@@ -5978,6 +5978,26 @@ billing.MapDelete("/payments/{activityId}", async (
 var administration = app.MapGroup("/api/administration").WithTags("Administration");
 RequireAccessPermission(administration, "admin", "acl", "write");
 
+var delegatedConfiguration = app.MapGroup("/api/configuration-delegation").WithTags("Configuration delegation");
+delegatedConfiguration.MapPost("/practice-settings/{key}/change-requests", async (string key, PracticeSettingChangeRequestCreateRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+    if (!session.Authenticated) return Results.Json(session, statusCode: StatusCodes.Status401Unauthorized);
+    try { var response = await repository.CreateDelegatedPracticeSettingChangeRequestAsync(key, request, session.Username, cancellationToken); return Results.Created($"/api/administration/practice-setting-change-requests/{response.Request.RequestId}", response); }
+    catch (UnauthorizedAccessException exception) { return Results.Json(new { error = exception.Message }, statusCode: StatusCodes.Status403Forbidden); }
+    catch (PracticeSettingChangeRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("CreateDelegatedPracticeSettingChangeRequest");
+delegatedConfiguration.MapPost("/practice-setting-change-requests/{requestId:guid}/submit", async (Guid requestId, PracticeSettingChangeRequestDecisionRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+    if (!session.Authenticated) return Results.Json(session, statusCode: StatusCodes.Status401Unauthorized);
+    try { return Results.Ok(await repository.SubmitDelegatedPracticeSettingChangeRequestAsync(requestId, request, session.Username, cancellationToken)); }
+    catch (UnauthorizedAccessException exception) { return Results.Json(new { error = exception.Message }, statusCode: StatusCodes.Status403Forbidden); }
+    catch (PracticeSettingChangeRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("SubmitDelegatedPracticeSettingChangeRequest");
+
 administration.MapGet("/experience-baseline", () =>
     Results.Ok(ExperienceBaselineCatalog.Build()))
     .WithName("GetExperienceBaseline");
@@ -6028,6 +6048,12 @@ administration.MapGet("/practice-settings", async (AdministrationRepository repo
     Results.Ok(await repository.GetPracticeSettingsAsync(cancellationToken))).WithName("GetPracticeSettings");
 administration.MapGet("/practice-settings/registry", async (AdministrationRepository repository, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetPracticeSettingRegistryAsync(cancellationToken))).WithName("GetPracticeSettingRegistry");
+administration.MapGet("/practice-setting-delegations", async (AdministrationRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetPracticeSettingDelegationsAsync(cancellationToken))).WithName("GetPracticeSettingDelegations");
+administration.MapPost("/practice-setting-delegations", async (AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, PracticeSettingDelegationCreateRequest request, CancellationToken cancellationToken) =>
+{ try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Created("/api/administration/practice-setting-delegations", await repository.GrantPracticeSettingDelegationAsync(request, session.Username, cancellationToken)); } catch (PracticeSettingChangeRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); } catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); } }).WithName("GrantPracticeSettingDelegation");
+administration.MapPost("/practice-setting-delegations/{delegationId:guid}/revoke", async (Guid delegationId, PracticeSettingChangeRequestDecisionRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{ try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Ok(await repository.RevokePracticeSettingDelegationAsync(delegationId, request.Note, session.Username, cancellationToken)); } catch (PracticeSettingChangeRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); } catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); } }).WithName("RevokePracticeSettingDelegation");
 administration.MapGet("/practice-settings/effective", async (AdministrationRepository repository, int? facilityId, CancellationToken cancellationToken) =>
 {
     try { return Results.Ok(await repository.GetEffectivePracticeSettingsAsync(facilityId, cancellationToken)); }

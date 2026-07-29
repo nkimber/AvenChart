@@ -7,11 +7,13 @@ import {
 } from "react";
 import {
   createPracticeSettingChangeRequest,
+  getPracticeSettingDelegations,
   getEffectivePracticeSettings,
   getPracticeSettingChangeRequest,
   getPracticeSettingChangeRequestImpactPreview,
   getPracticeSettingChangeRequests,
   getPracticeSettingRegistry,
+  grantPracticeSettingDelegation,
   transitionPracticeSettingChangeRequest,
   type EffectivePracticeSettingItem,
   type PracticeSettingImpactPreview,
@@ -20,6 +22,7 @@ import {
   type PracticeSettingChangeRequestsResponse,
   type PracticeSettingChangeRequestStatus,
   type PracticeSettingItem,
+  type PracticeSettingDelegation,
   type PracticeSettingRegistryItem,
 } from "../../api.ts";
 
@@ -102,6 +105,18 @@ export default function PracticeSettingGovernance({
   const [registryState, setRegistryState] = useState<
     AsyncState<Map<string, PracticeSettingRegistryItem>>
   >({ status: "loading" });
+  const [delegationState, setDelegationState] = useState<
+    AsyncState<PracticeSettingDelegation[]>
+  >({ status: "loading" });
+  const [delegation, setDelegation] = useState({
+    username: "",
+    settingKey: "",
+    facilityId: "",
+    expiresAt: "",
+    reason: "",
+  });
+  const [delegationError, setDelegationError] = useState<string | null>(null);
+  const [savingDelegation, setSavingDelegation] = useState(false);
 
   const settingByKey = useMemo(
     () => new Map(settings.map((setting) => [setting.key, setting])),
@@ -190,6 +205,25 @@ export default function PracticeSettingGovernance({
       active = false;
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    let active = true;
+    void getPracticeSettingDelegations(sessionId)
+      .then((items) => {
+        if (active) setDelegationState({ status: "ready", data: items });
+      })
+      .catch((error) => {
+        if (active) {
+          setDelegationState({
+            status: "error",
+            message: errorMessage(error, "Could not load delegated authority."),
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [refreshVersion, sessionId]);
 
   useEffect(() => {
     if (proposal.settingKey || settings.length === 0) return;
@@ -285,6 +319,32 @@ export default function PracticeSettingGovernance({
       );
     } finally {
       setSavingProposal(false);
+    }
+  }
+
+  async function submitDelegation(event: FormEvent) {
+    event.preventDefault();
+    const facilityId = Number(delegation.facilityId);
+    if (!delegation.username.trim() || !delegation.settingKey || !Number.isInteger(facilityId) || facilityId <= 0 || !delegation.reason.trim()) {
+      setDelegationError("Username, setting, active facility ID, and a reason are required.");
+      return;
+    }
+    setSavingDelegation(true);
+    setDelegationError(null);
+    try {
+      await grantPracticeSettingDelegation(sessionId, {
+        username: delegation.username.trim(),
+        settingKey: delegation.settingKey,
+        facilityId,
+        expiresAt: delegation.expiresAt ? new Date(delegation.expiresAt).toISOString() : null,
+        reason: delegation.reason.trim(),
+      });
+      setDelegation({ username: "", settingKey: delegation.settingKey, facilityId: "", expiresAt: "", reason: "" });
+      setRefreshVersion((version) => version + 1);
+    } catch (error) {
+      setDelegationError(errorMessage(error, "Could not grant delegated authority."));
+    } finally {
+      setSavingDelegation(false);
     }
   }
 
@@ -407,12 +467,58 @@ export default function PracticeSettingGovernance({
       <div className="practice-governance-boundary" role="note">
         <strong>Current local boundary:</strong> the same authorized
         administrator may submit, approve, and activate. Independent approver
-        matrices, effective dates, delegated administration,
-        and impact preview remain owner-governed ADM-01/ADM-02 work. Effective
+        matrices, effective dates, and impact preview remain owner-governed
+        ADM-01/ADM-02 work. A delegate may only create and submit their own
+        facility-scoped draft; administrators retain review and activation.
+        Effective
         values below now disclose their system or default-facility source. The
         older direct-update API remains compatibility-only and is not used by
         this screen.
       </div>
+
+      <form className="practice-change-form" onSubmit={submitDelegation}>
+        <div className="practice-change-form-heading">
+          <div>
+            <p className="cl-form-section-label">Delegated draft authority</p>
+            <p className="cl-admin-form-copy">
+              Grant a time-bounded user-and-facility scope. It cannot approve,
+              activate, or bypass the governed workflow.
+            </p>
+          </div>
+        </div>
+        <label className="cl-admin-field">
+          <span>Delegate username</span>
+          <input className="ne-input" value={delegation.username} onChange={(event) => setDelegation({ ...delegation, username: event.target.value })} disabled={savingDelegation} />
+        </label>
+        <label className="cl-admin-field">
+          <span>Practice setting</span>
+          <select className="ne-input" value={delegation.settingKey} onChange={(event) => setDelegation({ ...delegation, settingKey: event.target.value })} disabled={savingDelegation}>
+            <option value="">Select a setting</option>
+            {settings.map((setting) => <option key={setting.key} value={setting.key}>{setting.label}</option>)}
+          </select>
+        </label>
+        <label className="cl-admin-field">
+          <span>Facility ID</span>
+          <input className="ne-input" type="number" min="1" value={delegation.facilityId} onChange={(event) => setDelegation({ ...delegation, facilityId: event.target.value })} disabled={savingDelegation} />
+        </label>
+        <label className="cl-admin-field">
+          <span>Expiry (optional)</span>
+          <input className="ne-input" type="datetime-local" value={delegation.expiresAt} onChange={(event) => setDelegation({ ...delegation, expiresAt: event.target.value })} disabled={savingDelegation} />
+        </label>
+        <label className="cl-admin-field">
+          <span>Reason</span>
+          <input className="ne-input" value={delegation.reason} onChange={(event) => setDelegation({ ...delegation, reason: event.target.value })} disabled={savingDelegation} />
+        </label>
+        {delegationError && <p className="cl-form-error" role="alert">{delegationError}</p>}
+        <button className="cl-btn-secondary" type="submit" disabled={savingDelegation}>Grant draft authority</button>
+        {delegationState.status === "loading" && <p className="cl-empty-text">Loading delegated authority…</p>}
+        {delegationState.status === "error" && <p className="cl-form-error" role="alert">{delegationState.message}</p>}
+        {delegationState.status === "ready" && (
+          <p className="cl-empty-text">
+            Active delegations: {delegationState.data.filter((item) => item.active && (!item.expiresAt || new Date(item.expiresAt) > new Date())).map((item) => `${item.username} · ${item.settingKey} · facility ${item.facilityId}`).join("; ") || "none"}.
+          </p>
+        )}
+      </form>
 
       <div className="practice-governance-boundary" role="note">
         <strong>Local configuration registry:</strong>{" "}

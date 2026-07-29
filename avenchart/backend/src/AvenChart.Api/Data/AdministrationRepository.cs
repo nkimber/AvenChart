@@ -78,6 +78,126 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                     "partial: exact facility/staff and future appointment-view reach; no direct forms/rules/modules/client binding")
             ]));
 
+    public async Task<IReadOnlyList<PracticeSettingDelegationItem>> GetPracticeSettingDelegationsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select delegation_id,username,setting_key,facility_id,expires_at,active,reason,created_at,created_by,updated_at,updated_by from practice_setting_delegations order by active desc,updated_at desc,delegation_id desc;";
+        var items = new List<PracticeSettingDelegationItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) items.Add(ReadPracticeSettingDelegation(reader));
+        return items;
+    }
+
+    public async Task<PracticeSettingDelegationItem> GrantPracticeSettingDelegationAsync(PracticeSettingDelegationCreateRequest request, string username, CancellationToken cancellationToken)
+    {
+        ValidatePracticeSettingKey(request.SettingKey);
+        var delegateUsername = request.Username.Trim();
+        var reason = ValidateChangeRequestReason(request.Reason, required: true)!;
+        if (request.ExpiresAt is not null && request.ExpiresAt <= DateTimeOffset.UtcNow) throw new ArgumentException("A delegation expiry must be in the future.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var valid = connection.CreateCommand())
+        {
+            valid.Transaction = transaction;
+            valid.CommandText = "select exists(select 1 from auth_accounts where username=@username and active=true) and exists(select 1 from facilities where id=@facilityId and inactive=false);";
+            valid.Parameters.AddWithValue("username", delegateUsername);
+            valid.Parameters.AddWithValue("facilityId", request.FacilityId);
+            if (!(bool)(await valid.ExecuteScalarAsync(cancellationToken) ?? false)) throw new ArgumentException("The delegated user or active facility was not found.");
+        }
+        var id = Guid.NewGuid();
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = transaction;
+            insert.CommandText = "insert into practice_setting_delegations(delegation_id,username,setting_key,facility_id,expires_at,active,reason,created_at,created_by,updated_at,updated_by) values(@id,@delegate,@key,@facility,@expires,true,@reason,now(),@actor,now(),@actor); insert into practice_setting_delegation_events(delegation_id,action,note,occurred_at,username) values(@id,'granted',@reason,now(),@actor);";
+            insert.Parameters.AddWithValue("id", id); insert.Parameters.AddWithValue("delegate", delegateUsername); insert.Parameters.AddWithValue("key", request.SettingKey); insert.Parameters.AddWithValue("facility", request.FacilityId); insert.Parameters.AddWithValue("expires", (object?)request.ExpiresAt ?? DBNull.Value); insert.Parameters.AddWithValue("reason", reason); insert.Parameters.AddWithValue("actor", username);
+            try { await insert.ExecuteNonQueryAsync(cancellationToken); } catch (PostgresException exception) when (exception.SqlState == "23505") { throw new PracticeSettingChangeRequestConflictException("An active delegation already exists for this user, setting, and facility."); }
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return (await GetPracticeSettingDelegationAsync(connection, id, cancellationToken))!;
+    }
+
+    public async Task<bool> HasActivePracticeSettingDelegationAsync(string username, string settingKey, int? facilityId, CancellationToken cancellationToken)
+    {
+        if (facilityId is null) return false;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select exists(select 1 from practice_setting_delegations where lower(username)=lower(@username) and setting_key=@key and facility_id=@facility and active=true and (expires_at is null or expires_at > now()));";
+        command.Parameters.AddWithValue("username", username); command.Parameters.AddWithValue("key", settingKey); command.Parameters.AddWithValue("facility", facilityId.Value);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    public async Task<PracticeSettingChangeRequestDetailResponse> CreateDelegatedPracticeSettingChangeRequestAsync(
+        string key,
+        PracticeSettingChangeRequestCreateRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        if (!await HasActivePracticeSettingDelegationAsync(username, key, request.FacilityId, cancellationToken))
+        {
+            throw new UnauthorizedAccessException("No active delegation permits this facility-scoped setting proposal.");
+        }
+        return await CreatePracticeSettingChangeRequestAsync(key, request, username, cancellationToken);
+    }
+
+    public async Task<PracticeSettingChangeRequestDetailResponse> SubmitDelegatedPracticeSettingChangeRequestAsync(
+        Guid requestId,
+        PracticeSettingChangeRequestDecisionRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        var detail = await GetPracticeSettingChangeRequestAsync(requestId, cancellationToken);
+        if (!string.Equals(detail.Request.CreatedBy, username, StringComparison.OrdinalIgnoreCase)
+            || !await HasActivePracticeSettingDelegationAsync(
+                username,
+                detail.Request.SettingKey,
+                detail.Request.FacilityId,
+                cancellationToken))
+        {
+            throw new UnauthorizedAccessException("No active delegation permits submission of this facility-scoped setting proposal.");
+        }
+
+        return await SubmitPracticeSettingChangeRequestAsync(
+            requestId,
+            request.Note,
+            request.ExpectedVersion,
+            username,
+            cancellationToken);
+    }
+
+    public async Task<PracticeSettingDelegationItem> RevokePracticeSettingDelegationAsync(
+        Guid delegationId,
+        string? note,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        var normalizedNote = ValidateChangeRequestReason(note, required: true)!;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = "update practice_setting_delegations set active=false,updated_at=now(),updated_by=@actor where delegation_id=@id and active=true;";
+            update.Parameters.AddWithValue("id", delegationId);
+            update.Parameters.AddWithValue("actor", username);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new PracticeSettingChangeRequestConflictException("The delegation was not found or is already inactive.");
+            }
+        }
+        await using (var audit = connection.CreateCommand())
+        {
+            audit.Transaction = transaction;
+            audit.CommandText = "insert into practice_setting_delegation_events(delegation_id,action,note,occurred_at,username) values(@id,'revoked',@note,now(),@actor);";
+            audit.Parameters.AddWithValue("id", delegationId);
+            audit.Parameters.AddWithValue("note", normalizedNote);
+            audit.Parameters.AddWithValue("actor", username);
+            await audit.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return (await GetPracticeSettingDelegationAsync(connection, delegationId, cancellationToken))!;
+    }
+
     public async Task<EffectivePracticeSettingsResponse> GetEffectivePracticeSettingsAsync(int? facilityId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -1451,6 +1571,21 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             reader.GetString(10),
             reader.GetFieldValue<DateTimeOffset>(11).ToString("O"),
             reader.GetString(12));
+
+    private static PracticeSettingDelegationItem ReadPracticeSettingDelegation(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3),
+        reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4), reader.GetBoolean(5),
+        reader.GetString(6), reader.GetFieldValue<DateTimeOffset>(7).ToString("O"), reader.GetString(8),
+        reader.GetFieldValue<DateTimeOffset>(9).ToString("O"), reader.GetString(10));
+
+    private static async Task<PracticeSettingDelegationItem?> GetPracticeSettingDelegationAsync(NpgsqlConnection connection, Guid delegationId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select delegation_id,username,setting_key,facility_id,expires_at,active,reason,created_at,created_by,updated_at,updated_by from practice_setting_delegations where delegation_id=@id;";
+        command.Parameters.AddWithValue("id", delegationId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadPracticeSettingDelegation(reader) : null;
+    }
 
     private static async Task<PracticeSettingChangeRequestItem?> GetPracticeSettingChangeRequestAsync(NpgsqlConnection connection, Guid requestId, CancellationToken cancellationToken)
     {

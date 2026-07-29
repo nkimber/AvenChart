@@ -6903,6 +6903,47 @@ export async function getPracticeSettingRegistry(
 ): Promise<{ registryRevision: string; items: PracticeSettingRegistryItem[] }> {
   return clinicianGet(sessionId, '/api/administration/practice-settings/registry')
 }
+export type PracticeSettingDelegation = {
+  delegationId: string
+  username: string
+  settingKey: string
+  facilityId: number
+  expiresAt: string | null
+  active: boolean
+  reason: string
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+export async function getPracticeSettingDelegations(
+  sessionId: string,
+): Promise<PracticeSettingDelegation[]> {
+  return clinicianGet(sessionId, '/api/administration/practice-setting-delegations')
+}
+export async function grantPracticeSettingDelegation(
+  sessionId: string,
+  input: {
+    username: string
+    settingKey: string
+    facilityId: number
+    expiresAt?: string | null
+    reason: string
+  },
+): Promise<PracticeSettingDelegation> {
+  return clinicianPost(sessionId, '/api/administration/practice-setting-delegations', input)
+}
+export async function revokePracticeSettingDelegation(
+  sessionId: string,
+  delegationId: string,
+  note: string,
+): Promise<PracticeSettingDelegation> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/practice-setting-delegations/${encodeURIComponent(delegationId)}/revoke`,
+    { note },
+  )
+}
 export type EffectivePracticeSettingItem = PracticeSettingItem & {
   sourceScope: 'system' | 'facility'
   sourceFacilityId: number | null

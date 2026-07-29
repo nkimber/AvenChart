@@ -203,6 +203,26 @@ public sealed record PracticeSettingRegistryResponse(
     string RegistryRevision,
     IReadOnlyList<PracticeSettingRegistryItem> Items);
 
+public sealed record PracticeSettingDelegationCreateRequest(
+    string Username,
+    string SettingKey,
+    int FacilityId,
+    DateTimeOffset? ExpiresAt,
+    string Reason);
+
+public sealed record PracticeSettingDelegationItem(
+    Guid DelegationId,
+    string Username,
+    string SettingKey,
+    int FacilityId,
+    DateTimeOffset? ExpiresAt,
+    bool Active,
+    string Reason,
+    string CreatedAt,
+    string CreatedBy,
+    string UpdatedAt,
+    string UpdatedBy);
+
 public sealed record EffectivePracticeSettingItem(
     string Key,
     string Label,
