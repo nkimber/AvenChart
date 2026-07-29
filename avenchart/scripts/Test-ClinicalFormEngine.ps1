@@ -739,6 +739,15 @@ try {
         ($null -ne $rosPulmonaryDefinition -and $rosPulmonaryDefinition.contextScope -eq "encounter" -and $rosPulmonaryDefinition.signaturePolicy -eq "author-only" -and $rosPulmonaryDetail.currentRevision.status -eq "effective" -and (($rosPulmonaryFields.key -join "|") -eq "emphysema|chronic_bronchitis|interstitial_lung_disease|shortness_of_breath_2|lung_cancer|lung_cancer_surgery|pheumothorax") -and @($rosPulmonaryFields | Where-Object { $_.type -ne "boolean" }).Count -eq 0 -and ($rosPulmonaryFields | Where-Object { $_.key -eq "pheumothorax" }).helpText -match "persisted field spelling" -and $rosPulmonaryPreview.valid) `
         @{ definitionId=$rosPulmonaryDefinition.definitionId; schemaHash=$rosPulmonaryDetail.currentRevision.schemaHash; fields=$rosPulmonaryFields.key; previewValid=$rosPulmonaryPreview.valid }
 
+    $rosCardiovascularDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.reviewofsystemscardiovascular" }) | Select-Object -First 1
+    $rosCardiovascularDetail = if ($null -ne $rosCardiovascularDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($rosCardiovascularDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $rosCardiovascularFields = @($rosCardiovascularDetail.currentRevision.definition.fields)
+    $rosCardiovascularPreview = if ($null -ne $rosCardiovascularDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$rosCardiovascularDetail.currentRevision.definition; values=@{ heart_attack=$true; irregular_heart_beat=$false; chest_pains=$true; shortness_of_breath=$false; high_blood_pressure=$true; heart_failure=$false; poor_circulation=$true; vascular_surgery=$false; cardiac_catheterization=$true; coronary_artery_bypass=$false; heart_transplant=$true; stress_test=$false } } } else { $null }
+    Add-Check `
+        "Legacy Review of Systems Cardiovascular adoption maps the complete checklist without PHP execution" `
+        ($null -ne $rosCardiovascularDefinition -and $rosCardiovascularDefinition.contextScope -eq "encounter" -and $rosCardiovascularDefinition.signaturePolicy -eq "author-only" -and $rosCardiovascularDetail.currentRevision.status -eq "effective" -and $rosCardiovascularFields.Count -eq 12 -and (($rosCardiovascularFields.key -join "|") -eq "heart_attack|irregular_heart_beat|chest_pains|shortness_of_breath|high_blood_pressure|heart_failure|poor_circulation|vascular_surgery|cardiac_catheterization|coronary_artery_bypass|heart_transplant|stress_test") -and @($rosCardiovascularFields | Where-Object { $_.type -ne "boolean" }).Count -eq 0 -and $rosCardiovascularPreview.valid) `
+        @{ definitionId=$rosCardiovascularDefinition.definitionId; schemaHash=$rosCardiovascularDetail.currentRevision.schemaHash; fields=$rosCardiovascularFields.key; previewValid=$rosCardiovascularPreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
