@@ -170,6 +170,7 @@ export type GovernedReportExecutionPolicy = {
   revision: string;
   definitionRevision: string;
   scopeRevision: string;
+  formReportingRevision: string;
   queueRevision: string;
   datasetId: string;
   datasetVersion: string;
@@ -228,7 +229,7 @@ export type GovernedReportPreview = {
   datasetVersion: string;
   executionRevision: string;
   scopeRevision: string;
-  queueRevision: string;
+  formReportingRevision: string;
   scopeSnapshotChecksum: string;
   scopeFacilityId: number | null;
   scopeSubjectCount: number | null;
@@ -258,6 +259,7 @@ export type GovernedReportRun = {
   datasetVersion: string;
   executionRevision: string;
   scopeRevision: string;
+  formReportingRevision: string;
   queueRevision: string;
   scopeSnapshotChecksum: string;
   scopeFacilityId: number | null;

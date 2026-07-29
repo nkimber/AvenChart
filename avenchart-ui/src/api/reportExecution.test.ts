@@ -34,8 +34,9 @@ describe("governed report execution transport", () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          revision: "local-report-execution-v3",
-          scopeRevision: "local-report-scope-v1",
+          revision: "local-report-execution-v4",
+          scopeRevision: "local-report-scope-v2",
+          formReportingRevision: "local-clinical-form-reporting-v1",
           queueRevision: "local-report-queue-v1",
           durableQueueEnabled: true,
           executableRowPolicies: [
@@ -79,7 +80,7 @@ describe("governed report execution transport", () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          revision: "local-report-operations-v1",
+          revision: "local-report-operations-v2",
           generatedAt: "2026-07-29T12:00:00Z",
           health: "attention",
           pollIntervalSeconds: 5,

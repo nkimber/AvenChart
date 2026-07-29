@@ -122,17 +122,28 @@ try {
         -Uri "$ApiBaseUrl/api/reports/definition-policy" `
         -Headers $headers `
         -TimeoutSec 20
+    $formFamily = @(
+        $policy.families |
+            Where-Object { $_.key -eq "clinical-forms" }
+    ) | Select-Object -First 1
     Add-Check "Truthful bounded policy" (
-        $policy.revision -eq "local-report-definition-v1" `
+        $policy.revision -eq "local-report-definition-v2" `
             -and -not $policy.rawSqlAccepted `
             -and -not $policy.executableTemplatesAccepted `
             -and -not $policy.externalDeliveryEnabled `
             -and $policy.rowPolicyExecutionEnforced `
-            -and $policy.families.Count -eq 7 `
+            -and $policy.families.Count -eq 8 `
+            -and $formFamily.parameterSchema.Count -eq 2 `
+            -and ($formFamily.parameterSchema.key -join ",") -eq "from,to" `
+            -and $formFamily.outputSchema.Count -eq 21 `
+            -and $formFamily.outputSchema.key -contains "schema_hash" `
+            -and $formFamily.outputSchema.key -contains "report_column" `
+            -and $formFamily.outputSchema.key -contains "content_hash" `
             -and $policy.productionBlockers.Count -eq 8
     ) @{
         revision = $policy.revision
         familyCount = $policy.families.Count
+        formOutputFields = $formFamily.outputSchema.key
         blockerCount = $policy.productionBlockers.Count
         rawSqlAccepted = $policy.rawSqlAccepted
         rowPolicyExecutionEnforced = $policy.rowPolicyExecutionEnforced

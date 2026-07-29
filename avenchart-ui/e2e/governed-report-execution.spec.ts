@@ -81,6 +81,136 @@ async function createActiveDefinition(
   return created.definitionId;
 }
 
+async function createSignedClinicalFormFixture(
+  request: APIRequestContext,
+  apiBaseUrl: string,
+  headers: Record<string, string>,
+  marker: string,
+) {
+  const stableKey = `tmp.form.report.${marker.replaceAll("-", "")}`;
+  const createdResponse = await request.post(
+    `${apiBaseUrl}/api/form-engine/definitions`,
+    {
+      headers,
+      data: {
+        definition: {
+          stableKey,
+          name: `Report form ${marker}`,
+          purpose: "Verify revision-aware governed report execution.",
+          contextScope: "encounter",
+          owningService: "clinical_operations",
+          capability: "encounters.auth_a",
+          signaturePolicy: "author-only",
+          sections: [
+            {
+              key: "observation",
+              title: "Observation",
+              sequence: 10,
+              description: "Bounded report fixture.",
+            },
+          ],
+          fields: [
+            {
+              key: "chief_concern",
+              sectionKey: "observation",
+              label: "Chief concern",
+              type: "multiline",
+              sequence: 10,
+              required: true,
+              accessibilityLabel: "Chief concern",
+              helpText: null,
+              maxLength: 500,
+              minimum: null,
+              maximum: null,
+              precision: null,
+              unit: null,
+              codeSystem: null,
+              options: [],
+              repeatMinimum: null,
+              repeatMaximum: null,
+              children: [],
+              readOnly: false,
+            },
+          ],
+          rules: [],
+        },
+        reason: "Create the browser clinical form reporting fixture.",
+      },
+    },
+  );
+  expect(createdResponse.status()).toBe(201);
+  const created = (await createdResponse.json()) as {
+    definition: { definitionId: string };
+  };
+  for (const [action, expectedVersion] of [
+    ["review", 0],
+    ["approve", 1],
+    ["activate", 2],
+  ] as const) {
+    const transition = await request.post(
+      `${apiBaseUrl}/api/form-engine/definitions/${created.definition.definitionId}/${action}`,
+      {
+        headers,
+        data: {
+          revision: 1,
+          expectedVersion,
+          reason: `${action} the browser clinical form reporting fixture.`,
+          effectiveFrom: null,
+          effectiveTo: null,
+        },
+      },
+    );
+    expect(transition.ok()).toBeTruthy();
+  }
+
+  const instanceResponse = await request.post(
+    `${apiBaseUrl}/api/form-engine/patients/MOD-PAT-0012/instances`,
+    {
+      headers,
+      data: {
+        definitionId: created.definition.definitionId,
+        revision: null,
+        encounterId: 1000121,
+        idempotencyKey: `report-form-${marker}`,
+        values: {
+          chief_concern: `Revision-aware report value ${marker}`,
+        },
+        reason: "Create the signed browser report fixture.",
+      },
+    },
+  );
+  expect(instanceResponse.status()).toBe(201);
+  const instance = (await instanceResponse.json()) as {
+    instance: { instanceId: string; version: number };
+  };
+  const finalizedResponse = await request.post(
+    `${apiBaseUrl}/api/form-engine/instances/${instance.instance.instanceId}/finalize`,
+    {
+      headers,
+      data: {
+        expectedVersion: instance.instance.version,
+        reason: "Finalize the browser report fixture.",
+      },
+    },
+  );
+  expect(finalizedResponse.ok()).toBeTruthy();
+  const finalized = (await finalizedResponse.json()) as {
+    instance: { version: number };
+  };
+  const signedResponse = await request.post(
+    `${apiBaseUrl}/api/form-engine/instances/${instance.instance.instanceId}/sign`,
+    {
+      headers,
+      data: {
+        expectedVersion: finalized.instance.version,
+        reason: "Sign the browser report fixture.",
+      },
+    },
+  );
+  expect(signedResponse.ok()).toBeTruthy();
+  return created.definition.definitionId;
+}
+
 test.describe("REP-02 governed report execution", () => {
   test("previews, runs, downloads, and records blocked scope", async ({
     page,
@@ -132,7 +262,10 @@ test.describe("REP-02 governed report execution", () => {
           name: "Governed report execution",
         }),
       ).toBeVisible({ timeout: 20_000 });
-      await expect(workspace).toContainText("local-report-execution-v3");
+      await expect(workspace).toContainText("local-report-execution-v4");
+      await expect(workspace).toContainText(
+        "local-clinical-form-reporting-v1",
+      );
       await expect(workspace).toContainText("local-report-queue-v1");
       await expect(workspace).toContainText("3 automatic attempts");
       await expect(workspace).toContainText("Local download only");
@@ -140,7 +273,7 @@ test.describe("REP-02 governed report execution", () => {
       await expect(
         operations.getByRole("heading", { name: "Report operations" }),
       ).toBeVisible();
-      await expect(operations).toContainText("local-report-operations-v1");
+      await expect(operations).toContainText("local-report-operations-v2");
       await expect(operations).toContainText("not production-approved");
 
       await workspace
@@ -267,6 +400,7 @@ test.describe("REP-02 governed report execution", () => {
     const apiBaseUrl =
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     const definitions: string[] = [];
+    let formDefinitionId: string | null = null;
     const adminLogin = await page.request.post(
       `${apiBaseUrl}/api/auth/login`,
       { data: { username: "admin", password: "pass" } },
@@ -278,6 +412,12 @@ test.describe("REP-02 governed report execution", () => {
     };
 
     try {
+      formDefinitionId = await createSignedClinicalFormFixture(
+        page.request,
+        apiBaseUrl,
+        adminHeaders,
+        suffix,
+      );
       const facilityPurpose =
         "Verify browser facility scope for an active provider.";
       const facilityDefinition = await createActiveDefinition(
@@ -309,6 +449,22 @@ test.describe("REP-02 governed report execution", () => {
         },
       );
       definitions.push(assignedDefinition);
+
+      const formPurpose =
+        "Verify browser form reporting through assigned-patient scope.";
+      const formReportDefinition = await createActiveDefinition(
+        page.request,
+        apiBaseUrl,
+        adminHeaders,
+        {
+          stableKey: `tmp-report-execution-ui-${suffix}-forms`,
+          title: `Browser provider form execution ${suffix}`,
+          purpose: formPurpose,
+          family: "clinical-forms",
+          rowPolicy: "patient-assigned",
+        },
+      );
+      definitions.push(formReportDefinition);
 
       await signIn(page, "gold-provider-01", "pass");
       await page.goto("/clinician/reports");
@@ -373,6 +529,49 @@ test.describe("REP-02 governed report execution", () => {
         }),
       ).toContainText("completed", { timeout: 60_000 });
 
+      await workspace
+        .getByLabel("Active definition")
+        .selectOption(formReportDefinition);
+      await workspace
+        .getByRole("button", { name: "Preview 10 rows" })
+        .click();
+      const formPreview = workspace
+        .getByRole("heading", { name: "Non-persistent preview" })
+        .locator("xpath=parent::section");
+      await expect(formPreview).toContainText(/\d+ total rows/, {
+        timeout: 20_000,
+      });
+      const formPreviewTable = formPreview.getByRole("region", {
+        name: "Governed report preview",
+      });
+      await expect(formPreviewTable).toContainText("Form Stable Key");
+      await expect(formPreviewTable).toContainText("Report Column");
+      await expect(formPreviewTable).toContainText(
+        "local-clinical-form-renderer-v1",
+      );
+      await expect(formPreviewTable).toContainText(
+        `Revision-aware report value ${suffix}`,
+      );
+      await expect(formPreview).toContainText(
+        "local-clinical-form-reporting-v1",
+      );
+      await workspace
+        .getByRole("button", { name: "Run governed report" })
+        .click();
+      await expect(evidence).toContainText(
+        "local-clinical-form-reporting-v1",
+        { timeout: 20_000 },
+      );
+      await expect(
+        workspace.getByRole("region", {
+          name: "Governed report run history",
+        }),
+      ).toContainText("completed", { timeout: 60_000 });
+      const formDownloadPromise = page.waitForEvent("download");
+      await workspace.getByRole("button", { name: "Download" }).click();
+      const formDownload = await formDownloadPromise;
+      expect(formDownload.suggestedFilename()).toMatch(/\.csv$/);
+
       const accessibility = await new AxeBuilder({ page })
         .include(".report-execution-workspace")
         .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -386,6 +585,13 @@ test.describe("REP-02 governed report execution", () => {
       for (const definitionId of definitions) {
         const cleanup = await page.request.delete(
           `${apiBaseUrl}/api/reports/definitions/${definitionId}/test-fixture`,
+          { headers: adminHeaders },
+        );
+        expect(cleanup.status()).toBe(204);
+      }
+      if (formDefinitionId) {
+        const cleanup = await page.request.delete(
+          `${apiBaseUrl}/api/form-engine/definitions/${formDefinitionId}/test-fixture`,
           { headers: adminHeaders },
         );
         expect(cleanup.status()).toBe(204);

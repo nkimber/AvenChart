@@ -11,7 +11,7 @@ namespace AvenChart.Api.Data;
 
 public sealed class ReportDefinitionRepository(NpgsqlDataSource dataSource)
 {
-    private const string PolicyRevision = "local-report-definition-v1";
+    private const string PolicyRevision = "local-report-definition-v2";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly Regex StableKeyPattern = new(
         "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
@@ -87,7 +87,37 @@ public sealed class ReportDefinitionRepository(NpgsqlDataSource dataSource)
             true,
             "inventory-transactions",
             "Inventory transactions joined to lots and items.",
-            ["identifier", "subject", "date", "detail"])
+            ["identifier", "subject", "date", "detail"]),
+        BuildFamily(
+            "clinical-forms",
+            "Clinical form fields",
+            "Bounded signed and amended clinical-form field facts with pinned revision evidence.",
+            true,
+            "clinical-form-instances",
+            "Signed and amended clinical form instances joined to patients, encounters, and their pinned form revisions.",
+            [
+                "instance_id",
+                "patient_id",
+                "encounter_id",
+                "form_stable_key",
+                "form_name",
+                "form_revision",
+                "schema_hash",
+                "renderer_revision",
+                "instance_state",
+                "instance_version",
+                "content_hash",
+                "clinical_date",
+                "recorded_at",
+                "field_path",
+                "field_key",
+                "field_label",
+                "field_type",
+                "report_column",
+                "code_system",
+                "unit",
+                "value"
+            ])
     ];
 
     public ReportDefinitionGovernancePolicy GetPolicy() =>

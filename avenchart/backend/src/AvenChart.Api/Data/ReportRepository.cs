@@ -16,7 +16,22 @@ public sealed record GovernedReportDataScope(
 
 public sealed class ReportRepository(NpgsqlDataSource dataSource)
 {
-    private static readonly IReadOnlyList<ReportFamilyItem> Families = [new("operational", "Operational snapshot", "Practice counts and activity summary.", false), new("patients", "Patient list", "Registered patient demographics.", false), new("appointments", "Appointments", "Scheduled appointment activity.", true), new("encounters", "Encounters", "Clinical encounter activity.", true), new("referrals", "Referrals", "Local referral lifecycle activity.", true), new("chart-tracker", "Chart tracker", "Recorded chart-location handoffs.", true), new("inventory", "Inventory transactions", "Immutable inventory transaction activity.", true)];
+    private const int MaximumFamilyRows = 5000;
+    private static readonly IReadOnlyList<ReportFamilyItem> Families =
+    [
+        new("operational", "Operational snapshot", "Practice counts and activity summary.", false),
+        new("patients", "Patient list", "Registered patient demographics.", false),
+        new("appointments", "Appointments", "Scheduled appointment activity.", true),
+        new("encounters", "Encounters", "Clinical encounter activity.", true),
+        new("referrals", "Referrals", "Local referral lifecycle activity.", true),
+        new("chart-tracker", "Chart tracker", "Recorded chart-location handoffs.", true),
+        new("inventory", "Inventory transactions", "Immutable inventory transaction activity.", true),
+        new(
+            "clinical-forms",
+            "Clinical form fields",
+            "Signed and amended form fields with pinned form, schema, renderer, and content revisions.",
+            true)
+    ];
     public IReadOnlyList<ReportFamilyItem> GetFamilies() => Families;
 
     public async Task<ControlledInventoryReportResponse> RunControlledInventoryReportAsync(ControlledInventoryReportRequest request, string username, CancellationToken cancellationToken)
@@ -545,6 +560,14 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         {
             throw new ArgumentException("From date cannot be after to date.");
         }
+        if (key == "clinical-forms")
+        {
+            return await GetClinicalFormsCsvAsync(
+                from,
+                to,
+                scope,
+                cancellationToken);
+        }
         if (scope.RowPolicy == "practice-wide")
         {
             return await GetFamilyCsvAsync(key, from, to, cancellationToken);
@@ -786,23 +809,482 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         }
     }
 
-    public async Task<string> GetFamilyCsvAsync(string family, DateOnly? from, DateOnly? to, CancellationToken cancellationToken)
+    public async Task<string> GetFamilyCsvAsync(
+        string family,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken)
     {
-        var key = family.Trim().ToLowerInvariant(); if (!Families.Any(item => item.Key == key)) throw new ArgumentException("Unsupported report family."); if (from is not null && to is not null && from > to) throw new ArgumentException("From date cannot be after to date."); if (key == "operational") return await GetOperationalReportsCsvAsync(cancellationToken);
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        var key = family.Trim().ToLowerInvariant();
+        if (!Families.Any(item => item.Key == key))
+        {
+            throw new ArgumentException("Unsupported report family.");
+        }
+        if (from is not null && to is not null && from > to)
+        {
+            throw new ArgumentException("From date cannot be after to date.");
+        }
+        if (key == "operational")
+        {
+            return await GetOperationalReportsCsvAsync(cancellationToken);
+        }
+        if (key == "clinical-forms")
+        {
+            return await GetClinicalFormsCsvAsync(
+                from,
+                to,
+                new("practice-wide", null, []),
+                cancellationToken);
+        }
+
+        await using var connection =
+            await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
         command.CommandText = key switch
         {
-            "patients" => "select p.canonical_id, trim(concat(p.last_name, ', ', p.first_name)), p.date_of_birth::text, coalesce(p.phone_cell,p.phone_home,p.email,'') from patients p where p.merged_into_patient_id is null order by p.last_name,p.first_name limit 5000;",
-            "appointments" => "select a.id::text, p.pubpid, a.appointment_date::text, concat(coalesce(a.title,''),' | ',coalesce(a.status,'')) from appointments a join patients p on p.legacy_pid=a.pid where (@from is null or a.appointment_date>=@from) and (@to is null or a.appointment_date<=@to) order by a.appointment_date,a.start_time limit 5000;",
-            "encounters" => "select e.encounter::text, p.pubpid, e.encounter_date::text, coalesce(e.reason,'') from encounters e join patients p on p.legacy_pid=e.pid where (@from is null or e.encounter_date>=@from) and (@to is null or e.encounter_date<=@to) order by e.encounter_date desc,e.encounter desc limit 5000;",
-            "referrals" => "select r.id::text, p.pubpid, r.requested_at::date::text, concat(r.destination,' | ',r.status) from referrals r join patients p on p.canonical_id=r.patient_id where (@from is null or r.requested_at::date>=@from) and (@to is null or r.requested_at::date<=@to) order by r.requested_at desc limit 5000;",
-            "chart-tracker" => "select e.id::text, p.pubpid, e.recorded_at::date::text, coalesce(e.location, trim(concat(s.first_name,' ',s.last_name)),'') from chart_tracker_events e join patients p on p.canonical_id=e.patient_id left join staff s on s.id=e.user_id where (@from is null or e.recorded_at::date>=@from) and (@to is null or e.recorded_at::date<=@to) order by e.recorded_at desc limit 5000;",
-            "inventory" => "select t.transaction_id::text, i.item_code, t.occurred_at::date::text, concat(t.transaction_type,' | ',t.quantity_delta::text,' | ',coalesce(t.reason,'')) from inventory_transactions t join inventory_lots l on l.lot_id=t.lot_id join inventory_items i on i.item_id=l.item_id where (@from is null or t.occurred_at::date>=@from) and (@to is null or t.occurred_at::date<=@to) order by t.occurred_at desc limit 5000;",
+            "patients" => """
+                select p.canonical_id,
+                       trim(concat(p.last_name, ', ', p.first_name)),
+                       p.date_of_birth::text,
+                       coalesce(p.phone_cell,p.phone_home,p.email,'')
+                from patients p
+                where p.merged_into_patient_id is null
+                order by p.last_name,p.first_name
+                limit 5000;
+                """,
+            "appointments" => """
+                select a.id::text,
+                       p.pubpid,
+                       a.appointment_date::text,
+                       concat(coalesce(a.title,''),' | ',coalesce(a.status,''))
+                from appointments a
+                join patients p on p.legacy_pid=a.pid
+                where (@from is null or a.appointment_date>=@from)
+                  and (@to is null or a.appointment_date<=@to)
+                order by a.appointment_date,a.start_time
+                limit 5000;
+                """,
+            "encounters" => """
+                select e.encounter::text,
+                       p.pubpid,
+                       e.encounter_date::text,
+                       coalesce(e.reason,'')
+                from encounters e
+                join patients p on p.legacy_pid=e.pid
+                where (@from is null or e.encounter_date>=@from)
+                  and (@to is null or e.encounter_date<=@to)
+                order by e.encounter_date desc,e.encounter desc
+                limit 5000;
+                """,
+            "referrals" => """
+                select r.id::text,
+                       p.pubpid,
+                       r.requested_at::date::text,
+                       concat(r.destination,' | ',r.status)
+                from referrals r
+                join patients p on p.canonical_id=r.patient_id
+                where (@from is null or r.requested_at::date>=@from)
+                  and (@to is null or r.requested_at::date<=@to)
+                order by r.requested_at desc
+                limit 5000;
+                """,
+            "chart-tracker" => """
+                select e.id::text,
+                       p.pubpid,
+                       e.recorded_at::date::text,
+                       coalesce(e.location, trim(concat(s.first_name,' ',s.last_name)),'')
+                from chart_tracker_events e
+                join patients p on p.canonical_id=e.patient_id
+                left join staff s on s.id=e.user_id
+                where (@from is null or e.recorded_at::date>=@from)
+                  and (@to is null or e.recorded_at::date<=@to)
+                order by e.recorded_at desc
+                limit 5000;
+                """,
+            "inventory" => """
+                select t.transaction_id::text,
+                       i.item_code,
+                       t.occurred_at::date::text,
+                       concat(t.transaction_type,' | ',t.quantity_delta::text,' | ',coalesce(t.reason,''))
+                from inventory_transactions t
+                join inventory_lots l on l.lot_id=t.lot_id
+                join inventory_items i on i.item_id=l.item_id
+                where (@from is null or t.occurred_at::date>=@from)
+                  and (@to is null or t.occurred_at::date<=@to)
+                order by t.occurred_at desc
+                limit 5000;
+                """,
             _ => throw new ArgumentException("Unsupported report family.")
         };
-        command.Parameters.Add("from", NpgsqlDbType.Date).Value = (object?)from ?? DBNull.Value; command.Parameters.Add("to", NpgsqlDbType.Date).Value = (object?)to ?? DBNull.Value;
-        var csv = new StringBuilder(); AppendCsvRow(csv, "Identifier", "Subject", "Date", "Detail"); await using var reader = await command.ExecuteReaderAsync(cancellationToken); while (await reader.ReadAsync(cancellationToken)) AppendCsvRow(csv, reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)); return csv.ToString();
+        command.Parameters.Add("from", NpgsqlDbType.Date).Value =
+            (object?)from ?? DBNull.Value;
+        command.Parameters.Add("to", NpgsqlDbType.Date).Value =
+            (object?)to ?? DBNull.Value;
+        var csv = new StringBuilder();
+        AppendCsvRow(csv, "Identifier", "Subject", "Date", "Detail");
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            AppendCsvRow(
+                csv,
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3));
+        }
+        return csv.ToString();
     }
+
+    private async Task<string> GetClinicalFormsCsvAsync(
+        DateOnly? from,
+        DateOnly? to,
+        GovernedReportDataScope scope,
+        CancellationToken cancellationToken)
+    {
+        if (scope.RowPolicy == "facility-scoped" && scope.FacilityId is null)
+        {
+            throw new ArgumentException(
+                "Facility-scoped clinical form execution requires a pinned facility.");
+        }
+        if (scope.RowPolicy is not (
+                "practice-wide" or "facility-scoped" or "patient-assigned"))
+        {
+            throw new ArgumentException(
+                "Unsupported governed clinical form row policy.");
+        }
+
+        await using var connection =
+            await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              instance.instance_id,
+              instance.patient_id,
+              instance.encounter_id,
+              definition.stable_key,
+              instance.definition_revision,
+              revision.schema_hash,
+              revision.renderer_version,
+              instance.state,
+              instance.version,
+              coalesce(
+                encounter.encounter_date,
+                instance.signed_at::date,
+                instance.finalized_at::date,
+                instance.updated_at::date
+              ) as clinical_date,
+              coalesce(
+                instance.signed_at,
+                instance.finalized_at,
+                instance.updated_at
+              ) as recorded_at,
+              revision.schema_json::text,
+              instance.values_json::text
+            from clinical_form_instances instance
+            join clinical_form_definitions definition
+              on definition.definition_id=instance.definition_id
+            join clinical_form_revisions revision
+              on revision.definition_id=instance.definition_id
+             and revision.revision=instance.definition_revision
+            join patients patient
+              on patient.canonical_id=instance.patient_id
+             and patient.merged_into_patient_id is null
+            left join encounters encounter
+              on encounter.encounter=instance.encounter_id
+             and encounter.pid=patient.legacy_pid
+            where instance.state in ('signed','amended','corrected')
+              and (
+                @from is null
+                or coalesce(
+                  encounter.encounter_date,
+                  instance.signed_at::date,
+                  instance.finalized_at::date,
+                  instance.updated_at::date
+                )>=@from
+              )
+              and (
+                @to is null
+                or coalesce(
+                  encounter.encounter_date,
+                  instance.signed_at::date,
+                  instance.finalized_at::date,
+                  instance.updated_at::date
+                )<=@to
+              )
+              and (
+                @rowPolicy='practice-wide'
+                or (
+                  @rowPolicy='facility-scoped'
+                  and coalesce(encounter.facility_id,patient.facility_id)=@facility
+                )
+                or (
+                  @rowPolicy='patient-assigned'
+                  and patient.canonical_id=any(@patientIds)
+                )
+              )
+            order by clinical_date, recorded_at, instance.instance_id
+            limit 5001;
+            """;
+        command.Parameters.Add("from", NpgsqlDbType.Date).Value =
+            (object?)from ?? DBNull.Value;
+        command.Parameters.Add("to", NpgsqlDbType.Date).Value =
+            (object?)to ?? DBNull.Value;
+        command.Parameters.AddWithValue("rowPolicy", scope.RowPolicy);
+        command.Parameters.Add("facility", NpgsqlDbType.Integer).Value =
+            (object?)scope.FacilityId ?? DBNull.Value;
+        command.Parameters.Add(
+            "patientIds",
+            NpgsqlDbType.Array | NpgsqlDbType.Text).Value =
+            scope.PatientIds.ToArray();
+
+        var csv = new StringBuilder();
+        AppendCsvRow(
+            csv,
+            "Instance Id",
+            "Patient Id",
+            "Encounter Id",
+            "Form Stable Key",
+            "Form Name",
+            "Form Revision",
+            "Schema Hash",
+            "Renderer Revision",
+            "Instance State",
+            "Instance Version",
+            "Content Hash",
+            "Clinical Date",
+            "Recorded At",
+            "Field Path",
+            "Field Key",
+            "Field Label",
+            "Field Type",
+            "Report Column",
+            "Code System",
+            "Unit",
+            "Value");
+
+        var rowCount = 0;
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var instanceId = reader.GetGuid(0);
+            var patientId = reader.GetString(1);
+            int? encounterId =
+                reader.IsDBNull(2) ? null : reader.GetInt32(2);
+            var stableKey = reader.GetString(3);
+            var revision = reader.GetInt32(4);
+            var schemaHash = reader.GetString(5).Trim();
+            var rendererRevision = reader.GetString(6);
+            var state = reader.GetString(7);
+            var version = reader.GetInt32(8);
+            var clinicalDate = reader.GetFieldValue<DateOnly>(9);
+            var recordedAt = reader.GetFieldValue<DateTimeOffset>(10);
+            var definition =
+                ClinicalFormRuntime.DeserializeSchema(reader.GetString(11));
+            var values =
+                ClinicalFormRuntime.DeserializeValues(reader.GetString(12));
+            var contentHash = ClinicalFormRuntime.HashInstance(
+                instanceId,
+                revision,
+                version,
+                state,
+                values);
+
+            foreach (var field in FlattenClinicalFormFields(
+                         definition,
+                         revision,
+                         values))
+            {
+                rowCount++;
+                if (rowCount > MaximumFamilyRows)
+                {
+                    throw new InvalidOperationException(
+                        $"The clinical form result exceeded the {MaximumFamilyRows}-row execution limit.");
+                }
+
+                AppendCsvRow(
+                    csv,
+                    instanceId,
+                    patientId,
+                    encounterId,
+                    stableKey,
+                    definition.Name,
+                    revision,
+                    schemaHash,
+                    rendererRevision,
+                    state,
+                    version,
+                    contentHash,
+                    clinicalDate.ToString(
+                        "yyyy-MM-dd",
+                        CultureInfo.InvariantCulture),
+                    recordedAt.ToString("O", CultureInfo.InvariantCulture),
+                    field.ActualPath,
+                    field.Field.Key,
+                    field.Field.Label,
+                    field.Field.Type,
+                    field.ReportColumn,
+                    field.Field.CodeSystem,
+                    field.Field.Unit,
+                    field.Value);
+            }
+        }
+
+        return csv.ToString();
+    }
+
+    private static IReadOnlyList<ClinicalFormReportField>
+        FlattenClinicalFormFields(
+            ClinicalFormSchemaDefinition definition,
+            int revision,
+            IReadOnlyDictionary<string, JsonElement> values)
+    {
+        var rows = new List<ClinicalFormReportField>();
+        foreach (var field in definition.Fields
+                     .OrderBy(item => item.SectionKey, StringComparer.Ordinal)
+                     .ThenBy(item => item.Sequence)
+                     .ThenBy(item => item.Key, StringComparer.Ordinal))
+        {
+            values.TryGetValue(field.Key, out var value);
+            AddClinicalFormFieldRows(
+                rows,
+                definition.StableKey,
+                revision,
+                field,
+                canonicalParentPath: null,
+                actualParentPath: null,
+                value,
+                value.ValueKind != JsonValueKind.Undefined);
+        }
+        return rows;
+    }
+
+    private static void AddClinicalFormFieldRows(
+        ICollection<ClinicalFormReportField> rows,
+        string stableKey,
+        int revision,
+        ClinicalFormFieldDefinition field,
+        string? canonicalParentPath,
+        string? actualParentPath,
+        JsonElement value,
+        bool hasValue)
+    {
+        var canonicalPath = canonicalParentPath is null
+            ? field.Key
+            : $"{canonicalParentPath}.{field.Key}";
+        var actualPath = actualParentPath is null
+            ? field.Key
+            : $"{actualParentPath}.{field.Key}";
+        var reportColumn =
+            $"clinical_form.{stableKey}.r{revision}.{canonicalPath}";
+
+        if (field.Type == "repeat")
+        {
+            var items = hasValue && value.ValueKind == JsonValueKind.Array
+                ? value.EnumerateArray().ToArray()
+                : [];
+            rows.Add(new(
+                field,
+                actualPath,
+                reportColumn,
+                $"{items.Length.ToString(CultureInfo.InvariantCulture)} items"));
+
+            if (items.Length == 0)
+            {
+                foreach (var child in OrderedClinicalFormChildren(field))
+                {
+                    AddClinicalFormFieldRows(
+                        rows,
+                        stableKey,
+                        revision,
+                        child,
+                        canonicalPath,
+                        actualPath,
+                        default,
+                        hasValue: false);
+                }
+                return;
+            }
+
+            for (var index = 0; index < items.Length; index++)
+            {
+                var item = items[index];
+                var indexedParent = $"{actualPath}[{index}]";
+                foreach (var child in OrderedClinicalFormChildren(field))
+                {
+                    var childValue = TryReadClinicalFormChild(
+                        item,
+                        child.Key,
+                        out var found);
+                    AddClinicalFormFieldRows(
+                        rows,
+                        stableKey,
+                        revision,
+                        child,
+                        canonicalPath,
+                        indexedParent,
+                        childValue,
+                        found);
+                }
+            }
+            return;
+        }
+
+        rows.Add(new(
+            field,
+            actualPath,
+            reportColumn,
+            hasValue ? FormatClinicalFormValue(value) : string.Empty));
+
+        foreach (var child in OrderedClinicalFormChildren(field))
+        {
+            var childValue = TryReadClinicalFormChild(
+                value,
+                child.Key,
+                out var found);
+            AddClinicalFormFieldRows(
+                rows,
+                stableKey,
+                revision,
+                child,
+                canonicalPath,
+                actualPath,
+                childValue,
+                hasValue && found);
+        }
+    }
+
+    private static IReadOnlyList<ClinicalFormFieldDefinition>
+        OrderedClinicalFormChildren(ClinicalFormFieldDefinition field) =>
+        field.Children
+            .OrderBy(child => child.Sequence)
+            .ThenBy(child => child.Key, StringComparer.Ordinal)
+            .ToArray();
+
+    private static JsonElement TryReadClinicalFormChild(
+        JsonElement parent,
+        string key,
+        out bool found)
+    {
+        if (parent.ValueKind == JsonValueKind.Object &&
+            parent.TryGetProperty(key, out var value))
+        {
+            found = true;
+            return value;
+        }
+
+        found = false;
+        return default;
+    }
+
+    private static string FormatClinicalFormValue(JsonElement value) =>
+        value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Null or JsonValueKind.Undefined => string.Empty,
+            _ => value.GetRawText()
+        };
 
     private static async Task<ReportHeader> GetReportHeaderAsync(
         NpgsqlConnection connection,
@@ -1017,13 +1499,15 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         return Convert.ToInt32(reader.GetInt64(reader.GetOrdinal(columnName)));
     }
 
-    private static void AppendCsvRow(StringBuilder builder, params object[] values)
+    private static void AppendCsvRow(
+        StringBuilder builder,
+        params object?[] values)
     {
         builder.AppendJoin(',', values.Select(FormatCsvValue));
         builder.AppendLine();
     }
 
-    private static string FormatCsvValue(object value)
+    private static string FormatCsvValue(object? value)
     {
         var text = value switch
         {
@@ -1038,5 +1522,14 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
             : text;
     }
 
-    private sealed record ReportHeader(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+    private sealed record ClinicalFormReportField(
+        ClinicalFormFieldDefinition Field,
+        string ActualPath,
+        string ReportColumn,
+        string Value);
+
+    private sealed record ReportHeader(
+        string DatasetId,
+        string DatasetVersion,
+        DateOnly BaseDate);
 }

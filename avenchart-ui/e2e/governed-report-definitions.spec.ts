@@ -44,7 +44,7 @@ test.describe("REP-01 governed report definitions", () => {
       await expect(
         page.getByRole("heading", { name: "Governed report catalog" }),
       ).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByText("local-report-definition-v1")).toBeVisible();
+      await expect(page.getByText("local-report-definition-v2")).toBeVisible();
       await expect(page.getByText("Raw SQL: rejected")).toBeVisible();
       await page
         .getByText(/Production blockers \(8\)/)

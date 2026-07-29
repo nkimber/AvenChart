@@ -16,6 +16,7 @@ $headers = $null
 $providerHeaders = $null
 $frontdeskHeaders = $null
 $careTeamFixtureActive = $false
+$clinicalFormFixtureActive = $false
 $definitionIds = [System.Collections.Generic.List[string]]::new()
 $marker = "tmp-report-execution-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
 
@@ -268,8 +269,11 @@ try {
         -RequestHeaders $providerHeaders
     Add-Check "Protected actor-aware execution policy" (
         $unauthenticated.Status -eq 401 `
-            -and $policy.revision -eq "local-report-execution-v3" `
-            -and $policy.scopeRevision -eq "local-report-scope-v1" `
+            -and $policy.revision -eq "local-report-execution-v4" `
+            -and $policy.definitionRevision -eq "local-report-definition-v2" `
+            -and $policy.scopeRevision -eq "local-report-scope-v2" `
+            -and $policy.formReportingRevision -eq
+                "local-clinical-form-reporting-v1" `
             -and $policy.queueRevision -eq "local-report-queue-v1" `
             -and $policy.durableQueueEnabled `
             -and $policy.maximumAttempts -eq 3 `
@@ -285,12 +289,14 @@ try {
             -and $providerPolicy.currentActorScope.assignedPatientCount -eq 83 `
             -and $policy.operatorAccess `
             -and -not $providerPolicy.operatorAccess `
-            -and $providerPolicy.rowPolicyFamilySupport."facility-scoped".Count -eq 7 `
-            -and $providerPolicy.rowPolicyFamilySupport."patient-assigned".Count -eq 6 `
+            -and $providerPolicy.rowPolicyFamilySupport."facility-scoped".Count -eq 8 `
+            -and $providerPolicy.rowPolicyFamilySupport."patient-assigned".Count -eq 7 `
+            -and $providerPolicy.rowPolicyFamilySupport."patient-assigned" -contains
+                "clinical-forms" `
             -and $policy.deliveryModes.Count -eq 1 `
             -and -not $policy.externalDeliveryEnabled `
             -and -not $policy.artifactStorageProductionApproved `
-            -and $policy.productionBlockers.Count -eq 8
+            -and $policy.productionBlockers.Count -eq 9
     ) @{
         unauthenticatedStatus = $unauthenticated.Status
         revision = $policy.revision
@@ -304,6 +310,83 @@ try {
         adminOperatorAccess = $policy.operatorAccess
         providerOperatorAccess = $providerPolicy.operatorAccess
     }
+
+    $clinicalFormFixtureActive = $true
+    Invoke-ReportFixtureSql -Sql @"
+with source as (
+  select
+    definition.definition_id,
+    definition.effective_revision,
+    dataset.base_date::timestamp + interval '12 hours' as recorded_at
+  from clinical_form_definitions definition
+  cross join lateral (
+    select base_date
+    from dataset_metadata
+    order by generated_at desc
+    limit 1
+  ) dataset
+  where definition.stable_key='clinical.observation'
+), fixtures(patient_id,encounter_id,state,suffix) as (
+  values
+    ('MOD-PAT-0012',1000121,'signed','assigned-main'),
+    ('MOD-PAT-0003',1000031,'signed','unassigned-main'),
+    ('MOD-PAT-0001',1000011,'signed','unassigned-south'),
+    ('MOD-PAT-0012',1000121,'draft','excluded-draft')
+)
+insert into clinical_form_instances (
+  instance_id, definition_id, definition_revision, patient_id,
+  encounter_id, state, version, author, values_json, validation_json,
+  idempotency_key, created_at, updated_at, finalized_at, signed_at
+)
+select
+  gen_random_uuid(),
+  source.definition_id,
+  source.effective_revision,
+  fixture.patient_id,
+  fixture.encounter_id,
+  fixture.state,
+  case when fixture.state='signed' then 2 else 0 end,
+  'admin',
+  jsonb_build_object(
+    'chief_concern',
+    '$marker form ' || fixture.suffix,
+    'pain_score',
+    2,
+    'follow_up',
+    true,
+    'disposition',
+    'routine',
+    'notes',
+    'Synthetic reporting fixture.'
+  ),
+  '{}'::jsonb,
+  '$marker-form-' || fixture.suffix,
+  source.recorded_at,
+  source.recorded_at,
+  case when fixture.state='signed' then source.recorded_at else null end,
+  case when fixture.state='signed' then source.recorded_at else null end
+from source
+cross join fixtures fixture;
+
+insert into clinical_form_signatures (
+  signature_id, instance_id, role, signer, method, policy_revision,
+  credential_context, signed_at, content_hash
+)
+select
+  gen_random_uuid(),
+  instance.instance_id,
+  'signer',
+  'admin',
+  'local-attestation',
+  'local-clinical-signature-v1',
+  'active-local-auth-account',
+  instance.signed_at,
+  md5(instance.instance_id::text || instance.values_json::text)
+    || md5('report-fixture:' || instance.instance_id::text)
+from clinical_form_instances instance
+where instance.idempotency_key like '$marker-form-%'
+  and instance.state='signed';
+"@ | Out-Null
 
     $purpose = "Verify revision-pinned patient report execution."
     $active = New-ActiveDefinition `
@@ -350,7 +433,7 @@ try {
             -and $preview.revisionNumber -eq 1 `
             -and $preview.rowPolicy -eq "practice-wide" `
             -and $preview.totalRows -eq 1000 `
-            -and $preview.scopeRevision -eq "local-report-scope-v1" `
+            -and $preview.scopeRevision -eq "local-report-scope-v2" `
             -and $preview.scopeSubjectCount -eq 1000 `
             -and $preview.scopeSnapshotChecksum -match "^[a-f0-9]{64}$" `
             -and $preview.rows.Count -eq 10 `
@@ -415,7 +498,7 @@ try {
             -and $first.run.definitionSnapshotChecksum -match "^[a-f0-9]{64}$" `
             -and $first.run.datasetId -eq $policy.datasetId `
             -and $first.run.datasetVersion -eq $policy.datasetVersion `
-            -and $first.run.scopeRevision -eq "local-report-scope-v1" `
+            -and $first.run.scopeRevision -eq "local-report-scope-v2" `
             -and $first.run.scopeSubjectCount -eq 1000 `
             -and $first.run.scopeSnapshotChecksum -eq $preview.scopeSnapshotChecksum `
             -and $first.run.queueRevision -eq "local-report-queue-v1" `
@@ -759,7 +842,7 @@ where run_id='$($expiryAccepted.run.runId)';
     Add-Check "Missing staff scope creates visible failed evidence" (
         $scopeRun.run.status -eq "failed" `
             -and $scopeRun.run.failureCode -eq "scope-identity-unavailable" `
-            -and $scopeRun.run.scopeRevision -eq "local-report-scope-v1" `
+            -and $scopeRun.run.scopeRevision -eq "local-report-scope-v2" `
             -and $scopeRun.run.scopeSnapshotChecksum -match "^[a-f0-9]{64}$" `
             -and -not $scopeRun.run.downloadAvailable `
             -and ($scopeRun.events.action -join ",") -eq "queued,failed" `
@@ -861,6 +944,77 @@ where run_id='$($expiryAccepted.run.runId)';
         scopeChecksum = $assignedRun.run.scopeSnapshotChecksum
     }
 
+    $formPracticePurpose =
+        "Verify practice-wide revision-labeled clinical form reporting."
+    $formPractice = New-ActiveDefinition `
+        -StableKey "$marker-practice-clinical-forms" `
+        -Title "Synthetic practice clinical form execution" `
+        -Purpose $formPracticePurpose `
+        -Family "clinical-forms" `
+        -RowPolicy "practice-wide"
+    $formPracticeRequest = @{
+        purpose = $formPracticePurpose
+        recipientUsername = "admin"
+        deliveryMode = "local-download"
+        asOfDate = $policy.requiredAsOfDate
+        parameters = @{}
+    }
+    $formPracticePreview = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/reports/definitions/$($formPractice.definitionId)/preview" `
+        -Method "POST" `
+        -RequestHeaders $headers `
+        -Body $formPracticeRequest
+    $formPracticeRunRequest = $formPracticeRequest.Clone()
+    $formPracticeRunRequest.idempotencyKey =
+        "report-run-$([Guid]::NewGuid().ToString('N'))"
+    $formPracticeRun = (Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/definitions/$($formPractice.definitionId)/run" `
+        -Method "POST" `
+        -RequestHeaders $headers `
+        -Body $formPracticeRunRequest).Json
+    $formPracticeRun = Wait-GovernedRun `
+        -RunDetail $formPracticeRun `
+        -RequestHeaders $headers
+    $formPracticeDownload = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/runs/$($formPracticeRun.run.runId)/download" `
+        -RequestHeaders $headers
+    $formPracticeCsv = [Text.Encoding]::UTF8.GetString(
+        $formPracticeDownload.Bytes
+    )
+    Add-Check "Practice clinical form reporting labels every field revision and excludes drafts" (
+        $formPracticePreview.totalRows -eq 15 `
+            -and $formPracticePreview.columns.Count -eq 21 `
+            -and ($formPracticePreview.columns -join ",") -eq
+                "Instance Id,Patient Id,Encounter Id,Form Stable Key,Form Name,Form Revision,Schema Hash,Renderer Revision,Instance State,Instance Version,Content Hash,Clinical Date,Recorded At,Field Path,Field Key,Field Label,Field Type,Report Column,Code System,Unit,Value" `
+            -and $formPracticePreview.formReportingRevision -eq
+                "local-clinical-form-reporting-v1" `
+            -and @($formPracticePreview.rows | Where-Object {
+                $_[6] -notmatch "^[a-f0-9]{64}$" `
+                    -or $_[10] -notmatch "^[a-f0-9]{64}$" `
+                    -or $_[17] -notmatch
+                        "^clinical_form\.clinical\.observation\.r1\."
+            }).Count -eq 0 `
+            -and $formPracticeRun.run.status -eq "completed" `
+            -and $formPracticeRun.run.rowCount -eq 15 `
+            -and $formPracticeRun.run.formReportingRevision -eq
+                "local-clinical-form-reporting-v1" `
+            -and $formPracticeRun.run.resultChecksum -eq
+                $formPracticePreview.resultChecksum `
+            -and $formPracticeDownload.Status -eq 200 `
+            -and (Get-BytesSha256 -Bytes $formPracticeDownload.Bytes) -eq
+                $formPracticeRun.run.resultChecksum `
+            -and $formPracticeCsv -match "MOD-PAT-0012" `
+            -and $formPracticeCsv -match "MOD-PAT-0003" `
+            -and $formPracticeCsv -match "MOD-PAT-0001" `
+            -and $formPracticeCsv -notmatch "excluded-draft"
+    ) @{
+        previewRows = $formPracticePreview.totalRows
+        previewColumns = $formPracticePreview.columns
+        formReportingRevision = $formPracticeRun.run.formReportingRevision
+        runRows = $formPracticeRun.run.rowCount
+        checksum = $formPracticeRun.run.resultChecksum
+    }
+
     $inventoryPurpose = "Verify unsupported patient-linked inventory scope."
     $inventory = New-ActiveDefinition `
         -StableKey "$marker-assigned-inventory" `
@@ -899,7 +1053,8 @@ where run_id='$($expiryAccepted.run.runId)';
         "encounters",
         "referrals",
         "chart-tracker",
-        "inventory"
+        "inventory",
+        "clinical-forms"
     )) {
         $familyPurpose = "Verify facility-scoped $family report execution."
         $familyDefinition = New-ActiveDefinition `
@@ -934,6 +1089,18 @@ where run_id='$($expiryAccepted.run.runId)';
         $familyDownload = Invoke-Api `
             -Uri "$ApiBaseUrl/api/reports/runs/$($familyRun.run.runId)/download" `
             -RequestHeaders $providerHeaders
+        $familyCsv = [Text.Encoding]::UTF8.GetString($familyDownload.Bytes)
+        $formFamilyPassed = $family -ne "clinical-forms" -or (
+            $familyPreview.totalRows -eq 10 `
+                -and $familyPreview.formReportingRevision -eq
+                    "local-clinical-form-reporting-v1" `
+                -and $familyRun.run.formReportingRevision -eq
+                    "local-clinical-form-reporting-v1" `
+                -and $familyCsv -match "MOD-PAT-0012" `
+                -and $familyCsv -match "MOD-PAT-0003" `
+                -and $familyCsv -notmatch "MOD-PAT-0001" `
+                -and $familyCsv -notmatch "excluded-draft"
+        )
         $facilityMatrix.Add([ordered]@{
             family = $family
             passed = (
@@ -946,14 +1113,15 @@ where run_id='$($expiryAccepted.run.runId)';
                         $familyPreview.resultChecksum `
                     -and $familyDownload.Status -eq 200 `
                     -and (Get-BytesSha256 -Bytes $familyDownload.Bytes) -eq
-                        $familyRun.run.resultChecksum
+                        $familyRun.run.resultChecksum `
+                    -and $formFamilyPassed
             )
             rows = $familyRun.run.rowCount
             checksum = $familyRun.run.resultChecksum
         })
     }
     Add-Check "Facility scope covers every curated report family and artifact path" (
-        $facilityMatrix.Count -eq 6 `
+        $facilityMatrix.Count -eq 7 `
             -and @($facilityMatrix | Where-Object { -not $_.passed }).Count -eq 0
     ) $facilityMatrix
 
@@ -963,7 +1131,8 @@ where run_id='$($expiryAccepted.run.runId)';
         "appointments",
         "encounters",
         "referrals",
-        "chart-tracker"
+        "chart-tracker",
+        "clinical-forms"
     )) {
         $familyPurpose = "Verify assigned-patient $family report execution."
         $familyDefinition = New-ActiveDefinition `
@@ -998,6 +1167,18 @@ where run_id='$($expiryAccepted.run.runId)';
         $familyDownload = Invoke-Api `
             -Uri "$ApiBaseUrl/api/reports/runs/$($familyRun.run.runId)/download" `
             -RequestHeaders $providerHeaders
+        $familyCsv = [Text.Encoding]::UTF8.GetString($familyDownload.Bytes)
+        $formFamilyPassed = $family -ne "clinical-forms" -or (
+            $familyPreview.totalRows -eq 5 `
+                -and $familyPreview.formReportingRevision -eq
+                    "local-clinical-form-reporting-v1" `
+                -and $familyRun.run.formReportingRevision -eq
+                    "local-clinical-form-reporting-v1" `
+                -and $familyCsv -match "MOD-PAT-0012" `
+                -and $familyCsv -notmatch "MOD-PAT-0003" `
+                -and $familyCsv -notmatch "MOD-PAT-0001" `
+                -and $familyCsv -notmatch "excluded-draft"
+        )
         $assignedMatrix.Add([ordered]@{
             family = $family
             passed = (
@@ -1008,14 +1189,15 @@ where run_id='$($expiryAccepted.run.runId)';
                         $familyPreview.resultChecksum `
                     -and $familyDownload.Status -eq 200 `
                     -and (Get-BytesSha256 -Bytes $familyDownload.Bytes) -eq
-                        $familyRun.run.resultChecksum
+                        $familyRun.run.resultChecksum `
+                    -and $formFamilyPassed
             )
             rows = $familyRun.run.rowCount
             checksum = $familyRun.run.resultChecksum
         })
     }
     Add-Check "Patient assignment scope covers every patient-linked family and artifact path" (
-        $assignedMatrix.Count -eq 5 `
+        $assignedMatrix.Count -eq 6 `
             -and @($assignedMatrix | Where-Object { -not $_.passed }).Count -eq 0
     ) $assignedMatrix
 
@@ -1218,11 +1400,11 @@ where run_id='$($first.run.runId)'
             -and $providerOperations.Json.requiredSection -eq "patients" `
             -and $providerOperations.Json.requiredPermission -eq "pat_rep" `
             -and $providerOperations.Json.requiredReturnValue -eq "write" `
-            -and $operations.revision -eq "local-report-operations-v1" `
+            -and $operations.revision -eq "local-report-operations-v2" `
             -and -not $operations.productionApproved `
             -and $operations.pollIntervalSeconds -eq 5 `
             -and $operations.statuses.Count -eq 6 `
-            -and $operations.families.Count -eq 7 `
+            -and $operations.families.Count -eq 8 `
             -and $operations.attentionConditions.Count -eq 5 `
             -and $operations.summary.totalRuns -gt 0 `
             -and $operations.total -gt 0 `
@@ -1312,6 +1494,31 @@ finally {
         Add-Check "Care-team scope fixture emergency cleanup" (
             $careTeamCleanup.Status -eq 200
         ) @{ cleanupStatus = $careTeamCleanup.Status }
+    }
+    if ($clinicalFormFixtureActive) {
+        $formResidue = Invoke-ReportFixtureSql -Sql @"
+delete from clinical_form_signatures
+where instance_id in (
+  select instance_id
+  from clinical_form_instances
+  where idempotency_key like '$marker-form-%'
+);
+delete from clinical_form_instance_events
+where instance_id in (
+  select instance_id
+  from clinical_form_instances
+  where idempotency_key like '$marker-form-%'
+);
+delete from clinical_form_instances
+where idempotency_key like '$marker-form-%';
+select count(*)
+from clinical_form_instances
+where idempotency_key like '$marker-form-%';
+"@
+        $clinicalFormFixtureActive = $false
+        Add-Check "Synthetic clinical form reporting fixture cleanup" (
+            [int]($formResidue | Select-Object -Last 1) -eq 0
+        ) @{ remainingInstances = $formResidue }
     }
     if ($null -ne $headers) {
         foreach ($definitionId in $definitionIds) {

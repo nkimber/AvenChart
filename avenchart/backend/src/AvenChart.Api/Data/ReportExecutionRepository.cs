@@ -16,11 +16,13 @@ public sealed class ReportExecutionRepository(
     ReportRepository reportRepository,
     IOptions<ReportExecutionOptions> options)
 {
-    private const string ExecutionRevision = "local-report-execution-v3";
-    private const string DefinitionRevision = "local-report-definition-v1";
-    private const string ScopeRevision = "local-report-scope-v1";
+    private const string ExecutionRevision = "local-report-execution-v4";
+    private const string DefinitionRevision = "local-report-definition-v2";
+    private const string ScopeRevision = "local-report-scope-v2";
+    private const string FormReportingRevision =
+        "local-clinical-form-reporting-v1";
     private const string QueueRevision = "local-report-queue-v1";
-    private const string OperationsRevision = "local-report-operations-v1";
+    private const string OperationsRevision = "local-report-operations-v2";
     private const int OperationsPollIntervalSeconds = 5;
     private const int MaximumDateSpanDays = 366;
     private const int MaximumRows = 5000;
@@ -35,17 +37,52 @@ public sealed class ReportExecutionRepository(
         ["practice-wide", "facility-scoped", "patient-assigned"];
     private static readonly string[] DeliveryModes = ["local-download"];
     private static readonly string[] ReportFamilies =
-        ["operational", "patients", "appointments", "encounters", "referrals", "chart-tracker", "inventory"];
+        [
+            "operational",
+            "patients",
+            "appointments",
+            "encounters",
+            "referrals",
+            "chart-tracker",
+            "inventory",
+            "clinical-forms"
+        ];
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>>
         RowPolicyFamilySupport =
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
             {
                 ["practice-wide"] =
-                    ["operational", "patients", "appointments", "encounters", "referrals", "chart-tracker", "inventory"],
+                    [
+                        "operational",
+                        "patients",
+                        "appointments",
+                        "encounters",
+                        "referrals",
+                        "chart-tracker",
+                        "inventory",
+                        "clinical-forms"
+                    ],
                 ["facility-scoped"] =
-                    ["operational", "patients", "appointments", "encounters", "referrals", "chart-tracker", "inventory"],
+                    [
+                        "operational",
+                        "patients",
+                        "appointments",
+                        "encounters",
+                        "referrals",
+                        "chart-tracker",
+                        "inventory",
+                        "clinical-forms"
+                    ],
                 ["patient-assigned"] =
-                    ["operational", "patients", "appointments", "encounters", "referrals", "chart-tracker"]
+                    [
+                        "operational",
+                        "patients",
+                        "appointments",
+                        "encounters",
+                        "referrals",
+                        "chart-tracker",
+                        "clinical-forms"
+                    ]
             };
 
     public async Task<GovernedReportExecutionPolicy> GetPolicyAsync(
@@ -59,6 +96,7 @@ public sealed class ReportExecutionRepository(
             ExecutionRevision,
             DefinitionRevision,
             ScopeRevision,
+            FormReportingRevision,
             QueueRevision,
             watermark.DatasetId,
             watermark.DatasetVersion,
@@ -101,6 +139,7 @@ public sealed class ReportExecutionRepository(
             [
                 "The executable staff/facility/provider/care-team mapping is a local development contract and still requires accountable production policy approval.",
                 "Patient-assigned inventory execution remains denied because inventory transactions have no approved patient relationship.",
+                "Clinical form reporting includes only signed, amended, or corrected instances and labels pinned form, field, schema, renderer, instance, and content revisions; accountable metric and cross-revision semantic approval remain open.",
                 "Only the exact synthetic dataset as-of date is executable; historical snapshots and source-version time travel are not available.",
                 "The local database queue and in-process worker are not approved independent production worker infrastructure or an operational service-level contract.",
                 "The local database artifact is not approved encrypted production object storage; definition retention is enforced locally without legal hold, backup, recovery, or accountable disposition approval.",
@@ -214,6 +253,7 @@ public sealed class ReportExecutionRepository(
             context.Watermark.DatasetVersion,
             ExecutionRevision,
             ScopeRevision,
+            GetFormReportingRevision(context.Definition.ReportFamily),
             context.Scope.SnapshotChecksum,
             context.Scope.FacilityId,
             context.Scope.SubjectCount,
@@ -1122,7 +1162,8 @@ public sealed class ReportExecutionRepository(
               definition_snapshot_checksum, request_fingerprint, idempotency_key,
               result_summary, artifact_content_type, artifact_file_name,
               scope_revision, scope_snapshot, scope_snapshot_checksum,
-              scope_facility_id, scope_subject_count, queue_revision,
+              scope_facility_id, scope_subject_count,
+              form_reporting_revision, queue_revision,
               lifecycle_version, attempt_count, max_attempts,
               manual_retry_count, next_attempt_at, queue_expires_at)
             values (
@@ -1132,7 +1173,8 @@ public sealed class ReportExecutionRepository(
               @watermark, @definitionChecksum, @fingerprint, @idempotency,
               '{}'::jsonb, 'text/csv; charset=utf-8', @fileName,
               @scopeRevision, @scopeSnapshot, @scopeChecksum,
-              @scopeFacility, @scopeSubjects, @queueRevision,
+              @scopeFacility, @scopeSubjects, @formReportingRevision,
+              @queueRevision,
               0, 0, @maxAttempts, 0, @nextAttempt, @queueExpires);
             """;
         command.Parameters.AddWithValue("run", runId);
@@ -1164,6 +1206,9 @@ public sealed class ReportExecutionRepository(
             (object?)context.Scope.FacilityId ?? DBNull.Value;
         command.Parameters.Add("scopeSubjects", NpgsqlDbType.Integer).Value =
             (object?)context.Scope.SubjectCount ?? DBNull.Value;
+        command.Parameters.AddWithValue(
+            "formReportingRevision",
+            GetFormReportingRevision(context.Definition.ReportFamily));
         command.Parameters.AddWithValue("queueRevision", QueueRevision);
         command.Parameters.AddWithValue("maxAttempts", options.Value.MaxAttempts);
         command.Parameters.AddWithValue("nextAttempt", nextAttemptAt);
@@ -1187,6 +1232,8 @@ public sealed class ReportExecutionRepository(
                 ["scopeChecksum"] = context.Scope.SnapshotChecksum,
                 ["scopeFacilityId"] = context.Scope.FacilityId,
                 ["scopeSubjectCount"] = context.Scope.SubjectCount,
+                ["formReportingRevision"] =
+                    GetFormReportingRevision(context.Definition.ReportFamily),
                 ["recipient"] = context.RecipientUsername,
                 ["asOfDate"] = context.Watermark.BaseDate.ToString("yyyy-MM-dd"),
                 ["queueRevision"] = QueueRevision,
@@ -1607,6 +1654,7 @@ public sealed class ReportExecutionRepository(
             reader.GetString(reader.GetOrdinal("dataset_version")),
             reader.GetString(reader.GetOrdinal("execution_revision")),
             reader.GetString(reader.GetOrdinal("scope_revision")),
+            reader.GetString(reader.GetOrdinal("form_reporting_revision")),
             reader.GetString(reader.GetOrdinal("queue_revision")),
             reader.IsDBNull(reader.GetOrdinal("scope_snapshot_checksum"))
                 ? string.Empty
@@ -2114,6 +2162,14 @@ public sealed class ReportExecutionRepository(
                 canonicalParameters));
     }
 
+    private static string GetFormReportingRevision(string reportFamily) =>
+        string.Equals(
+            reportFamily,
+            "clinical-forms",
+            StringComparison.Ordinal)
+            ? FormReportingRevision
+            : "not-applicable";
+
     private static void EnsureScopeExecutable(ScopeResolution scope)
     {
         if (!scope.Executable)
@@ -2311,6 +2367,7 @@ public sealed class ReportExecutionRepository(
           coalesce(run.dataset_version, 'unknown') as dataset_version,
           run.execution_revision,
           run.scope_revision,
+          run.form_reporting_revision,
           run.queue_revision,
           run.scope_snapshot_checksum,
           run.scope_facility_id,

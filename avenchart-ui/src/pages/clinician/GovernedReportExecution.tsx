@@ -507,6 +507,10 @@ export default function GovernedReportExecution({
               <dd>{policy.scopeRevision}</dd>
             </div>
             <div>
+              <dt>Form reporting</dt>
+              <dd>{policy.formReportingRevision}</dd>
+            </div>
+            <div>
               <dt>Durable queue</dt>
               <dd>
                 {policy.queueRevision} / {policy.maximumAttempts} automatic
@@ -665,6 +669,7 @@ export default function GovernedReportExecution({
               <p className="cl-empty-text">
                 {preview.totalRows.toLocaleString()} total rows / revision{" "}
                 {preview.revisionNumber} / {preview.scopeRevision} /{" "}
+                {preview.formReportingRevision} /{" "}
                 {preview.scopeSubjectCount?.toLocaleString() ?? "practice"}{" "}
                 scoped patients / checksum{" "}
                 <code>{preview.resultChecksum}</code>
@@ -886,6 +891,10 @@ export default function GovernedReportExecution({
                       "unknown"}{" "}
                     patients
                   </dd>
+                </div>
+                <div>
+                  <dt>Form reporting</dt>
+                  <dd>{selectedRun.run.formReportingRevision}</dd>
                 </div>
                 <div>
                   <dt>Scope checksum</dt>
