@@ -712,6 +712,15 @@ try {
         ($null -ne $rosGeneralDefinition -and $rosGeneralDefinition.contextScope -eq "encounter" -and $rosGeneralDefinition.signaturePolicy -eq "author-only" -and $rosGeneralDetail.currentRevision.status -eq "effective" -and $rosGeneralFields.Count -eq 10 -and (($rosGeneralFields.key -join "|") -eq "fever|chills|night_sweats|weight_loss|poor_appetite|insomnia|fatigued|depressed|hyperactive|exposure_to_foreign_countries") -and @($rosGeneralFields | Where-Object { $_.type -ne "boolean" }).Count -eq 0 -and $rosGeneralPreview.valid) `
         @{ definitionId=$rosGeneralDefinition.definitionId; schemaHash=$rosGeneralDetail.currentRevision.schemaHash; fields=$rosGeneralFields.key; previewValid=$rosGeneralPreview.valid }
 
+    $rosSkinDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.reviewofsystemsskin" }) | Select-Object -First 1
+    $rosSkinDetail = if ($null -ne $rosSkinDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($rosSkinDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $rosSkinFields = @($rosSkinDetail.currentRevision.definition.fields)
+    $rosSkinPreview = if ($null -ne $rosSkinDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$rosSkinDetail.currentRevision.definition; values=@{ rashes=$true; infections=$false; ulcerations=$false; pemphigus=$false; herpes=$true } } } else { $null }
+    Add-Check `
+        "Legacy Review of Systems Skin adoption preserves the distinct herpes field without PHP execution" `
+        ($null -ne $rosSkinDefinition -and $rosSkinDefinition.contextScope -eq "encounter" -and $rosSkinDefinition.signaturePolicy -eq "author-only" -and $rosSkinDetail.currentRevision.status -eq "effective" -and (($rosSkinFields.key -join "|") -eq "rashes|infections|ulcerations|pemphigus|herpes") -and @($rosSkinFields | Where-Object { $_.type -ne "boolean" }).Count -eq 0 -and ($rosSkinFields | Where-Object { $_.key -eq "herpes" }).helpText -match "legacy page posts" -and $rosSkinPreview.valid) `
+        @{ definitionId=$rosSkinDefinition.definitionId; schemaHash=$rosSkinDetail.currentRevision.schemaHash; fields=$rosSkinFields.key; previewValid=$rosSkinPreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
