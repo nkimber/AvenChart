@@ -45,6 +45,39 @@ builder.Services.AddOptions<RuntimeSafetyOptions>()
         "RuntimeSafety:RateLimitQueueLimit must not be negative.")
     .ValidateOnStart();
 
+builder.Services.AddOptions<ReportExecutionOptions>()
+    .BindConfiguration(ReportExecutionOptions.SectionName)
+    .Validate(
+        options => options.PollIntervalMilliseconds is >= 50 and <= 5000,
+        "ReportExecution:PollIntervalMilliseconds must be between 50 and 5000.")
+    .Validate(
+        options => options.EnqueueDelayMilliseconds is >= 0 and <= 10000,
+        "ReportExecution:EnqueueDelayMilliseconds must be between 0 and 10000.")
+    .Validate(
+        options => options.HeartbeatIntervalMilliseconds is >= 100 and <= 10000,
+        "ReportExecution:HeartbeatIntervalMilliseconds must be between 100 and 10000.")
+    .Validate(
+        options => options.LeaseSeconds is >= 5 and <= 600,
+        "ReportExecution:LeaseSeconds must be between 5 and 600.")
+    .Validate(
+        options => options.ExecutionTimeoutSeconds is >= 1 and <= 300,
+        "ReportExecution:ExecutionTimeoutSeconds must be between 1 and 300.")
+    .Validate(
+        options => options.QueueExpirationMinutes is >= 1 and <= 1440,
+        "ReportExecution:QueueExpirationMinutes must be between 1 and 1440.")
+    .Validate(
+        options => options.MaxAttempts is >= 1 and <= 10,
+        "ReportExecution:MaxAttempts must be between 1 and 10.")
+    .Validate(
+        options => options.RetryBaseDelaySeconds is >= 1 and <= 60,
+        "ReportExecution:RetryBaseDelaySeconds must be between 1 and 60.")
+    .Validate(
+        options =>
+            options.HeartbeatIntervalMilliseconds <
+            options.LeaseSeconds * 1000,
+        "ReportExecution heartbeat must be shorter than its lease.")
+    .ValidateOnStart();
+
 var connectionString = builder.Configuration.GetConnectionString("AvenChart")
     ?? "Host=localhost;Port=5433;Database=legacy-ehr_modernized;Username=legacy-ehr;Password=legacy-ehr_demo";
 
@@ -74,6 +107,8 @@ builder.Services.AddScoped<AdministrationRepository>();
 builder.Services.AddScoped<ReportRepository>();
 builder.Services.AddScoped<ReportDefinitionRepository>();
 builder.Services.AddScoped<ReportExecutionRepository>();
+builder.Services.AddScoped<ReportExecutionQueueRepository>();
+builder.Services.AddHostedService<ReportExecutionWorker>();
 builder.Services.AddScoped<ClinicalFormRepository>();
 builder.Services.AddScoped<TherapyGroupRepository>();
 builder.Services.AddScoped<ReferralRepository>();
@@ -7643,6 +7678,80 @@ reports.MapGet("/runs/{runId}", async (
         }
     })
     .WithName("GetGovernedReportRun")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
+
+reports.MapPost("/runs/{runId}/cancel", async (
+        ReportExecutionRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string runId,
+        GovernedReportLifecycleRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            var run = await repository.CancelAsync(
+                runId,
+                request,
+                session.Username,
+                cancellationToken);
+            return run is null ? Results.NotFound() : Results.Ok(run);
+        }
+        catch (ReportExecutionConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                existingRun = exception.ExistingRun
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("CancelGovernedReportRun")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
+
+reports.MapPost("/runs/{runId}/retry", async (
+        ReportExecutionRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string runId,
+        GovernedReportLifecycleRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            var run = await repository.RetryAsync(
+                runId,
+                request,
+                session.Username,
+                cancellationToken);
+            return run is null ? Results.NotFound() : Results.Ok(run);
+        }
+        catch (ReportExecutionConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                existingRun = exception.ExistingRun
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("RetryGovernedReportRun")
     .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
 
 reports.MapGet("/runs/{runId}/download", async (

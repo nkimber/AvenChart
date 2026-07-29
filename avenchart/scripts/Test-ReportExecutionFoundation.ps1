@@ -111,6 +111,53 @@ function Invoke-Json {
     return $response.Json
 }
 
+function Wait-GovernedRun {
+    param(
+        [object]$RunDetail,
+        [hashtable]$RequestHeaders,
+        [int]$TimeoutSeconds = 30
+    )
+
+    $current = $RunDetail
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while (
+        $current.run.status -in @("queued", "running") `
+            -and (Get-Date) -lt $deadline
+    ) {
+        Start-Sleep -Milliseconds 200
+        $current = Invoke-Json `
+            -Uri "$ApiBaseUrl/api/reports/runs/$($current.run.runId)" `
+            -RequestHeaders $RequestHeaders
+    }
+    if ($current.run.status -in @("queued", "running")) {
+        throw "Report $($current.run.runId) did not reach a terminal state within $TimeoutSeconds seconds."
+    }
+    return $current
+}
+
+function Invoke-ReportFixtureSql {
+    param([string]$Sql)
+
+    Push-Location $solutionRoot
+    try {
+        $output = docker compose exec -T postgres psql `
+            -X `
+            -U legacy-ehr `
+            -d legacy-ehr_modernized `
+            -t `
+            -A `
+            -v ON_ERROR_STOP=1 `
+            -c $Sql
+        if ($LASTEXITCODE -ne 0) {
+            throw "Report fixture SQL failed with exit code $LASTEXITCODE."
+        }
+        return $output
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 function Get-BytesSha256 {
     param([byte[]]$Bytes)
     $sha256 = [Security.Cryptography.SHA256]::Create()
@@ -221,8 +268,14 @@ try {
         -RequestHeaders $providerHeaders
     Add-Check "Protected actor-aware execution policy" (
         $unauthenticated.Status -eq 401 `
-            -and $policy.revision -eq "local-report-execution-v2" `
+            -and $policy.revision -eq "local-report-execution-v3" `
             -and $policy.scopeRevision -eq "local-report-scope-v1" `
+            -and $policy.queueRevision -eq "local-report-queue-v1" `
+            -and $policy.durableQueueEnabled `
+            -and $policy.maximumAttempts -eq 3 `
+            -and $policy.executionTimeoutSeconds -eq 20 `
+            -and $policy.definitionRetentionEnforcedLocally `
+            -and $policy.retryableFailureCodes.Count -eq 4 `
             -and $policy.executableRowPolicies.Count -eq 3 `
             -and -not $policy.currentActorScope.activeStaffLinked `
             -and $providerPolicy.currentActorScope.activeStaffLinked `
@@ -235,12 +288,14 @@ try {
             -and $policy.deliveryModes.Count -eq 1 `
             -and -not $policy.externalDeliveryEnabled `
             -and -not $policy.artifactStorageProductionApproved `
-            -and $policy.productionBlockers.Count -eq 7
+            -and $policy.productionBlockers.Count -eq 8
     ) @{
         unauthenticatedStatus = $unauthenticated.Status
         revision = $policy.revision
         dataset = "$($policy.datasetId)@$($policy.datasetVersion)"
         requiredAsOfDate = $policy.requiredAsOfDate
+        queueRevision = $policy.queueRevision
+        maximumAttempts = $policy.maximumAttempts
         executableRowPolicies = $policy.executableRowPolicies
         adminScope = $policy.currentActorScope
         providerScope = $providerPolicy.currentActorScope
@@ -342,9 +397,13 @@ try {
         -Method "POST" `
         -RequestHeaders $headers `
         -Body $runRequest
-    $first = $firstResponse.Json
+    $firstAccepted = $firstResponse.Json
+    $first = Wait-GovernedRun `
+        -RunDetail $firstAccepted `
+        -RequestHeaders $headers
     Add-Check "Completed run retains reproducibility evidence" (
         $firstResponse.Status -eq 201 `
+            -and $firstAccepted.run.status -eq "queued" `
             -and $first.run.status -eq "completed" `
             -and $first.run.revisionNumber -eq 1 `
             -and $first.run.rowCount -eq 1000 `
@@ -355,10 +414,15 @@ try {
             -and $first.run.scopeRevision -eq "local-report-scope-v1" `
             -and $first.run.scopeSubjectCount -eq 1000 `
             -and $first.run.scopeSnapshotChecksum -eq $preview.scopeSnapshotChecksum `
+            -and $first.run.queueRevision -eq "local-report-queue-v1" `
+            -and $first.run.attemptCount -eq 1 `
+            -and $first.run.lifecycleVersion -eq 2 `
+            -and $first.run.artifactExpiresAt `
             -and $first.events.Count -eq 3 `
             -and ($first.events.action -join ",") -eq "queued,started,completed"
     ) @{
         status = $first.run.status
+        acceptedStatus = $firstAccepted.run.status
         runId = $first.run.runId
         revision = $first.run.revisionNumber
         rows = $first.run.rowCount
@@ -390,6 +454,9 @@ try {
         -Method "POST" `
         -RequestHeaders $headers `
         -Body $secondRequest).Json
+    $second = Wait-GovernedRun `
+        -RunDetail $second `
+        -RequestHeaders $headers
     $history = Invoke-Json `
         -Uri "$ApiBaseUrl/api/reports/definitions/$definitionId/runs?page=1&pageSize=10" `
         -RequestHeaders $headers
@@ -425,6 +492,240 @@ try {
         bytes = $download.Bytes.Length
         checksum = $downloadChecksum
         eventActions = $detailAfterDownload.events.action
+    }
+
+    $cancelRequest = $baseRequest.Clone()
+    $cancelRequest.idempotencyKey =
+        "report-run-$([Guid]::NewGuid().ToString('N'))"
+    $cancelAccepted = (Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/definitions/$definitionId/run" `
+        -Method "POST" `
+        -RequestHeaders $headers `
+        -Body $cancelRequest).Json
+    $cancelResponse = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/runs/$($cancelAccepted.run.runId)/cancel" `
+        -Method "POST" `
+        -RequestHeaders $headers `
+        -Body @{
+            expectedLifecycleVersion = $cancelAccepted.run.lifecycleVersion
+            reason = "Cancel this queued synthetic report before execution."
+        }
+    $cancelled = Wait-GovernedRun `
+        -RunDetail $cancelResponse.Json `
+        -RequestHeaders $headers
+    $staleCancel = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/runs/$($cancelAccepted.run.runId)/cancel" `
+        -Method "POST" `
+        -RequestHeaders $headers `
+        -Body @{
+            expectedLifecycleVersion = $cancelAccepted.run.lifecycleVersion
+            reason = "Repeat the stale queued cancellation request."
+        }
+    Add-Check "Queued cancellation is reasoned, optimistic, and terminal" (
+        $cancelAccepted.run.status -eq "queued" `
+            -and $cancelAccepted.run.canCancel `
+            -and $cancelResponse.Status -eq 200 `
+            -and $cancelled.run.status -eq "cancelled" `
+            -and $cancelled.run.attemptCount -eq 0 `
+            -and $cancelled.run.failureCode -eq "cancelled-by-request" `
+            -and -not $cancelled.run.downloadAvailable `
+            -and ($cancelled.events.action -join ",") -eq "queued,cancelled" `
+            -and $staleCancel.Status -eq 409
+    ) @{
+        acceptedStatus = $cancelAccepted.run.status
+        cancelledStatus = $cancelled.run.status
+        lifecycleVersion = $cancelled.run.lifecycleVersion
+        actions = $cancelled.events.action
+        staleStatus = $staleCancel.Status
+    }
+
+    $retryableVersion = $cancelled.run.lifecycleVersion + 1
+    Invoke-ReportFixtureSql -Sql @"
+update saved_report_runs
+set status='failed',
+    lifecycle_version=lifecycle_version+1,
+    attempt_count=1,
+    max_attempts=1,
+    finished_at=now(),
+    cancel_requested_at=null,
+    cancel_requested_by=null,
+    cancel_reason=null,
+    failure_code='execution-transient',
+    failure_message='Synthetic retryable dependency failure.',
+    failure_retryable=true,
+    result_summary=jsonb_build_object(
+      'failureCode',
+      'execution-transient',
+      'message',
+      'Synthetic retryable dependency failure.')
+where run_id='$($cancelled.run.runId)';
+insert into saved_report_run_events (
+  event_id, run_id, action, from_status, to_status,
+  actor_username, reason, occurred_at, details)
+values (
+  gen_random_uuid(),
+  '$($cancelled.run.runId)',
+  'test-retryable-failure',
+  'cancelled',
+  'failed',
+  'report-test',
+  'Inject a cleanup-owned retryable lifecycle fixture.',
+  now(),
+  jsonb_build_object('failureCode', 'execution-transient'));
+"@ | Out-Null
+    $retryable = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/reports/runs/$($cancelled.run.runId)" `
+        -RequestHeaders $headers
+    $retryAccepted = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/reports/runs/$($cancelled.run.runId)/retry" `
+        -Method "POST" `
+        -RequestHeaders $headers `
+        -Body @{
+            expectedLifecycleVersion = $retryableVersion
+            reason = "Retry after the synthetic dependency recovered."
+        }
+    $retried = Wait-GovernedRun `
+        -RunDetail $retryAccepted `
+        -RequestHeaders $headers
+    Add-Check "Classified manual retry extends a bounded attempt and completes" (
+        $retryable.run.status -eq "failed" `
+            -and $retryable.run.failureRetryable `
+            -and $retryable.run.canRetry `
+            -and $retryAccepted.run.status -eq "queued" `
+            -and $retried.run.status -eq "completed" `
+            -and $retried.run.attemptCount -eq 2 `
+            -and $retried.run.maxAttempts -eq 2 `
+            -and $retried.run.manualRetryCount -eq 1 `
+            -and $retried.events.action -contains "manual-retry-requested" `
+            -and $retried.events.action -contains "retry-started" `
+            -and $retried.run.resultChecksum -eq $first.run.resultChecksum
+    ) @{
+        retryableStatus = $retryable.run.status
+        acceptedStatus = $retryAccepted.run.status
+        finalStatus = $retried.run.status
+        attemptCount = $retried.run.attemptCount
+        manualRetryCount = $retried.run.manualRetryCount
+        actions = $retried.events.action
+    }
+
+    $leaseRequest = $baseRequest.Clone()
+    $leaseRequest.idempotencyKey =
+        "report-run-$([Guid]::NewGuid().ToString('N'))"
+    $leaseAccepted = (Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/definitions/$definitionId/run" `
+        -Method "POST" `
+        -RequestHeaders $headers `
+        -Body $leaseRequest).Json
+    $leaseCancelled = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/reports/runs/$($leaseAccepted.run.runId)/cancel" `
+        -Method "POST" `
+        -RequestHeaders $headers `
+        -Body @{
+            expectedLifecycleVersion = $leaseAccepted.run.lifecycleVersion
+            reason = "Hold this synthetic run for expired-lease recovery."
+        }
+    Invoke-ReportFixtureSql -Sql @"
+update saved_report_runs
+set status='running',
+    lifecycle_version=lifecycle_version+1,
+    attempt_count=1,
+    max_attempts=3,
+    started_at=now()-interval '2 minutes',
+    last_attempt_at=now()-interval '2 minutes',
+    lease_owner='dead-report-test-worker',
+    lease_expires_at=now()-interval '1 minute',
+    last_heartbeat_at=now()-interval '2 minutes',
+    cancel_requested_at=null,
+    cancel_requested_by=null,
+    cancel_reason=null,
+    finished_at=null,
+    failure_code=null,
+    failure_message=null,
+    failure_retryable=null
+where run_id='$($leaseAccepted.run.runId)';
+insert into saved_report_run_events (
+  event_id, run_id, action, from_status, to_status,
+  actor_username, reason, occurred_at, details)
+values (
+  gen_random_uuid(),
+  '$($leaseAccepted.run.runId)',
+  'test-dead-worker',
+  'cancelled',
+  'running',
+  'report-test',
+  'Inject a cleanup-owned expired worker lease.',
+  now(),
+  jsonb_build_object('leaseOwner', 'dead-report-test-worker'));
+"@ | Out-Null
+    $leaseInjected = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/reports/runs/$($leaseAccepted.run.runId)" `
+        -RequestHeaders $headers
+    $leaseRecovered = Wait-GovernedRun `
+        -RunDetail $leaseInjected `
+        -RequestHeaders $headers
+    Add-Check "Expired worker lease is recovered without duplicate execution" (
+        $leaseCancelled.run.status -eq "cancelled" `
+            -and $leaseInjected.run.status -eq "running" `
+            -and $leaseRecovered.run.status -eq "completed" `
+            -and $leaseRecovered.run.attemptCount -eq 2 `
+            -and $leaseRecovered.events.action -contains "lease-recovered" `
+            -and $leaseRecovered.events.action -contains "retry-started" `
+            -and $leaseRecovered.run.resultChecksum -eq $first.run.resultChecksum
+    ) @{
+        injectedStatus = $leaseInjected.run.status
+        finalStatus = $leaseRecovered.run.status
+        attemptCount = $leaseRecovered.run.attemptCount
+        actions = $leaseRecovered.events.action
+    }
+
+    $expiryRequest = $baseRequest.Clone()
+    $expiryRequest.idempotencyKey =
+        "report-run-$([Guid]::NewGuid().ToString('N'))"
+    $expiryAccepted = (Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/definitions/$definitionId/run" `
+        -Method "POST" `
+        -RequestHeaders $headers `
+        -Body $expiryRequest).Json
+    $expiryCancelled = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/reports/runs/$($expiryAccepted.run.runId)/cancel" `
+        -Method "POST" `
+        -RequestHeaders $headers `
+        -Body @{
+            expectedLifecycleVersion = $expiryAccepted.run.lifecycleVersion
+            reason = "Hold this synthetic run for queue-expiry evidence."
+        }
+    Invoke-ReportFixtureSql -Sql @"
+update saved_report_runs
+set status='queued',
+    lifecycle_version=lifecycle_version+1,
+    queue_expires_at=now()-interval '1 minute',
+    next_attempt_at=now()+interval '1 hour',
+    cancel_requested_at=null,
+    cancel_requested_by=null,
+    cancel_reason=null,
+    finished_at=null,
+    failure_code=null,
+    failure_message=null,
+    failure_retryable=null
+where run_id='$($expiryAccepted.run.runId)';
+"@ | Out-Null
+    $expiryInjected = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/reports/runs/$($expiryAccepted.run.runId)" `
+        -RequestHeaders $headers
+    $expired = Wait-GovernedRun `
+        -RunDetail $expiryInjected `
+        -RequestHeaders $headers
+    Add-Check "Unclaimed durable request expires without an artifact" (
+        $expiryCancelled.run.status -eq "cancelled" `
+            -and $expired.run.status -eq "expired" `
+            -and $expired.run.failureCode -eq "queue-expired" `
+            -and $expired.run.attemptCount -eq 0 `
+            -and -not $expired.run.downloadAvailable `
+            -and $expired.events.action -contains "expired"
+    ) @{
+        status = $expired.run.status
+        failureCode = $expired.run.failureCode
+        actions = $expired.events.action
     }
 
     $scopedPurpose = "Verify actor-bound facility report scope."
@@ -486,6 +787,9 @@ try {
         -Method "POST" `
         -RequestHeaders $providerHeaders `
         -Body $providerScopedRunRequest).Json
+    $providerScopedRun = Wait-GovernedRun `
+        -RunDetail $providerScopedRun `
+        -RequestHeaders $providerHeaders
     Add-Check "Facility scope filters and pins the active staff facility" (
         $providerScopedPreview.totalRows -eq 501 `
             -and $providerScopedPreview.scopeFacilityId -eq 10 `
@@ -532,6 +836,9 @@ try {
         -Method "POST" `
         -RequestHeaders $providerHeaders `
         -Body $assignedRunRequest).Json
+    $assignedRun = Wait-GovernedRun `
+        -RunDetail $assignedRun `
+        -RequestHeaders $providerHeaders
     Add-Check "Patient assignment scope filters and pins provider relationships" (
         $assignedPreview.totalRows -eq 83 `
             -and $assignedPreview.scopeSubjectCount -eq 83 `
@@ -617,6 +924,9 @@ try {
             -Method "POST" `
             -RequestHeaders $providerHeaders `
             -Body $familyRunRequest).Json
+        $familyRun = Wait-GovernedRun `
+            -RunDetail $familyRun `
+            -RequestHeaders $providerHeaders
         $familyDownload = Invoke-Api `
             -Uri "$ApiBaseUrl/api/reports/runs/$($familyRun.run.runId)/download" `
             -RequestHeaders $providerHeaders
@@ -678,6 +988,9 @@ try {
             -Method "POST" `
             -RequestHeaders $providerHeaders `
             -Body $familyRunRequest).Json
+        $familyRun = Wait-GovernedRun `
+            -RunDetail $familyRun `
+            -RequestHeaders $providerHeaders
         $familyDownload = Invoke-Api `
             -Uri "$ApiBaseUrl/api/reports/runs/$($familyRun.run.runId)/download" `
             -RequestHeaders $providerHeaders
@@ -736,6 +1049,9 @@ try {
         -Method "POST" `
         -RequestHeaders $providerHeaders `
         -Body $teamRunRequest).Json
+    $teamRun = Wait-GovernedRun `
+        -RunDetail $teamRun `
+        -RequestHeaders $providerHeaders
 
     $careTeamDelete = Invoke-Api `
         -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/care-team" `
@@ -848,6 +1164,42 @@ try {
         historicTitle = $historicRun.run.definitionTitle
         historicPurpose = $historicRun.run.purpose
         checksum = $historicRun.run.resultChecksum
+    }
+
+    Invoke-ReportFixtureSql -Sql @"
+update saved_report_runs
+set artifact_expires_at=now()-interval '1 minute'
+where run_id='$($first.run.runId)'
+  and status='completed';
+"@ | Out-Null
+    $artifactDeadline = (Get-Date).AddSeconds(30)
+    do {
+        Start-Sleep -Milliseconds 200
+        $artifactExpired = Invoke-Json `
+            -Uri "$ApiBaseUrl/api/reports/runs/$($first.run.runId)" `
+            -RequestHeaders $headers
+    } while (
+        $artifactExpired.run.status -eq "completed" `
+            -and (Get-Date) -lt $artifactDeadline
+    )
+    $expiredDownload = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/runs/$($first.run.runId)/download" `
+        -RequestHeaders $headers
+    Add-Check "Definition retention expires artifact bytes but preserves evidence" (
+        $artifactExpired.run.status -eq "expired" `
+            -and $artifactExpired.run.resultChecksum -eq $first.run.resultChecksum `
+            -and $artifactExpired.run.artifactBytes -eq 0 `
+            -and $artifactExpired.run.artifactExpiredAt `
+            -and -not $artifactExpired.run.downloadAvailable `
+            -and $artifactExpired.events.action -contains "artifact-expired" `
+            -and $expiredDownload.Status -eq 404
+    ) @{
+        status = $artifactExpired.run.status
+        resultChecksum = $artifactExpired.run.resultChecksum
+        artifactBytes = $artifactExpired.run.artifactBytes
+        artifactExpiredAt = $artifactExpired.run.artifactExpiredAt
+        actions = $artifactExpired.events.action
+        downloadStatus = $expiredDownload.Status
     }
 }
 catch {

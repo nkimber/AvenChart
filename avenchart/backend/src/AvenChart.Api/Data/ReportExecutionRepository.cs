@@ -3,19 +3,23 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
+using AvenChart.Api.Configuration;
 using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
 
 public sealed class ReportExecutionRepository(
     NpgsqlDataSource dataSource,
-    ReportRepository reportRepository)
+    ReportRepository reportRepository,
+    IOptions<ReportExecutionOptions> options)
 {
-    private const string ExecutionRevision = "local-report-execution-v2";
+    private const string ExecutionRevision = "local-report-execution-v3";
     private const string DefinitionRevision = "local-report-definition-v1";
     private const string ScopeRevision = "local-report-scope-v1";
+    private const string QueueRevision = "local-report-queue-v1";
     private const int MaximumDateSpanDays = 366;
     private const int MaximumRows = 5000;
     private const int PreviewRows = 10;
@@ -50,6 +54,7 @@ public sealed class ReportExecutionRepository(
             ExecutionRevision,
             DefinitionRevision,
             ScopeRevision,
+            QueueRevision,
             watermark.DatasetId,
             watermark.DatasetVersion,
             watermark.BaseDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -68,6 +73,22 @@ public sealed class ReportExecutionRepository(
             MaximumDateSpanDays,
             MaximumRows,
             PreviewRows,
+            DurableQueueEnabled: true,
+            options.Value.EnqueueDelayMilliseconds,
+            options.Value.PollIntervalMilliseconds,
+            options.Value.LeaseSeconds,
+            options.Value.ExecutionTimeoutSeconds,
+            options.Value.QueueExpirationMinutes,
+            options.Value.MaxAttempts,
+            options.Value.RetryBaseDelaySeconds,
+            DefinitionRetentionEnforcedLocally: true,
+            RetryableFailureCodes:
+            [
+                "execution-timeout",
+                "execution-transient",
+                "worker-stopped",
+                "worker-lease-expired"
+            ],
             ExternalDeliveryEnabled: false,
             ArtifactStorageProductionApproved: false,
             ProductionBlockers:
@@ -75,10 +96,11 @@ public sealed class ReportExecutionRepository(
                 "The executable staff/facility/provider/care-team mapping is a local development contract and still requires accountable production policy approval.",
                 "Patient-assigned inventory execution remains denied because inventory transactions have no approved patient relationship.",
                 "Only the exact synthetic dataset as-of date is executable; historical snapshots and source-version time travel are not available.",
-                "The local database artifact is not approved encrypted production object storage and has no legal-hold or retention-disposition service.",
+                "The local database queue and in-process worker are not approved independent production worker infrastructure or an operational service-level contract.",
+                "The local database artifact is not approved encrypted production object storage; definition retention is enforced locally without legal hold, backup, recovery, or accountable disposition approval.",
                 "Only requesting-user or report-owner recipients and local download are supported; schedules and external delivery remain disabled.",
                 "Metric owners have not approved the curated family semantics, validation fixtures, or cross-revision equivalence.",
-                "Production identity, purpose-of-use claims, disclosure authority, monitoring, recovery, performance, and accountable acceptance remain open."
+                "Production identity, purpose-of-use claims, disclosure authority, monitoring, performance, and accountable acceptance remain open."
             ]);
     }
 
@@ -242,13 +264,38 @@ public sealed class ReportExecutionRepository(
         }
 
         var runId = $"RPT-{Guid.NewGuid():N}";
-        await CreateQueuedRunAsync(
-            runId,
-            context,
-            actor,
-            idempotencyKey,
-            fingerprint,
-            cancellationToken);
+        try
+        {
+            await CreateQueuedRunAsync(
+                runId,
+                context,
+                actor,
+                idempotencyKey,
+                fingerprint,
+                cancellationToken);
+        }
+        catch (PostgresException exception) when (exception.SqlState == "23505")
+        {
+            var concurrent = await FindIdempotentRunAsync(
+                actor,
+                idempotencyKey,
+                cancellationToken);
+            if (concurrent is null ||
+                !string.Equals(
+                    concurrent.Value.Fingerprint,
+                    fingerprint,
+                    StringComparison.Ordinal))
+            {
+                throw new ReportExecutionConflictException(
+                    "The idempotency key was concurrently used for a different report request.",
+                    concurrent?.Detail.Run);
+            }
+
+            return concurrent.Value.Detail with
+            {
+                Run = concurrent.Value.Detail.Run with { Replay = true }
+            };
+        }
 
         if (!context.Scope.Executable)
         {
@@ -259,50 +306,6 @@ public sealed class ReportExecutionRepository(
                 context.Scope.FailureMessage!,
                 cancellationToken);
             return await GetRunAsync(runId, actor, cancellationToken);
-        }
-
-        await MarkRunningAsync(runId, actor, cancellationToken);
-        try
-        {
-            var started = DateTimeOffset.UtcNow;
-            var csv = await reportRepository.GetGovernedFamilyCsvAsync(
-                context.Definition.ReportFamily,
-                context.From,
-                context.To,
-                context.Scope.DataScope,
-                cancellationToken);
-            var rowCount = Math.Max(0, ParseCsv(csv).Count - 1);
-            if (rowCount > MaximumRows)
-            {
-                throw new InvalidOperationException(
-                    $"The result exceeded the {MaximumRows}-row execution limit.");
-            }
-
-            var checksum = Sha256(csv);
-            var bytes = Encoding.UTF8.GetByteCount(csv);
-            var finished = DateTimeOffset.UtcNow;
-            var duration = Math.Max(
-                0,
-                Convert.ToInt32((finished - started).TotalMilliseconds));
-            await CompleteRunAsync(
-                runId,
-                actor,
-                csv,
-                rowCount,
-                bytes,
-                checksum,
-                duration,
-                finished,
-                cancellationToken);
-        }
-        catch (Exception exception)
-        {
-            await FailRunAsync(
-                runId,
-                actor,
-                "execution-failed",
-                BoundFailure(exception.Message),
-                cancellationToken);
         }
 
         return await GetRunAsync(runId, actor, cancellationToken);
@@ -339,7 +342,7 @@ public sealed class ReportExecutionRepository(
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            runs.Add(ReadRun(reader, replay: false));
+            runs.Add(ReadRun(reader, replay: false, actor));
             total = reader.GetInt32(reader.GetOrdinal("total_count"));
         }
 
@@ -389,6 +392,248 @@ public sealed class ReportExecutionRepository(
         }
 
         return new(run, events);
+    }
+
+    public async Task<GovernedReportRunDetail?> CancelAsync(
+        string runId,
+        GovernedReportLifecycleRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        RejectUnknownProperties(request.AdditionalProperties);
+        var normalizedRunId = NormalizeRunId(runId);
+        var normalizedActor = NormalizeUsername(actor, "Authenticated actor");
+        var reason = NormalizeLifecycleReason(request.Reason);
+        await using var connection =
+            await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction =
+            await connection.BeginTransactionAsync(cancellationToken);
+
+        string status;
+        int lifecycleVersion;
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                select status, lifecycle_version
+                from saved_report_runs
+                where run_id=@run
+                  and lower(ran_by)=lower(@actor)
+                for update;
+                """;
+            command.Parameters.AddWithValue("run", normalizedRunId);
+            command.Parameters.AddWithValue("actor", normalizedActor);
+            await using var reader =
+                await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            status = reader.GetString(0);
+            lifecycleVersion = reader.GetInt32(1);
+        }
+
+        if (request.ExpectedLifecycleVersion != lifecycleVersion)
+        {
+            throw new ReportExecutionConflictException(
+                $"The report lifecycle changed after it was loaded. Current version is {lifecycleVersion}.");
+        }
+        if (status is not ("queued" or "running"))
+        {
+            throw new ReportExecutionConflictException(
+                $"A {status} report cannot be cancelled.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = status == "queued"
+                ? """
+                  update saved_report_runs
+                  set status='cancelled',
+                      lifecycle_version=lifecycle_version+1,
+                      cancel_requested_at=@now,
+                      cancel_requested_by=@actor,
+                      cancel_reason=@reason,
+                      finished_at=@now,
+                      duration_ms=0,
+                      next_attempt_at=null,
+                      failure_code='cancelled-by-request',
+                      failure_message=@reason,
+                      failure_retryable=false,
+                      result_summary=jsonb_build_object(
+                        'failureCode',
+                        'cancelled-by-request',
+                        'message',
+                        @reason::text)
+                  where run_id=@run and status='queued';
+                  """
+                : """
+                  update saved_report_runs
+                  set lifecycle_version=lifecycle_version+1,
+                      cancel_requested_at=@now,
+                      cancel_requested_by=@actor,
+                      cancel_reason=@reason
+                  where run_id=@run
+                    and status='running'
+                    and cancel_requested_at is null;
+                  """;
+            command.Parameters.AddWithValue("run", normalizedRunId);
+            command.Parameters.AddWithValue("actor", normalizedActor);
+            command.Parameters.AddWithValue("reason", reason);
+            command.Parameters.AddWithValue("now", now);
+            if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new ReportExecutionConflictException(
+                    "The report lifecycle changed while cancellation was requested.");
+            }
+        }
+
+        await InsertEventAsync(
+            connection,
+            transaction,
+            normalizedRunId,
+            status == "queued" ? "cancelled" : "cancellation-requested",
+            status,
+            status == "queued" ? "cancelled" : "running",
+            normalizedActor,
+            reason,
+            new Dictionary<string, object?>
+            {
+                ["requestedAt"] = now.ToString("O"),
+                ["lifecycleVersion"] = lifecycleVersion + 1
+            },
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetRunAsync(
+            normalizedRunId,
+            normalizedActor,
+            cancellationToken);
+    }
+
+    public async Task<GovernedReportRunDetail?> RetryAsync(
+        string runId,
+        GovernedReportLifecycleRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        RejectUnknownProperties(request.AdditionalProperties);
+        var normalizedRunId = NormalizeRunId(runId);
+        var normalizedActor = NormalizeUsername(actor, "Authenticated actor");
+        var reason = NormalizeLifecycleReason(request.Reason);
+        await using var connection =
+            await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction =
+            await connection.BeginTransactionAsync(cancellationToken);
+
+        string status;
+        int lifecycleVersion;
+        int attemptCount;
+        bool failureRetryable;
+        string? failureCode;
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                select status,
+                       lifecycle_version,
+                       attempt_count,
+                       coalesce(failure_retryable, false),
+                       failure_code
+                from saved_report_runs
+                where run_id=@run
+                  and lower(ran_by)=lower(@actor)
+                for update;
+                """;
+            command.Parameters.AddWithValue("run", normalizedRunId);
+            command.Parameters.AddWithValue("actor", normalizedActor);
+            await using var reader =
+                await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            status = reader.GetString(0);
+            lifecycleVersion = reader.GetInt32(1);
+            attemptCount = reader.GetInt32(2);
+            failureRetryable = reader.GetBoolean(3);
+            failureCode = reader.IsDBNull(4) ? null : reader.GetString(4);
+        }
+
+        if (request.ExpectedLifecycleVersion != lifecycleVersion)
+        {
+            throw new ReportExecutionConflictException(
+                $"The report lifecycle changed after it was loaded. Current version is {lifecycleVersion}.");
+        }
+        if (status != "failed")
+        {
+            throw new ReportExecutionConflictException(
+                $"A {status} report cannot be retried.");
+        }
+        if (!failureRetryable)
+        {
+            throw new ReportExecutionConflictException(
+                "This failure was classified as non-retryable.");
+        }
+        if (attemptCount >= 10)
+        {
+            throw new ReportExecutionConflictException(
+                "The report reached the absolute ten-attempt safety limit.");
+        }
+
+        var nextAttemptAt = DateTimeOffset.UtcNow.AddMilliseconds(
+            options.Value.EnqueueDelayMilliseconds);
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                update saved_report_runs
+                set status='queued',
+                    lifecycle_version=lifecycle_version+1,
+                    max_attempts=greatest(max_attempts, attempt_count+1),
+                    manual_retry_count=manual_retry_count+1,
+                    next_attempt_at=@nextAttempt,
+                    finished_at=null,
+                    duration_ms=null,
+                    failure_code=null,
+                    failure_message=null,
+                    failure_retryable=null,
+                    result_summary='{}'::jsonb,
+                    cancel_requested_at=null,
+                    cancel_requested_by=null,
+                    cancel_reason=null
+                where run_id=@run and status='failed';
+                """;
+            command.Parameters.AddWithValue("run", normalizedRunId);
+            command.Parameters.AddWithValue("nextAttempt", nextAttemptAt);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertEventAsync(
+            connection,
+            transaction,
+            normalizedRunId,
+            "manual-retry-requested",
+            "failed",
+            "queued",
+            normalizedActor,
+            reason,
+            new Dictionary<string, object?>
+            {
+                ["priorFailureCode"] = failureCode,
+                ["priorAttemptCount"] = attemptCount,
+                ["nextAttemptAt"] = nextAttemptAt.ToString("O"),
+                ["lifecycleVersion"] = lifecycleVersion + 1
+            },
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetRunAsync(
+            normalizedRunId,
+            normalizedActor,
+            cancellationToken);
     }
 
     public async Task<GovernedReportArtifact?> DownloadAsync(
@@ -669,6 +914,10 @@ public sealed class ReportExecutionRepository(
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
+        var nextAttemptAt = now.AddMilliseconds(
+            options.Value.EnqueueDelayMilliseconds);
+        var queueExpiresAt = now.AddMinutes(
+            options.Value.QueueExpirationMinutes);
         var parametersJson = JsonSerializer.Serialize(context.Parameters, JsonOptions);
         var watermarkJson = JsonSerializer.Serialize(
             new
@@ -695,7 +944,9 @@ public sealed class ReportExecutionRepository(
               definition_snapshot_checksum, request_fingerprint, idempotency_key,
               result_summary, artifact_content_type, artifact_file_name,
               scope_revision, scope_snapshot, scope_snapshot_checksum,
-              scope_facility_id, scope_subject_count)
+              scope_facility_id, scope_subject_count, queue_revision,
+              lifecycle_version, attempt_count, max_attempts,
+              manual_retry_count, next_attempt_at, queue_expires_at)
             values (
               @run, @definition, @revision, @revisionNumber, @at, @actor,
               'csv', 0, 'queued', @purpose, @recipient, @rowPolicy,
@@ -703,7 +954,8 @@ public sealed class ReportExecutionRepository(
               @watermark, @definitionChecksum, @fingerprint, @idempotency,
               '{}'::jsonb, 'text/csv; charset=utf-8', @fileName,
               @scopeRevision, @scopeSnapshot, @scopeChecksum,
-              @scopeFacility, @scopeSubjects);
+              @scopeFacility, @scopeSubjects, @queueRevision,
+              0, 0, @maxAttempts, 0, @nextAttempt, @queueExpires);
             """;
         command.Parameters.AddWithValue("run", runId);
         command.Parameters.AddWithValue("definition", context.Definition.DefinitionId);
@@ -734,6 +986,10 @@ public sealed class ReportExecutionRepository(
             (object?)context.Scope.FacilityId ?? DBNull.Value;
         command.Parameters.Add("scopeSubjects", NpgsqlDbType.Integer).Value =
             (object?)context.Scope.SubjectCount ?? DBNull.Value;
+        command.Parameters.AddWithValue("queueRevision", QueueRevision);
+        command.Parameters.AddWithValue("maxAttempts", options.Value.MaxAttempts);
+        command.Parameters.AddWithValue("nextAttempt", nextAttemptAt);
+        command.Parameters.AddWithValue("queueExpires", queueExpiresAt);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         await InsertEventAsync(
@@ -754,107 +1010,11 @@ public sealed class ReportExecutionRepository(
                 ["scopeFacilityId"] = context.Scope.FacilityId,
                 ["scopeSubjectCount"] = context.Scope.SubjectCount,
                 ["recipient"] = context.RecipientUsername,
-                ["asOfDate"] = context.Watermark.BaseDate.ToString("yyyy-MM-dd")
-            },
-            cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-    }
-
-    private async Task MarkRunningAsync(
-        string runId,
-        string actor,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            update saved_report_runs
-            set status = 'running', started_at = now()
-            where run_id = @run and status = 'queued';
-            """;
-        command.Parameters.AddWithValue("run", runId);
-        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
-        {
-            throw new InvalidOperationException("The queued report could not start.");
-        }
-        await InsertEventAsync(
-            connection,
-            transaction,
-            runId,
-            "started",
-            "queued",
-            "running",
-            actor,
-            "Synchronous local report execution started.",
-            new Dictionary<string, object?>(),
-            cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-    }
-
-    private async Task CompleteRunAsync(
-        string runId,
-        string actor,
-        string csv,
-        int rowCount,
-        int bytes,
-        string checksum,
-        int durationMs,
-        DateTimeOffset finished,
-        CancellationToken cancellationToken)
-    {
-        var summary = JsonSerializer.Serialize(
-            new { rowCount, bytes, checksum },
-            JsonOptions);
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            update saved_report_runs
-            set status = 'completed',
-                finished_at = @finished,
-                duration_ms = @duration,
-                row_count = @rows,
-                result_checksum = @checksum,
-                result_summary = @summary,
-                artifact_content = @artifact,
-                failure_code = null,
-                failure_message = null
-            where run_id = @run and status = 'running';
-
-            update saved_report_definitions definition
-            set last_run_at = @finished,
-                run_count = definition.run_count + 1
-            from saved_report_runs run
-            where run.run_id = @run
-              and definition.id = run.definition_id;
-            """;
-        command.Parameters.AddWithValue("run", runId);
-        command.Parameters.AddWithValue("finished", finished);
-        command.Parameters.AddWithValue("duration", durationMs);
-        command.Parameters.AddWithValue("rows", rowCount);
-        command.Parameters.AddWithValue("checksum", checksum);
-        command.Parameters.Add("summary", NpgsqlDbType.Jsonb).Value = summary;
-        command.Parameters.AddWithValue("artifact", csv);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-
-        await InsertEventAsync(
-            connection,
-            transaction,
-            runId,
-            "completed",
-            "running",
-            "completed",
-            actor,
-            "Report artifact completed with reproducibility evidence.",
-            new Dictionary<string, object?>
-            {
-                ["rowCount"] = rowCount,
-                ["bytes"] = bytes,
-                ["checksum"] = checksum,
-                ["durationMs"] = durationMs
+                ["asOfDate"] = context.Watermark.BaseDate.ToString("yyyy-MM-dd"),
+                ["queueRevision"] = QueueRevision,
+                ["nextAttemptAt"] = nextAttemptAt.ToString("O"),
+                ["queueExpiresAt"] = queueExpiresAt.ToString("O"),
+                ["maxAttempts"] = options.Value.MaxAttempts
             },
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -893,6 +1053,7 @@ public sealed class ReportExecutionRepository(
         command.CommandText = """
             update saved_report_runs
             set status = 'failed',
+                lifecycle_version = lifecycle_version + 1,
                 finished_at = @finished,
                 duration_ms = case
                   when started_at is null then 0
@@ -900,6 +1061,8 @@ public sealed class ReportExecutionRepository(
                 end,
                 failure_code = @code,
                 failure_message = @message,
+                failure_retryable = false,
+                next_attempt_at = null,
                 result_summary = jsonb_build_object(
                   'failureCode', @code::text,
                   'message', @message::text
@@ -979,13 +1142,14 @@ public sealed class ReportExecutionRepository(
         command.Parameters.AddWithValue("actor", actor);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
-            ? ReadRun(reader, replay: false)
+            ? ReadRun(reader, replay: false, actor)
             : null;
     }
 
     private static GovernedReportRunItem ReadRun(
         NpgsqlDataReader reader,
-        bool replay)
+        bool replay,
+        string actor)
     {
         var parameters = DeserializeStringDictionary(
             reader.GetString(reader.GetOrdinal("normalized_parameters")));
@@ -993,6 +1157,17 @@ public sealed class ReportExecutionRepository(
         var artifactContent = reader.IsDBNull(reader.GetOrdinal("artifact_content"))
             ? null
             : reader.GetString(reader.GetOrdinal("artifact_content"));
+        var requestedBy = reader.GetString(reader.GetOrdinal("ran_by"));
+        var attemptCount = reader.GetInt32(reader.GetOrdinal("attempt_count"));
+        var failureRetryable = reader.IsDBNull(
+            reader.GetOrdinal("failure_retryable"))
+            ? (bool?)null
+            : reader.GetBoolean(reader.GetOrdinal("failure_retryable"));
+        var cancelRequestedAt = ReadNullableInstant(
+            reader,
+            "cancel_requested_at");
+        var requesterControls =
+            string.Equals(requestedBy, actor, StringComparison.OrdinalIgnoreCase);
         return new(
             reader.GetString(reader.GetOrdinal("run_id")),
             reader.GetGuid(reader.GetOrdinal("definition_id")),
@@ -1006,7 +1181,7 @@ public sealed class ReportExecutionRepository(
             reader.GetString(reader.GetOrdinal("title")),
             reader.GetString(reader.GetOrdinal("report_family")),
             status,
-            reader.GetString(reader.GetOrdinal("ran_by")),
+            requestedBy,
             reader.GetString(reader.GetOrdinal("recipient_username")),
             reader.GetString(reader.GetOrdinal("purpose")),
             reader.GetString(reader.GetOrdinal("row_policy")),
@@ -1017,6 +1192,7 @@ public sealed class ReportExecutionRepository(
             reader.GetString(reader.GetOrdinal("dataset_version")),
             reader.GetString(reader.GetOrdinal("execution_revision")),
             reader.GetString(reader.GetOrdinal("scope_revision")),
+            reader.GetString(reader.GetOrdinal("queue_revision")),
             reader.IsDBNull(reader.GetOrdinal("scope_snapshot_checksum"))
                 ? string.Empty
                 : reader.GetString(reader.GetOrdinal("scope_snapshot_checksum")),
@@ -1027,6 +1203,21 @@ public sealed class ReportExecutionRepository(
                 ? null
                 : reader.GetInt32(reader.GetOrdinal("scope_subject_count")),
             reader.GetString(reader.GetOrdinal("definition_snapshot_checksum")),
+            reader.GetInt32(reader.GetOrdinal("lifecycle_version")),
+            attemptCount,
+            reader.GetInt32(reader.GetOrdinal("max_attempts")),
+            reader.GetInt32(reader.GetOrdinal("manual_retry_count")),
+            ReadNullableInstant(reader, "next_attempt_at"),
+            ReadNullableInstant(reader, "last_attempt_at"),
+            ReadNullableInstant(reader, "lease_expires_at"),
+            ReadNullableInstant(reader, "queue_expires_at"),
+            cancelRequestedAt,
+            reader.IsDBNull(reader.GetOrdinal("cancel_requested_by"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("cancel_requested_by")),
+            reader.IsDBNull(reader.GetOrdinal("cancel_reason"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("cancel_reason")),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("ran_at")).ToString("O"),
             reader.IsDBNull(reader.GetOrdinal("started_at"))
                 ? null
@@ -1048,14 +1239,34 @@ public sealed class ReportExecutionRepository(
             reader.IsDBNull(reader.GetOrdinal("artifact_file_name"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("artifact_file_name")),
+            ReadNullableInstant(reader, "artifact_expires_at"),
+            ReadNullableInstant(reader, "artifact_expired_at"),
             reader.IsDBNull(reader.GetOrdinal("failure_code"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("failure_code")),
             reader.IsDBNull(reader.GetOrdinal("failure_message"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("failure_message")),
+            failureRetryable,
             status == "completed" && artifactContent is not null,
+            requesterControls &&
+                (status is "queued" or "running") &&
+                cancelRequestedAt is null,
+            requesterControls &&
+                status == "failed" &&
+                failureRetryable == true &&
+                attemptCount < 10,
             replay);
+    }
+
+    private static string? ReadNullableInstant(
+        NpgsqlDataReader reader,
+        string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal)
+            ? null
+            : reader.GetFieldValue<DateTimeOffset>(ordinal).ToString("O");
     }
 
     private async Task<ActiveDefinition?> LoadActiveDefinitionAsync(
@@ -1525,6 +1736,17 @@ public sealed class ReportExecutionRepository(
         return normalized;
     }
 
+    private static string NormalizeLifecycleReason(string value)
+    {
+        var normalized = NormalizeRequired(value, "Lifecycle reason", 500);
+        if (normalized.Length < 10)
+        {
+            throw new ArgumentException(
+                "Lifecycle reason must be at least 10 characters.");
+        }
+        return normalized;
+    }
+
     private static string NormalizeRequired(string value, string label, int maximum)
     {
         var normalized = value?.Trim() ?? string.Empty;
@@ -1674,10 +1896,22 @@ public sealed class ReportExecutionRepository(
           coalesce(run.dataset_version, 'unknown') as dataset_version,
           run.execution_revision,
           run.scope_revision,
+          run.queue_revision,
           run.scope_snapshot_checksum,
           run.scope_facility_id,
           run.scope_subject_count,
           coalesce(run.definition_snapshot_checksum, '') as definition_snapshot_checksum,
+          run.lifecycle_version,
+          run.attempt_count,
+          run.max_attempts,
+          run.manual_retry_count,
+          run.next_attempt_at,
+          run.last_attempt_at,
+          run.lease_expires_at,
+          run.queue_expires_at,
+          run.cancel_requested_at,
+          run.cancel_requested_by,
+          run.cancel_reason,
           run.ran_at,
           run.started_at,
           run.finished_at,
@@ -1687,8 +1921,11 @@ public sealed class ReportExecutionRepository(
           run.artifact_content,
           run.artifact_content_type,
           run.artifact_file_name,
+          run.artifact_expires_at,
+          run.artifact_expired_at,
           run.failure_code,
           run.failure_message,
+          run.failure_retryable,
           count(*) over()::integer as total_count
         from saved_report_runs run
         join saved_report_definitions definition

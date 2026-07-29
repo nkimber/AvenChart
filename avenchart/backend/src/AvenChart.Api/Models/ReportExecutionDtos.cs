@@ -7,6 +7,7 @@ public sealed record GovernedReportExecutionPolicy(
     string Revision,
     string DefinitionRevision,
     string ScopeRevision,
+    string QueueRevision,
     string DatasetId,
     string DatasetVersion,
     string RequiredAsOfDate,
@@ -19,6 +20,16 @@ public sealed record GovernedReportExecutionPolicy(
     int MaximumDateSpanDays,
     int MaximumRows,
     int PreviewRows,
+    bool DurableQueueEnabled,
+    int EnqueueDelayMilliseconds,
+    int PollIntervalMilliseconds,
+    int LeaseSeconds,
+    int ExecutionTimeoutSeconds,
+    int QueueExpirationMinutes,
+    int MaximumAttempts,
+    int RetryBaseDelaySeconds,
+    bool DefinitionRetentionEnforcedLocally,
+    IReadOnlyList<string> RetryableFailureCodes,
     bool ExternalDeliveryEnabled,
     bool ArtifactStorageProductionApproved,
     IReadOnlyList<string> ProductionBlockers);
@@ -96,10 +107,22 @@ public sealed record GovernedReportRunItem(
     string DatasetVersion,
     string ExecutionRevision,
     string ScopeRevision,
+    string QueueRevision,
     string ScopeSnapshotChecksum,
     int? ScopeFacilityId,
     int? ScopeSubjectCount,
     string DefinitionSnapshotChecksum,
+    int LifecycleVersion,
+    int AttemptCount,
+    int MaxAttempts,
+    int ManualRetryCount,
+    string? NextAttemptAt,
+    string? LastAttemptAt,
+    string? LeaseExpiresAt,
+    string? QueueExpiresAt,
+    string? CancelRequestedAt,
+    string? CancelRequestedBy,
+    string? CancelReason,
     string RequestedAt,
     string? StartedAt,
     string? FinishedAt,
@@ -109,9 +132,14 @@ public sealed record GovernedReportRunItem(
     int ArtifactBytes,
     string? ArtifactContentType,
     string? ArtifactFileName,
+    string? ArtifactExpiresAt,
+    string? ArtifactExpiredAt,
     string? FailureCode,
     string? FailureMessage,
+    bool? FailureRetryable,
     bool DownloadAvailable,
+    bool CanCancel,
+    bool CanRetry,
     bool Replay);
 
 public sealed record GovernedReportRunEvent(
@@ -140,6 +168,14 @@ public sealed record GovernedReportArtifact(
     string ContentType,
     byte[] Content,
     string Checksum);
+
+public sealed record GovernedReportLifecycleRequest(
+    int ExpectedLifecycleVersion,
+    string Reason)
+{
+    [JsonExtensionData]
+    public IDictionary<string, JsonElement>? AdditionalProperties { get; init; }
+}
 
 public sealed class ReportExecutionConflictException(
     string message,

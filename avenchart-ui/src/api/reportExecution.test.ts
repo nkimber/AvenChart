@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  cancelGovernedReportRun,
   downloadGovernedReportRun,
   getGovernedReportExecutionPolicy,
   getGovernedReportRuns,
   previewGovernedReport,
+  retryGovernedReportRun,
   runGovernedReport,
 } from "./reportDefinitions.ts";
 
@@ -30,8 +32,10 @@ describe("governed report execution transport", () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          revision: "local-report-execution-v2",
+          revision: "local-report-execution-v3",
           scopeRevision: "local-report-scope-v1",
+          queueRevision: "local-report-queue-v1",
+          durableQueueEnabled: true,
           executableRowPolicies: [
             "practice-wide",
             "facility-scoped",
@@ -131,5 +135,57 @@ describe("governed report execution transport", () => {
       expect.objectContaining({ "X-Legacy EHR-Session": "staff-session" }),
     );
     expect(await blob.text()).toContain("Identifier,Subject");
+  });
+
+  it("sends optimistic lifecycle evidence for cancel and retry", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          run: {
+            runId: "RPT-cancel",
+            status: "cancelled",
+            lifecycleVersion: 4,
+          },
+          events: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          run: {
+            runId: "RPT-retry",
+            status: "queued",
+            lifecycleVersion: 8,
+          },
+          events: [],
+        }),
+      );
+
+    await cancelGovernedReportRun(
+      "staff-session",
+      "RPT-cancel/unsafe",
+      3,
+      "Cancel the obsolete queued report.",
+    );
+    await retryGovernedReportRun(
+      "staff-session",
+      "RPT-retry/unsafe",
+      7,
+      "Retry after the transient dependency recovered.",
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+      "/api/reports/runs/RPT-cancel%2Funsafe/cancel",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toContain(
+      "/api/reports/runs/RPT-retry%2Funsafe/retry",
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      expectedLifecycleVersion: 3,
+      reason: "Cancel the obsolete queued report.",
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      expectedLifecycleVersion: 7,
+      reason: "Retry after the transient dependency recovered.",
+    });
   });
 });

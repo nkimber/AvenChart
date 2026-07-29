@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  cancelGovernedReportRun,
   downloadGovernedReportRun,
   getGovernedReportCatalog,
   getGovernedReportDefinition,
@@ -7,6 +8,7 @@ import {
   getGovernedReportRun,
   getGovernedReportRuns,
   previewGovernedReport,
+  retryGovernedReportRun,
   runGovernedReport,
   type GovernedReportDefinitionDetail,
   type GovernedReportExecutionInput,
@@ -67,16 +69,19 @@ export default function GovernedReportExecution({
   const [preview, setPreview] = useState<GovernedReportPreview | null>(null);
   const [selectedRun, setSelectedRun] =
     useState<GovernedReportRunDetail | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
 
+  const selectedDetail =
+    detail?.definitionId === definitionId ? detail : null;
   const activeRevision = useMemo(
     () =>
-      detail?.revisions.find(
-        (revision) => revision.revisionId === detail.activeRevisionId,
+      selectedDetail?.revisions.find(
+        (revision) => revision.revisionId === selectedDetail.activeRevisionId,
       ) ?? null,
-    [detail],
+    [selectedDetail],
   );
   const policySupported =
     policy !== null &&
@@ -149,15 +154,25 @@ export default function GovernedReportExecution({
   }, [sessionId]);
 
   const refreshDefinition = useCallback(
-    async (selectedDefinitionId: string, page: number) => {
+    async (
+      selectedDefinitionId: string,
+      page: number,
+      signal?: AbortSignal,
+    ) => {
       if (!selectedDefinitionId) {
         setDetail(null);
         setRuns(EMPTY_RUNS);
         return;
       }
       const [loadedDetail, loadedRuns] = await Promise.all([
-        getGovernedReportDefinition(sessionId, selectedDefinitionId),
-        getGovernedReportRuns(sessionId, selectedDefinitionId, page, 10),
+        getGovernedReportDefinition(sessionId, selectedDefinitionId, signal),
+        getGovernedReportRuns(
+          sessionId,
+          selectedDefinitionId,
+          page,
+          10,
+          signal,
+        ),
       ]);
       setDetail(loadedDetail);
       setRuns(loadedRuns);
@@ -182,18 +197,112 @@ export default function GovernedReportExecution({
     [sessionId, username],
   );
 
+  const refreshRuns = useCallback(
+    async (selectedDefinitionId: string, page: number) => {
+      if (!selectedDefinitionId) {
+        setRuns(EMPTY_RUNS);
+        return;
+      }
+      setRuns(
+        await getGovernedReportRuns(
+          sessionId,
+          selectedDefinitionId,
+          page,
+          10,
+        ),
+      );
+    },
+    [sessionId],
+  );
+
   useEffect(() => {
+    const controller = new AbortController();
     setPreview(null);
     setSelectedRun(null);
+    setLifecycleReason("");
+    setDetail(null);
+    setRuns(EMPTY_RUNS);
     setError("");
-    refreshDefinition(definitionId, runPage).catch((cause) =>
+    refreshDefinition(definitionId, runPage, controller.signal).catch((cause) => {
+      if (controller.signal.aborted) return;
       setError(
         cause instanceof Error
           ? cause.message
           : "Could not load report run history.",
-      ),
-    );
+      );
+    });
+    return () => controller.abort();
   }, [definitionId, refreshDefinition, runPage]);
+
+  useEffect(() => {
+    const runId = selectedRun?.run.runId;
+    const runStatus = selectedRun?.run.status;
+    if (!runId || (runStatus !== "queued" && runStatus !== "running")) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const pollDelay = Math.max(100, policy?.pollIntervalMilliseconds ?? 250);
+    let timeoutId: number | undefined;
+
+    async function poll() {
+      while (!controller.signal.aborted) {
+        await new Promise<void>((resolve) => {
+          timeoutId = window.setTimeout(resolve, pollDelay);
+        });
+        if (controller.signal.aborted || !runId) return;
+
+        try {
+          const [updatedRun, updatedRuns] = await Promise.all([
+            getGovernedReportRun(sessionId, runId, controller.signal),
+            getGovernedReportRuns(
+              sessionId,
+              definitionId,
+              runPage,
+              10,
+              controller.signal,
+            ),
+          ]);
+          if (controller.signal.aborted) return;
+          setSelectedRun(updatedRun);
+          setRuns(updatedRuns);
+          if (
+            updatedRun.run.status !== "queued" &&
+            updatedRun.run.status !== "running"
+          ) {
+            showToast(
+              updatedRun.run.status === "completed"
+                ? "Governed report artifact completed."
+                : `Governed report finished as ${updatedRun.run.status}.`,
+              updatedRun.run.status === "completed" ? "success" : "error",
+            );
+            return;
+          }
+        } catch (cause) {
+          if (controller.signal.aborted) return;
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "Could not refresh queued report evidence.",
+          );
+          return;
+        }
+      }
+    }
+
+    void poll();
+    return () => {
+      controller.abort();
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [
+    definitionId,
+    policy?.pollIntervalMilliseconds,
+    runPage,
+    selectedRun?.run.runId,
+    selectedRun?.run.status,
+    sessionId,
+  ]);
 
   function executionInput(): GovernedReportExecutionInput {
     if (!activeRevision || !policy) {
@@ -244,10 +353,12 @@ export default function GovernedReportExecution({
       await refreshDefinition(definitionId, 1);
       setRunPage(1);
       showToast(
-        result.run.status === "completed"
-          ? "Governed report artifact completed."
-          : "The report failed closed and retained evidence.",
-        result.run.status === "completed" ? "success" : "error",
+        result.run.status === "queued" || result.run.status === "running"
+          ? "Governed report queued for durable local execution."
+          : result.run.status === "completed"
+            ? "Governed report artifact completed."
+            : "The report failed closed and retained evidence.",
+        result.run.status === "failed" ? "error" : "success",
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Report run failed.");
@@ -259,11 +370,52 @@ export default function GovernedReportExecution({
   async function inspectRun(runId: string) {
     setWorking(true);
     setError("");
+    setLifecycleReason("");
     try {
       setSelectedRun(await getGovernedReportRun(sessionId, runId));
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Could not load run evidence.",
+      );
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function updateLifecycle(action: "cancel" | "retry") {
+    if (!selectedRun || lifecycleReason.trim().length < 10) return;
+    setWorking(true);
+    setError("");
+    try {
+      const result =
+        action === "cancel"
+          ? await cancelGovernedReportRun(
+              sessionId,
+              selectedRun.run.runId,
+              selectedRun.run.lifecycleVersion,
+              lifecycleReason,
+            )
+          : await retryGovernedReportRun(
+              sessionId,
+              selectedRun.run.runId,
+              selectedRun.run.lifecycleVersion,
+              lifecycleReason,
+            );
+      setSelectedRun(result);
+      setLifecycleReason("");
+      await refreshRuns(definitionId, runPage);
+      showToast(
+        action === "cancel"
+          ? result.run.status === "cancelled"
+            ? "Queued report cancelled."
+            : "Cancellation requested from the active worker."
+          : "Retry accepted into the durable queue.",
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : `Could not ${action} the governed report.`,
       );
     } finally {
       setWorking(false);
@@ -300,9 +452,10 @@ export default function GovernedReportExecution({
         <div>
           <h2 className="cl-card-title">Governed report execution</h2>
           <p className="cl-empty-text">
-            Revision-pinned local preview, run, history, and download evidence.
-            Facility and assigned-patient filters use the authenticated local
-            staff relationship and retain their scope snapshot.
+            Revision-pinned local preview, durable queue, lifecycle, history,
+            and download evidence. Facility and assigned-patient filters use
+            the authenticated local staff relationship and retain their scope
+            snapshot.
           </p>
         </div>
         {policy && (
@@ -325,7 +478,9 @@ export default function GovernedReportExecution({
             and provider/care-team patient policies are executable development
             mappings. Missing staff/facility links and unsupported
             patient-linked families fail with evidence and no artifact.
-            External delivery and production artifact storage are disabled.
+            The database queue and in-process worker are local development
+            infrastructure. External delivery and production artifact storage
+            are disabled.
           </div>
           <dl className="report-definition-facts">
             <div>
@@ -349,6 +504,17 @@ export default function GovernedReportExecution({
             <div>
               <dt>Scope mapping</dt>
               <dd>{policy.scopeRevision}</dd>
+            </div>
+            <div>
+              <dt>Durable queue</dt>
+              <dd>
+                {policy.queueRevision} / {policy.maximumAttempts} automatic
+                attempts / {policy.executionTimeoutSeconds}s timeout
+              </dd>
+            </div>
+            <div>
+              <dt>Queue lifetime</dt>
+              <dd>{policy.queueExpirationMinutes} minutes</dd>
             </div>
             <div>
               <dt>Current staff scope</dt>
@@ -572,6 +738,9 @@ export default function GovernedReportExecution({
                                 {run.failureCode}
                               </span>
                             )}
+                            <span className="cl-field-help">
+                              attempt {run.attemptCount}/{run.maxAttempts}
+                            </span>
                           </td>
                           <td>{run.revisionNumber ?? "-"}</td>
                           <td>{run.rowCount.toLocaleString()}</td>
@@ -649,6 +818,32 @@ export default function GovernedReportExecution({
                   </dd>
                 </div>
                 <div>
+                  <dt>Status</dt>
+                  <dd>
+                    {selectedRun.run.status} / lifecycle{" "}
+                    {selectedRun.run.lifecycleVersion}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Queue</dt>
+                  <dd>
+                    {selectedRun.run.queueRevision} / attempt{" "}
+                    {selectedRun.run.attemptCount} of{" "}
+                    {selectedRun.run.maxAttempts}
+                    {selectedRun.run.manualRetryCount > 0
+                      ? ` / ${selectedRun.run.manualRetryCount} manual retries`
+                      : ""}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Next attempt</dt>
+                  <dd>{formatInstant(selectedRun.run.nextAttemptAt)}</dd>
+                </div>
+                <div>
+                  <dt>Queue expires</dt>
+                  <dd>{formatInstant(selectedRun.run.queueExpiresAt)}</dd>
+                </div>
+                <div>
                   <dt>Definition</dt>
                   <dd>
                     {selectedRun.run.definitionStableKey} revision{" "}
@@ -666,6 +861,16 @@ export default function GovernedReportExecution({
                   <dt>Checksum</dt>
                   <dd>
                     <code>{selectedRun.run.resultChecksum ?? "-"}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Artifact retention</dt>
+                  <dd>
+                    {selectedRun.run.artifactExpiredAt
+                      ? `expired ${formatInstant(
+                          selectedRun.run.artifactExpiredAt,
+                        )}`
+                      : formatInstant(selectedRun.run.artifactExpiresAt)}
                   </dd>
                 </div>
                 <div>
@@ -691,6 +896,63 @@ export default function GovernedReportExecution({
               {selectedRun.run.failureMessage && (
                 <div className="error-banner">
                   {selectedRun.run.failureMessage}
+                </div>
+              )}
+              {selectedRun.run.cancelRequestedAt && (
+                <div className="warning-banner" role="status">
+                  Cancellation requested by{" "}
+                  {selectedRun.run.cancelRequestedBy ?? "the requester"} at{" "}
+                  {formatInstant(selectedRun.run.cancelRequestedAt)}.
+                  {selectedRun.run.cancelReason
+                    ? ` ${selectedRun.run.cancelReason}`
+                    : ""}
+                </div>
+              )}
+              {(selectedRun.run.canCancel || selectedRun.run.canRetry) && (
+                <div className="report-execution-contract">
+                  <label className="cl-admin-field report-execution-wide">
+                    <span>Lifecycle reason</span>
+                    <textarea
+                      className="ne-input"
+                      value={lifecycleReason}
+                      onChange={(event) =>
+                        setLifecycleReason(event.target.value)
+                      }
+                      maxLength={500}
+                      rows={2}
+                      disabled={working}
+                      placeholder="Required: explain why this run should be cancelled or retried."
+                    />
+                    <small className="cl-field-help">
+                      10-500 characters; retained with the lifecycle event.
+                    </small>
+                  </label>
+                  <div className="cl-inline-actions">
+                    {selectedRun.run.canCancel && (
+                      <button
+                        className="cl-btn-secondary cl-btn-sm"
+                        type="button"
+                        onClick={() => updateLifecycle("cancel")}
+                        disabled={
+                          working || lifecycleReason.trim().length < 10
+                        }
+                      >
+                        Cancel run
+                      </button>
+                    )}
+                    {selectedRun.run.canRetry && (
+                      <button
+                        className="cl-btn-primary cl-btn-sm"
+                        type="button"
+                        onClick={() => updateLifecycle("retry")}
+                        disabled={
+                          working || lifecycleReason.trim().length < 10
+                        }
+                      >
+                        Retry run
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
               <div

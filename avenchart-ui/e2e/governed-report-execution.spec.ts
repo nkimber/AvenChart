@@ -132,7 +132,9 @@ test.describe("REP-02 governed report execution", () => {
           name: "Governed report execution",
         }),
       ).toBeVisible({ timeout: 20_000 });
-      await expect(workspace).toContainText("local-report-execution-v2");
+      await expect(workspace).toContainText("local-report-execution-v3");
+      await expect(workspace).toContainText("local-report-queue-v1");
+      await expect(workspace).toContainText("3 automatic attempts");
       await expect(workspace).toContainText("Local download only");
 
       await workspace
@@ -161,11 +163,16 @@ test.describe("REP-02 governed report execution", () => {
       await expect(runEvidence).toContainText("revision 1", {
         timeout: 20_000,
       });
+      await expect(runEvidence).toContainText(
+        "local-report-queue-v1 / attempt 1 of 3",
+        { timeout: 20_000 },
+      );
+      await expect(runEvidence).toContainText("Artifact retention");
       await expect(
         workspace.getByRole("region", {
           name: "Governed report run history",
         }),
-      ).toContainText("completed");
+      ).toContainText("completed", { timeout: 20_000 });
 
       const downloadPromise = page.waitForEvent("download");
       await workspace.getByRole("button", { name: "Download" }).click();
@@ -306,6 +313,9 @@ test.describe("REP-02 governed report execution", () => {
         timeout: 20_000,
       });
       await expect(evidence).toContainText("333 patients");
+      await expect(evidence).toContainText("attempt 1 of 3", {
+        timeout: 20_000,
+      });
 
       await workspace
         .getByLabel("Active definition")
@@ -328,7 +338,7 @@ test.describe("REP-02 governed report execution", () => {
         workspace.getByRole("region", {
           name: "Governed report run history",
         }),
-      ).toContainText("completed");
+      ).toContainText("completed", { timeout: 20_000 });
 
       const accessibility = await new AxeBuilder({ page })
         .include(".report-execution-workspace")

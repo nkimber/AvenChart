@@ -170,6 +170,7 @@ export type GovernedReportExecutionPolicy = {
   revision: string;
   definitionRevision: string;
   scopeRevision: string;
+  queueRevision: string;
   datasetId: string;
   datasetVersion: string;
   requiredAsOfDate: string;
@@ -189,6 +190,16 @@ export type GovernedReportExecutionPolicy = {
   maximumDateSpanDays: number;
   maximumRows: number;
   previewRows: number;
+  durableQueueEnabled: boolean;
+  enqueueDelayMilliseconds: number;
+  pollIntervalMilliseconds: number;
+  leaseSeconds: number;
+  executionTimeoutSeconds: number;
+  queueExpirationMinutes: number;
+  maximumAttempts: number;
+  retryBaseDelaySeconds: number;
+  definitionRetentionEnforcedLocally: boolean;
+  retryableFailureCodes: string[];
   externalDeliveryEnabled: boolean;
   artifactStorageProductionApproved: boolean;
   productionBlockers: string[];
@@ -216,6 +227,7 @@ export type GovernedReportPreview = {
   datasetVersion: string;
   executionRevision: string;
   scopeRevision: string;
+  queueRevision: string;
   scopeSnapshotChecksum: string;
   scopeFacilityId: number | null;
   scopeSubjectCount: number | null;
@@ -245,10 +257,22 @@ export type GovernedReportRun = {
   datasetVersion: string;
   executionRevision: string;
   scopeRevision: string;
+  queueRevision: string;
   scopeSnapshotChecksum: string;
   scopeFacilityId: number | null;
   scopeSubjectCount: number | null;
   definitionSnapshotChecksum: string;
+  lifecycleVersion: number;
+  attemptCount: number;
+  maxAttempts: number;
+  manualRetryCount: number;
+  nextAttemptAt: string | null;
+  lastAttemptAt: string | null;
+  leaseExpiresAt: string | null;
+  queueExpiresAt: string | null;
+  cancelRequestedAt: string | null;
+  cancelRequestedBy: string | null;
+  cancelReason: string | null;
   requestedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -258,9 +282,14 @@ export type GovernedReportRun = {
   artifactBytes: number;
   artifactContentType: string | null;
   artifactFileName: string | null;
+  artifactExpiresAt: string | null;
+  artifactExpiredAt: string | null;
   failureCode: string | null;
   failureMessage: string | null;
+  failureRetryable: boolean | null;
   downloadAvailable: boolean;
+  canCancel: boolean;
+  canRetry: boolean;
   replay: boolean;
 };
 
@@ -480,6 +509,40 @@ export async function getGovernedReportRun(
   const response = await apiFetch(
     `${apiBaseUrl}/api/reports/runs/${encodeURIComponent(runId)}`,
     { headers: headers(sessionId), signal },
+  );
+  return (await response.json()) as GovernedReportRunDetail;
+}
+
+export async function cancelGovernedReportRun(
+  sessionId: string,
+  runId: string,
+  expectedLifecycleVersion: number,
+  reason: string,
+): Promise<GovernedReportRunDetail> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/reports/runs/${encodeURIComponent(runId)}/cancel`,
+    {
+      method: "POST",
+      headers: headers(sessionId, true),
+      body: JSON.stringify({ expectedLifecycleVersion, reason }),
+    },
+  );
+  return (await response.json()) as GovernedReportRunDetail;
+}
+
+export async function retryGovernedReportRun(
+  sessionId: string,
+  runId: string,
+  expectedLifecycleVersion: number,
+  reason: string,
+): Promise<GovernedReportRunDetail> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/reports/runs/${encodeURIComponent(runId)}/retry`,
+    {
+      method: "POST",
+      headers: headers(sessionId, true),
+      body: JSON.stringify({ expectedLifecycleVersion, reason }),
+    },
   );
   return (await response.json()) as GovernedReportRunDetail;
 }
