@@ -2898,6 +2898,214 @@ export async function transitionInventoryCostPolicyChangeRequest(
     input,
   )
 }
+export type InventoryAccountingIntegrationDecisionDefinition = {
+  mode: 'external' | 'integration_accepted'
+  financeOwner: string
+  effectiveDate: string
+  mappingReference: string | null
+  reconciliationReference: string | null
+  rationale: string
+}
+export type InventoryAccountingIntegrationDecision = {
+  decisionId: string
+  definition: InventoryAccountingIntegrationDecisionDefinition
+  revision: number
+  status: 'active' | 'superseded'
+  activatedAt: string
+  activatedBy: string
+  supersededAt: string | null
+  supersededBy: string | null
+}
+export type InventoryAccountingIntegrationChangeRequest = {
+  requestId: string
+  proposedDefinition: InventoryAccountingIntegrationDecisionDefinition
+  baselineDecisionId: string | null
+  baselineRevision: number | null
+  reason: string
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
+  version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+export type InventoryAccountingIntegrationChangeRequestEvent = {
+  eventId: number
+  action: string
+  note: string | null
+  occurredAt: string
+  username: string
+}
+export type InventoryAccountingIntegrationCatalogResponse = {
+  activeDecision: InventoryAccountingIntegrationDecision | null
+  requests: InventoryAccountingIntegrationChangeRequest[]
+}
+export type InventoryAccountingIntegrationChangeRequestDetailResponse = {
+  request: InventoryAccountingIntegrationChangeRequest
+  activeDecision: InventoryAccountingIntegrationDecision | null
+  events: InventoryAccountingIntegrationChangeRequestEvent[]
+}
+export async function getInventoryAccountingIntegrationDecision(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryAccountingIntegrationCatalogResponse> {
+  return clinicianGet(sessionId, '/api/inventory/accounting-integration-decision', signal)
+}
+export async function createInventoryAccountingIntegrationChangeRequest(
+  sessionId: string,
+  input: { proposedDefinition: InventoryAccountingIntegrationDecisionDefinition; reason: string },
+): Promise<InventoryAccountingIntegrationChangeRequestDetailResponse> {
+  return clinicianPost(
+    sessionId,
+    '/api/inventory/accounting-integration-change-requests',
+    input,
+  )
+}
+export async function getInventoryAccountingIntegrationChangeRequest(
+  sessionId: string,
+  requestId: string,
+): Promise<InventoryAccountingIntegrationChangeRequestDetailResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/inventory/accounting-integration-change-requests/${requestId}`,
+  )
+}
+export async function transitionInventoryAccountingIntegrationChangeRequest(
+  sessionId: string,
+  requestId: string,
+  action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel',
+  input: { expectedVersion: number; note?: string },
+): Promise<InventoryAccountingIntegrationChangeRequestDetailResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/accounting-integration-change-requests/${requestId}/${action}`,
+    input,
+  )
+}
+export type InventoryReplenishmentPolicyDefinition = {
+  itemId: number
+  facilityId: number
+  reorderPoint: number
+  targetQuantity: number
+  leadTimeDays: number
+  safetyStock: number
+  preferredVendorId: string | null
+  packSize: number
+  approvalThreshold: number
+  effectiveDate: string
+  approvalReference: string
+  rationale: string
+}
+export type InventoryReplenishmentPolicy = {
+  policyId: string
+  definition: InventoryReplenishmentPolicyDefinition
+  revision: number
+  status: 'active' | 'superseded'
+  activatedAt: string
+  activatedBy: string
+  supersededAt: string | null
+  supersededBy: string | null
+}
+export type InventoryReplenishmentPolicyChangeRequest = {
+  requestId: string
+  proposedDefinition: InventoryReplenishmentPolicyDefinition
+  baselinePolicyId: string | null
+  baselineRevision: number | null
+  reason: string
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
+  version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+export type InventoryReplenishmentPolicyCatalogResponse = {
+  activePolicies: InventoryReplenishmentPolicy[]
+  requests: InventoryReplenishmentPolicyChangeRequest[]
+}
+export type InventoryReplenishmentPolicyChangeRequestEvent = {
+  eventId: number
+  action: string
+  note: string | null
+  occurredAt: string
+  username: string
+}
+export type InventoryReplenishmentPolicyChangeRequestDetailResponse = {
+  request: InventoryReplenishmentPolicyChangeRequest
+  activePolicy: InventoryReplenishmentPolicy | null
+  events: InventoryReplenishmentPolicyChangeRequestEvent[]
+}
+export async function getInventoryReplenishmentPolicies(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryReplenishmentPolicyCatalogResponse> {
+  return clinicianGet(sessionId, '/api/inventory/replenishment-policies', signal)
+}
+export async function createInventoryReplenishmentPolicyChangeRequest(
+  sessionId: string,
+  input: { proposedDefinition: InventoryReplenishmentPolicyDefinition; reason: string },
+): Promise<InventoryReplenishmentPolicyChangeRequestDetailResponse> {
+  return clinicianPost(
+    sessionId,
+    '/api/inventory/replenishment-policy-change-requests',
+    input,
+  )
+}
+export async function getInventoryReplenishmentPolicyChangeRequest(
+  sessionId: string,
+  requestId: string,
+): Promise<InventoryReplenishmentPolicyChangeRequestDetailResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/inventory/replenishment-policy-change-requests/${requestId}`,
+  )
+}
+export async function transitionInventoryReplenishmentPolicyChangeRequest(
+  sessionId: string,
+  requestId: string,
+  action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel',
+  input: { expectedVersion: number; note?: string },
+): Promise<InventoryReplenishmentPolicyChangeRequestDetailResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/replenishment-policy-change-requests/${requestId}/${action}`,
+    input,
+  )
+}
+export type InventoryReplenishmentRecommendation = {
+  policyId: string
+  policyRevision: number
+  itemId: number
+  itemCode: string
+  itemName: string
+  unit: string
+  facilityId: number
+  facilityCode: string
+  facilityName: string
+  onHand: number
+  reorderPoint: number
+  targetQuantity: number
+  leadTimeDays: number
+  safetyStock: number
+  preferredVendorId: string | null
+  preferredVendorName: string | null
+  packSize: number
+  approvalThreshold: number
+  recommendedQuantity: number
+  effectiveDate: string
+  approvalReference: string
+  canAutoOrder: boolean
+}
+export async function getInventoryReplenishmentRecommendations(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryReplenishmentRecommendation[]> {
+  return clinicianGet(
+    sessionId,
+    '/api/inventory/replenishment-recommendations',
+    signal,
+  )
+}
 export type InventoryReceiptCostLayer = {
   layerId: string
   sourceTransactionId: string
@@ -4244,6 +4452,16 @@ export type PatientMessageForwardRequest = {
   assignedTo: string
   expectedVersion: number
   note?: string | null
+}
+
+export type StaffMessageAttachmentItem = {
+  id: string
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  sha256: string
+  uploadedBy: string
+  uploadedAt: string
 }
 
 export type StaffMessageInboxCounts = {
