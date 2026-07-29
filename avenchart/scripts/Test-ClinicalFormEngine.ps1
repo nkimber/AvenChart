@@ -525,6 +525,14 @@ try {
         ($null -ne $clinicalNotesDefinition -and $clinicalNotesDefinition.contextScope -eq "encounter" -and $clinicalNotesDefinition.signaturePolicy -eq "author-only" -and $clinicalNotesDetail.currentRevision.status -eq "effective" -and $clinicalNotesDetail.currentRevision.schemaHash -eq "3dee3d5d24d1e564b14e3e3e0f6c1a618895ffe2cff8cfef8431eec32066299f" -and $clinicalNotesItems.type -eq "repeat" -and $clinicalNotesItems.repeatMaximum -eq 20 -and (($clinicalNotesItems.children.key -join "|") -eq "note_date|code|code_text|note_type|note_category|narrative") -and $clinicalNotesPreview.valid) `
         @{ definitionId=$clinicalNotesDefinition.definitionId; schemaHash=$clinicalNotesDetail.currentRevision.schemaHash; childFields=$clinicalNotesItems.children.key; previewValid=$clinicalNotesPreview.valid }
 
+    $functionalDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.functionalcognitivestatus" }) | Select-Object -First 1
+    $functionalDetail = if ($null -ne $functionalDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($functionalDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $functionalItems = @($functionalDetail.currentRevision.definition.fields | Where-Object { $_.key -eq "items" }) | Select-Object -First 1
+    Add-Check `
+        "Legacy Functional and Cognitive Status adoption maps bounded encounter entries without PHP execution" `
+        ($null -ne $functionalDefinition -and $functionalDefinition.contextScope -eq "encounter" -and $functionalDefinition.signaturePolicy -eq "author-only" -and $functionalDetail.currentRevision.schemaHash -eq "088c747c126a4b4520992468caacb9f4c704acb604315d06760b2d34c4069b71" -and $functionalItems.repeatMaximum -eq 20 -and (($functionalItems.children.key -join "|") -eq "code|code_text|status_date|is_mental_status|description")) `
+        @{ definitionId=$functionalDefinition.definitionId; schemaHash=$functionalDetail.currentRevision.schemaHash; childFields=$functionalItems.children.key }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
