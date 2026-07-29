@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   createConfigurationPackageImportRequest,
+  createConfigurationPackageCompensatingRollback,
   dryRunConfigurationPackage,
   exportConfigurationPackage,
   getConfigurationPackageImportRequests,
@@ -65,6 +66,13 @@ export default function ConfigurationPackageWorkspace({
     setBusy(true);
     try { setImportRequest(await getConfigurationPackageImportRequest(sessionId, requestId)); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Could not load the package request."); }
+    finally { setBusy(false); }
+  }
+  async function createCompensatingRollback() {
+    if (!importRequest) return;
+    setBusy(true);
+    try { setImportRequest(await createConfigurationPackageCompensatingRollback(sessionId, importRequest.request.requestId, reason)); setMessage("Compensating rollback request created for review."); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not create the compensating rollback request."); }
     finally { setBusy(false); }
   }
 
@@ -158,6 +166,7 @@ export default function ConfigurationPackageWorkspace({
             {importRequest.request.status === "submitted" && <><button className="cl-btn-primary" type="button" disabled={busy} onClick={() => void transitionImportRequest("approve")}>Approve</button><button className="cl-btn-secondary" type="button" disabled={busy} onClick={() => void transitionImportRequest("reject")}>Reject</button></>}
             {importRequest.request.status === "approved" && <button className="cl-btn-primary" type="button" disabled={busy} onClick={() => void transitionImportRequest("activate")}>Activate after baseline check</button>}
             {["draft", "submitted", "approved"].includes(importRequest.request.status) && <button className="cl-btn-secondary" type="button" disabled={busy} onClick={() => void transitionImportRequest("cancel")}>Cancel</button>}
+            {importRequest.request.status === "activated" && importRequest.request.kind === "import" && <button className="cl-btn-secondary" type="button" disabled={busy || !reason.trim()} onClick={() => void createCompensatingRollback()}>Create compensating rollback</button>}
           </div>
           <ul>{importRequest.currentConflicts.map((conflict) => <li key={conflict.key}>{conflict.key}: {conflict.state === "would-change" ? `${conflict.currentValue} → ${conflict.proposedValue}` : "unchanged"}</li>)}</ul>
           <p className="cl-empty-text">{importRequest.events.map((event) => `${event.action} by ${event.username}`).join(" · ")}</p>

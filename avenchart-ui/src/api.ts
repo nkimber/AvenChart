@@ -9168,3 +9168,6 @@ export async function getConfigurationPackageImportRequests(
 export async function getConfigurationPackageImportRequest(sessionId: string, requestId: string): Promise<ConfigurationPackageImportRequestDetail> {
   return clinicianGet(sessionId, `/api/administration/configuration-package-import-requests/${requestId}`)
 }
+export async function createConfigurationPackageCompensatingRollback(sessionId: string, requestId: string, reason: string): Promise<ConfigurationPackageImportRequestDetail> {
+  return clinicianPost(sessionId, `/api/administration/configuration-package-import-requests/${requestId}/compensating-rollback`, { note: reason })
+}
