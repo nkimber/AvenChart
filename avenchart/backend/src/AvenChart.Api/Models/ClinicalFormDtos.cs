@@ -393,6 +393,56 @@ public sealed record LegacyClinicalFormSnapshotDetailResponse(
     bool MigrationApproved,
     Guid? GovernedInstanceId);
 
+public sealed record LegacyClinicalFormMigrationManifest(
+    Guid ManifestId,
+    string StableKey,
+    string SourceSystem,
+    string SourceBaselineVersion,
+    string ExtractionRevision,
+    string SourceSchema,
+    string SourceTable,
+    int TargetDefinitionRevision,
+    string TargetSchemaHash,
+    string TargetRendererRevision,
+    int ManifestRevision,
+    string Status,
+    JsonElement Contract,
+    IReadOnlyList<string> Blockers,
+    string ManifestSha256,
+    bool ProductionApproved,
+    bool ExecutionEnabled,
+    string? ReviewedBy,
+    string? ReviewedAt,
+    string? ApprovedBy,
+    string? ApprovedAt,
+    string? DecisionReason,
+    string CreatedAt);
+
+public sealed record LegacyClinicalFormMigrationRowDisposition(
+    Guid SnapshotId,
+    string SourceRowId,
+    bool SourceActive,
+    int UnmappedCount,
+    string Disposition,
+    IReadOnlyList<string> Reasons);
+
+public sealed record LegacyClinicalFormMigrationReconciliation(
+    int SourceRows,
+    int ActiveRows,
+    int InactiveRows,
+    int FullyMappedRows,
+    int RowsWithUnmappedFacts,
+    int EligibleRows,
+    int BlockedRows,
+    int GovernedInstancesCreated,
+    string SourceSnapshotDigest,
+    IReadOnlyList<LegacyClinicalFormMigrationRowDisposition> Rows);
+
+public sealed record LegacyClinicalFormMigrationManifestResponse(
+    LegacyClinicalFormMigrationManifest Manifest,
+    string PatientId,
+    LegacyClinicalFormMigrationReconciliation Reconciliation);
+
 public sealed class ClinicalFormConflictException(
     string message,
     int? currentVersion = null,

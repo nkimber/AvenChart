@@ -35,6 +35,31 @@ public static class LegacyClinicalFormDisplayEndpoints
             })
             .WithName("GetLegacyClinicalFormSnapshot");
 
+        group.MapGet(
+                "/patients/{patientId}/legacy-migration-manifests/{stableKey}",
+                async (
+                    LegacyClinicalFormDisplayRepository repository,
+                    string patientId,
+                    string stableKey,
+                    CancellationToken cancellationToken) =>
+                {
+                    try
+                    {
+                        var result = await repository.GetMigrationManifestAsync(
+                            patientId,
+                            stableKey,
+                            cancellationToken);
+                        return result is null
+                            ? Results.NotFound()
+                            : Results.Ok(result);
+                    }
+                    catch (ArgumentException exception)
+                    {
+                        return Results.BadRequest(new { error = exception.Message });
+                    }
+                })
+            .WithName("GetPatientLegacyClinicalFormMigrationManifest");
+
         return group;
     }
 }

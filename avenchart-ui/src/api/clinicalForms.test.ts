@@ -7,6 +7,7 @@ import {
   getClinicalFormCatalog,
   getClinicalFormInstanceFieldDictionary,
   getLegacyClinicalFormSnapshot,
+  getPatientLegacyClinicalFormMigrationManifest,
   getPatientLegacyClinicalFormSnapshots,
   previewClinicalForm,
   transitionClinicalFormDefinition,
@@ -148,7 +149,7 @@ describe("governed clinical-form transport", () => {
     });
   });
 
-  it("encodes read-only legacy snapshot list and detail paths", async () => {
+  it("encodes read-only legacy snapshot and migration-manifest paths", async () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({ snapshots: [], total: 0, returned: 0, limit: 100 }),
@@ -161,6 +162,18 @@ describe("governed clinical-form transport", () => {
           readOnly: true,
           converted: false,
         }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          manifest: {
+            stableKey: "legacy.clinicnote",
+            status: "draft",
+            productionApproved: false,
+            executionEnabled: false,
+          },
+          patientId: "MOD PAT/1",
+          reconciliation: { sourceRows: 0, rows: [] },
+        }),
       );
 
     await getPatientLegacyClinicalFormSnapshots(
@@ -171,12 +184,20 @@ describe("governed clinical-form transport", () => {
       "staff-session",
       "90f00000-0000-4000-9000-000000000001",
     );
+    await getPatientLegacyClinicalFormMigrationManifest(
+      "staff-session",
+      "MOD PAT/1",
+      "legacy.clinicnote/v1",
+    );
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "http://localhost:5001/api/form-engine/patients/MOD%20PAT%2F1/legacy-snapshots",
     );
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
       "http://localhost:5001/api/form-engine/legacy-snapshots/90f00000-0000-4000-9000-000000000001",
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      "http://localhost:5001/api/form-engine/patients/MOD%20PAT%2F1/legacy-migration-manifests/legacy.clinicnote%2Fv1",
     );
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
       "X-Legacy EHR-Session": "staff-session",

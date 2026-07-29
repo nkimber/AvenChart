@@ -87,6 +87,14 @@ try {
         status = $unauthenticated
     }
 
+    $unauthenticatedManifest = Get-HttpStatus `
+        -Uri "$ApiBaseUrl/api/form-engine/patients/MOD-PAT-0001/legacy-migration-manifests/legacy.clinicnote"
+    Add-Check "Migration manifest requires authentication" (
+        $unauthenticatedManifest -eq 401
+    ) @{
+        status = $unauthenticatedManifest
+    }
+
     $list = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/form-engine/patients/MOD-PAT-0001/legacy-snapshots" `
         -Headers $headers `
@@ -110,6 +118,45 @@ try {
     Add-Check "Patient filtering does not leak snapshots" (
         $emptyList.total -eq 0 -and @($emptyList.snapshots).Count -eq 0
     ) $emptyList
+
+    $manifest = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/form-engine/patients/MOD-PAT-0001/legacy-migration-manifests/legacy.clinicnote" `
+        -Headers $headers `
+        -TimeoutSec 20
+    $eligibleDisposition = @(
+        $manifest.reconciliation.rows |
+            Where-Object sourceRowId -eq "880001"
+    )[0]
+    $blockedDisposition = @(
+        $manifest.reconciliation.rows |
+            Where-Object sourceRowId -eq "880002"
+    )[0]
+    Add-Check "Draft migration manifest and reconciliation remain non-executing" (
+        $manifest.manifest.status -eq "draft" `
+        -and $manifest.manifest.manifestRevision -eq 1 `
+        -and $manifest.manifest.contract.contractRevision -eq "local-clinical-form-migration-manifest-v1" `
+        -and @($manifest.manifest.contract.mappingRules).Count -eq 5 `
+        -and @($manifest.manifest.contract.changedSemantics).Count -eq 3 `
+        -and @($manifest.manifest.contract.errorDisposition).Count -eq 4 `
+        -and @($manifest.manifest.contract.compensationRollback).Count -eq 4 `
+        -and @($manifest.manifest.contract.requiredApprovals).Count -eq 5 `
+        -and @($manifest.manifest.blockers).Count -eq 4 `
+        -and $manifest.manifest.manifestSha256 -match "^[0-9a-f]{64}$" `
+        -and -not $manifest.manifest.productionApproved `
+        -and -not $manifest.manifest.executionEnabled `
+        -and $manifest.reconciliation.sourceRows -eq 2 `
+        -and $manifest.reconciliation.activeRows -eq 1 `
+        -and $manifest.reconciliation.inactiveRows -eq 1 `
+        -and $manifest.reconciliation.fullyMappedRows -eq 1 `
+        -and $manifest.reconciliation.rowsWithUnmappedFacts -eq 1 `
+        -and $manifest.reconciliation.eligibleRows -eq 1 `
+        -and $manifest.reconciliation.blockedRows -eq 1 `
+        -and $manifest.reconciliation.governedInstancesCreated -eq 0 `
+        -and $manifest.reconciliation.sourceSnapshotDigest -match "^[0-9a-f]{64}$" `
+        -and $eligibleDisposition.disposition -eq "eligible-for-review" `
+        -and $blockedDisposition.disposition -eq "blocked" `
+        -and $blockedDisposition.unmappedCount -eq 1
+    ) $manifest
 
     $mapped = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/form-engine/legacy-snapshots/90f00000-0000-4000-9000-000000000001" `

@@ -287,6 +287,77 @@ export type LegacyClinicalFormSnapshotDetail = {
   governedInstanceId: string | null;
 };
 
+export type LegacyClinicalFormMigrationMappingRule = {
+  sourceField: string;
+  targetField: string;
+  transform: string;
+  knownCodes?: Record<string, string>;
+};
+
+export type LegacyClinicalFormMigrationContract = {
+  contractRevision: string;
+  mappingRules: LegacyClinicalFormMigrationMappingRule[];
+  changedSemantics: string[];
+  errorDisposition: string[];
+  reconciliationRequired: string[];
+  compensationRollback: string[];
+  requiredApprovals: string[];
+};
+
+export type LegacyClinicalFormMigrationManifest = {
+  manifestId: string;
+  stableKey: string;
+  sourceSystem: string;
+  sourceBaselineVersion: string;
+  extractionRevision: string;
+  sourceSchema: string;
+  sourceTable: string;
+  targetDefinitionRevision: number;
+  targetSchemaHash: string;
+  targetRendererRevision: string;
+  manifestRevision: number;
+  status: string;
+  contract: LegacyClinicalFormMigrationContract;
+  blockers: string[];
+  manifestSha256: string;
+  productionApproved: boolean;
+  executionEnabled: boolean;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  decisionReason: string | null;
+  createdAt: string;
+};
+
+export type LegacyClinicalFormMigrationRowDisposition = {
+  snapshotId: string;
+  sourceRowId: string;
+  sourceActive: boolean;
+  unmappedCount: number;
+  disposition: "eligible-for-review" | "blocked";
+  reasons: string[];
+};
+
+export type LegacyClinicalFormMigrationReconciliation = {
+  sourceRows: number;
+  activeRows: number;
+  inactiveRows: number;
+  fullyMappedRows: number;
+  rowsWithUnmappedFacts: number;
+  eligibleRows: number;
+  blockedRows: number;
+  governedInstancesCreated: number;
+  sourceSnapshotDigest: string;
+  rows: LegacyClinicalFormMigrationRowDisposition[];
+};
+
+export type LegacyClinicalFormMigrationManifestResponse = {
+  manifest: LegacyClinicalFormMigrationManifest;
+  patientId: string;
+  reconciliation: LegacyClinicalFormMigrationReconciliation;
+};
+
 export type ClinicalFormRender = {
   instance: ClinicalFormInstanceSummary;
   definition: ClinicalFormSchema;
@@ -519,6 +590,19 @@ export async function getLegacyClinicalFormSnapshot(
     { headers: headers(sessionId), signal },
   );
   return (await response.json()) as LegacyClinicalFormSnapshotDetail;
+}
+
+export async function getPatientLegacyClinicalFormMigrationManifest(
+  sessionId: string,
+  patientId: string,
+  stableKey: string,
+  signal?: AbortSignal,
+): Promise<LegacyClinicalFormMigrationManifestResponse> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/form-engine/patients/${encodeURIComponent(patientId)}/legacy-migration-manifests/${encodeURIComponent(stableKey)}`,
+    { headers: headers(sessionId), signal },
+  );
+  return (await response.json()) as LegacyClinicalFormMigrationManifestResponse;
 }
 
 export async function createPatientClinicalFormInstance(

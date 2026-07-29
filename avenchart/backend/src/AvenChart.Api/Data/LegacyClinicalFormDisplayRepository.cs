@@ -114,6 +114,198 @@ public sealed class LegacyClinicalFormDisplayRepository(NpgsqlDataSource dataSou
             : null;
     }
 
+    public async Task<LegacyClinicalFormMigrationManifestResponse?> GetMigrationManifestAsync(
+        string patientId,
+        string stableKey,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(stableKey))
+        {
+            throw new ArgumentException("Form stable key is required.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var canonicalPatientId = await ResolvePatientAsync(
+            connection,
+            patientId,
+            cancellationToken);
+        await using var manifestCommand = connection.CreateCommand();
+        manifestCommand.CommandText = """
+            select
+              m.manifest_id,
+              m.stable_key,
+              m.source_system,
+              m.source_baseline_version,
+              m.extraction_revision,
+              m.source_schema,
+              m.source_table,
+              m.target_definition_revision,
+              r.schema_hash,
+              r.renderer_version,
+              m.manifest_revision,
+              m.status,
+              m.contract_json::text,
+              m.blockers_json::text,
+              m.manifest_sha256,
+              m.production_approved,
+              m.execution_enabled,
+              m.reviewed_by,
+              m.reviewed_at,
+              m.approved_by,
+              m.approved_at,
+              m.decision_reason,
+              m.created_at
+            from clinical_form_migration_manifests m
+            join clinical_form_definitions d
+              on d.stable_key = m.stable_key
+            join clinical_form_revisions r
+              on r.definition_id = d.definition_id
+             and r.revision = m.target_definition_revision
+            where m.stable_key = @stableKey
+            order by m.manifest_revision desc
+            limit 1;
+            """;
+        manifestCommand.Parameters.AddWithValue("stableKey", stableKey.Trim());
+        await using var manifestReader =
+            await manifestCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await manifestReader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var contractJson = manifestReader.GetString(12);
+        var storedManifestHash = manifestReader.GetString(14);
+        if (!string.Equals(
+                ClinicalFormRuntime.Hash(contractJson),
+                storedManifestHash,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Clinical form migration manifest {manifestReader.GetGuid(0)} failed its stored SHA-256 check.");
+        }
+
+        using var contractDocument = JsonDocument.Parse(contractJson);
+        var blockers = JsonSerializer.Deserialize<List<string>>(
+                           manifestReader.GetString(13))
+                       ?? [];
+        var manifest = new LegacyClinicalFormMigrationManifest(
+            manifestReader.GetGuid(0),
+            manifestReader.GetString(1),
+            manifestReader.GetString(2),
+            manifestReader.GetString(3),
+            manifestReader.GetString(4),
+            manifestReader.GetString(5),
+            manifestReader.GetString(6),
+            manifestReader.GetInt32(7),
+            manifestReader.GetString(8),
+            manifestReader.GetString(9),
+            manifestReader.GetInt32(10),
+            manifestReader.GetString(11),
+            contractDocument.RootElement.Clone(),
+            blockers,
+            storedManifestHash,
+            manifestReader.GetBoolean(15),
+            manifestReader.GetBoolean(16),
+            manifestReader.IsDBNull(17) ? null : manifestReader.GetString(17),
+            manifestReader.IsDBNull(18)
+                ? null
+                : Iso(manifestReader.GetFieldValue<DateTimeOffset>(18)),
+            manifestReader.IsDBNull(19) ? null : manifestReader.GetString(19),
+            manifestReader.IsDBNull(20)
+                ? null
+                : Iso(manifestReader.GetFieldValue<DateTimeOffset>(20)),
+            manifestReader.IsDBNull(21) ? null : manifestReader.GetString(21),
+            Iso(manifestReader.GetFieldValue<DateTimeOffset>(22)));
+        await manifestReader.DisposeAsync();
+
+        await using var snapshotCommand = connection.CreateCommand();
+        snapshotCommand.CommandText = $"""
+            select
+              s.snapshot_id,
+              s.source_system,
+              s.source_baseline_version,
+              s.extraction_revision,
+              s.source_schema,
+              s.source_table,
+              s.source_row_id,
+              s.source_revision,
+              s.source_form_key,
+              s.patient_id,
+              s.encounter_id,
+              s.source_active,
+              s.source_recorded_at,
+              s.captured_at,
+              s.adapter_revision,
+              s.target_definition_revision,
+              s.raw_values::text,
+              s.raw_sha256,
+              d.definition_id,
+              r.schema_json::text,
+              r.schema_hash,
+              r.renderer_version
+            from legacy_clinical_form_snapshots s
+            join clinical_form_definitions d
+              on d.stable_key = s.source_form_key
+            join clinical_form_revisions r
+              on r.definition_id = d.definition_id
+             and r.revision = s.target_definition_revision
+            where s.patient_id = @patientId
+              and s.source_form_key = @stableKey
+            order by s.source_recorded_at, s.snapshot_id
+            limit {ListLimit};
+            """;
+        snapshotCommand.Parameters.AddWithValue("patientId", canonicalPatientId);
+        snapshotCommand.Parameters.AddWithValue("stableKey", stableKey.Trim());
+        var details = new List<LegacyClinicalFormSnapshotDetailResponse>();
+        await using var snapshotReader =
+            await snapshotCommand.ExecuteReaderAsync(cancellationToken);
+        while (await snapshotReader.ReadAsync(cancellationToken))
+        {
+            details.Add(BuildDetail(ReadRow(snapshotReader)));
+        }
+
+        var rows = details.Select(detail =>
+        {
+            var reasons = new List<string>();
+            if (!detail.Snapshot.SourceActive)
+            {
+                reasons.Add("The source row is inactive.");
+            }
+
+            if (detail.UnmappedFacts.Count > 0)
+            {
+                reasons.Add(
+                    $"{detail.UnmappedFacts.Count} source fact(s) are unmapped.");
+            }
+
+            return new LegacyClinicalFormMigrationRowDisposition(
+                detail.Snapshot.SnapshotId,
+                detail.Snapshot.SourceRowId,
+                detail.Snapshot.SourceActive,
+                detail.UnmappedFacts.Count,
+                reasons.Count == 0 ? "eligible-for-review" : "blocked",
+                reasons);
+        }).ToList();
+        var sourceDigest = ClinicalFormRuntime.Hash(string.Join(
+            "\n",
+            details
+                .OrderBy(detail => detail.Snapshot.SnapshotId)
+                .Select(detail =>
+                    $"{detail.Snapshot.SnapshotId:D}:{detail.Snapshot.RawSha256}")));
+        var reconciliation = new LegacyClinicalFormMigrationReconciliation(
+            details.Count,
+            details.Count(detail => detail.Snapshot.SourceActive),
+            details.Count(detail => !detail.Snapshot.SourceActive),
+            details.Count(detail => detail.UnmappedFacts.Count == 0),
+            details.Count(detail => detail.UnmappedFacts.Count > 0),
+            rows.Count(row => row.Disposition == "eligible-for-review"),
+            rows.Count(row => row.Disposition == "blocked"),
+            GovernedInstancesCreated: 0,
+            sourceDigest,
+            rows);
+        return new(manifest, canonicalPatientId, reconciliation);
+    }
+
     private static LegacyClinicalFormSnapshotDetailResponse BuildDetail(
         SnapshotRow row)
     {

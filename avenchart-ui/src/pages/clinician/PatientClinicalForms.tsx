@@ -15,6 +15,7 @@ import {
   getClinicalFormInstance,
   getLegacyClinicalFormSnapshot,
   getPatientClinicalFormInstances,
+  getPatientLegacyClinicalFormMigrationManifest,
   getPatientLegacyClinicalFormSnapshots,
   previewClinicalForm,
   transitionClinicalFormInstance,
@@ -23,6 +24,7 @@ import {
   type ClinicalFormField,
   type ClinicalFormInstanceDetail,
   type ClinicalFormInstanceSummary,
+  type LegacyClinicalFormMigrationManifestResponse,
   type LegacyClinicalFormSnapshotDetail,
   type LegacyClinicalFormSnapshotSummary,
 } from "../../api/clinicalForms.ts";
@@ -237,6 +239,8 @@ export default function PatientClinicalForms() {
   const [legacySnapshots, setLegacySnapshots] = useState<
     LegacyClinicalFormSnapshotSummary[]
   >([]);
+  const [migrationManifest, setMigrationManifest] =
+    useState<LegacyClinicalFormMigrationManifestResponse | null>(null);
   const [selected, setSelected] = useState<ClinicalFormInstanceDetail | null>(null);
   const [selectedLegacy, setSelectedLegacy] =
     useState<LegacyClinicalFormSnapshotDetail | null>(null);
@@ -259,16 +263,23 @@ export default function PatientClinicalForms() {
         loadedCatalog,
         loadedInstances,
         loadedLegacySnapshots,
+        loadedMigrationManifest,
         loadedEncounters,
       ] = await Promise.all([
         getClinicalFormCatalog(session.sessionId),
         getPatientClinicalFormInstances(session.sessionId, patientId),
         getPatientLegacyClinicalFormSnapshots(session.sessionId, patientId),
+        getPatientLegacyClinicalFormMigrationManifest(
+          session.sessionId,
+          patientId,
+          "legacy.clinicnote",
+        ),
         searchEncounters(session.sessionId, { patientId, limit: 100 }),
       ]);
       setCatalog(loadedCatalog.definitions);
       setInstances(loadedInstances.instances);
       setLegacySnapshots(loadedLegacySnapshots.snapshots);
+      setMigrationManifest(loadedMigrationManifest);
       setEncounters(loadedEncounters.encounters);
       setEncounterId((current) =>
         current ||
@@ -690,6 +701,211 @@ export default function PatientClinicalForms() {
           </div>
         )}
       </section>
+
+      {migrationManifest ? (
+        <section
+          className="cl-card"
+          aria-labelledby="legacy-clinical-form-migration-heading"
+        >
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Non-executing migration plan</p>
+              <h2 id="legacy-clinical-form-migration-heading">
+                Clinic Note migration manifest
+              </h2>
+            </div>
+            <p>
+              {migrationManifest.manifest.status} · revision{" "}
+              {migrationManifest.manifest.manifestRevision}
+            </p>
+          </div>
+          <div className="hint-banner" role="note">
+            <strong>Review evidence only.</strong> Production approval is{" "}
+            {migrationManifest.manifest.productionApproved
+              ? "recorded"
+              : "not recorded"}
+            , execution is{" "}
+            {migrationManifest.manifest.executionEnabled
+              ? "enabled"
+              : "disabled"}
+            , and this manifest has created{" "}
+            {migrationManifest.reconciliation.governedInstancesCreated}{" "}
+            governed instances.
+          </div>
+          <dl className="facts-list">
+            <div>
+              <dt>Contract revision</dt>
+              <dd>
+                {migrationManifest.manifest.contract.contractRevision}
+              </dd>
+            </div>
+            <div>
+              <dt>Source boundary</dt>
+              <dd>
+                {migrationManifest.manifest.sourceSchema}.
+                {migrationManifest.manifest.sourceTable} ·{" "}
+                {migrationManifest.manifest.sourceBaselineVersion}
+              </dd>
+            </div>
+            <div>
+              <dt>Target evidence</dt>
+              <dd>
+                Definition revision{" "}
+                {migrationManifest.manifest.targetDefinitionRevision} ·{" "}
+                {migrationManifest.manifest.targetRendererRevision}
+              </dd>
+            </div>
+            <div>
+              <dt>Manifest SHA-256</dt>
+              <dd>{migrationManifest.manifest.manifestSha256}</dd>
+            </div>
+            <div>
+              <dt>Source snapshot digest</dt>
+              <dd>
+                {migrationManifest.reconciliation.sourceSnapshotDigest}
+              </dd>
+            </div>
+            <div>
+              <dt>Target schema SHA-256</dt>
+              <dd>{migrationManifest.manifest.targetSchemaHash}</dd>
+            </div>
+          </dl>
+
+          <h3>Reconciliation preview</h3>
+          <dl className="facts-list">
+            <div>
+              <dt>Source rows</dt>
+              <dd>{migrationManifest.reconciliation.sourceRows}</dd>
+            </div>
+            <div>
+              <dt>Active / inactive</dt>
+              <dd>
+                {migrationManifest.reconciliation.activeRows} /{" "}
+                {migrationManifest.reconciliation.inactiveRows}
+              </dd>
+            </div>
+            <div>
+              <dt>Fully mapped / unmapped</dt>
+              <dd>
+                {migrationManifest.reconciliation.fullyMappedRows} /{" "}
+                {migrationManifest.reconciliation.rowsWithUnmappedFacts}
+              </dd>
+            </div>
+            <div>
+              <dt>Eligible / blocked</dt>
+              <dd>
+                {migrationManifest.reconciliation.eligibleRows} /{" "}
+                {migrationManifest.reconciliation.blockedRows}
+              </dd>
+            </div>
+          </dl>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Source row</th>
+                  <th>State</th>
+                  <th>Unmapped</th>
+                  <th>Disposition</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {migrationManifest.reconciliation.rows.map((row) => (
+                  <tr key={row.snapshotId}>
+                    <td>{row.sourceRowId}</td>
+                    <td>{row.sourceActive ? "Active" : "Inactive"}</td>
+                    <td>{row.unmappedCount}</td>
+                    <td>{row.disposition}</td>
+                    <td>
+                      {row.reasons.length === 0
+                        ? "No blocking facts in this preview."
+                        : row.reasons.join(" ")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Field mapping contract</h3>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Source field</th>
+                  <th>Target field</th>
+                  <th>Transform</th>
+                  <th>Known code map</th>
+                </tr>
+              </thead>
+              <tbody>
+                {migrationManifest.manifest.contract.mappingRules.map(
+                  (mapping) => (
+                    <tr key={mapping.sourceField}>
+                      <td>
+                        <code>{mapping.sourceField}</code>
+                      </td>
+                      <td>
+                        <code>{mapping.targetField}</code>
+                      </td>
+                      <td>{mapping.transform}</td>
+                      <td>
+                        {mapping.knownCodes
+                          ? Object.entries(mapping.knownCodes)
+                              .map(([source, target]) => `${source} → ${target}`)
+                              .join("; ")
+                          : "Not applicable"}
+                      </td>
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="cl-access-grid">
+            <div>
+              <h3>Changed semantics</h3>
+              <ul className="history-list">
+                {migrationManifest.manifest.contract.changedSemantics.map(
+                  (item) => <li key={item}>{item}</li>,
+                )}
+              </ul>
+            </div>
+            <div>
+              <h3>Error disposition</h3>
+              <ul className="history-list">
+                {migrationManifest.manifest.contract.errorDisposition.map(
+                  (item) => <li key={item}>{item}</li>,
+                )}
+              </ul>
+            </div>
+            <div>
+              <h3>Compensation and rollback</h3>
+              <ul className="history-list">
+                {migrationManifest.manifest.contract.compensationRollback.map(
+                  (item) => <li key={item}>{item}</li>,
+                )}
+              </ul>
+            </div>
+            <div>
+              <h3>Required approvals</h3>
+              <ul className="history-list">
+                {migrationManifest.manifest.contract.requiredApprovals.map(
+                  (item) => <li key={item}>{item}</li>,
+                )}
+              </ul>
+            </div>
+          </div>
+          <h3>Open blockers</h3>
+          <ul className="history-list">
+            {migrationManifest.manifest.blockers.map((blocker) => (
+              <li key={blocker}>{blocker}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {selectedLegacy ? (
         <section
