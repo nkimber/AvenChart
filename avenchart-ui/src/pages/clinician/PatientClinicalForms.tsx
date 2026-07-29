@@ -28,6 +28,7 @@ import {
   type ClinicalFormInstanceDetail,
   type ClinicalFormInstanceSummary,
   type ClinicalFormPolicy,
+  type ClinicalFormRepeatRowEvaluation,
   type LegacyClinicalFormMigrationManifestResponse,
   type LegacyClinicalFormSnapshotDetail,
   type LegacyClinicalFormSnapshotSummary,
@@ -101,6 +102,7 @@ type FieldInputProps = {
   disabled: boolean;
   issue?: string;
   idPrefix?: string;
+  repeatRows?: ClinicalFormRepeatRowEvaluation[] | null;
   onChange: (value: unknown) => void;
 };
 
@@ -111,6 +113,7 @@ export function FieldInput({
   disabled,
   issue,
   idPrefix,
+  repeatRows,
   onChange,
 }: FieldInputProps) {
   const inputId = `clinical-form-${idPrefix ? `${idPrefix}-` : ""}${field.key}`;
@@ -133,7 +136,19 @@ export function FieldInput({
       <fieldset className="cl-fieldset" disabled={disabled}>
         <legend>{field.label}{required ? " *" : ""}</legend>
         {field.helpText ? <p id={helpId} className="cl-field-help">{field.helpText}</p> : null}
-        {rows.map((row, index) => (
+        {rows.map((row, index) => {
+          const rowEvaluation = repeatRows?.find(
+            (candidate) =>
+              candidate.repeatFieldKey === field.key &&
+              candidate.rowIndex === index,
+          );
+          const rowIssueByField = new Map(
+            (rowEvaluation?.issues ?? []).map((candidate) => [
+              candidate.fieldKey,
+              candidate.message,
+            ]),
+          );
+          return (
           <div className="cl-card" key={`${field.key}-${index}`} style={{ marginBottom: 12 }}>
             <div className="section-heading">
               <h4>Entry {index + 1}</h4>
@@ -146,13 +161,22 @@ export function FieldInput({
                 Remove entry
               </button>
             </div>
-            {field.children.map((child) => (
+            {field.children
+              .filter(
+                (child) =>
+                  rowEvaluation?.visibleFields[child.key] !== false,
+              )
+              .map((child) => (
               <div className="cl-form-field" key={child.key}>
                 <FieldInput
                   field={child}
                   value={row[child.key]}
-                  required={child.required}
+                  required={
+                    rowEvaluation?.requiredFields[child.key] ??
+                    child.required
+                  }
                   disabled={disabled}
+                  issue={rowIssueByField.get(child.key)}
                   idPrefix={`${field.key}-${index}`}
                   onChange={(next) => {
                     const nextRows = rows.map((current, rowIndex) =>
@@ -164,7 +188,8 @@ export function FieldInput({
               </div>
             ))}
           </div>
-        ))}
+          );
+        })}
         <button
           className="cl-btn-secondary"
           type="button"
@@ -255,7 +280,7 @@ export function FieldInput({
   return (
     <>
       <label htmlFor={inputId}>{field.label}{required ? " *" : ""}</label>
-      {field.helpText || issue ? <p id={helpId} className="cl-field-help">{field.helpText}{issue ? ` ${issue}` : ""}</p> : null}
+      {field.helpText || issue ? <p id={helpId} className="cl-field-help" role={issue ? "alert" : undefined}>{field.helpText}{issue ? ` ${issue}` : ""}</p> : null}
       {input}
     </>
   );
@@ -696,14 +721,27 @@ export default function PatientClinicalForms() {
       clinicalFormFieldEntries(localizedDefinition.fields),
     );
     const displayedRules = new Map(
-      localizedDefinition.rules.map((rule) => [rule.key, rule]),
+      [
+        ...localizedDefinition.rules,
+        ...localizedDefinition.fields.flatMap(
+          (field) => field.rowRules ?? [],
+        ),
+      ].map((rule) => [rule.key, rule]),
     );
     return selected.validation.issues.map((issue) => {
       const localizedRuleMessage = issue.ruleKey
         ? displayedRules.get(issue.ruleKey)?.message
         : null;
       if (localizedRuleMessage) {
-        return { ...issue, message: localizedRuleMessage };
+        const repeatField = issue.repeatFieldKey
+          ? displayedFields.get(issue.repeatFieldKey)
+          : null;
+        const prefix =
+          repeatField && issue.rowIndex !== null &&
+          issue.rowIndex !== undefined
+            ? `${repeatField.label} row ${issue.rowIndex + 1}: `
+            : "";
+        return { ...issue, message: `${prefix}${localizedRuleMessage}` };
       }
 
       const baseField = baseFields.get(issue.fieldKey);
@@ -719,15 +757,50 @@ export default function PatientClinicalForms() {
         : issue;
     });
   }, [localizedDefinition, selected]);
-  const issueByField = new Map(localizedIssues.map((issue) => [issue.fieldKey, issue.message]));
+  const localizedRepeatRows = useMemo(
+    () =>
+      (selected?.validation.repeatRows ?? []).map((row) => ({
+        ...row,
+        issues: row.issues.map(
+          (issue) =>
+            localizedIssues.find(
+              (candidate) =>
+                candidate.repeatFieldKey === issue.repeatFieldKey &&
+                candidate.rowIndex === issue.rowIndex &&
+                candidate.fieldKey === issue.fieldKey &&
+                candidate.ruleKey === issue.ruleKey,
+            ) ?? issue,
+        ),
+      })),
+    [localizedIssues, selected?.validation.repeatRows],
+  );
+  const issueByField = new Map(
+    localizedIssues
+      .filter((issue) => !issue.repeatFieldKey)
+      .map((issue) => [issue.fieldKey, issue.message]),
+  );
   const issueByRule = new Map(
     localizedIssues
       .filter((issue) => issue.ruleKey)
-      .map((issue) => [issue.ruleKey, issue.message]),
+      .map((issue) => [
+        `${issue.repeatFieldKey ?? ""}:${issue.rowIndex ?? ""}:${issue.ruleKey}`,
+        issue.message,
+      ]),
   );
-  const triggeredRules = (selected?.validation.ruleEvaluations ?? []).filter(
-    (evaluation) => evaluation.triggered,
-  );
+  const triggeredRules = [
+    ...(selected?.validation.ruleEvaluations ?? []).map((evaluation) => ({
+      ...evaluation,
+      repeatFieldKey: null as string | null,
+      rowIndex: null as number | null,
+    })),
+    ...(selected?.validation.repeatRows ?? []).flatMap((row) =>
+      row.ruleEvaluations.map((evaluation) => ({
+        ...evaluation,
+        repeatFieldKey: row.repeatFieldKey,
+        rowIndex: row.rowIndex,
+      })),
+    ),
+  ].filter((evaluation) => evaluation.triggered);
   const draft = selected?.instance.state === "draft";
 
   return (
@@ -1408,21 +1481,34 @@ export default function PatientClinicalForms() {
               {triggeredRules.length > 0 ? (
                 <ul>
                   {triggeredRules.map((evaluation) => (
-                    <li key={evaluation.ruleKey}>
+                    <li
+                      key={`${evaluation.repeatFieldKey ?? "form"}-${evaluation.rowIndex ?? "top"}-${evaluation.ruleKey}`}
+                    >
                       <strong>{evaluation.action}</strong>{" "}
                       <code>{evaluation.targetFieldKey}</code>:{" "}
                       {evaluation.explanation}
-                      {issueByRule.get(evaluation.ruleKey)
-                        ? ` ${issueByRule.get(evaluation.ruleKey)}`
+                      {issueByRule.get(
+                        `${evaluation.repeatFieldKey ?? ""}:${evaluation.rowIndex ?? ""}:${evaluation.ruleKey}`,
+                      )
+                        ? ` ${issueByRule.get(
+                            `${evaluation.repeatFieldKey ?? ""}:${evaluation.rowIndex ?? ""}:${evaluation.ruleKey}`,
+                          )}`
                         : ""}{" "}
                       <span className="muted">Rule {evaluation.ruleKey}</span>
+                      {evaluation.repeatFieldKey !== null &&
+                      evaluation.rowIndex !== null ? (
+                        <span className="muted">
+                          {" "}Row {evaluation.rowIndex + 1} of{" "}
+                          {evaluation.repeatFieldKey}
+                        </span>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
               ) : null}
             </section>
           ) : null}
-          {localizedDefinition.sections.map((section) => <fieldset className="cl-fieldset" key={section.key}><legend>{section.title}</legend>{section.description ? <p className="cl-field-help">{section.description}</p> : null}{localizedDefinition.fields.filter((field) => field.sectionKey === section.key && selected.validation.visibleFields[field.key] !== false).map((field) => <div className="cl-form-field" key={field.key}><FieldInput field={field} value={values[field.key]} required={selected.validation.requiredFields[field.key] ?? field.required} disabled={!draft || saving} issue={issueByField.get(field.key)} onChange={(value) => setFieldValue(field.key, value)} /></div>)}</fieldset>)}
+          {localizedDefinition.sections.map((section) => <fieldset className="cl-fieldset" key={section.key}><legend>{section.title}</legend>{section.description ? <p className="cl-field-help">{section.description}</p> : null}{localizedDefinition.fields.filter((field) => field.sectionKey === section.key && selected.validation.visibleFields[field.key] !== false).map((field) => <div className="cl-form-field" key={field.key}><FieldInput field={field} value={values[field.key]} required={selected.validation.requiredFields[field.key] ?? field.required} disabled={!draft || saving} issue={issueByField.get(field.key)} repeatRows={localizedRepeatRows} onChange={(value) => setFieldValue(field.key, value)} /></div>)}</fieldset>)}
           <div className="cl-form-field"><label htmlFor="clinical-form-mutation-reason">Draft save reason / transition reason</label><input id="clinical-form-mutation-reason" value={draft ? reason : actionReason} maxLength={500} disabled={saving} onChange={(event) => draft ? setReason(event.target.value) : setActionReason(event.target.value)} /></div>
           <div className="page-actions">
             <button className="cl-btn-secondary" type="button" onClick={() => void openPrintableRecord()} disabled={saving}>Open printable record</button>

@@ -10,7 +10,7 @@ namespace AvenChart.Api.Data;
 public static partial class ClinicalFormRuntime
 {
     public const string RendererVersion = "local-clinical-form-renderer-v1";
-    public const string PolicyRevision = "local-clinical-form-v6";
+    public const string PolicyRevision = "local-clinical-form-v7";
     public const string SignaturePolicyRevision = "local-clinical-signature-v1";
 
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -258,13 +258,29 @@ public static partial class ClinicalFormRuntime
             .Select(rule => NormalizeRule(rule, fieldMap))
             .OrderBy(rule => rule.Key, StringComparer.Ordinal)
             .ToArray();
-        EnsureUnique(rules.Select(rule => rule.Key), "Rule keys must be unique.");
+        var allRules = rules
+            .Concat(fields.SelectMany(field => field.RowRules ?? []))
+            .ToArray();
+        if (allRules.Length > 100)
+        {
+            throw new ArgumentException(
+                "A form may contain at most 100 top-level and same-row rules.");
+        }
+
+        EnsureUnique(
+            allRules.Select(rule => rule.Key),
+            "Top-level and same-row rule keys must be unique.");
+        EnsureUnique(
+            rules
+                .Where(rule => rule.Action == "calculate")
+                .Select(rule => rule.TargetFieldKey),
+            "Each top-level computed field may have only one calculation rule.");
         EnsureAcyclicRules(rules);
         var localizations = NormalizeLocalizations(
             definition.Localizations,
             sections,
             fields,
-            rules);
+            allRules);
 
         return new ClinicalFormSchemaDefinition(
             stableKey,
@@ -331,7 +347,7 @@ public static partial class ClinicalFormRuntime
                     })
                     .ToArray(),
                 Fields = definition.Fields
-                    .Select(field => LocalizeField(field, fields))
+                    .Select(field => LocalizeField(field, fields, rules))
                     .ToArray(),
                 Rules = definition.Rules
                     .Select(rule => rule with
@@ -365,6 +381,12 @@ public static partial class ClinicalFormRuntime
                 "The value does not belong to the pinned form revision.",
                 null));
         }
+        foreach (var computedKey in fields.Values
+                     .Where(field => field.Type == "computed")
+                     .Select(field => field.Key))
+        {
+            values.Remove(computedKey);
+        }
 
         var visible = fields.Keys.ToDictionary(key => key, _ => true, StringComparer.Ordinal);
         var required = fields.ToDictionary(
@@ -372,8 +394,9 @@ public static partial class ClinicalFormRuntime
             pair => pair.Value.Required,
             StringComparer.Ordinal);
         var evaluations = new List<ClinicalFormRuleEvaluation>();
+        var repeatRows = new List<ClinicalFormRepeatRowEvaluation>();
 
-        foreach (var rule in definition.Rules.Where(rule => rule.Action == "calculate"))
+        foreach (var rule in OrderCalculationRules(definition.Rules))
         {
             var triggered = ConditionMatches(rule.Condition, values);
             if (triggered && rule.Calculation is not null)
@@ -460,7 +483,18 @@ public static partial class ClinicalFormRuntime
                 continue;
             }
 
-            ValidateValue(field, value, issues);
+            if (field.Type == "repeat")
+            {
+                var evaluated = EvaluateRepeat(field, value, issues, repeatRows);
+                if (evaluated is not null)
+                {
+                    values[field.Key] = evaluated.Value;
+                }
+            }
+            else
+            {
+                ValidateValue(field, value, issues);
+            }
         }
 
         return new ClinicalFormEvaluationResponse(
@@ -469,7 +503,8 @@ public static partial class ClinicalFormRuntime
             required,
             issues,
             evaluations,
-            issues.All(issue => issue.Severity != "error"));
+            issues.All(issue => issue.Severity != "error"),
+            repeatRows.Count == 0 ? null : repeatRows);
     }
 
     public static string SerializeSchema(ClinicalFormSchemaDefinition definition) =>
@@ -697,6 +732,42 @@ public static partial class ClinicalFormRuntime
             throw new ArgumentException($"Only computed fields may be read-only ({key}).");
         }
 
+        IReadOnlyList<ClinicalFormRuleDefinition>? rowRules = null;
+        var rowRuleSource = field.RowRules ?? [];
+        if (type == "repeat")
+        {
+            if (rowRuleSource.Count > 20)
+            {
+                throw new ArgumentException(
+                    $"Repeating group {key} may contain at most 20 same-row rules.");
+            }
+
+            var childMap = children.ToDictionary(
+                child => child.Key,
+                StringComparer.Ordinal);
+            var normalizedRowRules = rowRuleSource
+                .Select(rule => NormalizeRule(rule, childMap))
+                .OrderBy(rule => rule.Key, StringComparer.Ordinal)
+                .ToArray();
+            EnsureUnique(
+                normalizedRowRules.Select(rule => rule.Key),
+                $"Same-row rule keys in repeating group {key} must be unique.");
+            EnsureUnique(
+                normalizedRowRules
+                    .Where(rule => rule.Action == "calculate")
+                    .Select(rule => rule.TargetFieldKey),
+                $"Each computed child in repeating group {key} may have only one calculation rule.");
+            EnsureAcyclicRules(normalizedRowRules);
+            rowRules = normalizedRowRules.Length == 0
+                ? null
+                : normalizedRowRules;
+        }
+        else if (rowRuleSource.Count > 0)
+        {
+            throw new ArgumentException(
+                $"Only repeating groups may declare same-row rules ({key}).");
+        }
+
         return new ClinicalFormFieldDefinition(
             key,
             sectionKey,
@@ -717,7 +788,8 @@ public static partial class ClinicalFormRuntime
             repeatMinimum,
             repeatMaximum,
             children,
-            field.ReadOnly);
+            field.ReadOnly,
+            rowRules);
     }
 
     private static IReadOnlyList<ClinicalFormLocalizationDefinition>? NormalizeLocalizations(
@@ -957,7 +1029,8 @@ public static partial class ClinicalFormRuntime
 
     private static ClinicalFormFieldDefinition LocalizeField(
         ClinicalFormFieldDefinition field,
-        IReadOnlyDictionary<string, ClinicalFormFieldLocalizationDefinition> localizations)
+        IReadOnlyDictionary<string, ClinicalFormFieldLocalizationDefinition> localizations,
+        IReadOnlyDictionary<string, ClinicalFormRuleLocalizationDefinition> ruleLocalizations)
     {
         var localization = localizations[field.Key];
         var options = localization.Options.ToDictionary(
@@ -975,7 +1048,13 @@ public static partial class ClinicalFormRuntime
                 })
                 .ToArray(),
             Children = field.Children
-                .Select(child => LocalizeField(child, localizations))
+                .Select(child => LocalizeField(child, localizations, ruleLocalizations))
+                .ToArray(),
+            RowRules = field.RowRules?
+                .Select(rule => rule with
+                {
+                    Message = ruleLocalizations[rule.Key].Message
+                })
                 .ToArray()
         };
     }
@@ -1193,6 +1272,65 @@ public static partial class ClinicalFormRuntime
         }
     }
 
+    private static IReadOnlyList<ClinicalFormRuleDefinition> OrderCalculationRules(
+        IReadOnlyList<ClinicalFormRuleDefinition> rules)
+    {
+        var calculations = rules
+            .Where(rule => rule.Action == "calculate")
+            .ToArray();
+        var producerByField = calculations.ToDictionary(
+            rule => rule.TargetFieldKey,
+            StringComparer.Ordinal);
+        var dependencies = calculations.ToDictionary(
+            rule => rule.Key,
+            rule =>
+            {
+                var referencedFields = new HashSet<string>(
+                    StringComparer.Ordinal)
+                {
+                    rule.Condition.FieldKey
+                };
+                foreach (var operand in rule.Calculation?.Operands ?? [])
+                {
+                    if (operand.FieldKey is not null)
+                    {
+                        referencedFields.Add(operand.FieldKey);
+                    }
+                }
+
+                return referencedFields
+                    .Where(producerByField.ContainsKey)
+                    .Select(fieldKey => producerByField[fieldKey].Key)
+                    .ToHashSet(StringComparer.Ordinal);
+            },
+            StringComparer.Ordinal);
+        var ordered = new List<ClinicalFormRuleDefinition>(calculations.Length);
+        var remaining = calculations.ToDictionary(
+            rule => rule.Key,
+            StringComparer.Ordinal);
+        while (remaining.Count > 0)
+        {
+            var ready = remaining.Values
+                .Where(rule => dependencies[rule.Key].All(
+                    dependency => !remaining.ContainsKey(dependency)))
+                .OrderBy(rule => rule.Key, StringComparer.Ordinal)
+                .ToArray();
+            if (ready.Length == 0)
+            {
+                throw new ArgumentException(
+                    "Form calculation rules contain a cyclic dependency.");
+            }
+
+            foreach (var rule in ready)
+            {
+                ordered.Add(rule);
+                remaining.Remove(rule.Key);
+            }
+        }
+
+        return ordered;
+    }
+
     private static bool ConditionMatches(
         ClinicalFormRuleCondition condition,
         IReadOnlyDictionary<string, JsonElement> values)
@@ -1251,6 +1389,215 @@ public static partial class ClinicalFormRuntime
                 value.Value,
                 calculation.Precision ?? 2,
                 MidpointRounding.AwayFromZero);
+    }
+
+    private static JsonElement? EvaluateRepeat(
+        ClinicalFormFieldDefinition field,
+        JsonElement value,
+        ICollection<ClinicalFormValidationIssue> issues,
+        ICollection<ClinicalFormRepeatRowEvaluation> repeatRows)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            issues.Add(new(
+                field.Key,
+                "error",
+                $"{field.Label} must be a bounded array.",
+                null));
+            return null;
+        }
+
+        var rows = value.EnumerateArray().ToArray();
+        if (rows.Length < (field.RepeatMinimum ?? 0)
+            || rows.Length > (field.RepeatMaximum ?? 0))
+        {
+            issues.Add(new(
+                field.Key,
+                "error",
+                $"{field.Label} must contain {field.RepeatMinimum} to {field.RepeatMaximum} rows.",
+                null));
+        }
+
+        var childMap = field.Children.ToDictionary(
+            child => child.Key,
+            StringComparer.Ordinal);
+        var evaluatedRows = new List<IReadOnlyDictionary<string, JsonElement>>();
+        for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
+        {
+            var row = rows[rowIndex];
+            var rowIssues = new List<ClinicalFormValidationIssue>();
+            var rowEvaluations = new List<ClinicalFormRuleEvaluation>();
+            var visible = childMap.Keys.ToDictionary(
+                key => key,
+                _ => true,
+                StringComparer.Ordinal);
+            var required = childMap.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value.Required,
+                StringComparer.Ordinal);
+            var rowValues = new Dictionary<string, JsonElement>(
+                StringComparer.Ordinal);
+
+            if (row.ValueKind != JsonValueKind.Object)
+            {
+                var issue = new ClinicalFormValidationIssue(
+                    field.Key,
+                    "error",
+                    $"{field.Label} row {rowIndex + 1} must be an object.",
+                    null,
+                    field.Key,
+                    rowIndex);
+                issues.Add(issue);
+                rowIssues.Add(issue);
+                evaluatedRows.Add(rowValues);
+                repeatRows.Add(new(
+                    field.Key,
+                    rowIndex,
+                    visible,
+                    required,
+                    rowIssues,
+                    rowEvaluations));
+                continue;
+            }
+
+            foreach (var property in row.EnumerateObject())
+            {
+                if (!childMap.TryGetValue(property.Name, out var child))
+                {
+                    rowValues[property.Name] = property.Value.Clone();
+                    var issue = new ClinicalFormValidationIssue(
+                        field.Key,
+                        "error",
+                        $"{field.Label} row {rowIndex + 1} contains unknown child field {property.Name}.",
+                        null,
+                        field.Key,
+                        rowIndex);
+                    issues.Add(issue);
+                    rowIssues.Add(issue);
+                    continue;
+                }
+
+                if (child.Type != "computed")
+                {
+                    rowValues[property.Name] = property.Value.Clone();
+                }
+            }
+
+            foreach (var rule in OrderCalculationRules(field.RowRules ?? []))
+            {
+                var triggered = ConditionMatches(rule.Condition, rowValues);
+                if (triggered && rule.Calculation is not null)
+                {
+                    var calculated = Calculate(rule.Calculation, rowValues);
+                    if (calculated is not null)
+                    {
+                        rowValues[rule.TargetFieldKey] =
+                            JsonSerializer.SerializeToElement(
+                                calculated.Value,
+                                JsonOptions);
+                    }
+                }
+
+                rowEvaluations.Add(new(
+                    rule.Key,
+                    triggered,
+                    rule.Action,
+                    rule.TargetFieldKey,
+                    triggered
+                        ? "The same-row calculation condition matched; sibling values were evaluated."
+                        : "The same-row calculation condition did not match."));
+            }
+
+            foreach (var rule in (field.RowRules ?? [])
+                         .Where(rule => rule.Action != "calculate"))
+            {
+                var triggered = ConditionMatches(rule.Condition, rowValues);
+                switch (rule.Action)
+                {
+                    case "show" when triggered:
+                        visible[rule.TargetFieldKey] = true;
+                        break;
+                    case "hide" when triggered:
+                        visible[rule.TargetFieldKey] = false;
+                        break;
+                    case "require" when triggered:
+                        required[rule.TargetFieldKey] = true;
+                        break;
+                    case "warning" when triggered:
+                    {
+                        var issue = new ClinicalFormValidationIssue(
+                            rule.TargetFieldKey,
+                            "warning",
+                            $"{field.Label} row {rowIndex + 1}: {rule.Message ?? "The configured warning condition matched."}",
+                            rule.Key,
+                            field.Key,
+                            rowIndex);
+                        issues.Add(issue);
+                        rowIssues.Add(issue);
+                        break;
+                    }
+                }
+
+                rowEvaluations.Add(new(
+                    rule.Key,
+                    triggered,
+                    rule.Action,
+                    rule.TargetFieldKey,
+                    triggered
+                        ? "The same-row condition matched and the declarative action was applied."
+                        : "The same-row condition did not match."));
+            }
+
+            foreach (var child in field.Children)
+            {
+                var found = rowValues.TryGetValue(child.Key, out var childValue);
+                var hasValue = found && !IsEmpty(childValue);
+                if (visible[child.Key] && required[child.Key] && !hasValue)
+                {
+                    var issue = new ClinicalFormValidationIssue(
+                        child.Key,
+                        "error",
+                        $"{field.Label} row {rowIndex + 1}: {child.Label} is required.",
+                        null,
+                        field.Key,
+                        rowIndex);
+                    issues.Add(issue);
+                    rowIssues.Add(issue);
+                    continue;
+                }
+
+                if (!visible[child.Key] || !hasValue)
+                {
+                    continue;
+                }
+
+                var childIssues = new List<ClinicalFormValidationIssue>();
+                ValidateValue(child, childValue, childIssues);
+                foreach (var childIssue in childIssues)
+                {
+                    var issue = childIssue with
+                    {
+                        Message =
+                            $"{field.Label} row {rowIndex + 1}: {childIssue.Message}",
+                        RepeatFieldKey = field.Key,
+                        RowIndex = rowIndex
+                    };
+                    issues.Add(issue);
+                    rowIssues.Add(issue);
+                }
+            }
+
+            evaluatedRows.Add(rowValues);
+            repeatRows.Add(new(
+                field.Key,
+                rowIndex,
+                visible,
+                required,
+                rowIssues,
+                rowEvaluations));
+        }
+
+        return JsonSerializer.SerializeToElement(evaluatedRows, JsonOptions);
     }
 
     private static void ValidateValue(

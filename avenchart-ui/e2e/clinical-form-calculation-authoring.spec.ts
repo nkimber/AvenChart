@@ -152,7 +152,7 @@ test.describe("FORM-02 calculation authoring", () => {
         scoreChild
           .getByLabel("Child type")
           .locator('option[value="computed"]'),
-      ).toHaveCount(0);
+      ).toHaveCount(1);
       await scoreChild.getByLabel("Child minimum").fill("0");
       await scoreChild.getByLabel("Child maximum").fill("10");
       await scoreChild.getByLabel("Child required").check();
@@ -180,6 +180,31 @@ test.describe("FORM-02 calculation authoring", () => {
           "Child options (one code|display per line)",
         ),
       ).toHaveValue("yes|Yes\nno|No");
+
+      await repeatField.getByRole("button", { name: "Add child" }).click();
+      const rowTotalChild = repeatChildren.nth(3);
+      await rowTotalChild.getByLabel("Child key").fill("row_total");
+      await rowTotalChild.getByLabel("Child label").fill("Row total");
+      await rowTotalChild.getByLabel("Child type").selectOption("computed");
+
+      await repeatField
+        .getByRole("button", { name: "Add row rule" })
+        .click();
+      const rowRule = repeatField.locator(
+        ".clinical-form-row-rule-designer .clinical-form-rule-editor",
+      );
+      await rowRule.getByLabel("Row action").selectOption("calculate");
+      await expect(rowRule.getByLabel("Sibling target field")).toHaveValue(
+        "row_total",
+      );
+      await rowRule
+        .getByLabel("Reusable calculation starter")
+        .selectOption("product");
+      await expect(rowRule.getByLabel("Operand 1 field")).toHaveValue("score");
+      await rowRule
+        .getByLabel("Operand 2 source")
+        .selectOption("constant");
+      await rowRule.getByLabel("Operand 2 constant").fill("2");
 
       await governance.getByRole("button", { name: "Add rule" }).click();
       const rule = governance.locator(".clinical-form-rule-editor").last();
@@ -324,6 +349,18 @@ test.describe("FORM-02 calculation authoring", () => {
               } | null;
               repeatMinimum: number | null;
               repeatMaximum: number | null;
+              rowRules?: Array<{
+                action: string;
+                targetFieldKey: string;
+                calculation: {
+                  operator: string;
+                  operands: Array<{
+                    fieldKey: string | null;
+                    constant: number | null;
+                  }>;
+                  precision: number | null;
+                } | null;
+              }> | null;
               children: Array<{
                 key: string;
                 type: string;
@@ -432,6 +469,24 @@ test.describe("FORM-02 calculation authoring", () => {
               optionListReference: {
                 listKey: "yesno",
                 revisionId: 2,
+              },
+            }),
+            expect.objectContaining({
+              key: "row_total",
+              type: "computed",
+            }),
+          ],
+          rowRules: [
+            expect.objectContaining({
+              action: "calculate",
+              targetFieldKey: "row_total",
+              calculation: {
+                operator: "multiply",
+                operands: [
+                  { fieldKey: "score", constant: null },
+                  { fieldKey: null, constant: 2 },
+                ],
+                precision: 2,
               },
             }),
           ],

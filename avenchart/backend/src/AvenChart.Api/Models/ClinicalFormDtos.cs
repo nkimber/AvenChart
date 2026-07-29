@@ -75,7 +75,9 @@ public sealed record ClinicalFormFieldDefinition(
     int? RepeatMinimum,
     int? RepeatMaximum,
     IReadOnlyList<ClinicalFormFieldDefinition> Children,
-    bool ReadOnly);
+    bool ReadOnly,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<ClinicalFormRuleDefinition>? RowRules = null);
 
 public sealed record ClinicalFormOptionListCatalogItem(
     string ListKey,
@@ -252,7 +254,11 @@ public sealed record ClinicalFormValidationIssue(
     string FieldKey,
     string Severity,
     string Message,
-    string? RuleKey);
+    string? RuleKey,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RepeatFieldKey = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    int? RowIndex = null);
 
 public sealed record ClinicalFormRuleEvaluation(
     string RuleKey,
@@ -261,13 +267,23 @@ public sealed record ClinicalFormRuleEvaluation(
     string TargetFieldKey,
     string Explanation);
 
+public sealed record ClinicalFormRepeatRowEvaluation(
+    string RepeatFieldKey,
+    int RowIndex,
+    IReadOnlyDictionary<string, bool> VisibleFields,
+    IReadOnlyDictionary<string, bool> RequiredFields,
+    IReadOnlyList<ClinicalFormValidationIssue> Issues,
+    IReadOnlyList<ClinicalFormRuleEvaluation> RuleEvaluations);
+
 public sealed record ClinicalFormEvaluationResponse(
     IReadOnlyDictionary<string, JsonElement> Values,
     IReadOnlyDictionary<string, bool> VisibleFields,
     IReadOnlyDictionary<string, bool> RequiredFields,
     IReadOnlyList<ClinicalFormValidationIssue> Issues,
     IReadOnlyList<ClinicalFormRuleEvaluation> RuleEvaluations,
-    bool Valid);
+    bool Valid,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<ClinicalFormRepeatRowEvaluation>? RepeatRows = null);
 
 public sealed record ClinicalFormPreviewRequest(
     ClinicalFormSchemaDefinition Definition,

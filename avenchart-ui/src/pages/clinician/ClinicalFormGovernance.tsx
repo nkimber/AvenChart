@@ -27,6 +27,7 @@ import {
   type ClinicalFormSection,
 } from "../../api/clinicalForms.ts";
 import { showToast } from "../../components/Toast.tsx";
+import ClinicalFormRowRuleEditor from "../../components/ClinicalFormRowRuleEditor.tsx";
 import {
   applyCalculationTemplate,
   appendCalculationOperand,
@@ -51,6 +52,7 @@ import {
   parseClinicalFormOptionLines,
   removeClinicalFormRepeatChild,
 } from "../../domain/clinicalFormRepeatAuthoring.ts";
+import { clinicalFormRowRuleAuthoringIssues } from "../../domain/clinicalFormRowRuleAuthoring.ts";
 
 type Props = { sessionId: string };
 
@@ -228,16 +230,49 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
   ) {
     setSchema((current) => ({
       ...current,
-      fields: current.fields.map((field, index) =>
-        index === fieldIndex
-          ? {
-              ...field,
-              children: field.children.map((child, index) =>
-                index === childIndex ? { ...child, ...patch } : child,
-              ),
-            }
-          : field,
-      ),
+      fields: current.fields.map((field, index) => {
+        if (index !== fieldIndex) return field;
+        const previousKey = field.children[childIndex]?.key;
+        const nextKey =
+          patch.key && previousKey ? patch.key : previousKey;
+        return {
+          ...field,
+          children: field.children.map((child, index) =>
+            index === childIndex ? { ...child, ...patch } : child,
+          ),
+          rowRules:
+            previousKey && nextKey && previousKey !== nextKey
+              ? (field.rowRules ?? []).map((rule) => ({
+                  ...rule,
+                  condition: {
+                    ...rule.condition,
+                    fieldKey:
+                      rule.condition.fieldKey === previousKey
+                        ? nextKey
+                        : rule.condition.fieldKey,
+                  },
+                  targetFieldKey:
+                    rule.targetFieldKey === previousKey
+                      ? nextKey
+                      : rule.targetFieldKey,
+                  calculation: rule.calculation
+                    ? {
+                        ...rule.calculation,
+                        operands: rule.calculation.operands.map(
+                          (operand) => ({
+                            ...operand,
+                            fieldKey:
+                              operand.fieldKey === previousKey
+                                ? nextKey
+                                : operand.fieldKey,
+                          }),
+                        ),
+                      }
+                    : null,
+                }))
+              : field.rowRules,
+        };
+      }),
     }));
   }
 
@@ -706,9 +741,31 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
       ),
     [policy?.supportedCalculationOperators, schema.fields, schema.rules],
   );
+  const rowRuleIssues = useMemo(
+    () =>
+      clinicalFormRowRuleAuthoringIssues(
+        schema.fields,
+        policy?.supportedRuleActions ?? [],
+        policy?.supportedCalculationOperators ?? [],
+      ),
+    [
+      policy?.supportedCalculationOperators,
+      policy?.supportedRuleActions,
+      schema.fields,
+    ],
+  );
   const synchronizedSchema = useMemo(
     () => synchronizeClinicalFormLocalizations(schema),
     [schema],
+  );
+  const synchronizedRules = useMemo(
+    () => [
+      ...synchronizedSchema.rules,
+      ...synchronizedSchema.fields.flatMap(
+        (field) => field.rowRules ?? [],
+      ),
+    ],
+    [synchronizedSchema.fields, synchronizedSchema.rules],
   );
   const changeImpact = useMemo(
     () =>
@@ -1148,7 +1205,7 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                   </div>
 
                   {localization.rules.some((rule) =>
-                    synchronizedSchema.rules.some(
+                    synchronizedRules.some(
                       (candidate) =>
                         candidate.key === rule.ruleKey &&
                         candidate.action === "warning",
@@ -1159,7 +1216,7 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                       <div className="clinical-form-localization-list">
                         {localization.rules
                           .filter((rule) =>
-                            synchronizedSchema.rules.some(
+                            synchronizedRules.some(
                               (candidate) =>
                                 candidate.key === rule.ruleKey &&
                                 candidate.action === "warning",
@@ -1631,8 +1688,9 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                             <h5>Repeat child fields</h5>
                             <p className="cl-empty-text">
                               Author 1 to {clinicalFormRepeatChildLimit} typed
-                              children. Nested repeats and row-scoped
-                              calculations remain blocked.
+                              children. Computed children use bounded,
+                              sibling-only same-row calculations; nested
+                              repeats remain blocked.
                             </p>
                           </div>
                           <button
@@ -1756,6 +1814,7 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                                   <input
                                     type="checkbox"
                                     checked={child.required}
+                                    disabled={child.readOnly}
                                     onChange={(event) =>
                                       updateRepeatChild(index, childIndex, {
                                         required: event.target.checked,
@@ -1799,6 +1858,7 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                                   "integer",
                                   "decimal",
                                   "measurement",
+                                  "computed",
                                 ].includes(child.type) && (
                                   <>
                                     <label className="cl-admin-field">
@@ -2025,6 +2085,16 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                             </article>
                           ))}
                         </div>
+                        <ClinicalFormRowRuleEditor
+                          field={field}
+                          policy={policy}
+                          issues={rowRuleIssues.filter(
+                            (issue) => issue.repeatFieldKey === field.key,
+                          )}
+                          onChange={(nextField) =>
+                            updateField(index, nextField)
+                          }
+                        />
                       </div>
                     </>
                   )}
@@ -2576,7 +2646,11 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
             <button
               className="cl-btn-secondary"
               type="button"
-              disabled={busy || calculationIssues.length > 0}
+              disabled={
+                busy ||
+                calculationIssues.length > 0 ||
+                rowRuleIssues.length > 0
+              }
               onClick={() => void runPreview()}
             >
               <FileCode2 size={15} aria-hidden="true" />
@@ -2589,6 +2663,7 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                 busy ||
                 !reason.trim() ||
                 calculationIssues.length > 0 ||
+                rowRuleIssues.length > 0 ||
                 (successorMode && changeImpact?.items.length === 0)
               }
               onClick={() => void saveDefinition()}

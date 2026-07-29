@@ -250,8 +250,24 @@ export function calculationAuthoringIssues(
   const fieldMap = new Map(fields.map((field) => [field.key, field]));
   const supported = new Set(supportedOperators);
   const issues: CalculationAuthoringIssue[] = [];
+  const calculationRules = rules.filter(
+    (candidate) => candidate.action === "calculate",
+  );
+  const targetCounts = new Map<string, number>();
+  for (const rule of calculationRules) {
+    targetCounts.set(
+      rule.targetFieldKey,
+      (targetCounts.get(rule.targetFieldKey) ?? 0) + 1,
+    );
+  }
+  if ([...targetCounts.values()].some((count) => count > 1)) {
+    issues.push({
+      ruleKey: null,
+      message: "Each computed target may have only one calculation rule.",
+    });
+  }
 
-  for (const rule of rules.filter((candidate) => candidate.action === "calculate")) {
+  for (const rule of calculationRules) {
     const target = fieldMap.get(rule.targetFieldKey);
     if (target?.type !== "computed") {
       issues.push({

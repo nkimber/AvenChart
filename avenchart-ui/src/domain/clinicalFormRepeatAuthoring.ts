@@ -27,6 +27,7 @@ export function createSafeClinicalFormField(
     repeatMaximum: null,
     children: [],
     readOnly: false,
+    rowRules: null,
   };
 }
 
@@ -82,6 +83,7 @@ export function normalizeClinicalFormFieldType(
       : [],
     readOnly: type === "computed",
     required: type === "computed" ? false : field.required,
+    rowRules: repeat ? (field.rowRules ?? null) : null,
   };
 }
 
@@ -89,7 +91,7 @@ export function clinicalFormRepeatChildTypes(
   supportedFieldTypes: string[],
 ): string[] {
   return supportedFieldTypes.filter(
-    (type) => type !== "repeat" && type !== "computed",
+    (type) => type !== "repeat",
   );
 }
 
@@ -140,6 +142,14 @@ export function removeClinicalFormRepeatChild(
   return {
     ...field,
     children: field.children.filter((_, index) => index !== childIndex),
+    rowRules: (field.rowRules ?? []).filter(
+      (rule) =>
+        rule.condition.fieldKey !== field.children[childIndex]?.key &&
+        rule.targetFieldKey !== field.children[childIndex]?.key &&
+        !(rule.calculation?.operands ?? []).some(
+          (operand) => operand.fieldKey === field.children[childIndex]?.key,
+        ),
+    ),
   };
 }
 

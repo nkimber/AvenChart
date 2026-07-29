@@ -51,7 +51,7 @@ describe("clinical form repeat authoring", () => {
     expect(repeat.children.at(-1)?.sequence).toBe(200);
   });
 
-  it("excludes nested repeats and row-scoped computed outputs", () => {
+  it("excludes nested repeats while allowing same-row computed outputs", () => {
     expect(
       clinicalFormRepeatChildTypes([
         "text",
@@ -60,7 +60,7 @@ describe("clinical form repeat authoring", () => {
         "computed",
         "coded",
       ]),
-    ).toEqual(["text", "integer", "coded"]);
+    ).toEqual(["text", "integer", "computed", "coded"]);
   });
 
   it("keeps one child and parses bounded option rows", () => {

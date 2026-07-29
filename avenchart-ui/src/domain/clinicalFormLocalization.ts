@@ -3,6 +3,7 @@ import type {
   ClinicalFormField,
   ClinicalFormFieldLocalization,
   ClinicalFormLocalization,
+  ClinicalFormRule,
   ClinicalFormSchema,
 } from "../api/clinicalForms.ts";
 
@@ -11,6 +12,13 @@ function flattenFields(fields: ClinicalFormField[]): ClinicalFormField[] {
     field,
     ...flattenFields(field.children ?? []),
   ]);
+}
+
+function flattenRules(schema: ClinicalFormSchema): ClinicalFormRule[] {
+  return [
+    ...schema.rules,
+    ...flattenFields(schema.fields).flatMap((field) => field.rowRules ?? []),
+  ];
 }
 
 function synchronizeLocalization(
@@ -53,7 +61,7 @@ function synchronizeLocalization(
         })),
       };
     }),
-    rules: schema.rules.map((rule) => ({
+    rules: flattenRules(schema).map((rule) => ({
       ruleKey: rule.key,
       message: rules.has(rule.key)
         ? (rules.get(rule.key)?.message ?? null)
@@ -113,7 +121,7 @@ export function createClinicalFormLocalization(
           description: section.description,
         })),
         fields,
-        rules: synchronized.rules.map((rule) => ({
+        rules: flattenRules(synchronized).map((rule) => ({
           ruleKey: rule.key,
           message: rule.message,
         })),
@@ -125,6 +133,10 @@ export function createClinicalFormLocalization(
 function localizeField(
   field: ClinicalFormField,
   localizations: ReadonlyMap<string, ClinicalFormFieldLocalization>,
+  ruleLocalizations: ReadonlyMap<
+    string,
+    ClinicalFormLocalization["rules"][number]
+  >,
 ): ClinicalFormField {
   const localization = localizations.get(field.key);
   if (!localization) return field;
@@ -141,8 +153,12 @@ function localizeField(
       display: options.get(option.code) ?? option.display,
     })),
     children: field.children.map((child) =>
-      localizeField(child, localizations),
+      localizeField(child, localizations, ruleLocalizations),
     ),
+    rowRules: field.rowRules?.map((rule) => ({
+      ...rule,
+      message: ruleLocalizations.get(rule.key)?.message ?? rule.message,
+    })),
   };
 }
 
@@ -179,7 +195,9 @@ export function localizeClinicalFormSchema(
           }
         : section;
     }),
-    fields: synchronized.fields.map((field) => localizeField(field, fields)),
+    fields: synchronized.fields.map((field) =>
+      localizeField(field, fields, rules),
+    ),
     rules: synchronized.rules.map((rule) => ({
       ...rule,
       message: rules.get(rule.key)?.message ?? rule.message,

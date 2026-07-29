@@ -384,6 +384,15 @@ function compareField(
       : "custom inline options";
     add("high", `option source changes from ${before} to ${after}`);
   }
+  if (
+    canonicalJson(previous.rowRules ?? null) !==
+    canonicalJson(candidate.rowRules ?? null)
+  ) {
+    add(
+      "high",
+      "same-row visibility, requirement, warning, or calculation contract changes",
+    );
+  }
 
   if (changes.length === 0) return [];
   return [

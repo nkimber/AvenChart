@@ -45,6 +45,16 @@ function schema(): ClinicalFormSchema {
   repeat.repeatMaximum = 3;
   repeat.children = [field("note")];
   repeat.children[0]!.sectionKey = "";
+  repeat.rowRules = [
+    {
+      key: "warn_note",
+      condition: { fieldKey: "note", operator: "is-not-empty" },
+      action: "warning",
+      targetFieldKey: "note",
+      message: "Review the note.",
+      calculation: null,
+    },
+  ];
 
   return {
     stableKey: "tmp.form.localization",
@@ -92,6 +102,7 @@ describe("clinical form localization", () => {
         { fieldKey: "observations" },
         { fieldKey: "note" },
       ],
+      rules: [{ ruleKey: "warn_note", message: "Review the note." }],
     });
   });
 
@@ -137,6 +148,7 @@ describe("clinical form localization", () => {
     translation.fields[0]!.accessibilityLabel = "Decisión clínica";
     translation.fields[0]!.options[0]!.display = "Sí";
     translation.fields[2]!.label = "Nota";
+    translation.rules[0]!.message = "Revise la nota.";
 
     const displayed = localizeClinicalFormSchema(localized, "es-US");
     expect(displayed.name).toBe("Formulario localizado");
@@ -151,6 +163,9 @@ describe("clinical form localization", () => {
       ],
     });
     expect(displayed.fields[1]?.children[0]?.label).toBe("Nota");
+    expect(displayed.fields[1]?.rowRules?.[0]?.message).toBe(
+      "Revise la nota.",
+    );
     expect(localizeClinicalFormSchema(localized, "fr-CA").name).toBe(
       "Localized form",
     );

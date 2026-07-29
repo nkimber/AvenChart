@@ -146,7 +146,8 @@ function New-Field {
         [Nullable[int]]$RepeatMinimum = $null,
         [Nullable[int]]$RepeatMaximum = $null,
         [object[]]$Children = @(),
-        [bool]$ReadOnly = $false
+        [bool]$ReadOnly = $false,
+        [object[]]$RowRules = @()
     )
 
     return [ordered]@{
@@ -169,6 +170,7 @@ function New-Field {
         repeatMaximum = $RepeatMaximum
         children = $Children
         readOnly = $ReadOnly
+        rowRules = if ($RowRules.Count -gt 0) { $RowRules } else { $null }
     }
 }
 
@@ -386,7 +388,7 @@ try {
     )
     $actualFieldTypes = @($policy.supportedFieldTypes | Sort-Object)
     $policyPassed = `
-        $policy.revision -eq "local-clinical-form-v6" `
+        $policy.revision -eq "local-clinical-form-v7" `
         -and $policy.rendererVersion -eq "local-clinical-form-renderer-v1" `
         -and $policy.signaturePolicyRevision -eq "local-clinical-signature-v1" `
         -and (($actualFieldTypes -join "|") -eq ($expectedFieldTypes -join "|")) `
@@ -974,6 +976,86 @@ try {
                     -Type "multiline" `
                     -Sequence 30 `
                     -MaxLength 200
+                New-Field `
+                    -Key "score_twice" `
+                    -Label "Score twice" `
+                    -Type "computed" `
+                    -Sequence 40 `
+                    -Minimum 0 `
+                    -Maximum 20 `
+                    -Precision 0 `
+                    -ReadOnly $true
+                New-Field `
+                    -Key "score_quadruple" `
+                    -Label "Score quadruple" `
+                    -Type "computed" `
+                    -Sequence 50 `
+                    -Minimum 0 `
+                    -Maximum 40 `
+                    -Precision 0 `
+                    -ReadOnly $true
+            ) `
+            -RowRules @(
+                [ordered]@{
+                    key = "calculate_score_quadruple"
+                    condition = [ordered]@{
+                        fieldKey = "score_twice"
+                        operator = "is-not-empty"
+                    }
+                    action = "calculate"
+                    targetFieldKey = "score_quadruple"
+                    message = $null
+                    calculation = [ordered]@{
+                        operator = "multiply"
+                        operands = @(
+                            [ordered]@{ fieldKey = "score_twice"; constant = $null },
+                            [ordered]@{ fieldKey = $null; constant = 2 }
+                        )
+                        precision = 0
+                    }
+                }
+                [ordered]@{
+                    key = "calculate_score_twice"
+                    condition = [ordered]@{
+                        fieldKey = "score"
+                        operator = "is-not-empty"
+                    }
+                    action = "calculate"
+                    targetFieldKey = "score_twice"
+                    message = $null
+                    calculation = [ordered]@{
+                        operator = "multiply"
+                        operands = @(
+                            [ordered]@{ fieldKey = "score"; constant = $null },
+                            [ordered]@{ fieldKey = $null; constant = 2 }
+                        )
+                        precision = 0
+                    }
+                }
+                [ordered]@{
+                    key = "require_yes_note"
+                    condition = [ordered]@{
+                        fieldKey = "decision"
+                        operator = "equals"
+                        value = "yes"
+                    }
+                    action = "require"
+                    targetFieldKey = "note"
+                    message = $null
+                    calculation = $null
+                }
+                [ordered]@{
+                    key = "hide_no_note"
+                    condition = [ordered]@{
+                        fieldKey = "decision"
+                        operator = "equals"
+                        value = "no"
+                    }
+                    action = "hide"
+                    targetFieldKey = "note"
+                    message = $null
+                    calculation = $null
+                }
             )
     )
     $missingRepeatPreview = Invoke-Json `
@@ -993,6 +1075,30 @@ try {
                         score = 7
                         decision = "yes"
                         note = "Bounded row."
+                        score_twice = 999
+                    }
+                    @{
+                        score = 3
+                        decision = "no"
+                    }
+                )
+            }
+        }
+    $incompleteSameRowPreview = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/form-engine/preview" `
+        -Method "POST" `
+        -RequestHeaders $adminHeaders `
+        -Body @{
+            definition = $repeatSchema
+            values = @{
+                observations = @(
+                    @{
+                        score = 7
+                        decision = "yes"
+                    }
+                    @{
+                        score = 3
+                        decision = "no"
                     }
                 )
             }
@@ -1008,6 +1114,28 @@ try {
         @{
             missingIssues = $missingRepeatPreview.issues
             completeIssues = $completeRepeatPreview.issues
+        }
+    Add-Check `
+        "Same-row rules isolate rows, compute sibling outputs, and apply row-specific validation" `
+        (-not $incompleteSameRowPreview.valid `
+            -and $completeRepeatPreview.valid `
+            -and $completeRepeatPreview.values.observations[0].score_twice -eq 14 `
+            -and $completeRepeatPreview.values.observations[1].score_twice -eq 6 `
+            -and $completeRepeatPreview.values.observations[0].score_quadruple -eq 28 `
+            -and $completeRepeatPreview.values.observations[1].score_quadruple -eq 12 `
+            -and @($completeRepeatPreview.repeatRows).Count -eq 2 `
+            -and $completeRepeatPreview.repeatRows[0].requiredFields.note `
+            -and -not $completeRepeatPreview.repeatRows[1].visibleFields.note `
+            -and @($incompleteSameRowPreview.repeatRows[0].issues |
+                Where-Object {
+                    $_.fieldKey -eq "note" `
+                        -and $_.rowIndex -eq 0 `
+                        -and $_.message -match "Note is required"
+                }).Count -eq 1 `
+            -and @($incompleteSameRowPreview.repeatRows[1].issues).Count -eq 0) `
+        @{
+            incomplete = $incompleteSameRowPreview
+            complete = $completeRepeatPreview
         }
 
     $rowRuleSchema = $repeatSchema |

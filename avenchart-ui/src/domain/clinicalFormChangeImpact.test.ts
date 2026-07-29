@@ -232,4 +232,39 @@ describe("clinical form successor change impact", () => {
       }),
     );
   });
+
+  it("treats a same-row rule change as a high-impact contract change", () => {
+    const current = schema();
+    const repeat = field("items", "repeat");
+    repeat.repeatMinimum = 0;
+    repeat.repeatMaximum = 3;
+    repeat.children = [field("quantity", "integer")];
+    repeat.children[0]!.sectionKey = "";
+    current.fields = [repeat];
+    const candidate = structuredClone(current);
+    candidate.fields[0]!.rowRules = [
+      {
+        key: "warn_quantity",
+        condition: {
+          fieldKey: "quantity",
+          operator: "greater-than",
+          value: 5,
+        },
+        action: "warning",
+        targetFieldKey: "quantity",
+        message: "Review this quantity.",
+        calculation: null,
+      },
+    ];
+
+    expect(
+      describeClinicalFormChangeImpact(current, candidate).items,
+    ).toContainEqual(
+      expect.objectContaining({
+        key: "field:items:changed",
+        severity: "high",
+        description: expect.stringContaining("same-row visibility"),
+      }),
+    );
+  });
 });

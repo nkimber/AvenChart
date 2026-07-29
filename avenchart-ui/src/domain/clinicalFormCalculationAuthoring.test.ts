@@ -227,5 +227,19 @@ describe("clinical form calculation authoring", () => {
       ruleKey: null,
       message: "Form rules cannot contain cyclic field dependencies.",
     });
+
+    expect(
+      calculationAuthoringIssues(
+        [
+          calculationRule("first", "total", "amount"),
+          calculationRule("second", "total", "quantity"),
+        ],
+        fields,
+        ["sum", "add", "subtract", "multiply", "divide"],
+      ),
+    ).toContainEqual({
+      ruleKey: null,
+      message: "Each computed target may have only one calculation rule.",
+    });
   });
 });

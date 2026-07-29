@@ -52,6 +52,7 @@ export type ClinicalFormField = {
   repeatMaximum: number | null;
   children: ClinicalFormField[];
   readOnly: boolean;
+  rowRules?: ClinicalFormRule[] | null;
 };
 
 export type ClinicalFormCondition = {
@@ -219,6 +220,8 @@ export type ClinicalFormValidationIssue = {
   severity: "error" | "warning";
   message: string;
   ruleKey: string | null;
+  repeatFieldKey?: string | null;
+  rowIndex?: number | null;
 };
 
 export type ClinicalFormRuleEvaluation = {
@@ -229,6 +232,15 @@ export type ClinicalFormRuleEvaluation = {
   explanation: string;
 };
 
+export type ClinicalFormRepeatRowEvaluation = {
+  repeatFieldKey: string;
+  rowIndex: number;
+  visibleFields: Record<string, boolean>;
+  requiredFields: Record<string, boolean>;
+  issues: ClinicalFormValidationIssue[];
+  ruleEvaluations: ClinicalFormRuleEvaluation[];
+};
+
 export type ClinicalFormEvaluation = {
   values: Record<string, unknown>;
   visibleFields: Record<string, boolean>;
@@ -236,6 +248,7 @@ export type ClinicalFormEvaluation = {
   issues: ClinicalFormValidationIssue[];
   ruleEvaluations: ClinicalFormRuleEvaluation[];
   valid: boolean;
+  repeatRows?: ClinicalFormRepeatRowEvaluation[] | null;
 };
 
 export type ClinicalFormSignature = {
