@@ -29,6 +29,9 @@ const PatientMessages = lazy(() => import('./pages/clinician/PatientMessages.tsx
 const PatientReferrals = lazy(() => import('./pages/clinician/PatientReferrals.tsx'))
 const PatientAuthorizations = lazy(() => import('./pages/clinician/PatientAuthorizations.tsx'))
 const PatientSdoh = lazy(() => import('./pages/clinician/PatientSdoh.tsx'))
+const PatientClinicalForms = lazy(
+  () => import('./pages/clinician/PatientClinicalForms.tsx'),
+)
 const PatientPrintOutputs = lazy(() => import('./pages/clinician/PatientPrintOutputs.tsx'))
 const ClinicianCalendar = lazy(() => import('./pages/clinician/ClinicianCalendar.tsx'))
 const FlowBoard = lazy(() => import('./pages/clinician/FlowBoard.tsx'))
@@ -143,6 +146,7 @@ export default function App() {
             <Route path="referrals" element={<PatientReferrals />} />
             <Route path="authorizations" element={<PatientAuthorizations />} />
             <Route path="sdoh" element={<PatientSdoh />} />
+            <Route path="forms" element={<PatientClinicalForms />} />
             <Route path="print" element={<PatientPrintOutputs />} />
           </Route>
 

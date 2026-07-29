@@ -87,6 +87,7 @@ import AuthorizationPolicyRegistry from "./AuthorizationPolicyRegistry.tsx";
 import IdentityProviderReadiness from "./IdentityProviderReadiness.tsx";
 import CodingCatalogGovernance from "./CodingCatalogGovernance.tsx";
 import FormsLayoutGovernance from "./FormsLayoutGovernance.tsx";
+import ClinicalFormGovernance from "./ClinicalFormGovernance.tsx";
 import AlertRuleGovernance from "./AlertRuleGovernance.tsx";
 import ApiClientGovernance from "./ApiClientGovernance.tsx";
 import ModuleGovernance from "./ModuleGovernance.tsx";
@@ -2737,6 +2738,7 @@ export default function AdminDirectory() {
 
               {tab === "layouts" && (
                 <section className="cl-card">
+                  <ClinicalFormGovernance sessionId={session.sessionId} />
                   <FormsLayoutGovernance sessionId={session.sessionId} />
                   <div hidden aria-hidden="true">
                   <h2 className="cl-card-title">Forms and layouts</h2>

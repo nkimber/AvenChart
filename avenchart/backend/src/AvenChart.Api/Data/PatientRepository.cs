@@ -1033,6 +1033,26 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 delete from patient_deceased_status_events
                 where patient_id = @canonicalId;
 
+                update clinical_form_instances
+                set predecessor_instance_id = null,
+                    successor_instance_id = null
+                where patient_id = @canonicalId;
+
+                delete from clinical_form_signatures
+                where instance_id in (
+                    select instance_id from clinical_form_instances
+                    where patient_id = @canonicalId
+                );
+
+                delete from clinical_form_instance_events
+                where instance_id in (
+                    select instance_id from clinical_form_instances
+                    where patient_id = @canonicalId
+                );
+
+                delete from clinical_form_instances
+                where patient_id = @canonicalId;
+
                 delete from patients where canonical_id = @canonicalId;
                 """;
             cleanup.Parameters.AddWithValue("canonicalId", canonicalId);

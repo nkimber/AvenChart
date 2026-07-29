@@ -9540,6 +9540,466 @@ h4 {
   }
 }
 
+/* Governed clinical form engine (FORM-01/02/03 and CLIN-02) */
+.clinical-form-workspace,
+.clinical-form-governance {
+  display: grid;
+  gap: 1rem;
+}
+
+.clinical-form-boundary,
+.clinical-form-policy-boundary,
+.clinical-form-local-complete {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  border-left: 4px solid #247663;
+  background: #f2faf7;
+  color: #244c43;
+}
+
+.clinical-form-boundary p,
+.clinical-form-policy-boundary span {
+  margin: 0.35rem 0 0;
+  color: #4b655f;
+  line-height: 1.5;
+}
+
+.clinical-form-layout {
+  display: grid;
+  grid-template-columns: minmax(17rem, 0.68fr) minmax(0, 1.8fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.clinical-form-sidebar {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.clinical-form-history-title {
+  margin-top: 0.8rem;
+  padding-top: 1rem;
+  border-top: 1px solid #dbe7e3;
+}
+
+.clinical-form-instance-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.clinical-form-instance-link {
+  display: grid;
+  gap: 0.22rem;
+  width: 100%;
+  padding: 0.7rem;
+  border: 1px solid #d2e1dc;
+  border-radius: 0.65rem;
+  background: #fff;
+  color: #294740;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.clinical-form-instance-link:hover,
+.clinical-form-instance-link.is-selected {
+  border-color: #4a9b87;
+  background: #eef8f5;
+}
+
+.clinical-form-instance-link:focus-visible {
+  outline: 3px solid #0b7667;
+  outline-offset: 2px;
+}
+
+.clinical-form-instance-link span,
+.clinical-form-instance-link small {
+  color: #5e746e;
+  font-size: 0.78rem;
+}
+
+.clinical-form-detail {
+  min-width: 0;
+  border-top: 4px solid #247663;
+}
+
+.clinical-form-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 1rem 0;
+}
+
+.clinical-form-facts > div {
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid #dbe7e3;
+  border-radius: 0.6rem;
+  background: #fafcfb;
+}
+
+.clinical-form-facts dt {
+  color: #58706a;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.clinical-form-facts dd {
+  margin: 0.3rem 0 0;
+  overflow-wrap: anywhere;
+  color: #294740;
+}
+
+.clinical-form-validation {
+  margin: 0.9rem 0;
+  padding: 0.85rem;
+  border: 1px solid #d8c378;
+  border-radius: 0.7rem;
+  background: #fff9e8;
+}
+
+.clinical-form-validation h3,
+.clinical-form-validation h4 {
+  margin: 0 0 0.55rem;
+}
+
+.clinical-form-validation ul {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.clinical-form-validation li.is-error {
+  color: #813821;
+}
+
+.clinical-form-validation li.is-warning {
+  color: #6d5314;
+}
+
+.clinical-form-renderer,
+.clinical-form-section {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.clinical-form-section {
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid #d6e4df;
+  border-radius: 0.75rem;
+}
+
+.clinical-form-section > legend,
+.clinical-form-repeat > legend {
+  padding: 0 0.35rem;
+  color: #264c43;
+  font-weight: 800;
+}
+
+.clinical-form-section > p,
+.clinical-form-repeat > p {
+  margin: 0;
+  color: #5e746e;
+}
+
+.clinical-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.clinical-form-grid small {
+  color: #5f736e;
+  line-height: 1.4;
+}
+
+.clinical-form-boolean,
+.clinical-form-repeat {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1rem;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid #d6e4df;
+  border-radius: 0.65rem;
+}
+
+.clinical-form-boolean small,
+.clinical-form-repeat > p,
+.clinical-form-repeat-row {
+  width: 100%;
+}
+
+.clinical-form-boolean label {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.clinical-form-measurement {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.clinical-form-repeat-row {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.8rem;
+  border: 1px solid #dce8e4;
+  border-radius: 0.65rem;
+  background: #fafcfb;
+}
+
+.clinical-form-action-reason {
+  padding: 0.85rem;
+  border: 1px solid #d6e4df;
+  border-radius: 0.7rem;
+  background: #f8fbfa;
+}
+
+.clinical-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.clinical-form-lineage,
+.clinical-form-evidence {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #dbe7e3;
+}
+
+.clinical-form-lineage h3,
+.clinical-form-evidence h3,
+.clinical-form-definition-detail h4 {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  margin: 0;
+  color: #294b43;
+  font-size: 0.92rem;
+}
+
+.clinical-form-evidence article {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.75rem;
+  border: 1px solid #dbe7e3;
+  border-radius: 0.65rem;
+  background: #fafcfb;
+}
+
+.clinical-form-evidence article span {
+  color: #5d736d;
+  font-size: 0.78rem;
+}
+
+.clinical-form-evidence article p {
+  margin: 0;
+  color: #415f58;
+}
+
+.clinical-form-evidence code,
+.clinical-form-facts code,
+.clinical-form-definition-detail code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: #536c66;
+  font-size: 0.72rem;
+}
+
+.clinical-form-governance-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(17rem, 0.7fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+  border-top: 4px solid #247663;
+}
+
+.clinical-form-governance-hero p {
+  max-width: 74ch;
+  margin: 0.55rem 0 0;
+  color: #4e6861;
+  line-height: 1.55;
+}
+
+.clinical-form-policy-boundary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-content: center;
+  padding: 0.85rem;
+  border: 1px solid #d7c36f;
+  border-left-width: 4px;
+  border-radius: 0.7rem;
+  background: #fff9e8;
+}
+
+.clinical-form-policy-boundary span {
+  grid-column: 1 / -1;
+}
+
+.clinical-form-governance-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(20rem, 0.85fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.clinical-form-governance-layout > aside {
+  display: grid;
+  gap: 1rem;
+}
+
+.clinical-form-author-grid,
+.clinical-form-section-editor,
+.clinical-form-field-editor-grid,
+.clinical-form-rule-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.clinical-form-author-wide {
+  grid-column: 1 / -1;
+}
+
+.clinical-form-author-heading,
+.clinical-form-field-editor-title {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  justify-content: space-between;
+  margin: 1rem 0 0.7rem;
+}
+
+.clinical-form-author-heading h4 {
+  margin: 0;
+}
+
+.clinical-form-section-editor,
+.clinical-form-rule-editor {
+  margin-bottom: 0.65rem;
+  padding: 0.75rem;
+  border: 1px solid #dbe7e3;
+  border-radius: 0.65rem;
+  background: #fafcfb;
+}
+
+.clinical-form-field-editors {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.clinical-form-field-editor {
+  padding: 0.8rem;
+  border: 1px solid #cedfd9;
+  border-radius: 0.7rem;
+}
+
+.clinical-form-field-editor-title {
+  margin: 0 0 0.7rem;
+}
+
+.clinical-form-governance-filters {
+  grid-template-columns: 1fr;
+}
+
+.clinical-form-definition-detail {
+  border-top: 4px solid #247663;
+}
+
+.clinical-form-local-complete {
+  margin-top: 0.9rem;
+  padding: 0.8rem;
+  border-radius: 0.65rem;
+}
+
+@media (max-width: 1100px) {
+  .clinical-form-governance-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .clinical-form-layout,
+  .clinical-form-governance-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .clinical-form-sidebar {
+    position: static;
+  }
+
+  .clinical-form-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .clinical-form-grid,
+  .clinical-form-facts,
+  .clinical-form-author-grid,
+  .clinical-form-section-editor,
+  .clinical-form-field-editor-grid,
+  .clinical-form-rule-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .clinical-form-author-wide {
+    grid-column: auto;
+  }
+
+  .clinical-form-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .clinical-form-actions button {
+    width: 100%;
+  }
+}
+
+@media (forced-colors: active) {
+  .clinical-form-boundary,
+  .clinical-form-policy-boundary,
+  .clinical-form-local-complete,
+  .clinical-form-instance-link,
+  .clinical-form-detail,
+  .clinical-form-facts > div,
+  .clinical-form-validation,
+  .clinical-form-section,
+  .clinical-form-boolean,
+  .clinical-form-repeat,
+  .clinical-form-repeat-row,
+  .clinical-form-action-reason,
+  .clinical-form-evidence article,
+  .clinical-form-governance-hero,
+  .clinical-form-section-editor,
+  .clinical-form-rule-editor,
+  .clinical-form-field-editor {
+    border: 1px solid CanvasText;
+  }
+
+  .clinical-form-instance-link:focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
+
 /* Governed report definitions (REP-01) */
 .report-governance-hero {
   display: grid;
