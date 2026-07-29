@@ -207,7 +207,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         await using (var insert = connection.CreateCommand())
         {
             insert.Transaction = transaction;
-            insert.CommandText = "insert into configuration_package_import_requests(request_id,package_sha256,package_document,baseline_document,reason,status,version,created_at,created_by,updated_at,updated_by) values(@id,@digest,@package,@baseline,@reason,'draft',0,now(),@user,now(),@user);";
+            insert.CommandText = "insert into configuration_package_import_requests(request_id,package_sha256,package_document,baseline_document,kind,source_request_id,reason,status,version,created_at,created_by,updated_at,updated_by) values(@id,@digest,@package,@baseline,'import',null,@reason,'draft',0,now(),@user,now(),@user);";
             insert.Parameters.AddWithValue("id", requestId);
             insert.Parameters.AddWithValue("digest", digest);
             insert.Parameters.Add("package", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(package, PortalProfileChangeJsonOptions);
@@ -235,6 +235,42 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
 
     public Task<ConfigurationPackageImportRequestDetailResponse> ActivateConfigurationPackageImportRequestAsync(Guid requestId, string? note, int? version, string username, CancellationToken cancellationToken) =>
         TransitionConfigurationPackageImportRequestAsync(requestId, ["approved"], "activated", note, false, version, username, cancellationToken);
+
+    public async Task<ConfigurationPackageImportRequestDetailResponse> CreateConfigurationPackageCompensatingRollbackAsync(
+        Guid sourceRequestId,
+        string reason,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        var normalizedReason = ValidateChangeRequestReason(reason, required: true)!;
+        var requestId = Guid.NewGuid();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var source = await ReadConfigurationPackageImportRequestAsync(connection, sourceRequestId, cancellationToken, transaction, true)
+            ?? throw new ArgumentException("The source configuration-package import request was not found.");
+        if (source.Item.Status != "activated") throw new ConfigurationPackageImportRequestConflictException("Only an activated import request can create a compensating rollback.");
+        if (source.Item.Kind != "import") throw new ConfigurationPackageImportRequestConflictException("A compensating rollback can only target an original import request.");
+        var current = await GetCurrentConfigurationPackageAsync(connection, transaction, cancellationToken);
+        if (!ConfigurationPackagesMatch(current, source.Package)) throw new ConfigurationPackageImportRequestConflictException("The active settings no longer match the completed import. Use a new reviewed package instead of a compensating rollback.");
+        await EnsureNoOpenConfigurationPackageImportRequestAsync(connection, transaction, cancellationToken);
+        var rollbackPackage = source.Baseline;
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = transaction;
+            insert.CommandText = "insert into configuration_package_import_requests(request_id,package_sha256,package_document,baseline_document,kind,source_request_id,reason,status,version,created_at,created_by,updated_at,updated_by) values(@id,@digest,@package,@baseline,'rollback',@source,@reason,'draft',0,now(),@user,now(),@user);";
+            insert.Parameters.AddWithValue("id", requestId);
+            insert.Parameters.AddWithValue("digest", GetConfigurationPackageDigest(rollbackPackage));
+            insert.Parameters.Add("package", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(rollbackPackage, PortalProfileChangeJsonOptions);
+            insert.Parameters.Add("baseline", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(current, PortalProfileChangeJsonOptions);
+            insert.Parameters.AddWithValue("source", sourceRequestId);
+            insert.Parameters.AddWithValue("reason", normalizedReason);
+            insert.Parameters.AddWithValue("user", username);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await WriteConfigurationPackageImportEventAsync(connection, transaction, requestId, "created", normalizedReason, username, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetConfigurationPackageImportRequestAsync(requestId, cancellationToken);
+    }
 
     public async Task<IReadOnlyList<PracticeSettingDelegationItem>> GetPracticeSettingDelegationsAsync(CancellationToken cancellationToken)
     {
@@ -1954,7 +1990,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         if (nextStatus == "activated")
         {
             var current = await GetCurrentConfigurationPackageAsync(connection, transaction, cancellationToken);
-            if (!string.Equals(JsonSerializer.Serialize(current, PortalProfileChangeJsonOptions), JsonSerializer.Serialize(request.Baseline, PortalProfileChangeJsonOptions), StringComparison.Ordinal))
+            if (!ConfigurationPackagesMatch(current, request.Baseline))
             {
                 throw new ConfigurationPackageImportRequestConflictException("The active settings changed after this import request was created. Create a new package request.");
             }
@@ -1963,7 +1999,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 var prior = request.Baseline.PracticeSettings.Single(item => item.Key == setting.Key).Value;
                 if (!string.Equals(prior, setting.Value, StringComparison.Ordinal))
                 {
-                    await WritePracticeSettingRevisionAsync(connection, transaction, setting.Key, prior, setting.Value, username, "package-imported", null, cancellationToken);
+                    await WritePracticeSettingRevisionAsync(connection, transaction, setting.Key, prior, setting.Value, username, request.Item.Kind == "rollback" ? "package-rolled-back" : "package-imported", null, cancellationToken);
                 }
             }
         }
@@ -1996,6 +2032,17 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         return new("legacy-ehr-modernized-configuration-package", "1", settings);
     }
 
+    private static bool ConfigurationPackagesMatch(ConfigurationPackageDocument left, ConfigurationPackageDocument right) =>
+        string.Equals(JsonSerializer.Serialize(left, PortalProfileChangeJsonOptions), JsonSerializer.Serialize(right, PortalProfileChangeJsonOptions), StringComparison.Ordinal);
+
+    private static async Task EnsureNoOpenConfigurationPackageImportRequestAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select exists(select 1 from configuration_package_import_requests where status in ('draft','submitted','approved'));";
+        if ((bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false)) throw new ConfigurationPackageImportRequestConflictException("An open configuration-package import request already exists.");
+    }
+
     private sealed record ConfigurationPackageImportRequestData(
         ConfigurationPackageImportRequestItem Item,
         ConfigurationPackageDocument Package,
@@ -2010,13 +2057,13 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = $"select request_id,package_sha256,package_document,baseline_document,reason,status,version,created_at,created_by,updated_at,updated_by from configuration_package_import_requests where request_id=@id{(forUpdate ? " for update" : string.Empty)};";
+        command.CommandText = $"select request_id,package_sha256,package_document,baseline_document,kind,source_request_id,reason,status,version,created_at,created_by,updated_at,updated_by from configuration_package_import_requests where request_id=@id{(forUpdate ? " for update" : string.Empty)};";
         command.Parameters.AddWithValue("id", requestId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
         var package = JsonSerializer.Deserialize<ConfigurationPackageDocument>(reader.GetString(2), PortalProfileChangeJsonOptions) ?? throw new InvalidOperationException("The stored package document is invalid.");
         var baseline = JsonSerializer.Deserialize<ConfigurationPackageDocument>(reader.GetString(3), PortalProfileChangeJsonOptions) ?? throw new InvalidOperationException("The stored package baseline is invalid.");
-        return new(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(4), reader.GetString(5), reader.GetInt32(6), reader.GetFieldValue<DateTimeOffset>(7).ToString("O"), reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9).ToString("O"), reader.GetString(10)), package, baseline);
+        return new(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetGuid(5), reader.GetString(6), reader.GetString(7), reader.GetInt32(8), reader.GetFieldValue<DateTimeOffset>(9).ToString("O"), reader.GetString(10), reader.GetFieldValue<DateTimeOffset>(11).ToString("O"), reader.GetString(12)), package, baseline);
     }
 
     private static async Task WriteConfigurationPackageImportEventAsync(

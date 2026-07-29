@@ -2017,8 +2017,15 @@ appointments.MapPut("/{appointmentId}/status", async (
         AppointmentStatusUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var appointment = await repository.UpdateStatusAsync(appointmentId, request, cancellationToken);
-        return appointment is null ? Results.NotFound() : Results.Ok(appointment);
+        try
+        {
+            var appointment = await repository.UpdateStatusAsync(appointmentId, request, cancellationToken);
+            return appointment is null ? Results.NotFound() : Results.Ok(appointment);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
     .WithName("UpdateAppointmentStatus")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
@@ -5066,6 +5073,75 @@ foreach (var action in new[] { "submit", "approve", "reject", "activate", "cance
     { try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var result = action switch { "submit" => await repository.SubmitAsync(requestId, request, session.Username, cancellationToken), "approve" => await repository.ApproveAsync(requestId, request, session.Username, cancellationToken), "reject" => await repository.RejectAsync(requestId, request, session.Username, cancellationToken), "activate" => await repository.ActivateAsync(requestId, request, session.Username, cancellationToken), _ => await repository.CancelAsync(requestId, request, session.Username, cancellationToken) }; return Results.Ok(result); } catch (InventoryCostPolicyChangeRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); } catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); } })
         .WithName($"TransitionInventoryCostPolicyChangeRequest{action}")
         .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
+
+inventory.MapGet("/accounting-integration-decision", async (InventoryAccountingIntegrationRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetCatalogAsync(cancellationToken)))
+    .WithName("GetInventoryAccountingIntegrationDecision")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "view"));
+
+inventory.MapPost("/accounting-integration-change-requests", async (InventoryAccountingIntegrationChangeRequestCreateRequest request, InventoryAccountingIntegrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var created = await repository.CreateAsync(request, session.Username, cancellationToken); return Results.Created($"/api/inventory/accounting-integration-change-requests/{created.Request.RequestId}", created); }
+    catch (InventoryAccountingIntegrationConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
+    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryAccountingIntegration"] = [exception.Message] }); }
+})
+    .WithName("CreateInventoryAccountingIntegrationChangeRequest")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
+
+inventory.MapGet("/accounting-integration-change-requests/{requestId:guid}", async (Guid requestId, InventoryAccountingIntegrationRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetDetailAsync(requestId, cancellationToken)); }
+    catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); }
+})
+    .WithName("GetInventoryAccountingIntegrationChangeRequest")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "view"));
+
+foreach (var action in new[] { "submit", "approve", "reject", "activate", "cancel" })
+    inventory.MapPost($"/accounting-integration-change-requests/{{requestId:guid}}/{action}", async (Guid requestId, InventoryAccountingIntegrationChangeRequestDecisionRequest request, InventoryAccountingIntegrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+    {
+        try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var result = action switch { "submit" => await repository.SubmitAsync(requestId, request, session.Username, cancellationToken), "approve" => await repository.ApproveAsync(requestId, request, session.Username, cancellationToken), "reject" => await repository.RejectAsync(requestId, request, session.Username, cancellationToken), "activate" => await repository.ActivateAsync(requestId, request, session.Username, cancellationToken), _ => await repository.CancelAsync(requestId, request, session.Username, cancellationToken) }; return Results.Ok(result); }
+        catch (InventoryAccountingIntegrationConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
+        catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); }
+    })
+        .WithName($"TransitionInventoryAccountingIntegrationChangeRequest{action}")
+        .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
+
+inventory.MapGet("/replenishment-policies", async (InventoryReplenishmentPolicyRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetCatalogAsync(cancellationToken)))
+    .WithName("GetInventoryReplenishmentPolicies")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "view"));
+
+inventory.MapGet("/replenishment-recommendations", async (InventoryReplenishmentPolicyRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetRecommendationsAsync(cancellationToken)))
+    .WithName("GetInventoryReplenishmentRecommendations")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "view"));
+
+inventory.MapPost("/replenishment-policy-change-requests", async (InventoryReplenishmentPolicyChangeRequestCreateRequest request, InventoryReplenishmentPolicyRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var created = await repository.CreateAsync(request, session.Username, cancellationToken); return Results.Created($"/api/inventory/replenishment-policy-change-requests/{created.Request.RequestId}", created); }
+    catch (InventoryReplenishmentPolicyConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
+    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryReplenishmentPolicy"] = [exception.Message] }); }
+})
+    .WithName("CreateInventoryReplenishmentPolicyChangeRequest")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
+
+inventory.MapGet("/replenishment-policy-change-requests/{requestId:guid}", async (Guid requestId, InventoryReplenishmentPolicyRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetDetailAsync(requestId, cancellationToken)); }
+    catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); }
+})
+    .WithName("GetInventoryReplenishmentPolicyChangeRequest")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "view"));
+
+foreach (var action in new[] { "submit", "approve", "reject", "activate", "cancel" })
+    inventory.MapPost($"/replenishment-policy-change-requests/{{requestId:guid}}/{action}", async (Guid requestId, InventoryReplenishmentPolicyChangeRequestDecisionRequest request, InventoryReplenishmentPolicyRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+    {
+        try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var result = action switch { "submit" => await repository.SubmitAsync(requestId, request, session.Username, cancellationToken), "approve" => await repository.ApproveAsync(requestId, request, session.Username, cancellationToken), "reject" => await repository.RejectAsync(requestId, request, session.Username, cancellationToken), "activate" => await repository.ActivateAsync(requestId, request, session.Username, cancellationToken), _ => await repository.CancelAsync(requestId, request, session.Username, cancellationToken) }; return Results.Ok(result); }
+        catch (InventoryReplenishmentPolicyConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
+        catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); }
+    })
+        .WithName($"TransitionInventoryReplenishmentPolicyChangeRequest{action}")
+        .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
 
 inventory.MapGet("/medication-catalog", async (InventoryRepository repository, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetMedicationCatalogAsync(cancellationToken)))

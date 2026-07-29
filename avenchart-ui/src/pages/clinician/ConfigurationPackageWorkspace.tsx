@@ -89,6 +89,7 @@ export default function ConfigurationPackageWorkspace({
     }
   }
 
+
   return (
     <section className="cl-card" aria-label="Configuration package workspace">
       <h2 className="cl-card-title">Configuration package</h2>

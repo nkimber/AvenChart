@@ -251,6 +251,8 @@ public sealed record ConfigurationPackageImportRequestDecisionRequest(
 public sealed record ConfigurationPackageImportRequestItem(
     Guid RequestId,
     string Sha256,
+    string Kind,
+    Guid? SourceRequestId,
     string Reason,
     string Status,
     int Version,
