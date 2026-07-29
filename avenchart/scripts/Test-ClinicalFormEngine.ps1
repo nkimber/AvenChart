@@ -721,6 +721,15 @@ try {
         ($null -ne $rosSkinDefinition -and $rosSkinDefinition.contextScope -eq "encounter" -and $rosSkinDefinition.signaturePolicy -eq "author-only" -and $rosSkinDetail.currentRevision.status -eq "effective" -and (($rosSkinFields.key -join "|") -eq "rashes|infections|ulcerations|pemphigus|herpes") -and @($rosSkinFields | Where-Object { $_.type -ne "boolean" }).Count -eq 0 -and ($rosSkinFields | Where-Object { $_.key -eq "herpes" }).helpText -match "legacy page posts" -and $rosSkinPreview.valid) `
         @{ definitionId=$rosSkinDefinition.definitionId; schemaHash=$rosSkinDetail.currentRevision.schemaHash; fields=$rosSkinFields.key; previewValid=$rosSkinPreview.valid }
 
+    $rosHeentDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.reviewofsystemsheent" }) | Select-Object -First 1
+    $rosHeentDetail = if ($null -ne $rosHeentDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($rosHeentDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $rosHeentFields = @($rosHeentDetail.currentRevision.definition.fields)
+    $rosHeentPreview = if ($null -ne $rosHeentDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$rosHeentDetail.currentRevision.definition; values=@{ cataracts=$true; cataract_surgery=$false; glaucoma=$true; double_vision=$false; blurred_vision=$true; poor_hearing=$false; headaches=$true; ringing_in_ears=$false; bloody_nose=$true; sinusitis=$false; sinus_surgery=$true; dry_mouth=$false; strep_throat=$true; tonsillectomy=$false; swollen_lymph_nodes=$true; throat_cancer=$false; throat_cancer_surgery=$true } } } else { $null }
+    Add-Check `
+        "Legacy Review of Systems HEENT adoption maps the complete checklist without PHP execution" `
+        ($null -ne $rosHeentDefinition -and $rosHeentDefinition.contextScope -eq "encounter" -and $rosHeentDefinition.signaturePolicy -eq "author-only" -and $rosHeentDetail.currentRevision.status -eq "effective" -and $rosHeentFields.Count -eq 17 -and (($rosHeentFields.key -join "|") -eq "cataracts|cataract_surgery|glaucoma|double_vision|blurred_vision|poor_hearing|headaches|ringing_in_ears|bloody_nose|sinusitis|sinus_surgery|dry_mouth|strep_throat|tonsillectomy|swollen_lymph_nodes|throat_cancer|throat_cancer_surgery") -and @($rosHeentFields | Where-Object { $_.type -ne "boolean" }).Count -eq 0 -and $rosHeentPreview.valid) `
+        @{ definitionId=$rosHeentDefinition.definitionId; schemaHash=$rosHeentDetail.currentRevision.schemaHash; fields=$rosHeentFields.key; previewValid=$rosHeentPreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
