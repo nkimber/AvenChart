@@ -7834,6 +7834,9 @@ export type ApiClientChangeRequestsResponse = {
 export async function getApiClientChangeRequests(sessionId: string, status: GovernanceStatus | 'all' | 'open' = 'open'): Promise<ApiClientChangeRequestsResponse> {
   return clinicianGet(sessionId, `/api/administration/api-client-change-requests?status=${encodeURIComponent(status)}`)
 }
+export async function getApiClientChangeRequest(sessionId: string, requestId: string): Promise<ApiClientChangeRequestDetail> {
+  return clinicianGet(sessionId, `/api/administration/api-client-change-requests/${encodeURIComponent(requestId)}`)
+}
 export async function createApiClientChangeRequest(sessionId: string, input: ApiClientRegistryItem & { reason: string }): Promise<ApiClientChangeRequestDetail> {
   return clinicianPost(sessionId, '/api/administration/api-client-change-requests', input)
 }
