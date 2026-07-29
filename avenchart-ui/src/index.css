@@ -9971,6 +9971,23 @@ h4 {
   color: #526760;
 }
 
+.clinical-form-calculation-starter {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) minmax(18rem, 1.25fr);
+  gap: 0.75rem;
+  align-items: end;
+  padding: 0.7rem;
+  border: 1px solid #c9ded8;
+  border-radius: 0.55rem;
+  background: #f9fcfb;
+}
+
+.clinical-form-calculation-starter p {
+  margin: 0 0 0.15rem;
+  color: #3f5f57;
+  font-size: 0.84rem;
+}
+
 .clinical-form-calculation-grid,
 .clinical-form-calculation-operand {
   display: grid;
@@ -10197,6 +10214,7 @@ h4 {
   .clinical-form-section-editor,
   .clinical-form-field-editor-grid,
   .clinical-form-rule-editor,
+  .clinical-form-calculation-starter,
   .clinical-form-calculation-grid,
   .clinical-form-calculation-operand {
     grid-template-columns: 1fr;
@@ -10249,6 +10267,7 @@ h4 {
   .clinical-form-rule-editor,
   .clinical-form-field-editor,
   .clinical-form-calculation-editor,
+  .clinical-form-calculation-starter,
   .clinical-form-change-impact,
   .clinical-form-impact-list li,
   .clinical-form-repeat-designer,

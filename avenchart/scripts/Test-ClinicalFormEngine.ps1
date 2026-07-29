@@ -330,7 +330,7 @@ try {
     )
     $actualFieldTypes = @($policy.supportedFieldTypes | Sort-Object)
     $policyPassed = `
-        $policy.revision -eq "local-clinical-form-v4" `
+        $policy.revision -eq "local-clinical-form-v5" `
         -and $policy.rendererVersion -eq "local-clinical-form-renderer-v1" `
         -and $policy.signaturePolicyRevision -eq "local-clinical-signature-v1" `
         -and (($actualFieldTypes -join "|") -eq ($expectedFieldTypes -join "|")) `
@@ -344,6 +344,21 @@ try {
         -and -not $policy.previewPersistsClinicalData `
         -and -not $policy.productionSignatureStandardApproved
     Add-Check "Constrained form runtime policy" $policyPassed $policy
+
+    $calculationTemplates = @($policy.supportedCalculationTemplates)
+    Add-Check `
+        "Policy publishes reusable bounded calculation starters" `
+        ($calculationTemplates.Count -eq 4 `
+            -and (($calculationTemplates.key -join "|") `
+                -eq "bounded-sum|difference|product|ratio") `
+            -and @($calculationTemplates | Where-Object {
+                $_.operator -notin $policy.supportedCalculationOperators `
+                    -or $_.operandCount -lt 1 `
+                    -or $_.operandCount -gt 20 `
+                    -or $_.defaultPrecision -lt 0 `
+                    -or $_.defaultPrecision -gt 8
+            }).Count -eq 0) `
+        $calculationTemplates
 
     $optionListCatalog = Invoke-Json `
         -Uri "$ApiBaseUrl/api/form-engine/option-lists" `

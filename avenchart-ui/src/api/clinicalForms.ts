@@ -95,6 +95,7 @@ export type ClinicalFormPolicy = {
   supportedFieldTypes: string[];
   supportedRuleActions: string[];
   supportedCalculationOperators: string[];
+  supportedCalculationTemplates: ClinicalFormCalculationTemplate[];
   supportedConditionOperators: string[];
   definitionStates: string[];
   instanceStates: string[];
@@ -105,6 +106,15 @@ export type ClinicalFormPolicy = {
   externalFetchAllowed: boolean;
   previewPersistsClinicalData: boolean;
   productionSignatureStandardApproved: boolean;
+};
+
+export type ClinicalFormCalculationTemplate = {
+  key: string;
+  title: string;
+  description: string;
+  operator: string;
+  operandCount: number;
+  defaultPrecision: number;
 };
 
 export type ClinicalFormDefinitionSummary = {

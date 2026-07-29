@@ -4,6 +4,7 @@ import type {
   ClinicalFormRule,
 } from "../api/clinicalForms.ts";
 import {
+  applyCalculationTemplate,
   appendCalculationOperand,
   calculationAuthoringIssues,
   calculationOperandFieldKeys,
@@ -112,6 +113,52 @@ describe("clinical form calculation authoring", () => {
       { fieldKey: "amount", constant: null },
       { fieldKey: "quantity", constant: null },
     ]);
+  });
+
+  it("applies policy-provided reusable starters with safe operands", () => {
+    expect(
+      applyCalculationTemplate(
+        {
+          key: "bounded-sum",
+          title: "Bounded total",
+          description: "Two-field total.",
+          operator: "sum",
+          operandCount: 2,
+          defaultPrecision: 1,
+        },
+        fields,
+        "total",
+      ),
+    ).toEqual({
+      operator: "sum",
+      operands: [
+        { fieldKey: "amount", constant: null },
+        { fieldKey: "quantity", constant: null },
+      ],
+      precision: 1,
+    });
+
+    expect(
+      applyCalculationTemplate(
+        {
+          key: "ratio",
+          title: "Ratio",
+          description: "Divide two values.",
+          operator: "divide",
+          operandCount: 2,
+          defaultPrecision: 3,
+        },
+        fields,
+        "total",
+      ),
+    ).toEqual({
+      operator: "divide",
+      operands: [
+        { fieldKey: "amount", constant: null },
+        { fieldKey: "quantity", constant: null },
+      ],
+      precision: 3,
+    });
   });
 
   it("replaces an operand when its field becomes the calculation target", () => {

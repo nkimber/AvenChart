@@ -10,6 +10,7 @@ public sealed record ClinicalFormPolicyResponse(
     IReadOnlyList<string> SupportedFieldTypes,
     IReadOnlyList<string> SupportedRuleActions,
     IReadOnlyList<string> SupportedCalculationOperators,
+    IReadOnlyList<ClinicalFormCalculationTemplateDefinition> SupportedCalculationTemplates,
     IReadOnlyList<string> SupportedConditionOperators,
     IReadOnlyList<string> DefinitionStates,
     IReadOnlyList<string> InstanceStates,
@@ -20,6 +21,14 @@ public sealed record ClinicalFormPolicyResponse(
     bool ExternalFetchAllowed,
     bool PreviewPersistsClinicalData,
     bool ProductionSignatureStandardApproved);
+
+public sealed record ClinicalFormCalculationTemplateDefinition(
+    string Key,
+    string Title,
+    string Description,
+    string Operator,
+    int OperandCount,
+    int DefaultPrecision);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ClinicalFormSectionDefinition(

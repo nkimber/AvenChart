@@ -27,6 +27,7 @@ import {
 } from "../../api/clinicalForms.ts";
 import { showToast } from "../../components/Toast.tsx";
 import {
+  applyCalculationTemplate,
   appendCalculationOperand,
   calculationAuthoringIssues,
   calculationOperandFieldKeys,
@@ -611,6 +612,9 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
             <span>
               {policy.supportedCalculationOperators.length} calculation
               operators
+            </span>
+            <span>
+              {policy.supportedCalculationTemplates.length} reusable starters
             </span>
           </div>
           <p>
@@ -1755,6 +1759,46 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                   className="clinical-form-calculation-editor clinical-form-author-wide"
                   aria-label={`Calculation for ${rule.key || `rule ${index + 1}`}`}
                 >
+                  <div className="clinical-form-calculation-starter">
+                    <label className="cl-admin-field">
+                      <span>Reusable calculation starter</span>
+                      <select
+                        className="ne-input"
+                        value=""
+                        onChange={(event) => {
+                          const template =
+                            policy?.supportedCalculationTemplates.find(
+                              (candidate) =>
+                                candidate.key === event.target.value,
+                            );
+                          if (!template) return;
+                          updateCalculation(
+                            index,
+                            (_, currentRule, fields) =>
+                              applyCalculationTemplate(
+                                template,
+                                fields,
+                                currentRule.targetFieldKey,
+                              ),
+                          );
+                        }}
+                      >
+                        <option value="">Choose a policy starter</option>
+                        {policy?.supportedCalculationTemplates.map(
+                          (template) => (
+                            <option key={template.key} value={template.key}>
+                              {template.title} — {template.description}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+                    <p>
+                      Starters only prefill the existing bounded operator,
+                      operands, and precision. Review every field and constant
+                      before preview or save.
+                    </p>
+                  </div>
                   <div className="clinical-form-calculation-grid">
                     <label className="cl-admin-field">
                       <span>Calculation operator</span>

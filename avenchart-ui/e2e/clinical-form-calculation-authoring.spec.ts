@@ -59,6 +59,7 @@ test.describe("FORM-02 calculation authoring", () => {
         .getByText("Safe runtime and production blockers")
         .click();
       await expect(governance.getByText("5 calculation operators")).toBeVisible();
+      await expect(governance.getByText("4 reusable starters")).toBeVisible();
       await governance.getByLabel("Search", { exact: true }).fill(stableKey);
       await governance
         .getByRole("button", { name: "Apply", exact: true })
@@ -212,10 +213,17 @@ test.describe("FORM-02 calculation authoring", () => {
       ).toHaveValue("quantity");
       await rule
         .getByRole("combobox", {
-          name: "Calculation operator",
+          name: "Reusable calculation starter",
           exact: true,
         })
-        .selectOption("divide");
+        .selectOption("ratio");
+      await expect(
+        rule.getByRole("combobox", {
+          name: "Calculation operator",
+          exact: true,
+        }),
+      ).toHaveValue("divide");
+      await expect(rule.getByLabel("Result precision")).toHaveValue("2");
       await expect(
         rule.getByRole("combobox", { name: /Operand \d source/ }),
       ).toHaveCount(2);

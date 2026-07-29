@@ -10,7 +10,7 @@ namespace AvenChart.Api.Data;
 public static partial class ClinicalFormRuntime
 {
     public const string RendererVersion = "local-clinical-form-renderer-v1";
-    public const string PolicyRevision = "local-clinical-form-v4";
+    public const string PolicyRevision = "local-clinical-form-v5";
     public const string SignaturePolicyRevision = "local-clinical-signature-v1";
 
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -53,6 +53,39 @@ public static partial class ClinicalFormRuntime
     public static readonly IReadOnlyList<string> SupportedCalculationOperators =
         ["sum", "add", "subtract", "multiply", "divide"];
 
+    public static readonly IReadOnlyList<ClinicalFormCalculationTemplateDefinition>
+        SupportedCalculationTemplates =
+        [
+            new(
+                "bounded-sum",
+                "Bounded total",
+                "Starts a total with two numeric operands; add up to twenty.",
+                "sum",
+                2,
+                2),
+            new(
+                "difference",
+                "Difference",
+                "Subtracts the second numeric operand from the first.",
+                "subtract",
+                2,
+                2),
+            new(
+                "product",
+                "Product",
+                "Multiplies two numeric operands.",
+                "multiply",
+                2,
+                2),
+            new(
+                "ratio",
+                "Ratio",
+                "Divides the first numeric operand by the second.",
+                "divide",
+                2,
+                2)
+        ];
+
     private static readonly string[] UnsafeTextFragments =
     [
         "<script",
@@ -85,6 +118,7 @@ public static partial class ClinicalFormRuntime
         SupportedFieldTypes,
         SupportedRuleActions,
         SupportedCalculationOperators,
+        SupportedCalculationTemplates,
         SupportedConditionOperators,
         [
             "draft",

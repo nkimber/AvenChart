@@ -1,5 +1,6 @@
 import type {
   ClinicalFormCalculation,
+  ClinicalFormCalculationTemplate,
   ClinicalFormField,
   ClinicalFormRule,
 } from "../api/clinicalForms.ts";
@@ -144,6 +145,33 @@ export function appendCalculationOperand(
         ? { fieldKey, constant: null }
         : { fieldKey: null, constant: 0 },
     ],
+  };
+}
+
+export function applyCalculationTemplate(
+  template: ClinicalFormCalculationTemplate,
+  fields: ClinicalFormField[],
+  targetFieldKey: string,
+): ClinicalFormCalculation {
+  let calculation = createDefaultCalculation(
+    fields,
+    targetFieldKey,
+    template.operator,
+  );
+  while (
+    calculation.operator === "sum" &&
+    calculation.operands.length < template.operandCount
+  ) {
+    calculation = appendCalculationOperand(
+      calculation,
+      fields,
+      targetFieldKey,
+    );
+  }
+
+  return {
+    ...calculation,
+    precision: template.defaultPrecision,
   };
 }
 
