@@ -939,12 +939,13 @@ public static partial class ClinicalFormRuntime
         var text = value.GetString();
         if (dateTime)
         {
-            return DateTimeOffset.TryParseExact(
-                text,
-                "O",
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind,
-                out _)
+            return text is not null
+                && text.Contains('T', StringComparison.Ordinal)
+                && DateTimeOffset.TryParse(
+                    text,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out _)
                 ? null
                 : "must be an ISO date-time";
         }

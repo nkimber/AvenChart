@@ -454,6 +454,68 @@ try {
             maxLengths = $soapFields.maxLength
         }
 
+    $carePlanDefinition = @(
+        $catalog.definitions |
+            Where-Object { $_.stableKey -eq "legacy.careplan" }
+    ) | Select-Object -First 1
+    $carePlanDetail = if ($null -ne $carePlanDefinition) {
+        Invoke-Json `
+            -Uri "$ApiBaseUrl/api/form-engine/definitions/$($carePlanDefinition.definitionId)" `
+            -RequestHeaders $adminHeaders
+    }
+    else {
+        $null
+    }
+    $carePlanItems = @($carePlanDetail.currentRevision.definition.fields | Where-Object { $_.key -eq "items" }) | Select-Object -First 1
+    $carePlanPreview = if ($null -ne $carePlanItems) {
+        Invoke-Json `
+            -Uri "$ApiBaseUrl/api/form-engine/preview" `
+            -Method "POST" `
+            -RequestHeaders $adminHeaders `
+            -Body @{
+                definition = $carePlanDetail.currentRevision.definition
+                values = @{
+                    items = @(@{
+                        code = "SNOMED-CT:123456"
+                        code_text = "Focused care plan item"
+                        plan_type = "goal"
+                        service_date = "2026-07-28T09:00:00Z"
+                        target_date = "2026-08-28T09:00:00Z"
+                        plan_status = "active"
+                        description = "Synthetic bounded Care Plan verification."
+                        reason_code = "SNOMED-CT:654321"
+                        reason_status = "active"
+                    })
+                }
+            }
+    }
+    else {
+        $null
+    }
+    Add-Check `
+        "Legacy Care Plan adoption maps bounded repeating encounter items without PHP execution" `
+        ($null -ne $carePlanDefinition `
+            -and $carePlanDefinition.contextScope -eq "encounter" `
+            -and $carePlanDefinition.signaturePolicy -eq "author-only" `
+            -and $carePlanDetail.currentRevision.status -eq "effective" `
+            -and $carePlanDetail.currentRevision.schemaHash -eq "fe5d0b72861330ec2da403f62910467dd035112858ee34f544b13768f6e8c535" `
+            -and $carePlanItems.type -eq "repeat" `
+            -and $carePlanItems.repeatMinimum -eq 0 `
+            -and $carePlanItems.repeatMaximum -eq 20 `
+            -and (($carePlanItems.children.key -join "|") -eq "code|code_text|plan_type|service_date|target_date|end_date|plan_status|description|reason_code|reason_description|reason_status|reason_start_date|reason_end_date") `
+            -and (($carePlanItems.children | Where-Object { $_.key -eq "plan_type" }).options.code -join "|") -eq "plan_of_care|test_or_order|procedure|appointments|instructions|goal|health_concern|medication|intervention|planned_medication_activity|supply_order|device_order" `
+            -and (($carePlanItems.children | Where-Object { $_.key -eq "plan_status" }).options.code -join "|") -eq "draft|active|on_hold|revoked|completed|entered_in_error|unknown" `
+            -and $carePlanPreview.valid) `
+        @{
+            definitionId = $carePlanDefinition.definitionId
+            revision = $carePlanDetail.currentRevision.revision
+            schemaHash = $carePlanDetail.currentRevision.schemaHash
+            childFields = $carePlanItems.children.key
+            planTypeCodes = ($carePlanItems.children | Where-Object { $_.key -eq "plan_type" }).options.code
+            planStatusCodes = ($carePlanItems.children | Where-Object { $_.key -eq "plan_status" }).options.code
+            previewValid = $carePlanPreview.valid
+        }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
