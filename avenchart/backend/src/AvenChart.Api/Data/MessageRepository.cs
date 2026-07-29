@@ -862,6 +862,44 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
     }
 
+    public async Task<PatientMessageMutationResponse?> SetArchiveAsync(string messageId, bool archived, PatientMessageArchiveRequest request, string actor, CancellationToken cancellationToken)
+    {
+        var reason = NormalizeOptionalText(request.Reason);
+        if (string.IsNullOrWhiteSpace(messageId)) return null;
+        if (reason is null || reason.Length > 500) throw new ArgumentException("An archive or restore reason of 1 to 500 characters is required.");
+        string? patientId;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
+        {
+            await using var update = connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText = """
+                update messages set deleted=@archived, activity=case when @archived = 1 then 0 else 1 end, updated_at=now()
+                where id=@id and deleted <> @archived returning patient_id;
+                """;
+            update.Parameters.AddWithValue("id", messageId); update.Parameters.AddWithValue("archived", archived ? 1 : 0);
+            patientId = (string?)await update.ExecuteScalarAsync(cancellationToken);
+            if (patientId is null) throw new ArgumentException(archived ? "Only an active message can be archived." : "Only an archived message can be restored.");
+            await using var writeEvent = connection.CreateCommand();
+            writeEvent.Transaction = transaction;
+            writeEvent.CommandText = """insert into message_retention_events (message_id, patient_id, action, reason, actor) values (@messageId, @patientId, @action, @reason, @actor);""";
+            writeEvent.Parameters.AddWithValue("messageId", messageId); writeEvent.Parameters.AddWithValue("patientId", patientId); writeEvent.Parameters.AddWithValue("action", archived ? "archived" : "restored"); writeEvent.Parameters.AddWithValue("reason", reason); writeEvent.Parameters.AddWithValue("actor", actor);
+            await writeEvent.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
+    }
+
+    public async Task<PatientMessageRetentionHistoryResponse?> GetRetentionHistoryAsync(string messageId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        command.CommandText = """select event_id, action, reason, actor, occurred_at from message_retention_events where message_id=@id order by occurred_at desc, event_id desc;"""; command.Parameters.AddWithValue("id", messageId);
+        var events = new List<PatientMessageRetentionEvent>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken)) while (await reader.ReadAsync(cancellationToken)) events.Add(new(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetFieldValue<DateTimeOffset>(4).ToString("O")));
+        return events.Count == 0 && !await MessageExistsAsync(connection, messageId, cancellationToken) ? null : new PatientMessageRetentionHistoryResponse(messageId, events);
+    }
+
     public async Task<bool> DeleteAsync(string messageId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(messageId))

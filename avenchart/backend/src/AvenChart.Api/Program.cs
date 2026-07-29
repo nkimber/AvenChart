@@ -3333,6 +3333,24 @@ messages.MapPost("/{messageId}/correct", async (MessageRepository repository, Au
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 }).WithName("CorrectStaffMessage").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
+messages.MapGet("/{messageId}/retention-history", async (MessageRepository repository, string messageId, CancellationToken cancellationToken) =>
+{
+    var history = await repository.GetRetentionHistoryAsync(messageId, cancellationToken);
+    return history is null ? Results.NotFound() : Results.Ok(history);
+}).WithName("GetStaffMessageRetentionHistory").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
+
+messages.MapPost("/{messageId}/archive", async (MessageRepository repository, AuthRepository authRepository, HttpContext httpContext, string messageId, PatientMessageArchiveRequest request, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var result = await repository.SetArchiveAsync(messageId, true, request, session.Username, cancellationToken); return result is null ? Results.NotFound() : Results.Ok(result); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("ArchiveStaffMessage").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
+
+messages.MapPost("/{messageId}/restore", async (MessageRepository repository, AuthRepository authRepository, HttpContext httpContext, string messageId, PatientMessageArchiveRequest request, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var result = await repository.SetArchiveAsync(messageId, false, request, session.Username, cancellationToken); return result is null ? Results.NotFound() : Results.Ok(result); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("RestoreStaffMessage").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
+
 messages.MapPut("/{messageId}/reply", async (
         MessageRepository repository,
         string messageId,

@@ -65,6 +65,12 @@ public sealed record PatientMessageCorrectionHistoryResponse(
     string MessageId,
     IReadOnlyList<PatientMessageCorrectionEvent> Events);
 
+public sealed record PatientMessageArchiveRequest(string Reason);
+
+public sealed record PatientMessageRetentionEvent(long EventId, string Action, string Reason, string Actor, string OccurredAt);
+
+public sealed record PatientMessageRetentionHistoryResponse(string MessageId, IReadOnlyList<PatientMessageRetentionEvent> Events);
+
 public sealed record StaffMessageAttachmentSubmission(string? FileName, string? ContentType, string? ContentBase64);
 
 public sealed record StaffMessageAttachmentItem(string Id, string FileName, string ContentType, int SizeBytes, string Sha256, string UploadedBy, string UploadedAt);
