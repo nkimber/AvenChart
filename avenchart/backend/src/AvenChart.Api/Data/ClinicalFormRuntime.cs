@@ -10,7 +10,7 @@ namespace AvenChart.Api.Data;
 public static partial class ClinicalFormRuntime
 {
     public const string RendererVersion = "local-clinical-form-renderer-v1";
-    public const string PolicyRevision = "local-clinical-form-v1";
+    public const string PolicyRevision = "local-clinical-form-v2";
     public const string SignaturePolicyRevision = "local-clinical-signature-v1";
 
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -50,8 +50,8 @@ public static partial class ClinicalFormRuntime
         "is-not-empty"
     ];
 
-    private static readonly HashSet<string> SupportedCalculationOperators =
-        new(["add", "subtract", "multiply", "divide", "sum"], StringComparer.Ordinal);
+    public static readonly IReadOnlyList<string> SupportedCalculationOperators =
+        ["sum", "add", "subtract", "multiply", "divide"];
 
     private static readonly string[] UnsafeTextFragments =
     [
@@ -84,6 +84,7 @@ public static partial class ClinicalFormRuntime
         SignaturePolicyRevision,
         SupportedFieldTypes,
         SupportedRuleActions,
+        SupportedCalculationOperators,
         SupportedConditionOperators,
         [
             "draft",
@@ -645,7 +646,9 @@ public static partial class ClinicalFormRuntime
 
             var calculationOperator =
                 rule.Calculation.Operator?.Trim().ToLowerInvariant();
-            if (!SupportedCalculationOperators.Contains(calculationOperator!))
+            if (!SupportedCalculationOperators.Contains(
+                    calculationOperator!,
+                    StringComparer.Ordinal))
             {
                 throw new ArgumentException(
                     $"Calculation rule {key} uses an unsupported operator.");

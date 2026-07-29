@@ -24,6 +24,15 @@ import {
   type ClinicalFormSection,
 } from "../../api/clinicalForms.ts";
 import { showToast } from "../../components/Toast.tsx";
+import {
+  appendCalculationOperand,
+  calculationAuthoringIssues,
+  calculationOperandFieldKeys,
+  calculationTargetFieldKeys,
+  changeCalculationOperator,
+  createDefaultCalculation,
+  retargetCalculation,
+} from "../../domain/clinicalFormCalculationAuthoring.ts";
 
 type Props = { sessionId: string };
 
@@ -252,6 +261,83 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
     }));
   }
 
+  function updateCalculation(
+    index: number,
+    update: (
+      calculation: NonNullable<ClinicalFormRule["calculation"]>,
+      rule: ClinicalFormRule,
+      fields: ClinicalFormField[],
+    ) => NonNullable<ClinicalFormRule["calculation"]>,
+  ) {
+    setSchema((current) => ({
+      ...current,
+      rules: current.rules.map((rule, ruleIndex) => {
+        if (ruleIndex !== index || !rule.calculation) return rule;
+        return {
+          ...rule,
+          calculation: update(rule.calculation, rule, current.fields),
+        };
+      }),
+    }));
+  }
+
+  function setRuleAction(index: number, action: string) {
+    setSchema((current) => ({
+      ...current,
+      rules: current.rules.map((rule, ruleIndex) => {
+        if (ruleIndex !== index) return rule;
+        if (action !== "calculate") {
+          return {
+            ...rule,
+            action,
+            message:
+              action === "warning"
+                ? rule.message || "Review this value."
+                : null,
+            calculation: null,
+          };
+        }
+
+        const targetFieldKey =
+          calculationTargetFieldKeys(current.fields)[0] ?? "";
+        const operator =
+          policy?.supportedCalculationOperators[0] ?? "sum";
+        return {
+          ...rule,
+          action,
+          targetFieldKey,
+          message: null,
+          calculation: createDefaultCalculation(
+            current.fields,
+            targetFieldKey,
+            operator,
+          ),
+        };
+      }),
+    }));
+  }
+
+  function setRuleTarget(index: number, targetFieldKey: string) {
+    setSchema((current) => ({
+      ...current,
+      rules: current.rules.map((rule, ruleIndex) =>
+        ruleIndex === index
+          ? {
+              ...rule,
+              targetFieldKey,
+              calculation: rule.calculation
+                ? retargetCalculation(
+                    rule.calculation,
+                    current.fields,
+                    targetFieldKey,
+                  )
+                : null,
+            }
+          : rule,
+      ),
+    }));
+  }
+
   function addSection() {
     setSchema((current) => {
       const index = current.sections.length + 1;
@@ -423,6 +509,19 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
     () => schema.fields.map((field) => field.key),
     [schema.fields],
   );
+  const computedFieldKeys = useMemo(
+    () => calculationTargetFieldKeys(schema.fields),
+    [schema.fields],
+  );
+  const calculationIssues = useMemo(
+    () =>
+      calculationAuthoringIssues(
+        schema.rules,
+        schema.fields,
+        policy?.supportedCalculationOperators ?? [],
+      ),
+    [policy?.supportedCalculationOperators, schema.fields, schema.rules],
+  );
 
   return (
     <section className="clinical-form-governance">
@@ -476,6 +575,10 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
             <span>{policy.signaturePolicyRevision}</span>
             <span>{policy.supportedFieldTypes.length} field types</span>
             <span>{policy.supportedRuleActions.length} rule actions</span>
+            <span>
+              {policy.supportedCalculationOperators.length} calculation
+              operators
+            </span>
           </div>
           <p>
             Forbidden: {policy.forbiddenCapabilities.join(", ")}.
@@ -1110,22 +1213,14 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                   className="ne-input"
                   value={rule.action}
                   onChange={(event) =>
-                    updateRule(index, {
-                      action: event.target.value,
-                      message:
-                        event.target.value === "warning"
-                          ? rule.message || "Review this value."
-                          : rule.message,
-                    })
+                    setRuleAction(index, event.target.value)
                   }
                 >
-                  {policy?.supportedRuleActions
-                    .filter((action) => action !== "calculate")
-                    .map((action) => (
-                      <option key={action} value={action}>
-                        {action}
-                      </option>
-                    ))}
+                  {policy?.supportedRuleActions.map((action) => (
+                    <option key={action} value={action}>
+                      {action}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="cl-admin-field">
@@ -1134,12 +1229,17 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                   className="ne-input"
                   value={rule.targetFieldKey}
                   onChange={(event) =>
-                    updateRule(index, {
-                      targetFieldKey: event.target.value,
-                    })
+                    setRuleTarget(index, event.target.value)
                   }
                 >
-                  {currentFieldKeys.map((key) => (
+                  {rule.action === "calculate" &&
+                    computedFieldKeys.length === 0 && (
+                      <option value="">Add a computed field first</option>
+                    )}
+                  {(rule.action === "calculate"
+                    ? computedFieldKeys
+                    : currentFieldKeys
+                  ).map((key) => (
                     <option key={key} value={key}>
                       {key}
                     </option>
@@ -1158,6 +1258,242 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                   />
                 </label>
               )}
+              {rule.action === "calculate" && rule.calculation && (
+                <section
+                  className="clinical-form-calculation-editor clinical-form-author-wide"
+                  aria-label={`Calculation for ${rule.key || `rule ${index + 1}`}`}
+                >
+                  <div className="clinical-form-calculation-grid">
+                    <label className="cl-admin-field">
+                      <span>Calculation operator</span>
+                      <select
+                        className="ne-input"
+                        value={rule.calculation.operator}
+                        onChange={(event) =>
+                          updateCalculation(
+                            index,
+                            (calculation, currentRule, fields) =>
+                              changeCalculationOperator(
+                                calculation,
+                                event.target.value,
+                                fields,
+                                currentRule.targetFieldKey,
+                              ),
+                          )
+                        }
+                      >
+                        {policy?.supportedCalculationOperators.map(
+                          (operator) => (
+                            <option key={operator} value={operator}>
+                              {operator}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+                    <label className="cl-admin-field">
+                      <span>Result precision</span>
+                      <input
+                        className="ne-input"
+                        type="number"
+                        min="0"
+                        max="8"
+                        step="1"
+                        value={rule.calculation.precision ?? ""}
+                        onChange={(event) =>
+                          updateCalculation(index, (calculation) => ({
+                            ...calculation,
+                            precision:
+                              event.target.value === ""
+                                ? null
+                                : Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="clinical-form-calculation-operands">
+                    {rule.calculation.operands.map(
+                      (operand, operandIndex) => {
+                        const operandFieldKeys =
+                          calculationOperandFieldKeys(
+                            schema.fields,
+                            rule.targetFieldKey,
+                          );
+                        const sourceKind =
+                          operand.fieldKey !== null ? "field" : "constant";
+                        return (
+                          <div
+                            className="clinical-form-calculation-operand"
+                            key={operandIndex}
+                          >
+                            <label className="cl-admin-field">
+                              <span>Operand {operandIndex + 1} source</span>
+                              <select
+                                className="ne-input"
+                                value={sourceKind}
+                                onChange={(event) =>
+                                  updateCalculation(
+                                    index,
+                                    (calculation) => ({
+                                      ...calculation,
+                                      operands: calculation.operands.map(
+                                        (currentOperand, currentIndex) =>
+                                          currentIndex === operandIndex
+                                            ? event.target.value === "field"
+                                              ? {
+                                                  fieldKey:
+                                                    operandFieldKeys[0] ??
+                                                    null,
+                                                  constant: null,
+                                                }
+                                              : {
+                                                  fieldKey: null,
+                                                  constant: 0,
+                                                }
+                                            : currentOperand,
+                                      ),
+                                    }),
+                                  )
+                                }
+                              >
+                                <option value="field">Numeric field</option>
+                                <option value="constant">Constant</option>
+                              </select>
+                            </label>
+                            {sourceKind === "field" ? (
+                              <label className="cl-admin-field">
+                                <span>Operand {operandIndex + 1} field</span>
+                                <select
+                                  className="ne-input"
+                                  value={operand.fieldKey ?? ""}
+                                  onChange={(event) =>
+                                    updateCalculation(
+                                      index,
+                                      (calculation) => ({
+                                        ...calculation,
+                                        operands: calculation.operands.map(
+                                          (currentOperand, currentIndex) =>
+                                            currentIndex === operandIndex
+                                              ? {
+                                                  fieldKey:
+                                                    event.target.value ||
+                                                    null,
+                                                  constant: null,
+                                                }
+                                              : currentOperand,
+                                        ),
+                                      }),
+                                    )
+                                  }
+                                >
+                                  {operandFieldKeys.length === 0 && (
+                                    <option value="">
+                                      Add a numeric field first
+                                    </option>
+                                  )}
+                                  {operandFieldKeys.map((key) => (
+                                    <option key={key} value={key}>
+                                      {key}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            ) : (
+                              <label className="cl-admin-field">
+                                <span>Operand {operandIndex + 1} constant</span>
+                                <input
+                                  className="ne-input"
+                                  type="number"
+                                  step="any"
+                                  value={operand.constant ?? ""}
+                                  onChange={(event) =>
+                                    updateCalculation(
+                                      index,
+                                      (calculation) => ({
+                                        ...calculation,
+                                        operands: calculation.operands.map(
+                                          (currentOperand, currentIndex) =>
+                                            currentIndex === operandIndex
+                                              ? {
+                                                  fieldKey: null,
+                                                  constant:
+                                                    event.target.value === ""
+                                                      ? null
+                                                      : Number(
+                                                          event.target.value,
+                                                        ),
+                                                }
+                                              : currentOperand,
+                                        ),
+                                      }),
+                                    )
+                                  }
+                                />
+                              </label>
+                            )}
+                            {rule.calculation?.operator === "sum" &&
+                              rule.calculation.operands.length > 1 && (
+                                <button
+                                  className="cl-btn-secondary"
+                                  type="button"
+                                  aria-label={`Remove operand ${operandIndex + 1}`}
+                                  onClick={() =>
+                                    updateCalculation(
+                                      index,
+                                      (calculation) => ({
+                                        ...calculation,
+                                        operands:
+                                          calculation.operands.filter(
+                                            (_, currentIndex) =>
+                                              currentIndex !== operandIndex,
+                                          ),
+                                      }),
+                                    )
+                                  }
+                                >
+                                  Remove
+                                </button>
+                              )}
+                          </div>
+                        );
+                      },
+                    )}
+                  </div>
+                  {rule.calculation.operator === "sum" && (
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      disabled={rule.calculation.operands.length >= 20}
+                      onClick={() =>
+                        updateCalculation(
+                          index,
+                          (calculation, currentRule, fields) =>
+                            appendCalculationOperand(
+                              calculation,
+                              fields,
+                              currentRule.targetFieldKey,
+                            ),
+                        )
+                      }
+                    >
+                      <Plus size={14} aria-hidden="true" />
+                      Add operand
+                    </button>
+                  )}
+                  {calculationIssues
+                    .filter((issue) => issue.ruleKey === rule.key)
+                    .map((issue) => (
+                      <p
+                        className="clinical-form-calculation-issue"
+                        role="alert"
+                        key={issue.message}
+                      >
+                        {issue.message}
+                      </p>
+                    ))}
+                </section>
+              )}
               <button
                 className="cl-btn-secondary"
                 type="button"
@@ -1174,6 +1510,17 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
               </button>
             </div>
           ))}
+          {calculationIssues
+            .filter((issue) => issue.ruleKey === null)
+            .map((issue) => (
+              <p
+                className="clinical-form-calculation-issue"
+                role="alert"
+                key={issue.message}
+              >
+                {issue.message}
+              </p>
+            ))}
 
           <label className="cl-admin-field clinical-form-action-reason">
             <span>Governance reason</span>
@@ -1187,7 +1534,7 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
             <button
               className="cl-btn-secondary"
               type="button"
-              disabled={busy}
+              disabled={busy || calculationIssues.length > 0}
               onClick={() => void runPreview()}
             >
               <FileCode2 size={15} aria-hidden="true" />
@@ -1196,7 +1543,9 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
             <button
               className="cl-btn-primary"
               type="button"
-              disabled={busy || !reason.trim()}
+              disabled={
+                busy || !reason.trim() || calculationIssues.length > 0
+              }
               onClick={() => void saveDefinition()}
             >
               {successorMode ? "Create successor draft" : "Create draft"}

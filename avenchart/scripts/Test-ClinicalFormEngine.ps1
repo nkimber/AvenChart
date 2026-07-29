@@ -330,11 +330,13 @@ try {
     )
     $actualFieldTypes = @($policy.supportedFieldTypes | Sort-Object)
     $policyPassed = `
-        $policy.revision -eq "local-clinical-form-v1" `
+        $policy.revision -eq "local-clinical-form-v2" `
         -and $policy.rendererVersion -eq "local-clinical-form-renderer-v1" `
         -and $policy.signaturePolicyRevision -eq "local-clinical-signature-v1" `
         -and (($actualFieldTypes -join "|") -eq ($expectedFieldTypes -join "|")) `
         -and @($policy.supportedRuleActions).Count -eq 5 `
+        -and (($policy.supportedCalculationOperators -join "|") `
+            -eq "sum|add|subtract|multiply|divide") `
         -and @($policy.forbiddenCapabilities).Count -ge 7 `
         -and -not $policy.arbitraryScriptsAllowed `
         -and -not $policy.rawHtmlAllowed `

@@ -9958,6 +9958,44 @@ h4 {
   background: #fafcfb;
 }
 
+.clinical-form-calculation-editor {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.8rem;
+  border: 1px solid #bdd9d1;
+  border-radius: 0.65rem;
+  background: #f2faf7;
+}
+
+.clinical-form-calculation-grid,
+.clinical-form-calculation-operand {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.clinical-form-calculation-operands {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.clinical-form-calculation-operand {
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid #d6e8e2;
+}
+
+.clinical-form-calculation-operand > button {
+  justify-self: start;
+}
+
+.clinical-form-calculation-issue {
+  margin: 0;
+  color: #9a3412;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
 .clinical-form-field-editors {
   display: grid;
   gap: 0.75rem;
@@ -10014,7 +10052,9 @@ h4 {
   .clinical-form-author-grid,
   .clinical-form-section-editor,
   .clinical-form-field-editor-grid,
-  .clinical-form-rule-editor {
+  .clinical-form-rule-editor,
+  .clinical-form-calculation-grid,
+  .clinical-form-calculation-operand {
     grid-template-columns: 1fr;
   }
 
@@ -10049,7 +10089,8 @@ h4 {
   .clinical-form-governance-hero,
   .clinical-form-section-editor,
   .clinical-form-rule-editor,
-  .clinical-form-field-editor {
+  .clinical-form-field-editor,
+  .clinical-form-calculation-editor {
     border: 1px solid CanvasText;
   }
 

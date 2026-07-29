@@ -74,6 +74,7 @@ export type ClinicalFormPolicy = {
   signaturePolicyRevision: string;
   supportedFieldTypes: string[];
   supportedRuleActions: string[];
+  supportedCalculationOperators: string[];
   supportedConditionOperators: string[];
   definitionStates: string[];
   instanceStates: string[];

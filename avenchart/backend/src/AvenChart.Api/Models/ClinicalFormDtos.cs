@@ -9,6 +9,7 @@ public sealed record ClinicalFormPolicyResponse(
     string SignaturePolicyRevision,
     IReadOnlyList<string> SupportedFieldTypes,
     IReadOnlyList<string> SupportedRuleActions,
+    IReadOnlyList<string> SupportedCalculationOperators,
     IReadOnlyList<string> SupportedConditionOperators,
     IReadOnlyList<string> DefinitionStates,
     IReadOnlyList<string> InstanceStates,
