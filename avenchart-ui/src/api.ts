@@ -4208,6 +4208,7 @@ export type PatientMessageItem = {
   assignedTo?: string | null
   portalRelation?: string | null
   deleted: number
+  assignmentVersion: number
 }
 
 export type PatientMessagesResponse = {
@@ -4220,6 +4221,23 @@ export type PatientMessagesResponse = {
 export type PatientMessageMutationResponse = {
   id: string
   detail: PatientMessagesResponse
+}
+
+export type PatientMessageAssignmentEvent = {
+  eventId: number
+  action: 'assigned' | 'reassigned' | 'unassigned' | string
+  previousAssignedTo?: string | null
+  assignedTo?: string | null
+  reason?: string | null
+  actor: string
+  occurredAt: string
+  assignmentVersion: number
+}
+
+export type PatientMessageAssignmentHistoryResponse = {
+  messageId: string
+  currentVersion: number
+  events: PatientMessageAssignmentEvent[]
 }
 
 export type StaffMessageInboxCounts = {
@@ -4283,6 +4301,13 @@ export async function getStaffMessageInbox(
   return clinicianGet(sessionId, `/api/messages/inbox${suffix}`, signal)
 }
 
+export async function getPatientMessageAssignees(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<ClinicalWorkflowAssigneesResponse> {
+  return clinicianGet(sessionId, '/api/messages/assignees', signal)
+}
+
 export async function getPatientMessages(
   sessionId: string,
   patientId: string,
@@ -4324,16 +4349,24 @@ export async function updatePatientMessageStatus(
 export async function updatePatientMessageAssignment(
   sessionId: string,
   messageId: string,
-  assignedTo: string,
+  input: { assignedTo?: string | null; expectedVersion: number; reason?: string | null },
   signal?: AbortSignal,
 ): Promise<PatientMessagesResponse> {
   const result = await clinicianPut<PatientMessageMutationResponse>(
     sessionId,
     `/api/messages/${messageId}/assignment`,
-    { assignedTo },
+    input,
     signal,
   )
   return result.detail
+}
+
+export async function getPatientMessageAssignmentHistory(
+  sessionId: string,
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<PatientMessageAssignmentHistoryResponse> {
+  return clinicianGet(sessionId, `/api/messages/${messageId}/assignment-history`, signal)
 }
 
 export type OfficeNoteItem = {

@@ -3164,6 +3164,12 @@ messages.MapGet("/inbox", async (
     })
     .WithName("GetStaffMessageInbox");
 
+messages.MapGet("/assignees", async (
+        AuthorizationRepository repository,
+        CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetAssigneesAsync(cancellationToken)))
+    .WithName("GetPatientMessageAssignees");
+
 messages.MapGet("/{patientId}", async (
         MessageRepository repository,
         string patientId,
@@ -3213,15 +3219,45 @@ messages.MapPut("/{messageId}/content", async (
 
 messages.MapPut("/{messageId}/assignment", async (
         MessageRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string messageId,
         PatientMessageAssignmentUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.UpdateAssignmentAsync(messageId, request, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.UpdateAssignmentAsync(messageId, request, session.Username, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (PatientMessageAssignmentVersionConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                expectedVersion = exception.ExpectedVersion,
+                currentVersion = exception.CurrentVersion,
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
     .WithName("UpdatePatientMessageAssignment")
     .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
+
+messages.MapGet("/{messageId}/assignment-history", async (
+        MessageRepository repository,
+        string messageId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetAssignmentHistoryAsync(messageId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetPatientMessageAssignmentHistory")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
 
 messages.MapPut("/{messageId}/reply", async (
         MessageRepository repository,

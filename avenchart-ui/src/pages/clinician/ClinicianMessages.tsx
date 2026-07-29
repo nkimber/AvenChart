@@ -3,11 +3,15 @@ import { Link, useOutletContext, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Mail, RefreshCw, Send } from 'lucide-react'
 import {
   createPatientMessage,
+  getPatientMessageAssignmentHistory,
+  getPatientMessageAssignees,
   getPatientMessages,
   getStaffMessageInbox,
   isRequestCancellation,
   replyToPatientMessage,
   updatePatientMessageAssignment,
+  type ClinicalWorkflowAssignee,
+  type PatientMessageAssignmentHistoryResponse,
   type PatientMessageItem,
   type StaffMessageInboxQuery,
   type StaffMessageInboxResponse,
@@ -105,6 +109,11 @@ export default function ClinicianMessages() {
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null)
   const [assigningId, setAssigningId] = useState<string | null>(null)
   const [assignmentError, setAssignmentError] = useState<{ id: string; message: string } | null>(null)
+  const [assignees, setAssignees] = useState<ClinicalWorkflowAssignee[]>([])
+  const [assigneeError, setAssigneeError] = useState<string | null>(null)
+  const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, { assignedTo: string; reason: string }>>({})
+  const [assignmentHistory, setAssignmentHistory] = useState<Record<string, PatientMessageAssignmentHistoryResponse>>({})
+  const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -126,6 +135,18 @@ export default function ClinicianMessages() {
       .finally(() => setInboxLoading(false))
     return () => controller.abort()
   }, [queryKey, reload, session.sessionId])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setAssigneeError(null)
+    getPatientMessageAssignees(session.sessionId, controller.signal)
+      .then((result) => setAssignees(result.assignees))
+      .catch((error: unknown) => {
+        if (isRequestCancellation(error)) return
+        setAssigneeError(error instanceof Error ? error.message : 'Could not load active staff for assignment.')
+      })
+    return () => controller.abort()
+  }, [session.sessionId])
 
   function applyFilters(event: FormEvent) {
     event.preventDefault()
@@ -204,13 +225,28 @@ export default function ClinicianMessages() {
   }
 
   async function handleClaim(messageId: string) {
-    setAssigningId(messageId)
+    const message = threadState.status === 'ready'
+      ? threadState.thread.messages.find((item) => item.id === messageId)
+      : undefined
+    if (!message) return
+    await handleAssignment(message, session.username, '')
+  }
+
+  async function handleAssignment(message: PatientMessageItem, requestedAssignee?: string, requestedReason?: string) {
+    const draft = assignmentDrafts[message.id]
+    const assignedTo = requestedAssignee ?? draft?.assignedTo ?? message.assignedTo ?? ''
+    const reason = requestedReason ?? draft?.reason ?? ''
+    setAssigningId(message.id)
     setAssignmentError(null)
     try {
       const updated = await updatePatientMessageAssignment(
         session.sessionId,
-        messageId,
-        session.username,
+        message.id,
+        {
+          assignedTo: assignedTo || null,
+          expectedVersion: message.assignmentVersion,
+          reason: reason.trim() || null,
+        },
       )
       setThreadState((previous) =>
         previous.status === 'ready'
@@ -223,14 +259,61 @@ export default function ClinicianMessages() {
             }
           : previous,
       )
+      setAssignmentDrafts((current) => {
+        const next = { ...current }
+        delete next[message.id]
+        return next
+      })
+      setAssignmentHistory((current) => {
+        const next = { ...current }
+        delete next[message.id]
+        return next
+      })
       setReload((value) => value + 1)
-      showToast('Message assigned to you.', 'success')
+      showToast(
+        assignedTo
+          ? `Message assigned to ${assignedTo}.`
+          : 'Message assignment removed.',
+        'success',
+      )
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not update the assignment.'
-      setAssignmentError({ id: messageId, message })
-      showToast(message, 'error')
+      const errorMessage = error instanceof Error ? error.message : 'Could not update the assignment.'
+      setAssignmentError({ id: message.id, message: errorMessage })
+      showToast(errorMessage, 'error')
     } finally {
       setAssigningId(null)
+    }
+  }
+
+  function updateAssignmentDraft(messageId: string, field: 'assignedTo' | 'reason', value: string) {
+    setAssignmentDrafts((current) => ({
+      ...current,
+      [messageId]: {
+        assignedTo: current[messageId]?.assignedTo ?? '',
+        reason: current[messageId]?.reason ?? '',
+        [field]: value,
+      },
+    }))
+  }
+
+  async function toggleAssignmentHistory(messageId: string) {
+    if (assignmentHistory[messageId]) {
+      setAssignmentHistory((current) => {
+        const next = { ...current }
+        delete next[messageId]
+        return next
+      })
+      return
+    }
+
+    setHistoryLoadingId(messageId)
+    try {
+      const history = await getPatientMessageAssignmentHistory(session.sessionId, messageId)
+      setAssignmentHistory((current) => ({ ...current, [messageId]: history }))
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not load assignment history.', 'error')
+    } finally {
+      setHistoryLoadingId(null)
     }
   }
 
@@ -565,6 +648,81 @@ export default function ClinicianMessages() {
                                 ? 'Reassign to me'
                                 : 'Claim'}
                           </button>
+                        )}
+                      </div>
+                      <div className="msg-reply-form">
+                        <label className="ne-field">
+                          <span className="ne-label">Assign to</span>
+                          <select
+                            className="ne-input"
+                            value={assignmentDrafts[message.id]?.assignedTo ?? message.assignedTo ?? ''}
+                            disabled={assigningId !== null || assignees.length === 0}
+                            onChange={(event) => updateAssignmentDraft(message.id, 'assignedTo', event.target.value)}
+                          >
+                            <option value="">Unassigned</option>
+                            {assignees.map((assignee) => (
+                              <option key={assignee.username} value={assignee.username}>
+                                {assignee.displayName} ({assignee.username})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="ne-field">
+                          <span className="ne-label">
+                            Reason{message.assignedTo ? ' (required to reassign or unassign)' : ' (optional when claiming)'}
+                          </span>
+                          <input
+                            className="ne-input"
+                            maxLength={500}
+                            value={assignmentDrafts[message.id]?.reason ?? ''}
+                            disabled={assigningId !== null}
+                            onChange={(event) => updateAssignmentDraft(message.id, 'reason', event.target.value)}
+                          />
+                        </label>
+                        <div className="ne-actions">
+                          <button
+                            className="cl-btn-secondary"
+                            type="button"
+                            disabled={assigningId !== null || assignees.length === 0 || (assignmentDrafts[message.id]?.assignedTo ?? message.assignedTo ?? '') === (message.assignedTo ?? '')}
+                            onClick={() => void handleAssignment(message)}
+                          >
+                            {assigningId === message.id ? 'Savingâ€¦' : 'Save assignment'}
+                          </button>
+                          <button
+                            className="cl-btn-secondary"
+                            type="button"
+                            disabled={historyLoadingId === message.id}
+                            onClick={() => void toggleAssignmentHistory(message.id)}
+                          >
+                            {historyLoadingId === message.id
+                              ? 'Loading historyâ€¦'
+                              : assignmentHistory[message.id]
+                                ? 'Hide assignment history'
+                                : 'Assignment history'}
+                          </button>
+                        </div>
+                        {assigneeError && <p className="field-error" role="alert">{assigneeError}</p>}
+                        {assignmentHistory[message.id] && (
+                          <div className="cl-card" aria-label="Assignment history">
+                            <p className="msg-item-meta">
+                              Assignment version {assignmentHistory[message.id].currentVersion}
+                            </p>
+                            {assignmentHistory[message.id].events.length === 0 ? (
+                              <p className="cl-empty-text">No modernized assignment events have been recorded for this message.</p>
+                            ) : (
+                              <ul className="message-inbox-list">
+                                {assignmentHistory[message.id].events.map((event) => (
+                                  <li key={event.eventId}>
+                                    <strong>{event.action}</strong>
+                                    {' â€” '}
+                                    {event.previousAssignedTo ?? 'Unassigned'} to {event.assignedTo ?? 'Unassigned'}
+                                    {' Â· '}{event.actor}{' Â· '}{new Date(event.occurredAt).toLocaleString()}
+                                    {event.reason ? ` Â· ${event.reason}` : ''}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
                         )}
                       </div>
                       {assignmentError?.id === message.id && (

@@ -23,7 +23,8 @@ public sealed record PatientMessageItem(
     bool IsEncrypted,
     int? UpdatedBy,
     string? UpdatedAt,
-    int Deleted);
+    int Deleted,
+    int AssignmentVersion);
 
 public sealed record PatientMessageCreateRequest(
     string PatientId,
@@ -40,7 +41,24 @@ public sealed record PatientMessageContentUpdateRequest(
     string Body);
 
 public sealed record PatientMessageAssignmentUpdateRequest(
-    string AssignedTo);
+    string? AssignedTo,
+    int ExpectedVersion,
+    string? Reason);
+
+public sealed record PatientMessageAssignmentEvent(
+    long EventId,
+    string Action,
+    string? PreviousAssignedTo,
+    string? AssignedTo,
+    string? Reason,
+    string Actor,
+    string OccurredAt,
+    int AssignmentVersion);
+
+public sealed record PatientMessageAssignmentHistoryResponse(
+    string MessageId,
+    int CurrentVersion,
+    IReadOnlyList<PatientMessageAssignmentEvent> Events);
 
 public sealed record PatientMessageReplyRequest(
     string Body,

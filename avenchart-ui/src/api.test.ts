@@ -1584,6 +1584,7 @@ describe('authenticated API transport', () => {
           status: 'new',
           assignedTo: 'admin',
           deleted: 0,
+          assignmentVersion: 1,
         },
       ],
     }
@@ -1632,7 +1633,7 @@ describe('authenticated API transport', () => {
     const result = await updatePatientMessageAssignment(
       'staff-session',
       'MSG-1',
-      'admin',
+      { assignedTo: 'admin', expectedVersion: 0, reason: 'Ownership verification' },
     )
 
     expect(result).toEqual(detail)
@@ -1640,7 +1641,7 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/messages/MSG-1/assignment',
       expect.objectContaining({
         method: 'PUT',
-        body: JSON.stringify({ assignedTo: 'admin' }),
+        body: JSON.stringify({ assignedTo: 'admin', expectedVersion: 0, reason: 'Ownership verification' }),
       }),
     )
   })

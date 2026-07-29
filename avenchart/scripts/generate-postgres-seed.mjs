@@ -1641,7 +1641,8 @@ create table messages (
   updated_by integer,
   updated_at timestamp,
   deleted integer not null default 0,
-  activity integer not null default 1
+  activity integer not null default 1,
+  assignment_version integer not null default 0
 );
 
 create table portal_mailbox_messages (

@@ -324,38 +324,182 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
     public async Task<PatientMessageMutationResponse?> UpdateAssignmentAsync(
         string messageId,
         PatientMessageAssignmentUpdateRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(messageId)
-            || string.IsNullOrWhiteSpace(request.AssignedTo))
+        if (string.IsNullOrWhiteSpace(messageId))
         {
             return null;
         }
 
-        string? patientId = null;
+        if (request.ExpectedVersion < 0)
+        {
+            throw new ArgumentException("The expected assignment version must be zero or greater.");
+        }
+
+        var assignedTo = NormalizeOptionalText(request.AssignedTo);
+        var reason = NormalizeOptionalText(request.Reason);
+        if (reason is { Length: > 500 })
+        {
+            throw new ArgumentException("The assignment reason must be 500 characters or fewer.");
+        }
+
+        string? patientId;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
-        await using (var command = connection.CreateCommand())
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
         {
-            command.CommandText = """
-                update messages
-                set assigned_to = @assignedTo,
-                    updated_by = 1,
-                    updated_at = now()
-                where id = @id and deleted = 0
-                returning patient_id;
-                """;
-            command.Parameters.AddWithValue("id", messageId);
-            command.Parameters.AddWithValue("assignedTo", request.AssignedTo.Trim());
-            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-        }
+            MessageAssignmentState? current;
+            await using (var read = connection.CreateCommand())
+            {
+                read.Transaction = transaction;
+                read.CommandText = """
+                    select patient_id, nullif(trim(coalesce(assigned_to, '')), ''), assignment_version
+                    from messages
+                    where id = @id and deleted = 0
+                    for update;
+                    """;
+                read.Parameters.AddWithValue("id", messageId);
+                await using var reader = await read.ExecuteReaderAsync(cancellationToken);
+                current = await reader.ReadAsync(cancellationToken)
+                    ? new MessageAssignmentState(
+                        reader.GetString(0),
+                        reader.IsDBNull(1) ? null : reader.GetString(1),
+                        reader.GetInt32(2))
+                    : null;
+            }
 
-        if (patientId is null)
-        {
-            return null;
+            if (current is null)
+            {
+                return null;
+            }
+
+            if (current.Version != request.ExpectedVersion)
+            {
+                throw new PatientMessageAssignmentVersionConflictException(
+                    request.ExpectedVersion,
+                    current.Version);
+            }
+
+            if (string.Equals(current.AssignedTo, assignedTo, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("The selected assignment is already current.");
+            }
+
+            if (current.AssignedTo is not null && string.IsNullOrWhiteSpace(reason))
+            {
+                throw new ArgumentException("A reason is required when reassigning or unassigning a message.");
+            }
+
+            if (assignedTo is not null)
+            {
+                await EnsureActiveAssigneeAsync(connection, transaction, assignedTo, cancellationToken);
+            }
+
+            var actorStaffId = await GetActiveStaffIdAsync(connection, transaction, actor, cancellationToken);
+            var action = current.AssignedTo is null
+                ? "assigned"
+                : assignedTo is null
+                    ? "unassigned"
+                    : "reassigned";
+            var nextVersion = current.Version + 1;
+
+            await using (var update = connection.CreateCommand())
+            {
+                update.Transaction = transaction;
+                update.CommandText = """
+                    update messages
+                    set assigned_to = @assignedTo,
+                        assignment_version = @assignmentVersion,
+                        updated_by = @updatedBy,
+                        updated_at = now()
+                    where id = @id and deleted = 0;
+                    """;
+                update.Parameters.AddWithValue("id", messageId);
+                update.Parameters.AddWithValue("assignedTo", (object?)assignedTo ?? DBNull.Value);
+                update.Parameters.AddWithValue("assignmentVersion", nextVersion);
+                update.Parameters.AddWithValue("updatedBy", (object?)actorStaffId ?? DBNull.Value);
+                await update.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var writeEvent = connection.CreateCommand())
+            {
+                writeEvent.Transaction = transaction;
+                writeEvent.CommandText = """
+                    insert into message_assignment_events
+                        (message_id, patient_id, action, previous_assigned_to, assigned_to, reason, actor, assignment_version, occurred_at)
+                    values
+                        (@messageId, @patientId, @action, @previousAssignedTo, @assignedTo, @reason, @actor, @assignmentVersion, now());
+                    """;
+                writeEvent.Parameters.AddWithValue("messageId", messageId);
+                writeEvent.Parameters.AddWithValue("patientId", current.PatientId);
+                writeEvent.Parameters.AddWithValue("action", action);
+                writeEvent.Parameters.AddWithValue("previousAssignedTo", (object?)current.AssignedTo ?? DBNull.Value);
+                writeEvent.Parameters.AddWithValue("assignedTo", (object?)assignedTo ?? DBNull.Value);
+                writeEvent.Parameters.AddWithValue("reason", (object?)reason ?? DBNull.Value);
+                writeEvent.Parameters.AddWithValue("actor", actor);
+                writeEvent.Parameters.AddWithValue("assignmentVersion", nextVersion);
+                await writeEvent.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            patientId = current.PatientId;
+            await transaction.CommitAsync(cancellationToken);
         }
 
         var detail = await GetForPatientAsync(patientId, cancellationToken);
         return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
+    }
+
+    public async Task<PatientMessageAssignmentHistoryResponse?> GetAssignmentHistoryAsync(
+        string messageId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(messageId))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        int? currentVersion;
+        await using (var message = connection.CreateCommand())
+        {
+            message.CommandText = """
+                select assignment_version
+                from messages
+                where id = @id and deleted = 0;
+                """;
+            message.Parameters.AddWithValue("id", messageId);
+            currentVersion = (int?)await message.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (currentVersion is null)
+        {
+            return null;
+        }
+
+        await using var history = connection.CreateCommand();
+        history.CommandText = """
+            select event_id, action, previous_assigned_to, assigned_to, reason, actor, occurred_at, assignment_version
+            from message_assignment_events
+            where message_id = @messageId
+            order by occurred_at desc, event_id desc;
+            """;
+        history.Parameters.AddWithValue("messageId", messageId);
+        var events = new List<PatientMessageAssignmentEvent>();
+        await using var reader = await history.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            events.Add(new PatientMessageAssignmentEvent(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.GetString(5),
+                reader.GetFieldValue<DateTimeOffset>(6).ToString("O"),
+                reader.GetInt32(7)));
+        }
+
+        return new PatientMessageAssignmentHistoryResponse(messageId, currentVersion.Value, events);
     }
 
     public async Task<PatientMessageMutationResponse?> ReplyAsync(
@@ -519,7 +663,7 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select id, message_date, title, body, status, assigned_to, portal_relation, is_encrypted,
-                updated_by, updated_at, deleted
+                updated_by, updated_at, deleted, assignment_version
             from messages
             where pid = @pid and deleted = 0
             order by message_date desc, id desc;
@@ -541,7 +685,8 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
                 IsEncrypted: reader.GetBoolean(reader.GetOrdinal("is_encrypted")),
                 UpdatedBy: ReadNullableInt32(reader, "updated_by"),
                 UpdatedAt: ReadNullableTimestamp(reader, "updated_at"),
-                Deleted: reader.GetInt32(reader.GetOrdinal("deleted"))));
+                Deleted: reader.GetInt32(reader.GetOrdinal("deleted")),
+                AssignmentVersion: reader.GetInt32(reader.GetOrdinal("assignment_version"))));
         }
 
         return items;
@@ -580,7 +725,52 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     }
 
+    private static string? NormalizeOptionalText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+
+    private static async Task EnsureActiveAssigneeAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select exists(
+                select 1
+                from auth_accounts
+                where active = true and lower(username) = lower(@username));
+            """;
+        command.Parameters.AddWithValue("username", username);
+        if (!(bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false))
+        {
+            throw new ArgumentException("The assignment target must be an active staff user.");
+        }
+    }
+
+    private static async Task<int?> GetActiveStaffIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select staff_id
+            from auth_accounts
+            where active = true and lower(username) = lower(@username)
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("username", username);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null or DBNull ? null : Convert.ToInt32(value, CultureInfo.InvariantCulture);
+    }
+
+    private sealed record MessageAssignmentState(string PatientId, string? AssignedTo, int Version);
 
     private sealed record MessagePatient(
         string PatientId,
@@ -590,4 +780,15 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         string LastName,
         string DisplayName,
         bool PortalEnabled);
+}
+
+public sealed class PatientMessageAssignmentVersionConflictException(
+    int expectedVersion,
+    int currentVersion)
+    : Exception(
+        $"The message assignment changed after it was loaded. Expected version {expectedVersion}; current version is {currentVersion}.")
+{
+    public int ExpectedVersion { get; } = expectedVersion;
+
+    public int CurrentVersion { get; } = currentVersion;
 }
