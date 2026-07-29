@@ -357,6 +357,41 @@ try {
             -and $seededDefinition.effectiveRevision -eq 1) `
         $seededDefinition
 
+    $clinicNoteDefinition = @(
+        $catalog.definitions |
+            Where-Object { $_.stableKey -eq "legacy.clinicnote" }
+    ) | Select-Object -First 1
+    $clinicNoteDetail = if ($null -ne $clinicNoteDefinition) {
+        Invoke-Json `
+            -Uri "$ApiBaseUrl/api/form-engine/definitions/$($clinicNoteDefinition.definitionId)" `
+            -RequestHeaders $adminHeaders
+    }
+    else {
+        $null
+    }
+    $clinicNoteFields = @($clinicNoteDetail.currentRevision.definition.fields)
+    $clinicNoteFollowUp = @(
+        $clinicNoteFields |
+            Where-Object { $_.key -eq "follow_up_status" }
+    ) | Select-Object -First 1
+    Add-Check `
+        "Legacy Clinic Note adoption maps its encounter fields without PHP execution" `
+        ($null -ne $clinicNoteDefinition `
+            -and $clinicNoteDefinition.contextScope -eq "encounter" `
+            -and $clinicNoteDefinition.signaturePolicy -eq "author-only" `
+            -and $clinicNoteDetail.currentRevision.status -eq "effective" `
+            -and $clinicNoteDetail.currentRevision.schemaHash.Length -eq 64 `
+            -and (($clinicNoteFields.key -join "|") -eq "history|examination|plan|follow_up_status|follow_up_timing") `
+            -and $clinicNoteFollowUp.codeSystem -eq "legacy_clinic_note_followup_v1" `
+            -and (($clinicNoteFollowUp.options.code -join "|") -eq "required_in|pending_investigation|none_required")) `
+        @{
+            definitionId = $clinicNoteDefinition.definitionId
+            revision = $clinicNoteDetail.currentRevision.revision
+            schemaHash = $clinicNoteDetail.currentRevision.schemaHash
+            fields = $clinicNoteFields.key
+            followUpCodes = $clinicNoteFollowUp.options.code
+        }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
