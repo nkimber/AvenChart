@@ -12,6 +12,9 @@ New-Item -ItemType Directory -Force $artifactsRoot | Out-Null
 
 $checks = [System.Collections.Generic.List[object]]::new()
 $status = "passed"
+$headers = $null
+$providerHeaders = $null
+$manifestId = "90f00000-0000-4000-a000-000000000001"
 
 function Add-Check {
     param(
@@ -34,7 +37,8 @@ function Get-HttpStatus {
     param(
         [string]$Uri,
         [string]$Method = "GET",
-        [hashtable]$RequestHeaders = @{}
+        [hashtable]$RequestHeaders = @{},
+        [object]$Body = $null
     )
 
     $handler = [System.Net.Http.HttpClientHandler]::new()
@@ -50,6 +54,13 @@ function Get-HttpStatus {
                 [string]$entry.Key,
                 [string]$entry.Value
             ) | Out-Null
+        }
+        if ($null -ne $Body) {
+            $request.Content = [System.Net.Http.StringContent]::new(
+                ($Body | ConvertTo-Json -Depth 20),
+                [System.Text.Encoding]::UTF8,
+                "application/json"
+            )
         }
         $response = $client.SendAsync($request).GetAwaiter().GetResult()
         try {
@@ -80,6 +91,22 @@ try {
         throw "Administration login did not issue an active session."
     }
     $headers = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $providerLogin = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/login" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{
+            username = "gold-provider-01"
+            password = "pass"
+        } | ConvertTo-Json) `
+        -TimeoutSec 20
+    if (-not $providerLogin.authenticated -or
+        [string]::IsNullOrWhiteSpace($providerLogin.sessionId)) {
+        throw "Provider login did not issue an active session."
+    }
+    $providerHeaders = @{
+        "X-Legacy EHR-Session" = $providerLogin.sessionId
+    }
 
     $unauthenticated = Get-HttpStatus `
         -Uri "$ApiBaseUrl/api/form-engine/patients/MOD-PAT-0001/legacy-snapshots"
@@ -93,6 +120,19 @@ try {
         $unauthenticatedManifest -eq 401
     ) @{
         status = $unauthenticatedManifest
+    }
+
+    $unauthenticatedDecision = Get-HttpStatus `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/review" `
+        -Method Post `
+        -Body @{
+            expectedVersion = 1
+            reason = "Unauthenticated review must be rejected."
+        }
+    Add-Check "Manifest decisions require authentication" (
+        $unauthenticatedDecision -eq 401
+    ) @{
+        status = $unauthenticatedDecision
     }
 
     $list = Invoke-RestMethod `
@@ -134,6 +174,7 @@ try {
     Add-Check "Draft migration manifest and reconciliation remain non-executing" (
         $manifest.manifest.status -eq "draft" `
         -and $manifest.manifest.manifestRevision -eq 1 `
+        -and $manifest.manifest.version -eq 1 `
         -and $manifest.manifest.contract.contractRevision -eq "local-clinical-form-migration-manifest-v1" `
         -and @($manifest.manifest.contract.mappingRules).Count -eq 5 `
         -and @($manifest.manifest.contract.changedSemantics).Count -eq 3 `
@@ -155,8 +196,174 @@ try {
         -and $manifest.reconciliation.sourceSnapshotDigest -match "^[0-9a-f]{64}$" `
         -and $eligibleDisposition.disposition -eq "eligible-for-review" `
         -and $blockedDisposition.disposition -eq "blocked" `
-        -and $blockedDisposition.unmappedCount -eq 1
+        -and $blockedDisposition.unmappedCount -eq 1 `
+        -and @($manifest.events).Count -eq 1 `
+        -and $manifest.events[0].action -eq "created" `
+        -and $manifest.events[0].snapshotSha256 -match "^[0-9a-f]{64}$" `
+        -and @($manifest.allowedActions).Count -eq 1 `
+        -and $manifest.allowedActions[0] -eq "review"
     ) $manifest
+
+    $adminReview = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/review" `
+        -Method Post `
+        -Headers $headers `
+        -ContentType "application/json" `
+        -Body (@{
+            expectedVersion = 1
+            reason = "Administrator review for separation-of-duties verification."
+        } | ConvertTo-Json) `
+        -TimeoutSec 20
+    $sameActorApproval = Get-HttpStatus `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/approve" `
+        -Method Post `
+        -RequestHeaders $headers `
+        -Body @{
+            expectedVersion = 2
+            reason = "The same reviewer must not approve this manifest."
+        }
+    Add-Check "Reviewer cannot approve their own manifest review" (
+        $adminReview.status -eq "in-review" `
+        -and $adminReview.version -eq 2 `
+        -and $sameActorApproval -eq 409
+    ) @{
+        review = $adminReview
+        approvalStatus = $sameActorApproval
+    }
+
+    Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/test-fixture" `
+        -Method Delete `
+        -Headers $headers `
+        -TimeoutSec 20 | Out-Null
+    $providerReviewForRejection = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/review" `
+        -Method Post `
+        -Headers $providerHeaders `
+        -ContentType "application/json" `
+        -Body (@{
+            expectedVersion = 1
+            reason = "Clinical reviewer checked mappings before rejection verification."
+        } | ConvertTo-Json) `
+        -TimeoutSec 20
+    $adminRejection = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/reject" `
+        -Method Post `
+        -Headers $headers `
+        -ContentType "application/json" `
+        -Body (@{
+            expectedVersion = 2
+            reason = "Reject the local manifest during reversible fixture verification."
+        } | ConvertTo-Json) `
+        -TimeoutSec 20
+    Add-Check "Separate reviewer and administrator rejection is evidenced" (
+        $providerReviewForRejection.status -eq "in-review" `
+        -and $providerReviewForRejection.decision.actor -eq "gold-provider-01" `
+        -and $adminRejection.status -eq "rejected" `
+        -and $adminRejection.version -eq 3 `
+        -and $adminRejection.decision.actor -eq "admin" `
+        -and -not $adminRejection.productionApproved `
+        -and -not $adminRejection.executionEnabled
+    ) @{
+        review = $providerReviewForRejection
+        rejection = $adminRejection
+    }
+
+    Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/test-fixture" `
+        -Method Delete `
+        -Headers $headers `
+        -TimeoutSec 20 | Out-Null
+    $providerReview = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/review" `
+        -Method Post `
+        -Headers $providerHeaders `
+        -ContentType "application/json" `
+        -Body (@{
+            expectedVersion = 1
+            reason = "Clinical owner reviewed the bounded mapping and semantic changes."
+        } | ConvertTo-Json) `
+        -TimeoutSec 20
+    $providerApproval = Get-HttpStatus `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/approve" `
+        -Method Post `
+        -RequestHeaders $providerHeaders `
+        -Body @{
+            expectedVersion = 2
+            reason = "A clinician cannot record administrator approval."
+        }
+    Add-Check "Clinical reviewer cannot exercise administrator approval" (
+        $providerReview.status -eq "in-review" `
+        -and $providerReview.version -eq 2 `
+        -and $providerApproval -eq 403
+    ) @{
+        review = $providerReview
+        providerApprovalStatus = $providerApproval
+    }
+
+    $staleApproval = Get-HttpStatus `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/approve" `
+        -Method Post `
+        -RequestHeaders $headers `
+        -Body @{
+            expectedVersion = 1
+            reason = "Stale approval must fail optimistic concurrency."
+        }
+    Add-Check "Stale manifest approval is rejected" (
+        $staleApproval -eq 409
+    ) @{
+        status = $staleApproval
+    }
+
+    $adminApproval = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/approve" `
+        -Method Post `
+        -Headers $headers `
+        -ContentType "application/json" `
+        -Body (@{
+            expectedVersion = 2
+            reason = "Administrator accepts the local synthetic manifest evidence."
+        } | ConvertTo-Json) `
+        -TimeoutSec 20
+    $approvedManifest = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/form-engine/patients/MOD-PAT-0001/legacy-migration-manifests/legacy.clinicnote" `
+        -Headers $headers `
+        -TimeoutSec 20
+    Add-Check "Separate local approval has immutable non-executing evidence" (
+        $adminApproval.status -eq "locally-approved" `
+        -and $adminApproval.version -eq 3 `
+        -and $adminApproval.decision.actor -eq "admin" `
+        -and -not $adminApproval.productionApproved `
+        -and -not $adminApproval.executionEnabled `
+        -and $approvedManifest.manifest.status -eq "locally-approved" `
+        -and $approvedManifest.manifest.version -eq 3 `
+        -and $approvedManifest.manifest.reviewedBy -eq "gold-provider-01" `
+        -and $approvedManifest.manifest.approvedBy -eq "admin" `
+        -and -not $approvedManifest.manifest.productionApproved `
+        -and -not $approvedManifest.manifest.executionEnabled `
+        -and $approvedManifest.reconciliation.governedInstancesCreated -eq 0 `
+        -and @($approvedManifest.events).Count -eq 3 `
+        -and (@($approvedManifest.events | Where-Object action -eq "review").Count -eq 1) `
+        -and (@($approvedManifest.events | Where-Object action -eq "approve").Count -eq 1) `
+        -and (@($approvedManifest.events | Where-Object {
+            $_.snapshotSha256 -notmatch "^[0-9a-f]{64}$"
+        }).Count -eq 0) `
+        -and @($approvedManifest.allowedActions).Count -eq 0
+    ) $approvedManifest
+
+    $terminalRejection = Get-HttpStatus `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/reject" `
+        -Method Post `
+        -RequestHeaders $headers `
+        -Body @{
+            expectedVersion = 3
+            reason = "An approved local manifest cannot be silently rejected."
+        }
+    Add-Check "Local approval cannot be silently overwritten" (
+        $terminalRejection -eq 409
+    ) @{
+        status = $terminalRejection
+    }
 
     $mapped = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/form-engine/legacy-snapshots/90f00000-0000-4000-9000-000000000001" `
@@ -216,6 +423,36 @@ catch {
     }
 }
 finally {
+    if ($null -ne $headers) {
+        try {
+            Invoke-RestMethod `
+                -Uri "$ApiBaseUrl/api/form-engine/legacy-migration-manifests/$manifestId/test-fixture" `
+                -Method Delete `
+                -Headers $headers `
+                -TimeoutSec 20 | Out-Null
+            $resetManifest = Invoke-RestMethod `
+                -Uri "$ApiBaseUrl/api/form-engine/patients/MOD-PAT-0001/legacy-migration-manifests/legacy.clinicnote" `
+                -Headers $headers `
+                -TimeoutSec 20
+            Add-Check "Manifest fixture cleanup restores the draft boundary" (
+                $resetManifest.manifest.status -eq "draft" `
+                -and $resetManifest.manifest.version -eq 1 `
+                -and $null -eq $resetManifest.manifest.reviewedBy `
+                -and $null -eq $resetManifest.manifest.approvedBy `
+                -and -not $resetManifest.manifest.productionApproved `
+                -and -not $resetManifest.manifest.executionEnabled `
+                -and @($resetManifest.events).Count -eq 1 `
+                -and @($resetManifest.allowedActions).Count -eq 1 `
+                -and $resetManifest.allowedActions[0] -eq "review"
+            ) $resetManifest
+        }
+        catch {
+            Add-Check "Manifest fixture cleanup restores the draft boundary" $false @{
+                message = $_.Exception.Message
+            }
+        }
+    }
+
     [ordered]@{
         status = $status
         generatedAt = (Get-Date).ToUniversalTime().ToString("o")

@@ -405,6 +405,7 @@ public sealed record LegacyClinicalFormMigrationManifest(
     string TargetSchemaHash,
     string TargetRendererRevision,
     int ManifestRevision,
+    int Version,
     string Status,
     JsonElement Contract,
     IReadOnlyList<string> Blockers,
@@ -416,7 +417,36 @@ public sealed record LegacyClinicalFormMigrationManifest(
     string? ApprovedBy,
     string? ApprovedAt,
     string? DecisionReason,
-    string CreatedAt);
+    string CreatedAt,
+    string UpdatedAt,
+    string UpdatedBy);
+
+public sealed record LegacyClinicalFormMigrationManifestEvent(
+    long EventId,
+    int Version,
+    string Action,
+    string? FromStatus,
+    string ToStatus,
+    string Actor,
+    string Reason,
+    string OccurredAt,
+    string SnapshotSha256);
+
+public sealed record LegacyClinicalFormMigrationManifestDecisionRequest(
+    int ExpectedVersion,
+    string Reason)
+{
+    [JsonExtensionData]
+    public IDictionary<string, JsonElement>? ExtraFields { get; init; }
+}
+
+public sealed record LegacyClinicalFormMigrationManifestDecisionResponse(
+    Guid ManifestId,
+    int Version,
+    string Status,
+    bool ProductionApproved,
+    bool ExecutionEnabled,
+    LegacyClinicalFormMigrationManifestEvent Decision);
 
 public sealed record LegacyClinicalFormMigrationRowDisposition(
     Guid SnapshotId,
@@ -441,7 +471,18 @@ public sealed record LegacyClinicalFormMigrationReconciliation(
 public sealed record LegacyClinicalFormMigrationManifestResponse(
     LegacyClinicalFormMigrationManifest Manifest,
     string PatientId,
-    LegacyClinicalFormMigrationReconciliation Reconciliation);
+    LegacyClinicalFormMigrationReconciliation Reconciliation,
+    IReadOnlyList<LegacyClinicalFormMigrationManifestEvent> Events,
+    IReadOnlyList<string> AllowedActions);
+
+public sealed class LegacyClinicalFormMigrationManifestConflictException(
+    string message,
+    int currentVersion,
+    string currentStatus) : Exception(message)
+{
+    public int CurrentVersion { get; } = currentVersion;
+    public string CurrentStatus { get; } = currentStatus;
+}
 
 public sealed class ClinicalFormConflictException(
     string message,

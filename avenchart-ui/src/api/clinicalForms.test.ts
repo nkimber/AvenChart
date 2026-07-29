@@ -11,6 +11,7 @@ import {
   getPatientLegacyClinicalFormSnapshots,
   previewClinicalForm,
   transitionClinicalFormDefinition,
+  transitionLegacyClinicalFormMigrationManifest,
   transitionClinicalFormInstance,
   updateClinicalFormInstance,
   type ClinicalFormSchema,
@@ -166,13 +167,30 @@ describe("governed clinical-form transport", () => {
       .mockResolvedValueOnce(
         jsonResponse({
           manifest: {
+            manifestId: "90f00000-0000-4000-a000-000000000001",
             stableKey: "legacy.clinicnote",
+            version: 1,
             status: "draft",
             productionApproved: false,
             executionEnabled: false,
           },
           patientId: "MOD PAT/1",
           reconciliation: { sourceRows: 0, rows: [] },
+          events: [],
+          allowedActions: ["review"],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          manifestId: "90f00000-0000-4000-a000-000000000001",
+          version: 2,
+          status: "in-review",
+          productionApproved: false,
+          executionEnabled: false,
+          decision: {
+            action: "review",
+            version: 2,
+          },
         }),
       );
 
@@ -189,6 +207,13 @@ describe("governed clinical-form transport", () => {
       "MOD PAT/1",
       "legacy.clinicnote/v1",
     );
+    await transitionLegacyClinicalFormMigrationManifest(
+      "staff-session",
+      "manifest/with spaces",
+      "review",
+      1,
+      "Clinical field mapping review completed.",
+    );
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "http://localhost:5001/api/form-engine/patients/MOD%20PAT%2F1/legacy-snapshots",
@@ -199,6 +224,16 @@ describe("governed clinical-form transport", () => {
     expect(fetchMock.mock.calls[2]?.[0]).toBe(
       "http://localhost:5001/api/form-engine/patients/MOD%20PAT%2F1/legacy-migration-manifests/legacy.clinicnote%2Fv1",
     );
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+      "http://localhost:5001/api/form-engine/legacy-migration-manifests/manifest%2Fwith%20spaces/review",
+    );
+    expect(fetchMock.mock.calls[3]?.[1]).toEqual(
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body))).toEqual({
+      expectedVersion: 1,
+      reason: "Clinical field mapping review completed.",
+    });
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
       "X-Legacy EHR-Session": "staff-session",
     });

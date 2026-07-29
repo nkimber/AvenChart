@@ -18,6 +18,7 @@ import {
   getPatientLegacyClinicalFormMigrationManifest,
   getPatientLegacyClinicalFormSnapshots,
   previewClinicalForm,
+  transitionLegacyClinicalFormMigrationManifest,
   transitionClinicalFormInstance,
   updateClinicalFormInstance,
   type ClinicalFormDefinitionSummary,
@@ -248,9 +249,13 @@ export default function PatientClinicalForms() {
   const valuesRef = useRef<RecordValue>({});
   const [reason, setReason] = useState("Clinical form entry");
   const [actionReason, setActionReason] = useState("");
+  const [migrationDecisionReason, setMigrationDecisionReason] = useState("");
+  const [migrationDecisionBusy, setMigrationDecisionBusy] = useState(false);
   const [liveFeedbackState, setLiveFeedbackState] =
     useState<LiveFeedbackState>("idle");
   const [liveFeedbackError, setLiveFeedbackError] = useState("");
+  const [encounterLookupUnavailable, setEncounterLookupUnavailable] =
+    useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -258,6 +263,7 @@ export default function PatientClinicalForms() {
   async function refresh(selectId?: string, selectLegacyId?: string) {
     setLoading(true);
     setError("");
+    setEncounterLookupUnavailable(false);
     try {
       const [
         loadedCatalog,
@@ -274,7 +280,13 @@ export default function PatientClinicalForms() {
           patientId,
           "legacy.clinicnote",
         ),
-        searchEncounters(session.sessionId, { patientId, limit: 100 }),
+        searchEncounters(session.sessionId, { patientId, limit: 100 }).catch(
+          (cause) => {
+            if (isRequestCancellation(cause)) throw cause;
+            setEncounterLookupUnavailable(true);
+            return { totalMatches: 0, encounters: [] };
+          },
+        ),
       ]);
       setCatalog(loadedCatalog.definitions);
       setInstances(loadedInstances.instances);
@@ -329,6 +341,49 @@ export default function PatientClinicalForms() {
     });
     setLiveFeedbackState("waiting");
     setLiveFeedbackError("");
+  }
+
+  async function decideMigrationManifest(
+    action: "review" | "approve" | "reject",
+  ) {
+    if (!migrationManifest || migrationDecisionReason.trim().length < 10) {
+      showToast(
+        "Enter a decision reason of at least 10 characters.",
+        "error",
+      );
+      return;
+    }
+
+    setMigrationDecisionBusy(true);
+    try {
+      await transitionLegacyClinicalFormMigrationManifest(
+        session.sessionId,
+        migrationManifest.manifest.manifestId,
+        action,
+        migrationManifest.manifest.version,
+        migrationDecisionReason.trim(),
+      );
+      setMigrationDecisionReason("");
+      await refresh();
+      showToast(
+        action === "review"
+          ? "Local migration-manifest review recorded."
+          : action === "approve"
+            ? "Local migration-manifest approval recorded."
+            : "Local migration-manifest rejection recorded.",
+        "success",
+      );
+    } catch (cause) {
+      showToast(
+        cause instanceof Error
+          ? cause.message
+          : "The migration-manifest decision could not be recorded.",
+        "error",
+      );
+      await refresh();
+    } finally {
+      setMigrationDecisionBusy(false);
+    }
   }
 
   const selectedInstanceId = selected?.instance.instanceId;
@@ -603,6 +658,12 @@ export default function PatientClinicalForms() {
             {encounters.map((encounter) => <option key={encounter.id} value={encounter.encounter}>{encounter.date} — {encounter.reason || `Encounter ${encounter.encounter}`}</option>)}
           </select>
           <p className="cl-field-help">Patient-scoped forms ignore this selection. Encounter-scoped forms require it.</p>
+          {encounterLookupUnavailable ? (
+            <p className="cl-field-help" role="status">
+              Encounter choices are unavailable for this session. Patient-scoped
+              forms and migration evidence remain available.
+            </p>
+          ) : null}
         </div>
         {catalog.length === 0 ? <p className="cl-empty-text">No effective clinical forms are currently available.</p> : (
           <div className="card-grid">
@@ -716,7 +777,8 @@ export default function PatientClinicalForms() {
             </div>
             <p>
               {migrationManifest.manifest.status} · revision{" "}
-              {migrationManifest.manifest.manifestRevision}
+              {migrationManifest.manifest.manifestRevision} · version{" "}
+              {migrationManifest.manifest.version}
             </p>
           </div>
           <div className="hint-banner" role="note">
@@ -769,7 +831,160 @@ export default function PatientClinicalForms() {
               <dt>Target schema SHA-256</dt>
               <dd>{migrationManifest.manifest.targetSchemaHash}</dd>
             </div>
+            <div>
+              <dt>Reviewed by</dt>
+              <dd>
+                {migrationManifest.manifest.reviewedBy
+                  ? `${migrationManifest.manifest.reviewedBy} at ${formatInstant(migrationManifest.manifest.reviewedAt)}`
+                  : "Not recorded"}
+              </dd>
+            </div>
+            <div>
+              <dt>Locally approved by</dt>
+              <dd>
+                {migrationManifest.manifest.approvedBy
+                  ? `${migrationManifest.manifest.approvedBy} at ${formatInstant(migrationManifest.manifest.approvedAt)}`
+                  : "Not recorded"}
+              </dd>
+            </div>
+            <div>
+              <dt>Last decision</dt>
+              <dd>
+                {migrationManifest.manifest.decisionReason ??
+                  "No local decision has been recorded."}
+              </dd>
+            </div>
           </dl>
+
+          <div className="cl-access-panel">
+            <h3 className="cl-access-title">Local governance decision</h3>
+            <p className="cl-field-help">
+              A clinician with Forms Administration records the review. A
+              different administrator must approve or reject it. Local
+              approval never changes production approval or execution.
+            </p>
+            {migrationManifest.allowedActions.length > 0 ? (
+              <>
+                <label
+                  className="cl-admin-field"
+                  htmlFor="migration-manifest-decision-reason"
+                >
+                  <span>Decision reason</span>
+                  <textarea
+                    id="migration-manifest-decision-reason"
+                    className="ne-input"
+                    rows={3}
+                    minLength={10}
+                    maxLength={500}
+                    value={migrationDecisionReason}
+                    disabled={migrationDecisionBusy}
+                    onChange={(event) =>
+                      setMigrationDecisionReason(event.target.value)
+                    }
+                  />
+                </label>
+                <div className="cl-access-actions">
+                  {migrationManifest.allowedActions.includes("review") ? (
+                    <button
+                      className="cl-btn-primary"
+                      type="button"
+                      disabled={
+                        migrationDecisionBusy ||
+                        migrationDecisionReason.trim().length < 10
+                      }
+                      onClick={() => void decideMigrationManifest("review")}
+                    >
+                      Complete local review
+                    </button>
+                  ) : (
+                    <>
+                      {migrationManifest.allowedActions.includes("approve") ? (
+                        <button
+                          className="cl-btn-primary"
+                          type="button"
+                          disabled={
+                            migrationDecisionBusy ||
+                            migrationDecisionReason.trim().length < 10
+                          }
+                          onClick={() =>
+                            void decideMigrationManifest("approve")
+                          }
+                        >
+                          Approve locally
+                        </button>
+                      ) : null}
+                      {migrationManifest.allowedActions.includes("reject") ? (
+                        <button
+                          className="cl-btn-secondary"
+                          type="button"
+                          disabled={
+                            migrationDecisionBusy ||
+                            migrationDecisionReason.trim().length < 10
+                          }
+                          onClick={() =>
+                            void decideMigrationManifest("reject")
+                          }
+                        >
+                          Reject local review
+                        </button>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p>
+                This local manifest is {migrationManifest.manifest.status}.
+                {migrationManifest.manifest.status === "draft" ||
+                migrationManifest.manifest.status === "in-review"
+                  ? " This session has no authorized state-valid decision."
+                  : ""}{" "}
+                Production approval remains{" "}
+                {migrationManifest.manifest.productionApproved
+                  ? "recorded"
+                  : "not recorded"}
+                , and execution remains{" "}
+                {migrationManifest.manifest.executionEnabled
+                  ? "enabled"
+                  : "disabled"}
+                .
+              </p>
+            )}
+          </div>
+
+          <h3>Immutable local decision history</h3>
+          <div className="table-scroll">
+            <table aria-label="Migration manifest decision history">
+              <thead>
+                <tr>
+                  <th>Version</th>
+                  <th>Decision</th>
+                  <th>State</th>
+                  <th>Actor</th>
+                  <th>Reason</th>
+                  <th>Evidence SHA-256</th>
+                </tr>
+              </thead>
+              <tbody>
+                {migrationManifest.events.map((event) => (
+                  <tr key={event.eventId}>
+                    <td>{event.version}</td>
+                    <td>{event.action}</td>
+                    <td>
+                      {event.fromStatus
+                        ? `${event.fromStatus} → ${event.toStatus}`
+                        : event.toStatus}
+                    </td>
+                    <td>
+                      {event.actor} · {formatInstant(event.occurredAt)}
+                    </td>
+                    <td>{event.reason}</td>
+                    <td>{event.snapshotSha256}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           <h3>Reconciliation preview</h3>
           <dl className="facts-list">

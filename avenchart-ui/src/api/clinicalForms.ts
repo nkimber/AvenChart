@@ -316,6 +316,7 @@ export type LegacyClinicalFormMigrationManifest = {
   targetSchemaHash: string;
   targetRendererRevision: string;
   manifestRevision: number;
+  version: number;
   status: string;
   contract: LegacyClinicalFormMigrationContract;
   blockers: string[];
@@ -328,6 +329,29 @@ export type LegacyClinicalFormMigrationManifest = {
   approvedAt: string | null;
   decisionReason: string | null;
   createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+};
+
+export type LegacyClinicalFormMigrationManifestEvent = {
+  eventId: number;
+  version: number;
+  action: "created" | "review" | "approve" | "reject";
+  fromStatus: string | null;
+  toStatus: string;
+  actor: string;
+  reason: string;
+  occurredAt: string;
+  snapshotSha256: string;
+};
+
+export type LegacyClinicalFormMigrationManifestDecision = {
+  manifestId: string;
+  version: number;
+  status: string;
+  productionApproved: boolean;
+  executionEnabled: boolean;
+  decision: LegacyClinicalFormMigrationManifestEvent;
 };
 
 export type LegacyClinicalFormMigrationRowDisposition = {
@@ -356,6 +380,8 @@ export type LegacyClinicalFormMigrationManifestResponse = {
   manifest: LegacyClinicalFormMigrationManifest;
   patientId: string;
   reconciliation: LegacyClinicalFormMigrationReconciliation;
+  events: LegacyClinicalFormMigrationManifestEvent[];
+  allowedActions: Array<"review" | "approve" | "reject">;
 };
 
 export type ClinicalFormRender = {
@@ -603,6 +629,24 @@ export async function getPatientLegacyClinicalFormMigrationManifest(
     { headers: headers(sessionId), signal },
   );
   return (await response.json()) as LegacyClinicalFormMigrationManifestResponse;
+}
+
+export async function transitionLegacyClinicalFormMigrationManifest(
+  sessionId: string,
+  manifestId: string,
+  action: "review" | "approve" | "reject",
+  expectedVersion: number,
+  reason: string,
+): Promise<LegacyClinicalFormMigrationManifestDecision> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/form-engine/legacy-migration-manifests/${encodeURIComponent(manifestId)}/${action}`,
+    {
+      method: "POST",
+      headers: headers(sessionId, true),
+      body: JSON.stringify({ expectedVersion, reason }),
+    },
+  );
+  return (await response.json()) as LegacyClinicalFormMigrationManifestDecision;
 }
 
 export async function createPatientClinicalFormInstance(
