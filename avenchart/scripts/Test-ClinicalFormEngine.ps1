@@ -564,6 +564,16 @@ try {
         ($null -ne $gadDefinition -and $gadDefinition.contextScope -eq "encounter" -and $gadDefinition.signaturePolicy -eq "author-only" -and $gadScores.Count -eq 7 -and (($gadDetail.currentRevision.definition.fields.key -join "|") -eq "nervous_score|control_worry_score|worry_score|relax_score|restless_score|irritable_score|fear_score|difficulty|total_score") -and $gadPreview.valid -and $gadPreview.values.total_score -eq 9 -and $gadPreview.visibleFields.difficulty -and $gadPreview.requiredFields.difficulty) `
         @{ definitionId=$gadDefinition.definitionId; schemaHash=$gadDetail.currentRevision.schemaHash; calculatedTotal=$gadPreview.values.total_score }
 
+    $transferSummaryDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.transfersummary" }) | Select-Object -First 1
+    $transferSummaryDetail = if ($null -ne $transferSummaryDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($transferSummaryDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $transferSummaryFields = @($transferSummaryDetail.currentRevision.definition.fields)
+    $transferSummaryNarratives = @($transferSummaryFields | Where-Object { $_.key -in @("status_of_admission", "diagnosis", "intervention_provided", "overall_status_of_discharge") })
+    $transferSummaryPreview = if ($null -ne $transferSummaryDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$transferSummaryDetail.currentRevision.definition; values=@{ transfer_to="Example specialty clinic"; transfer_date="2026-07-29"; status_of_admission="Stable admission status."; diagnosis="Transfer diagnosis."; intervention_provided="Care coordination completed."; overall_status_of_discharge="Transferred in stable condition." } } } else { $null }
+    Add-Check `
+        "Legacy Transfer Summary adoption maps fixed encounter transfer fields without PHP execution" `
+        ($null -ne $transferSummaryDefinition -and $transferSummaryDefinition.contextScope -eq "encounter" -and $transferSummaryDefinition.signaturePolicy -eq "author-only" -and $transferSummaryDetail.currentRevision.status -eq "effective" -and (($transferSummaryFields.key -join "|") -eq "transfer_to|transfer_date|status_of_admission|diagnosis|intervention_provided|overall_status_of_discharge") -and ($transferSummaryFields | Where-Object { $_.key -eq "transfer_to" }).type -eq "text" -and ($transferSummaryFields | Where-Object { $_.key -eq "transfer_to" }).maxLength -eq 255 -and ($transferSummaryFields | Where-Object { $_.key -eq "transfer_date" }).type -eq "date" -and $transferSummaryNarratives.Count -eq 4 -and @($transferSummaryNarratives | Where-Object { $_.type -ne "multiline" -or $_.maxLength -ne 4000 }).Count -eq 0 -and $transferSummaryPreview.valid) `
+        @{ definitionId=$transferSummaryDefinition.definitionId; schemaHash=$transferSummaryDetail.currentRevision.schemaHash; fields=$transferSummaryFields.key; previewValid=$transferSummaryPreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
