@@ -40,6 +40,7 @@ import {
   endPatientPortalSession,
   findPatientDuplicateCandidates,
   forwardPatientMessage,
+  getStaffMessageAttachments,
   failPatientDocumentOcr,
   getCurrentSession,
   getAuthorizationPolicyCatalog,
@@ -91,6 +92,8 @@ import {
   replyToPatientMessage,
   routePrescriptionToPharmacy,
   routePatientDocument,
+  uploadStaffMessageAttachment,
+  downloadStaffMessageAttachment,
   searchEncounters,
   searchClinicalMedicationVocabulary,
   SESSION_INVALID_EVENT,
@@ -1678,6 +1681,30 @@ describe('authenticated API transport', () => {
         body: JSON.stringify({ assignedTo: 'gold-frontdesk-01', expectedVersion: 0, note: 'Please follow up.' }),
       }),
     )
+  })
+
+  it('uses the protected staff attachment upload, list, and download contracts', async () => {
+    const attachment = {
+      id: 'b32d514b-bc4d-422e-8f48-ce6eafcba8e9',
+      fileName: 'verification.txt',
+      contentType: 'text/plain',
+      sizeBytes: 19,
+      sha256: 'a'.repeat(64),
+      uploadedBy: 'admin',
+      uploadedAt: '2026-07-29T20:00:00Z',
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([attachment]))
+      .mockResolvedValueOnce(jsonResponse(attachment, 201))
+      .mockResolvedValueOnce(new Response('attachment evidence', { status: 200, headers: { 'content-type': 'text/plain' } }))
+
+    await expect(getStaffMessageAttachments('staff-session', 'MSG-1')).resolves.toEqual([attachment])
+    await expect(uploadStaffMessageAttachment('staff-session', 'MSG-1', { fileName: 'verification.txt', contentType: 'text/plain', contentBase64: 'YXR0YWNobWVudCBldmlkZW5jZQ==' })).resolves.toEqual(attachment)
+    await expect(downloadStaffMessageAttachment('staff-session', 'MSG-1', attachment.id)).resolves.toBeInstanceOf(Blob)
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:5001/api/messages/MSG-1/attachments', expect.objectContaining({ headers: expect.objectContaining({ 'X-Legacy EHR-Session': 'staff-session' }) }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/attachments', expect.objectContaining({ method: 'POST', body: JSON.stringify({ fileName: 'verification.txt', contentType: 'text/plain', contentBase64: 'YXR0YWNobWVudCBldmlkZW5jZQ==' }) }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, `http://localhost:5001/api/messages/MSG-1/attachments/${attachment.id}`, expect.objectContaining({ headers: { 'X-Legacy EHR-Session': 'staff-session' } }))
   })
 
   it('unwraps create and status mutation envelopes consistently', async () => {
