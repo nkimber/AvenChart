@@ -27,12 +27,16 @@ import {
   createPatientScannerCapture,
   createPatientMessage,
   createPracticeSettingChangeRequest,
+  createProcedureLabProviderOrganization,
+  createProcedureOrderCatalogItem,
   createPrescription,
   deleteAllergy,
   deleteImmunization,
   deleteMedication,
   deletePatientDocument,
   deletePatientAuthorizationTestFixture,
+  deleteProcedureLabProviderOrganization,
+  deleteProcedureOrderCatalogItem,
   deleteProblem,
   decidePrescriptionRefillRequest,
   decideInventoryPurchaseRequisition,
@@ -85,6 +89,9 @@ import {
   getPrescriptionAuditHistory,
   getPrescriptionRefillQueue,
   getProcedureOrderQueue,
+  getProcedureLabProviderAddressBook,
+  getProcedureLabProviders,
+  getProcedureOrderCatalog,
   getProcedureReportQueue,
   getStaffMessageInbox,
   logout,
@@ -116,6 +123,7 @@ import {
   updatePatientMessageStatus,
   updatePatientDocumentMetadata,
   updatePatientProviderAssignment,
+  updateProcedureOrderCatalogItem,
   updatePrescription,
   updateInventoryMedicationLink,
 } from './api.ts'
@@ -1861,10 +1869,6 @@ describe('authenticated API transport', () => {
     ])
   })
 
-  it('uses the protected assign, sign, reopen, and bulk-sign report contracts', async () => {
-    const detail = {
-      patientId: 'MOD-PAT-0004',
-      patientDisplayName: 'Alex Morgan',
   it('uses the protected local lab directory and ordering-organization contracts', async () => {
     const providers = { datasetId: 'test', datasetVersion: 'v1', includeInactive: true, totalProviders: 1, activeProviders: 1, inactiveProviders: 0, providers: [{ id: 501, name: 'Northstar Lab', active: true, orderCount: 2, reportCount: 3, futureOrderCount: 1 }] }
     const addressBook = { datasetId: 'test', datasetVersion: 'v1', organizations: [{ id: 61, organization: 'Northstar Ordering', type: 'ord_lab', active: true }] }
@@ -1889,6 +1893,34 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'DELETE' })
   })
 
+  it('uses the protected local lab order-catalog contracts', async () => {
+    const catalog = { datasetId: 'test', datasetVersion: 'v1', totalItems: 2, groupCount: 1, orderCount: 1, labProviderCount: 1, items: [{ id: 71, name: 'Routine chemistry', itemType: 'grp', sequence: 0, active: true, childCount: 1 }] }
+    const input = { parentId: 71, labId: 501, name: 'Basic metabolic panel', code: 'BMP', itemType: 'ord' as const, procedureTypeName: 'laboratory', description: null, specimen: 'serum', standardCode: '24323-8', sequence: 10, active: true }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(catalog))
+      .mockResolvedValueOnce(jsonResponse({ id: 72, catalog }))
+      .mockResolvedValueOnce(jsonResponse({ id: 72, catalog }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    await expect(getProcedureOrderCatalog('staff-session')).resolves.toEqual(catalog)
+    await expect(createProcedureOrderCatalogItem('staff-session', input)).resolves.toEqual(catalog)
+    await expect(updateProcedureOrderCatalogItem('staff-session', 72, input)).resolves.toEqual(catalog)
+    await expect(deleteProcedureOrderCatalogItem('staff-session', 72)).resolves.toBeUndefined()
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/procedures/order-catalog',
+      'http://localhost:5001/api/procedures/order-catalog',
+      'http://localhost:5001/api/procedures/order-catalog/72',
+      'http://localhost:5001/api/procedures/order-catalog/72',
+    ])
+    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([undefined, 'POST', 'PUT', 'DELETE'])
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ body: JSON.stringify(input) })
+  })
+
+  it('uses the protected assign, sign, reopen, and bulk-sign report contracts', async () => {
+    const detail = {
+      patientId: 'MOD-PAT-0004',
+      patientDisplayName: 'Alex Morgan',
       counts: { orders: 1, reports: 1, results: 0, finalResults: 0 },
       orders: [],
     }

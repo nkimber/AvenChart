@@ -6198,6 +6198,65 @@ export function deleteProcedureLabProviderOrganization(sessionId: string, organi
   return clinicianDelete(sessionId, `/api/procedures/lab-provider-address-book/${organizationId}`)
 }
 
+export type ProcedureOrderCatalogItem = {
+  id: number
+  parentId?: number | null
+  labId?: number | null
+  labName?: string | null
+  name: string
+  code?: string | null
+  itemType: 'grp' | 'ord'
+  procedureTypeName?: string | null
+  description?: string | null
+  specimen?: string | null
+  standardCode?: string | null
+  sequence: number
+  active: boolean
+  childCount: number
+}
+
+export type ProcedureOrderCatalogResponse = {
+  datasetId: string
+  datasetVersion: string
+  totalItems: number
+  groupCount: number
+  orderCount: number
+  labProviderCount: number
+  items: ProcedureOrderCatalogItem[]
+}
+
+export type ProcedureOrderCatalogInput = {
+  parentId?: number | null
+  labId?: number | null
+  name: string
+  code?: string | null
+  itemType: 'grp' | 'ord'
+  procedureTypeName?: string | null
+  description?: string | null
+  specimen?: string | null
+  standardCode?: string | null
+  sequence?: number | null
+  active: boolean
+}
+
+export function getProcedureOrderCatalog(sessionId: string, signal?: AbortSignal): Promise<ProcedureOrderCatalogResponse> {
+  return clinicianGet(sessionId, '/api/procedures/order-catalog', signal)
+}
+
+export async function createProcedureOrderCatalogItem(sessionId: string, input: ProcedureOrderCatalogInput): Promise<ProcedureOrderCatalogResponse> {
+  const result = await clinicianPost<{ id: number; catalog: ProcedureOrderCatalogResponse }>(sessionId, '/api/procedures/order-catalog', input)
+  return result.catalog
+}
+
+export async function updateProcedureOrderCatalogItem(sessionId: string, itemId: number, input: ProcedureOrderCatalogInput): Promise<ProcedureOrderCatalogResponse> {
+  const result = await clinicianPut<{ id: number; catalog: ProcedureOrderCatalogResponse }>(sessionId, `/api/procedures/order-catalog/${itemId}`, input)
+  return result.catalog
+}
+
+export function deleteProcedureOrderCatalogItem(sessionId: string, itemId: number): Promise<void> {
+  return clinicianDelete(sessionId, `/api/procedures/order-catalog/${itemId}`)
+}
+
 export type ProcedureResultItem = {
   id: number
   code?: string | null
