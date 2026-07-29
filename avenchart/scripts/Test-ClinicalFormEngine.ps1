@@ -533,6 +533,15 @@ try {
         ($null -ne $functionalDefinition -and $functionalDefinition.contextScope -eq "encounter" -and $functionalDefinition.signaturePolicy -eq "author-only" -and $functionalDetail.currentRevision.schemaHash -eq "088c747c126a4b4520992468caacb9f4c704acb604315d06760b2d34c4069b71" -and $functionalItems.repeatMaximum -eq 20 -and (($functionalItems.children.key -join "|") -eq "code|code_text|status_date|is_mental_status|description")) `
         @{ definitionId=$functionalDefinition.definitionId; schemaHash=$functionalDetail.currentRevision.schemaHash; childFields=$functionalItems.children.key }
 
+    $afterCareDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.aftercareplan" }) | Select-Object -First 1
+    $afterCareDetail = if ($null -ne $afterCareDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($afterCareDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $afterCareFields = @($afterCareDetail.currentRevision.definition.fields)
+    $afterCareGoalFields = @($afterCareFields | Where-Object { $_.key -like "goal_*" })
+    Add-Check `
+        "Legacy AfterCare Plan adoption maps fixed encounter discharge goals without PHP execution" `
+        ($null -ne $afterCareDefinition -and $afterCareDefinition.contextScope -eq "encounter" -and $afterCareDefinition.signaturePolicy -eq "author-only" -and $afterCareDetail.currentRevision.schemaHash -eq "3e8e5d6d3b865136d321e250653a31aa628957b1ad57ed820f2dc65ad1015bb5" -and (($afterCareFields.key -join "|") -eq "admit_date|discharged_date|goal_a_1|goal_a_2|goal_a_3|goal_b_1|goal_b_2|goal_c_1|goal_c_2") -and @($afterCareFields | Where-Object { $_.type -eq "date" }).Count -eq 2 -and $afterCareGoalFields.Count -eq 7 -and @($afterCareGoalFields | Where-Object { $_.type -ne "multiline" -or $_.maxLength -ne 4000 }).Count -eq 0) `
+        @{ definitionId=$afterCareDefinition.definitionId; schemaHash=$afterCareDetail.currentRevision.schemaHash; fields=$afterCareFields.key }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
