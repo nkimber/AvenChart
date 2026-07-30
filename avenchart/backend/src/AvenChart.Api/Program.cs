@@ -4951,10 +4951,17 @@ procedures.MapPost("/orders", async (
         ProcedureOrderCreateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateOrderAsync(request, cancellationToken);
-        return mutation is null
-            ? Results.BadRequest("Procedure order could not be created from the supplied patient, encounter, and order details.")
-            : Results.Created($"/api/procedures/orders/{mutation.Id}", mutation);
+        try
+        {
+            var mutation = await repository.CreateOrderAsync(request, cancellationToken);
+            return mutation is null
+                ? Results.BadRequest("Procedure order could not be created from the supplied patient, encounter, and order details.")
+                : Results.Created($"/api/procedures/orders/{mutation.Id}", mutation);
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
     })
     .WithName("CreateProcedureOrder")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "addonly"));
