@@ -815,8 +815,9 @@ public sealed class EncounterRepository(
         return detail is null ? null : new EncounterSignatureMutationResponse(Convert.ToInt32(id), detail);
     }
 
-    public async Task<bool> ArchiveAsync(int encounter, CancellationToken cancellationToken)
+    public async Task<bool> ArchiveAsync(int encounter, EncounterArchiveRequest request, string username, CancellationToken cancellationToken)
     {
+        var reason = RequireArchiveReason(request.Reason);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await EnsureEncounterArchiveColumnAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
@@ -827,11 +828,14 @@ public sealed class EncounterRepository(
               and archived_at is null;
             """;
         command.Parameters.AddWithValue("encounter", encounter);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        var archived = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        if (archived) await RecordAuditAsync(connection, encounter, username, "archived", [$"reason:{reason}"], cancellationToken);
+        return archived;
     }
 
-    public async Task<bool> RestoreAsync(int encounter, CancellationToken cancellationToken)
+    public async Task<bool> RestoreAsync(int encounter, EncounterArchiveRequest request, string username, CancellationToken cancellationToken)
     {
+        var reason = RequireArchiveReason(request.Reason);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await EnsureEncounterArchiveColumnAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
@@ -842,7 +846,9 @@ public sealed class EncounterRepository(
               and archived_at is not null;
             """;
         command.Parameters.AddWithValue("encounter", encounter);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        var restored = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        if (restored) await RecordAuditAsync(connection, encounter, username, "restored", [$"reason:{reason}"], cancellationToken);
+        return restored;
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -1333,6 +1339,8 @@ public sealed class EncounterRepository(
                     ReviewStatus: ReadNullableString(reader, "review_status"),
                     ReviewedBy: ReadNullableString(reader, "reviewed_by"),
                     ReviewedAt: ReadNullableDateTime(reader, "reviewed_at"),
+                    ReviewVersion: reader.GetInt32(reader.GetOrdinal("review_version")),
+                    ReviewHistoryCount: Convert.ToInt32(reader.GetValue(reader.GetOrdinal("review_history_count"))),
                     Notes: ReadNullableString(reader, "notes"),
                     Results: [])));
         }
@@ -1987,18 +1995,30 @@ public sealed class EncounterRepository(
     }
 
     private static async Task RecordSummaryAuditAsync(NpgsqlConnection connection, int encounter, string username, IReadOnlyList<string> changedFields, CancellationToken cancellationToken)
+        => await RecordAuditAsync(connection, encounter, username, "summary-updated", changedFields, cancellationToken);
+
+    private static async Task RecordAuditAsync(NpgsqlConnection connection, int encounter, string username, string action, IReadOnlyList<string> changedFields, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into encounter_audit_events (event_id, encounter, occurred_at, username, action, changed_fields)
-            values (@eventId, @encounter, @occurredAt, @username, 'summary-updated', @changedFields);
+            values (@eventId, @encounter, @occurredAt, @username, @action, @changedFields);
             """;
         command.Parameters.AddWithValue("eventId", Guid.NewGuid());
         command.Parameters.AddWithValue("encounter", encounter);
         command.Parameters.AddWithValue("occurredAt", DateTimeOffset.UtcNow);
         command.Parameters.AddWithValue("username", username);
+        command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("changedFields", string.Join(',', changedFields));
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static string RequireArchiveReason(string? value)
+    {
+        var reason = NormalizeText(value);
+        return reason is null || reason.Length > 500
+            ? throw new ArgumentException("An archive or restore reason of 1 to 500 characters is required.")
+            : reason;
     }
 
     private static void AddChangedField(List<string> fields, string name, string? prior, string? updated)

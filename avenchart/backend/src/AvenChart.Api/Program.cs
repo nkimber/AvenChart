@@ -2084,13 +2084,19 @@ encounters.MapGet("/", async (
     })
     .WithName("SearchEncounters");
 
-encounters.MapPut("/{encounter:int}/archive", async (EncounterRepository repository, int encounter, CancellationToken cancellationToken) =>
-    await repository.ArchiveAsync(encounter, cancellationToken) ? Results.NoContent() : Results.NotFound())
+encounters.MapPut("/{encounter:int}/archive", async (EncounterRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, EncounterArchiveRequest request, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return await repository.ArchiveAsync(encounter, request, session.Username, cancellationToken) ? Results.NoContent() : Results.NotFound(); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+})
     .WithName("ArchiveEncounter")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
-encounters.MapPut("/{encounter:int}/restore", async (EncounterRepository repository, int encounter, CancellationToken cancellationToken) =>
-    await repository.RestoreAsync(encounter, cancellationToken) ? Results.NoContent() : Results.NotFound())
+encounters.MapPut("/{encounter:int}/restore", async (EncounterRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, EncounterArchiveRequest request, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return await repository.RestoreAsync(encounter, request, session.Username, cancellationToken) ? Results.NoContent() : Results.NotFound(); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+})
     .WithName("RestoreEncounter")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
@@ -3372,8 +3378,6 @@ messages.MapGet("/{messageId}/retention-history", async (MessageRepository repos
     return history is null ? Results.NotFound() : Results.Ok(history);
 }).WithName("GetStaffMessageRetentionHistory").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
 
-messages.MapPost("/{messageId}/archive", async (MessageRepository repository, AuthRepository authRepository, HttpContext httpContext, string messageId, PatientMessageArchiveRequest request, CancellationToken cancellationToken) =>
-{
 messages.MapGet("/{messageId}/escalation-history", async (MessageRepository repository, string messageId, CancellationToken cancellationToken) =>
 {
     var history = await repository.GetEscalationHistoryAsync(messageId, cancellationToken);

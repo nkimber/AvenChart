@@ -5826,12 +5826,14 @@ export async function updateEncounter(
 
 export async function archiveEncounter(
   encounter: number,
+  reason: string,
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/archive`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify({ reason }),
     signal,
   })
   if (!response.ok) {

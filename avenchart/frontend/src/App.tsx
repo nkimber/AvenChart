@@ -2700,7 +2700,11 @@ function App() {
 
     try {
       const sessionId = getActiveEncounterSessionId()
-      await archiveEncounter(encounter.encounter, sessionId)
+      const reason = window.prompt('Why is this encounter being archived?')?.trim()
+      if (!reason) {
+        throw new Error('An archive reason is required')
+      }
+      await archiveEncounter(encounter.encounter, reason, sessionId)
       setSelectedEncounter(null)
       setEncounterDetail(null)
       setEncounterDetailStatus('idle')

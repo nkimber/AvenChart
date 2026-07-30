@@ -233,6 +233,8 @@ public sealed record EncounterUpdateRequest(
     int? PosCode,
     string? BillingNote);
 
+public sealed record EncounterArchiveRequest(string Reason);
+
 public sealed record EncounterVitalsCreateRequest(
     string DateTime,
     int? Systolic,
