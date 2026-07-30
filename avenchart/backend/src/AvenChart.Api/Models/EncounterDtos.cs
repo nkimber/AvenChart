@@ -281,8 +281,6 @@ public sealed record EncounterLayoutFormResponse(int Encounter, string LayoutKey
 public sealed record EncounterLayoutFormSaveRequest(IReadOnlyDictionary<string, string?> Values);
 
 public sealed record EncounterSignRequest(
-    string SignerUsername,
-    string SignedAt,
     bool IsLock,
     string? Amendment);
 

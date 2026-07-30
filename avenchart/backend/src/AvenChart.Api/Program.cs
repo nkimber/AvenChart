@@ -2286,13 +2286,16 @@ encounters.MapPost("/{encounter:int}/soap-notes", async (
 
 encounters.MapPut("/{encounter:int}/sign", async (
         EncounterRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int encounter,
         EncounterSignRequest request,
         CancellationToken cancellationToken) =>
     {
-        var response = await repository.SignAsync(encounter, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var response = await repository.SignAsync(encounter, request, session.Username, cancellationToken);
         return response is null
-            ? Results.BadRequest("Encounter could not be signed from the supplied encounter and signer details.")
+            ? Results.BadRequest("Encounter could not be signed for the authenticated session.")
             : Results.Ok(response);
     })
     .WithName("SignEncounter")

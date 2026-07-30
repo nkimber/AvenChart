@@ -13029,8 +13029,6 @@ function EncounterWorkspace({
   )
   const [soapStatus, setSoapStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
-  const [signatureSigner, setSignatureSigner] = useState('admin')
-  const [signatureSignedAt, setSignatureSignedAt] = useState('2026-06-18T10:20')
   const [signatureMode, setSignatureMode] = useState<'signed' | 'locked'>('signed')
   const [signatureAmendment, setSignatureAmendment] = useState('Encounter reviewed and signed from modernized workspace.')
   const [signatureStatus, setSignatureStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -13140,7 +13138,6 @@ function EncounterWorkspace({
     setSummaryBillingNote(encounterDetail.billingNote ?? '')
     setVitalsDateTime(`${encounterDetail.date}T10:05`)
     setSoapDateTime(`${encounterDetail.date}T10:10`)
-    setSignatureSignedAt(`${encounterDetail.date}T10:20`)
     setEncounterDocumentDate(encounterDetail.date)
     setEncounterBinaryDocumentDate(encounterDetail.date)
     setEncounterExternalLinkDate(encounterDetail.date)
@@ -13354,8 +13351,6 @@ function EncounterWorkspace({
     setSignatureStatus('saving')
     try {
       await onSignEncounter(encounterDetail, {
-        signerUsername: signatureSigner,
-        signedAt: signatureSignedAt,
         isLock: signatureMode === 'locked',
         amendment: signatureAmendment,
       })
@@ -13935,25 +13930,7 @@ function EncounterWorkspace({
                 {encounterSignatures.length > 0 && <span className="panel-count-pill">Signed</span>}
               </div>
               <form className="encounter-signature-form" onSubmit={handleSignatureSubmit}>
-                <label className="filter-field">
-                  <span>Signer</span>
-                  <input
-                    value={signatureSigner}
-                    onChange={(event) => setSignatureSigner(event.target.value)}
-                    aria-label="Encounter sign-off signer"
-                    required
-                  />
-                </label>
-                <label className="filter-field">
-                  <span>Signed At</span>
-                  <input
-                    value={signatureSignedAt}
-                    onChange={(event) => setSignatureSignedAt(event.target.value)}
-                    aria-label="Encounter sign-off signed at"
-                    type="datetime-local"
-                    required
-                  />
-                </label>
+                <p className="access-copy">The authenticated session is recorded as the signer at the server time.</p>
                 <label className="filter-field">
                   <span>Mode</span>
                   <select

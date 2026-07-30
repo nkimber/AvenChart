@@ -736,13 +736,15 @@ public sealed class EncounterRepository(
     public async Task<EncounterSignatureMutationResponse?> SignAsync(
         int encounter,
         EncounterSignRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
-        var signerUsername = NormalizeText(request.SignerUsername);
-        if (signerUsername is null || !TryParseDateTime(request.SignedAt, out var signedAt))
+        var signerUsername = NormalizeText(actor);
+        if (signerUsername is null)
         {
             return null;
         }
+        var signedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();

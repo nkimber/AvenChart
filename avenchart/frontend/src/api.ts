@@ -964,8 +964,6 @@ export type EncounterFormMutationResponse = {
 }
 
 export type EncounterSignInput = {
-  signerUsername: string
-  signedAt: string
   isLock: boolean
   amendment?: string | null
 }
