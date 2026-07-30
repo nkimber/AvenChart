@@ -2471,6 +2471,27 @@ catch {
 }
 
 try {
+    $legacyZendModuleCatalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/modules" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $legacyZendModules = [ordered]@{
+        CARECOORDINATION = "mod_active=1, mod_ui_active=0, sql_run=1"
+        CCR = "mod_active=1, mod_ui_active=0, sql_run=1"
+        DOCUMENTS_MODULE = "mod_active=1, mod_ui_active=0, sql_run=1"
+        IMMUNIZATION_MODULE = "mod_active=1, mod_ui_active=0, sql_run=1"
+        SYNDROMIC_SURVEILLANCE = "mod_active=1, mod_ui_active=0, sql_run=1"
+        CODE_TYPES = "mod_active=0, mod_ui_active=0, sql_run=0"
+        PATIENT_FILTER = "mod_active=0, mod_ui_active=0, sql_run=0"
+        PATIENT_VALIDATION = "mod_active=0, mod_ui_active=0, sql_run=0"
+        PRESCRIPTION_TEMPLATES = "mod_active=0, mod_ui_active=0, sql_run=0"
+    }
+    $legacyZendModuleRows = @($legacyZendModuleCatalog.modules | Where-Object { $legacyZendModules.Contains($_.key) })
+    $legacyZendModuleCatalogPassed = $legacyZendModuleRows.Count -eq $legacyZendModules.Count -and @($legacyZendModuleRows | Where-Object { $_.status -ne "decision-required" -or $_.canChangeStatus -or $_.description -notmatch "Legacy Zend module" -or $_.description -notmatch [regex]::Escape($legacyZendModules[$_.key]) }).Count -eq 0
+    Add-Check -Name "legacy Zend modules are visible as governed registry inventory records" -Result $(if ($legacyZendModuleCatalogPassed) { "passed" } else { "failed" }) -Details @{ moduleKeys = $legacyZendModuleRows.key; runtimeEvidence = @($legacyZendModuleRows | ForEach-Object { "$($_.key):$($_.description -match 'mod_active=')" }); editableKeys = @($legacyZendModuleRows | Where-Object canChangeStatus | ForEach-Object key) }
+}
+catch {
+    Add-Check -Name "legacy Zend modules are visible as governed registry inventory records" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $apiClientRevisionHeaders = Get-AdministrationHeaders
     $apiClientHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-clients/LOCAL_PORTAL/history" -Method Get -Headers $apiClientRevisionHeaders -TimeoutSec 20
     $apiClientBaselineRevision = $apiClientHistoryBefore.revisions | Where-Object { $_.action -eq "baseline" } | Select-Object -First 1
