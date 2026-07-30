@@ -12,6 +12,7 @@ import {
   createMedication,
   deactivateMedication,
   restoreMedication,
+  updateMedication,
   createImmunization,
   createPrescription,
   deleteImmunization,
@@ -208,6 +209,42 @@ export default function PatientChart() {
       showToast("Medication added.", "success");
     } catch {
       showToast("Could not add medication.", "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function editMedication(
+    medication: ClinicalListsResponse["medications"][number],
+  ) {
+    const title = window.prompt("Medication name", medication.title)?.trim();
+    if (!title) return;
+    const diagnosis = window.prompt("Diagnosis (optional)", medication.diagnosis ?? "");
+    if (diagnosis === null) return;
+    const date = window.prompt("Medication date (YYYY-MM-DD)", medication.date ?? today());
+    if (!date?.trim()) return;
+    const comments = window.prompt("Medication notes (optional)", medication.comments ?? "");
+    if (comments === null) return;
+    const reason = window.prompt("Reason for this local medication-list correction");
+    if (!reason?.trim()) return;
+
+    setWorking(true);
+    try {
+      const result = await updateMedication(session.sessionId, medication.id, {
+        title,
+        diagnosis: diagnosis.trim() || null,
+        date: date.trim(),
+        comments: comments.trim() || null,
+        reason: reason.trim(),
+        expectedVersion: medication.lifecycleVersion,
+      });
+      setState({ status: "ready", data: result.detail });
+      showToast("Medication list entry updated.", "success");
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Could not update medication.",
+        "error",
+      );
     } finally {
       setWorking(false);
     }
@@ -816,6 +853,17 @@ export default function PatientChart() {
                     )}
                   </div>
                   <div className="cl-lifecycle-actions">
+                    {m.activity === 1 && (
+                      <button
+                        className="cl-clinical-action"
+                        type="button"
+                        aria-label={`Edit ${m.title}`}
+                        disabled={working}
+                        onClick={() => void editMedication(m)}
+                      >
+                        Edit
+                      </button>
+                    )}
                     <button
                       className="cl-clinical-action"
                       type="button"

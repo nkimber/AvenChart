@@ -656,6 +656,54 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return new ClinicalMedicationLifecycleHistoryResponse(medicationId, currentVersion, events.Count, events);
     }
 
+    public async Task<ClinicalMedicationLifecycleMutationResult> UpdateMedicationAsync(
+        string medicationId,
+        ClinicalMedicationUpdateRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(medicationId) || !HasBoundedText(request.Title, 255)
+            || !HasBoundedText(request.Reason, 500) || request.ExpectedVersion <= 0
+            || !HasBoundedText(actor, 120) || !TryReadDate(request.Date, out var medicationDate))
+        {
+            return new ClinicalMedicationLifecycleMutationResult(ClinicalMedicationLifecycleMutationStatus.Invalid, null);
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        string? patientId;
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                update medications set title = @title, diagnosis = @diagnosis, medication_date = @date,
+                    modified_date = @date, comments = @comments, lifecycle_version = lifecycle_version + 1
+                where id = @id and type = 'medication' and activity = 1 and lifecycle_version = @expectedVersion
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", medicationId);
+            command.Parameters.AddWithValue("title", request.Title.Trim());
+            command.Parameters.AddWithValue("diagnosis", NullableText(request.Diagnosis));
+            command.Parameters.Add("date", NpgsqlDbType.Date).Value = medicationDate;
+            command.Parameters.AddWithValue("comments", NullableText(request.Comments));
+            command.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion);
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+        if (patientId is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return await GetMedicationMutationFailureAsync(connection, medicationId, cancellationToken);
+        }
+        await InsertMedicationLifecycleEventAsync(connection, transaction, medicationId, "edited", null, 1,
+            actor.Trim(), request.Reason.Trim(), request.ExpectedVersion, request.ExpectedVersion + 1, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        var lists = await GetForPatientAsync(patientId, cancellationToken);
+        return lists is null
+            ? new ClinicalMedicationLifecycleMutationResult(ClinicalMedicationLifecycleMutationStatus.NotFound, null)
+            : new ClinicalMedicationLifecycleMutationResult(ClinicalMedicationLifecycleMutationStatus.Updated,
+                new ClinicalListMutationResponse(medicationId, lists));
+    }
+
     public async Task<bool> DeleteMedicationAsync(string medicationId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(medicationId))

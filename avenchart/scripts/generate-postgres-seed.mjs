@@ -1840,7 +1840,7 @@ create table medications (
 create table medication_list_lifecycle_events (
   id bigserial primary key,
   medication_id text not null references medications(id) on delete cascade,
-  action text not null check (action in ('created', 'deactivated', 'restored')),
+  action text not null check (action in ('created', 'deactivated', 'restored', 'edited')),
   previous_activity integer,
   current_activity integer not null,
   actor text not null,

@@ -65,6 +65,14 @@ public sealed record ClinicalMedicationRestoreRequest(
     string Reason,
     int ExpectedVersion);
 
+public sealed record ClinicalMedicationUpdateRequest(
+    string Title,
+    string? Diagnosis,
+    string Date,
+    string? Comments,
+    string Reason,
+    int ExpectedVersion);
+
 public sealed record ClinicalListMutationResponse(
     string Id,
     ClinicalListsResponse Detail);

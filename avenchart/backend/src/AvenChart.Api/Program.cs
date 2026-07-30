@@ -2972,6 +2972,26 @@ clinicalLists.MapPut("/medications/{medicationId}/restore", async (
     })
     .WithName("RestoreClinicalMedication");
 
+clinicalLists.MapPut("/medications/{medicationId}", async (
+        ClinicalListRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string medicationId,
+        ClinicalMedicationUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.UpdateMedicationAsync(medicationId, request, session.Username, cancellationToken);
+        return mutation.Status switch
+        {
+            ClinicalMedicationLifecycleMutationStatus.Updated => Results.Ok(mutation.Mutation),
+            ClinicalMedicationLifecycleMutationStatus.Invalid => Results.BadRequest(new { error = "A title, valid date, non-empty 1-500 character reason, and loaded version are required." }),
+            ClinicalMedicationLifecycleMutationStatus.NotFound => Results.NotFound(),
+            _ => Results.Conflict(new { error = "The medication changed after it was loaded. Refresh and try again." })
+        };
+    })
+    .WithName("UpdateClinicalMedication");
+
 clinicalLists.MapGet("/medications/{medicationId}/lifecycle-history", async (
         ClinicalListRepository repository,
         string medicationId,

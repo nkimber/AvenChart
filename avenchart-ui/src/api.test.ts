@@ -126,6 +126,7 @@ import {
   submitInventoryPurchaseRequisition,
   transitionPracticeSettingChangeRequest,
   updatePatientCareTeam,
+  updateMedication,
   updatePatientAuthorizationAssignment,
   updatePatientAuthorizationStatus,
   updatePatientEmployer,
@@ -1581,6 +1582,32 @@ describe('authenticated API transport', () => {
         expectedVersion: 2,
       }),
     })
+  })
+
+  it('uses the versioned medication content-edit contract', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'MED-41', detail: {} }))
+    await updateMedication('staff-session', 'MED-41', {
+      title: 'Metformin 500 mg tablet',
+      diagnosis: 'E11.9',
+      date: '2026-07-29',
+      comments: 'Updated local list wording.',
+      reason: 'Reconciled the current medication-list details.',
+      expectedVersion: 3,
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/clinical-lists/medications/MED-41',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          title: 'Metformin 500 mg tablet',
+          diagnosis: 'E11.9',
+          date: '2026-07-29',
+          comments: 'Updated local list wording.',
+          reason: 'Reconciled the current medication-list details.',
+          expectedVersion: 3,
+        }),
+      }),
+    )
   })
 
   it('rejects an HTML response masquerading as a document', async () => {

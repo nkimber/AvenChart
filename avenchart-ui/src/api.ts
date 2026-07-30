@@ -8869,6 +8869,29 @@ export async function restoreMedication(
   )
 }
 
+export type UpdateMedicationInput = {
+  title: string
+  diagnosis?: string | null
+  date: string
+  comments?: string | null
+  reason: string
+  expectedVersion: number
+}
+
+export function updateMedication(
+  sessionId: string,
+  medicationId: string,
+  body: UpdateMedicationInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/medications/${medicationId}`,
+    body,
+    signal,
+  )
+}
+
 export function getMedicationLifecycleHistory(
   sessionId: string,
   medicationId: string,
