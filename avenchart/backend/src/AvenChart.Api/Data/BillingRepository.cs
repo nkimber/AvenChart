@@ -2372,6 +2372,11 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             {
                 return null;
             }
+            if (await IsEncounterLockedAsync(connection, encounter.Encounter, cancellationToken))
+            {
+                throw new EncounterLockConflictException(
+                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            }
 
             legacyPid = patient.LegacyPid;
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
