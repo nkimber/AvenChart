@@ -26,6 +26,9 @@ public sealed record IntegrationOutboxMessage(
     DateTimeOffset? DeliveredAt,
     string? ExternalReference,
     string? LastError,
+    DateTimeOffset? QuarantinedAt,
+    string? QuarantinedBy,
+    int RecoveryCount,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
@@ -33,6 +36,10 @@ public sealed record IntegrationDispatchResponse(
     IntegrationOutboxMessage Message,
     bool Dispatched,
     string Outcome);
+
+public sealed record IntegrationOutboxRecoveryRequest(
+    string Reason,
+    int ExpectedAttemptCount);
 
 public sealed record IntegrationInboxReceiveRequest(
     string Source,

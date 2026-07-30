@@ -37,9 +37,23 @@ public sealed class LocalDeterministicIntegrationTransport(
                 RetryAfter: null));
         }
 
-        var error = string.Equals(message.Destination, "local://retry", StringComparison.OrdinalIgnoreCase)
-            ? "Deterministic local transport requested one retry."
-            : "The local integration transport only accepts local://success, local://retry, or local://failure destinations.";
+        if (string.Equals(message.Destination, "local://recoverable", StringComparison.OrdinalIgnoreCase)
+            && message.RecoveryCount > 0)
+        {
+            return Task.FromResult(new IntegrationTransportResult(
+                Delivered: true,
+                Outcome: "delivered-after-recovery",
+                ExternalReference: $"LOCAL-RECOVERED-{message.EventId:N}",
+                Error: null,
+                RetryAfter: null));
+        }
+
+        var error = message.Destination switch
+        {
+            "local://retry" => "Deterministic local transport requested one retry.",
+            "local://recoverable" => "Deterministic local transport requires explicit quarantine recovery.",
+            _ => "The local integration transport only accepts local://success, local://retry, local://recoverable, or local://failure destinations."
+        };
         return Task.FromResult(new IntegrationTransportResult(
             Delivered: false,
             Outcome: "retry-scheduled",

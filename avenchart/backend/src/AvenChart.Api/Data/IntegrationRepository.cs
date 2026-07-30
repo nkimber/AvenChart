@@ -12,8 +12,10 @@ public sealed class IntegrationRepository(
 {
     private static readonly HashSet<string> KnownStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
-        "queued", "dispatching", "retry-scheduled", "delivered"
+        "queued", "dispatching", "retry-scheduled", "delivered", "quarantined"
     };
+
+    private const int MaximumAutomaticAttempts = 3;
 
     public async Task<IntegrationOutboxMessage> QueueAsync(
         IntegrationOutboxQueueRequest request,
@@ -37,7 +39,7 @@ public sealed class IntegrationRepository(
             set updated_at = integration_outbox.updated_at
             returning event_id, idempotency_key, event_type, aggregate_type, aggregate_id, destination, payload,
               status, attempt_count, available_at, locked_at, last_attempt_at, delivered_at,
-              external_reference, last_error, created_at, updated_at;
+              external_reference, last_error, quarantined_at, quarantined_by, recovery_count, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("event_id", eventId);
         command.Parameters.AddWithValue("idempotency_key", (object?)NormalizeOptional(request.IdempotencyKey) ?? DBNull.Value);
@@ -74,7 +76,7 @@ public sealed class IntegrationRepository(
         command.CommandText = """
             select event_id, idempotency_key, event_type, aggregate_type, aggregate_id, destination, payload,
               status, attempt_count, available_at, locked_at, last_attempt_at, delivered_at,
-              external_reference, last_error, created_at, updated_at
+              external_reference, last_error, quarantined_at, quarantined_by, recovery_count, created_at, updated_at
             from integration_outbox
             where (@status is null or status = @status)
             order by created_at desc
@@ -109,6 +111,54 @@ public sealed class IntegrationRepository(
         var result = await transport.DeliverAsync(claimed, cancellationToken);
         var completed = await CompleteDispatchAsync(claimed, result, cancellationToken);
         return new IntegrationDispatchResponse(completed, Dispatched: result.Delivered, Outcome: result.Outcome);
+    }
+
+    public async Task<IntegrationOutboxMessage> RequeueQuarantinedAsync(
+        Guid eventId,
+        IntegrationOutboxRecoveryRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var reason = request.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 500)
+        {
+            throw new ArgumentException("A recovery reason of 500 characters or fewer is required.");
+        }
+
+        if (request.ExpectedAttemptCount < MaximumAutomaticAttempts)
+        {
+            throw new ArgumentException("The expected attempt count is invalid for a quarantined integration event.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            update integration_outbox
+            set status = 'queued', available_at = @now, locked_at = null,
+              quarantined_at = null, quarantined_by = null, recovery_count = recovery_count + 1,
+              updated_at = @now
+            where event_id = @event_id and status = 'quarantined' and attempt_count = @attempt_count
+            returning event_id, idempotency_key, event_type, aggregate_type, aggregate_id, destination, payload,
+              status, attempt_count, available_at, locked_at, last_attempt_at, delivered_at,
+              external_reference, last_error, quarantined_at, quarantined_by, recovery_count, created_at, updated_at;
+            """;
+        command.Parameters.AddWithValue("event_id", eventId);
+        command.Parameters.AddWithValue("attempt_count", request.ExpectedAttemptCount);
+        command.Parameters.AddWithValue("now", now);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("The integration event is not quarantined at the expected attempt count.");
+        }
+
+        var requeued = ReadOutboxMessage(reader);
+        await reader.DisposeAsync();
+        await WriteOutboxEventAsync(connection, transaction, eventId, "requeued", reason, actor, requeued.AttemptCount, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return requeued;
     }
 
     public async Task<IntegrationInboxReceipt> ReceiveAsync(
@@ -185,7 +235,7 @@ public sealed class IntegrationRepository(
               and available_at <= @now
             returning event_id, idempotency_key, event_type, aggregate_type, aggregate_id, destination, payload,
               status, attempt_count, available_at, locked_at, last_attempt_at, delivered_at,
-              external_reference, last_error, created_at, updated_at;
+              external_reference, last_error, quarantined_at, quarantined_by, recovery_count, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("event_id", eventId);
         command.Parameters.AddWithValue("now", now);
@@ -209,25 +259,31 @@ public sealed class IntegrationRepository(
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var status = result.Delivered ? "delivered" : "retry-scheduled";
-        var availableAt = result.Delivered ? message.AvailableAt : now.Add(result.RetryAfter ?? TimeSpan.FromMinutes(1));
+        var quarantine = !result.Delivered && message.AttemptCount >= MaximumAutomaticAttempts;
+        var status = result.Delivered ? "delivered" : quarantine ? "quarantined" : "retry-scheduled";
+        var availableAt = result.Delivered || quarantine ? message.AvailableAt : now.Add(result.RetryAfter ?? TimeSpan.FromMinutes(1));
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             update integration_outbox
             set status = @status, available_at = @available_at, locked_at = null,
               delivered_at = @delivered_at, external_reference = @external_reference,
-              last_error = @last_error, updated_at = @now
+              last_error = @last_error, quarantined_at = @quarantined_at,
+              quarantined_by = @quarantined_by, updated_at = @now
             where event_id = @event_id and status = 'dispatching' and attempt_count = @attempt_count
             returning event_id, idempotency_key, event_type, aggregate_type, aggregate_id, destination, payload,
               status, attempt_count, available_at, locked_at, last_attempt_at, delivered_at,
-              external_reference, last_error, created_at, updated_at;
+              external_reference, last_error, quarantined_at, quarantined_by, recovery_count, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("status", status);
         command.Parameters.AddWithValue("available_at", availableAt);
         command.Parameters.AddWithValue("delivered_at", result.Delivered ? now : DBNull.Value);
         command.Parameters.AddWithValue("external_reference", (object?)result.ExternalReference ?? DBNull.Value);
         command.Parameters.AddWithValue("last_error", (object?)result.Error ?? DBNull.Value);
+        command.Parameters.AddWithValue("quarantined_at", quarantine ? now : DBNull.Value);
+        command.Parameters.AddWithValue("quarantined_by", quarantine ? "local-dispatch" : DBNull.Value);
         command.Parameters.AddWithValue("now", now);
         command.Parameters.AddWithValue("event_id", message.EventId);
         command.Parameters.AddWithValue("attempt_count", message.AttemptCount);
@@ -237,7 +293,15 @@ public sealed class IntegrationRepository(
             throw new InvalidOperationException("Integration outbox dispatch completion was lost.");
         }
 
-        return ReadOutboxMessage(reader);
+        var completed = ReadOutboxMessage(reader);
+        await reader.DisposeAsync();
+        if (quarantine)
+        {
+            await WriteOutboxEventAsync(connection, transaction, message.EventId, "quarantined", result.Error ?? "Dispatch attempts exhausted.", "local-dispatch", completed.AttemptCount, now, cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return completed;
     }
 
     private static async Task<IntegrationOutboxMessage?> GetOutboxMessageAsync(
@@ -249,7 +313,7 @@ public sealed class IntegrationRepository(
         command.CommandText = """
             select event_id, idempotency_key, event_type, aggregate_type, aggregate_id, destination, payload,
               status, attempt_count, available_at, locked_at, last_attempt_at, delivered_at,
-              external_reference, last_error, created_at, updated_at
+              external_reference, last_error, quarantined_at, quarantined_by, recovery_count, created_at, updated_at
             from integration_outbox where event_id = @event_id;
             """;
         command.Parameters.AddWithValue("event_id", eventId);
@@ -266,7 +330,35 @@ public sealed class IntegrationRepository(
             reader.GetFieldValue<DateTimeOffset>(9), reader.IsDBNull(10) ? null : reader.GetFieldValue<DateTimeOffset>(10),
             reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11), reader.IsDBNull(12) ? null : reader.GetFieldValue<DateTimeOffset>(12),
             reader.IsDBNull(13) ? null : reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetString(14),
-            reader.GetFieldValue<DateTimeOffset>(15), reader.GetFieldValue<DateTimeOffset>(16));
+            reader.IsDBNull(15) ? null : reader.GetFieldValue<DateTimeOffset>(15), reader.IsDBNull(16) ? null : reader.GetString(16),
+            reader.GetInt32(17), reader.GetFieldValue<DateTimeOffset>(18), reader.GetFieldValue<DateTimeOffset>(19));
+    }
+
+    private static async Task WriteOutboxEventAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid eventId,
+        string action,
+        string reason,
+        string actor,
+        int attemptCount,
+        DateTimeOffset occurredAt,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into integration_outbox_events (event_log_id, event_id, action, reason, actor, attempt_count, occurred_at)
+            values (@event_log_id, @event_id, @action, @reason, @actor, @attempt_count, @occurred_at);
+            """;
+        command.Parameters.AddWithValue("event_log_id", Guid.NewGuid());
+        command.Parameters.AddWithValue("event_id", eventId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("reason", reason);
+        command.Parameters.AddWithValue("actor", actor);
+        command.Parameters.AddWithValue("attempt_count", attemptCount);
+        command.Parameters.AddWithValue("occurred_at", occurredAt);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static void ValidateQueueRequest(IntegrationOutboxQueueRequest request)

@@ -5520,6 +5520,33 @@ integrations.MapPost("/outbox/{eventId:guid}/dispatch", async (
     })
     .WithName("DispatchIntegrationOutbox");
 
+integrations.MapPost("/outbox/{eventId:guid}/requeue", async (
+        IntegrationRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        Guid eventId,
+        IntegrationOutboxRecoveryRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            return Results.Ok(await repository.RequeueQuarantinedAsync(eventId, request, session.Username, cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = [exception.Message]
+            });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
+    })
+    .WithName("RequeueQuarantinedIntegrationOutbox");
+
 integrations.MapPost("/inbox", async (
         IntegrationRepository repository,
         IntegrationInboxReceiveRequest request,
