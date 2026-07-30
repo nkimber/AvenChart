@@ -923,6 +923,7 @@ try {
         "legacy.rosreproductive" = "g|p|ap|lc|mearche|menopause|lmp|f_frequency|f_flow|f_symptoms|abnormal_hair_growth|f_hirsutism"
         "legacy.rosmusculoskeletal" = "joint_pain|swelling|m_redness|m_warm|m_stiffness|muscle|m_aches|fms|arthritis|loc"
         "legacy.rosneurologic" = "seizures|stroke|tia|n_numbness|n_weakness|paralysis|intellectual_decline|memory_problems|dementia|n_headache"
+        "legacy.rosskin" = "s_cancer|psoriasis|s_acne|s_other|s_disease"
     }
     $legacyRosProof = @()
     foreach ($legacyRosEntry in $legacyRosCompatibility.GetEnumerator()) {
