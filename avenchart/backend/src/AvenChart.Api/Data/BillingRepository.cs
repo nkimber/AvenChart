@@ -3062,9 +3062,10 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = "select exists(select 1 from encounter_signatures where encounter = @encounter and is_lock);";
+        command.CommandText = "select count(*) from encounter_signatures where encounter = @encounter and is_lock;";
         command.Parameters.AddWithValue("encounter", encounter);
-        return await command.ExecuteScalarAsync(cancellationToken) is true;
+        var lockCount = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt64(lockCount ?? 0, CultureInfo.InvariantCulture) > 0;
     }
 
     private static async Task<(int Pid, int Encounter)?> GetBillingLineContextAsync(
