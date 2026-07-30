@@ -1815,6 +1815,46 @@ export type PatientReferralWorkflowHistory = {
   createdAt: string
   updatedAt: string
 }
+export type ReferralWorkQueueFilters = {
+  status?: 'draft' | 'sent' | 'received' | 'closed' | 'cancelled' | 'all'
+  assignedTo?: string
+  overdueOnly?: boolean
+  query?: string
+  limit?: number
+}
+
+export type ReferralWorkQueueItem = {
+  referral: PatientReferral
+  patientDisplayName: string
+  pubpid: string
+  isOverdue: boolean
+}
+
+export type ReferralWorkQueueResponse = {
+  total: number
+  activeCount: number
+  overdueCount: number
+  items: ReferralWorkQueueItem[]
+}
+
+export async function getReferralWorkQueue(
+  sessionId: string,
+  filters: ReferralWorkQueueFilters = {},
+  signal?: AbortSignal,
+): Promise<ReferralWorkQueueResponse> {
+  const query = new URLSearchParams()
+  if (filters.status && filters.status !== 'all') query.set('status', filters.status)
+  if (filters.assignedTo?.trim()) query.set('assignedTo', filters.assignedTo.trim())
+  if (filters.overdueOnly) query.set('overdueOnly', 'true')
+  if (filters.query?.trim()) query.set('query', filters.query.trim())
+  if (filters.limit) query.set('limit', String(filters.limit))
+  return clinicianGet(
+    sessionId,
+    `/api/clinical-workflows/referral-work-queue${query.size ? `?${query}` : ''}`,
+    signal,
+  )
+}
+
 export async function getPatientReferrals(
   sessionId: string,
   patientId: string,
@@ -1987,8 +2027,9 @@ export type PatientAuthorizationWorkflowHistory = {
 
 export async function getClinicalWorkflowAssignees(
   sessionId: string,
+  signal?: AbortSignal,
 ): Promise<ClinicalWorkflowAssigneesResponse> {
-  return clinicianGet(sessionId, '/api/clinical-workflows/assignees')
+  return clinicianGet(sessionId, '/api/clinical-workflows/assignees', signal)
 }
 
 export async function getPatientAuthorizations(
