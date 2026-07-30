@@ -4972,8 +4972,15 @@ procedures.MapPut("/orders/{orderId:int}/status", async (
         ProcedureOrderStatusUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.UpdateOrderStatusAsync(orderId, request, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var mutation = await repository.UpdateOrderStatusAsync(orderId, request, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
     })
     .WithName("UpdateProcedureOrderStatus")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
@@ -4984,10 +4991,17 @@ procedures.MapPost("/orders/{orderId:int}/transmit", async (
         ProcedureOrderTransmitRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.TransmitOrderAsync(orderId, request, cancellationToken);
-        return mutation is null
-            ? Results.BadRequest("Procedure order could not be marked transmitted from the supplied order state.")
-            : Results.Ok(mutation);
+        try
+        {
+            var mutation = await repository.TransmitOrderAsync(orderId, request, cancellationToken);
+            return mutation is null
+                ? Results.BadRequest("Procedure order could not be marked transmitted from the supplied order state.")
+                : Results.Ok(mutation);
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
     })
     .WithName("TransmitProcedureOrder")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
@@ -4998,10 +5012,17 @@ procedures.MapPut("/orders/{orderId:int}", async (
         ProcedureOrderUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.UpdateOrderAsync(orderId, request, cancellationToken);
-        return mutation is null
-            ? Results.BadRequest("Procedure order could not be updated from the supplied order details.")
-            : Results.Ok(mutation);
+        try
+        {
+            var mutation = await repository.UpdateOrderAsync(orderId, request, cancellationToken);
+            return mutation is null
+                ? Results.BadRequest("Procedure order could not be updated from the supplied order details.")
+                : Results.Ok(mutation);
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
     })
     .WithName("UpdateProcedureOrder")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));

@@ -1227,6 +1227,17 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        await using (var lockConnection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var order = await GetOrderMutationContextAsync(lockConnection, orderId, cancellationToken);
+            if (order is null) return null;
+            if (await IsEncounterLockedAsync(lockConnection, order.Encounter, cancellationToken))
+            {
+                throw new EncounterLockConflictException(
+                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            }
+        }
+
         string? patientId = null;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         await using (var command = connection.CreateCommand())
@@ -1260,6 +1271,17 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         if (orderId <= 0)
         {
             return null;
+        }
+
+        await using (var lockConnection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var order = await GetOrderMutationContextAsync(lockConnection, orderId, cancellationToken);
+            if (order is null) return null;
+            if (await IsEncounterLockedAsync(lockConnection, order.Encounter, cancellationToken))
+            {
+                throw new EncounterLockConflictException(
+                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            }
         }
 
         var transmittedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
@@ -1319,6 +1341,17 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             || !TryReadDate(request.DateOrdered, out var orderDate))
         {
             return null;
+        }
+
+        await using (var lockConnection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var order = await GetOrderMutationContextAsync(lockConnection, orderId, cancellationToken);
+            if (order is null) return null;
+            if (await IsEncounterLockedAsync(lockConnection, order.Encounter, cancellationToken))
+            {
+                throw new EncounterLockConflictException(
+                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            }
         }
 
         string? patientId = null;
@@ -2414,7 +2447,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, patient_id, pid
+            select id, patient_id, pid, encounter
             from lab_orders
             where id = @id
             limit 1;
@@ -2430,7 +2463,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return new ProcedureOrderMutationContext(
             Id: reader.GetInt32(reader.GetOrdinal("id")),
             PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
-            LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")));
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
+            Encounter: reader.GetInt32(reader.GetOrdinal("encounter")));
     }
 
     private static async Task<ProcedureReportMutationContext?> GetReportMutationContextAsync(
@@ -3125,7 +3159,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     private sealed record ProcedureEncounterMutationContext(int Encounter, int? ProviderId);
 
-    private sealed record ProcedureOrderMutationContext(int Id, string PatientId, int LegacyPid);
+    private sealed record ProcedureOrderMutationContext(int Id, string PatientId, int LegacyPid, int Encounter);
 
     private sealed record ProcedureReportMutationContext(int Id, string PatientId, int LegacyPid);
 
