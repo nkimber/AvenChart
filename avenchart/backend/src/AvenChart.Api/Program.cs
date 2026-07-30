@@ -4829,6 +4829,25 @@ procedures.MapGet("/report-review-queue", async (
     })
     .WithName("GetProcedureReportReviewQueue");
 
+procedures.MapGet("/critical-result-queue", async (
+        ProcedureRepository repository,
+        CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetCriticalLabResultQueueAsync(cancellationToken)))
+    .WithName("GetCriticalLabResultQueue")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "view"));
+
+procedures.MapPut("/results/{resultId:int}/critical-acknowledgement", async (
+        ProcedureRepository repository, AuthRepository authRepository, HttpContext httpContext,
+        int resultId, CriticalLabResultAcknowledgementRequest request, CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        return await repository.AcknowledgeCriticalLabResultAsync(resultId, request, session.Username, cancellationToken)
+            ? Results.Ok(new { acknowledged = true })
+            : Results.Conflict(new { error = "The critical result is no longer open at the supplied version." });
+    })
+    .WithName("AcknowledgeCriticalLabResult")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
+
 procedures.MapGet("/reports/{reportId:int}/review-history", async (
         ProcedureRepository repository,
         int reportId,

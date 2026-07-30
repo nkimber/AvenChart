@@ -343,6 +343,8 @@ drop table if exists track_anything_types;
 drop table if exists address_book_contacts;
 drop table if exists office_notes;
 drop table if exists procedure_result_versions;
+drop table if exists critical_lab_result_acknowledgement_events;
+drop table if exists critical_lab_result_acknowledgements;
 drop table if exists lab_results;
 drop table if exists lab_report_review_events;
 drop table if exists lab_reports;
@@ -1633,6 +1635,28 @@ create table lab_results (
   abnormal text,
   result_date timestamp not null,
   result_status text
+);
+
+create table critical_lab_result_acknowledgements (
+  result_id integer primary key references lab_results(id) on delete cascade,
+  status text not null default 'open' check (status in ('open', 'acknowledged')),
+  version integer not null default 1,
+  acknowledged_by text,
+  acknowledged_at timestamp,
+  acknowledgement_reason text
+);
+
+create table critical_lab_result_acknowledgement_events (
+  id bigserial primary key,
+  result_id integer not null references lab_results(id) on delete cascade,
+  action text not null,
+  previous_status text,
+  current_status text not null,
+  actor text not null,
+  reason text not null,
+  expected_version integer not null,
+  resulting_version integer not null,
+  occurred_at timestamp not null
 );
 
 create table procedure_result_versions (
@@ -3104,6 +3128,7 @@ create index idx_lab_order_catalog_lab_id on lab_order_catalog (lab_id);
 create index idx_lab_reports_date on lab_reports (report_date);
 create index idx_lab_report_review_events_report on lab_report_review_events (report_id, occurred_at desc, id desc);
 create index idx_lab_results_date on lab_results (result_date);
+create index idx_critical_lab_result_ack_events_result on critical_lab_result_acknowledgement_events (result_id, occurred_at desc, id desc);
 create index idx_procedure_result_versions_result on procedure_result_versions (result_id, version_no desc);
 create index idx_messages_pid on messages (pid);
 create index idx_portal_mailbox_owner_recipient on portal_mailbox_messages (owner, recipient_id, deleted);

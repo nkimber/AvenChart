@@ -9049,6 +9049,34 @@ export type ProcedureMutationResponse = {
   detail: ProcedureResultsResponse
 }
 
+export type CriticalLabResultQueueResponse = {
+  totalOpen: number
+  results: Array<{
+    resultId: number
+    reportId: number
+    patientId: string
+    patientDisplayName: string
+    code?: string | null
+    text?: string | null
+    result?: string | null
+    units?: string | null
+    abnormal?: string | null
+    resultDate: string
+    acknowledgementStatus: string
+    acknowledgementVersion: number
+    acknowledgedBy?: string | null
+    acknowledgedAt?: string | null
+  }>
+}
+
+export function getCriticalLabResultQueue(sessionId: string, signal?: AbortSignal): Promise<CriticalLabResultQueueResponse> {
+  return clinicianGet(sessionId, '/api/procedures/critical-result-queue', signal)
+}
+
+export async function acknowledgeCriticalLabResult(sessionId: string, resultId: number, body: { expectedVersion: number; reason: string }): Promise<void> {
+  await clinicianPut<{ acknowledged: boolean }>(sessionId, `/api/procedures/results/${resultId}/critical-acknowledgement`, body)
+}
+
 export type ProcedureReportReviewHistoryResponse = {
   reportId: number
   reviewVersion: number

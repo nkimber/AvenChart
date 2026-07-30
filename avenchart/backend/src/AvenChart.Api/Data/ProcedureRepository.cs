@@ -212,6 +212,69 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             Reports: reports);
     }
 
+    public async Task<CriticalLabResultQueueResponse> GetCriticalLabResultQueueAsync(
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select lres.id as result_id, lr.id as report_id, p.canonical_id as patient_id,
+                   trim(concat(p.last_name, ', ', p.first_name)) as patient_display_name,
+                   lres.code, lres.text, lres.result, lres.units, lres.abnormal, lres.result_date,
+                   coalesce(ack.status, 'open') as acknowledgement_status,
+                   coalesce(ack.version, 1) as acknowledgement_version,
+                   ack.acknowledged_by, ack.acknowledged_at
+            from lab_results lres
+            inner join lab_reports lr on lr.id = lres.report_id
+            inner join lab_orders lo on lo.id = lr.order_id
+            inner join patients p on p.legacy_pid = lo.pid
+            left join critical_lab_result_acknowledgements ack on ack.result_id = lres.id
+            where lower(coalesce(lres.abnormal, '')) in ('critical', 'panic', 'hh', 'll')
+              and coalesce(ack.status, 'open') = 'open'
+            order by lres.result_date desc, lres.id desc;
+            """;
+        var results = new List<CriticalLabResultQueueItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(new CriticalLabResultQueueItem(
+                reader.GetInt32(reader.GetOrdinal("result_id")), reader.GetInt32(reader.GetOrdinal("report_id")),
+                reader.GetString(reader.GetOrdinal("patient_id")), reader.GetString(reader.GetOrdinal("patient_display_name")),
+                ReadNullableString(reader, "code"), ReadNullableString(reader, "text"), ReadNullableString(reader, "result"),
+                ReadNullableString(reader, "units"), ReadNullableString(reader, "abnormal"),
+                reader.GetDateTime(reader.GetOrdinal("result_date")).ToString("yyyy-MM-dd HH:mm"),
+                reader.GetString(reader.GetOrdinal("acknowledgement_status")), reader.GetInt32(reader.GetOrdinal("acknowledgement_version")),
+                ReadNullableString(reader, "acknowledged_by"), ReadNullableDateTime(reader, "acknowledged_at")));
+        }
+        return new CriticalLabResultQueueResponse(results.Count, results);
+    }
+
+    public async Task<bool> AcknowledgeCriticalLabResultAsync(
+        int resultId, CriticalLabResultAcknowledgementRequest request, string actor, CancellationToken cancellationToken)
+    {
+        if (resultId <= 0 || request.ExpectedVersion <= 0 || !HasBoundedReason(request.Reason) || string.IsNullOrWhiteSpace(actor)) return false;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into critical_lab_result_acknowledgements (result_id, status, version, acknowledged_by, acknowledged_at, acknowledgement_reason)
+            select @resultId, 'acknowledged', 2, @actor, @occurredAt, @reason
+            where exists (select 1 from lab_results where id = @resultId and lower(coalesce(abnormal, '')) in ('critical', 'panic', 'hh', 'll'))
+            on conflict (result_id) do update set status = 'acknowledged', version = critical_lab_result_acknowledgements.version + 1, acknowledged_by = excluded.acknowledged_by, acknowledged_at = excluded.acknowledged_at, acknowledgement_reason = excluded.acknowledgement_reason
+            where critical_lab_result_acknowledgements.status = 'open' and critical_lab_result_acknowledgements.version = @expectedVersion
+            returning version;
+            """;
+        var occurredAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        command.Parameters.AddWithValue("resultId", resultId); command.Parameters.AddWithValue("actor", actor.Trim()); command.Parameters.AddWithValue("reason", request.Reason.Trim()); command.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion); command.Parameters.AddWithValue("occurredAt", occurredAt);
+        var version = await command.ExecuteScalarAsync(cancellationToken);
+        if (version is null) return false;
+        await using var history = connection.CreateCommand(); history.Transaction = transaction;
+        history.CommandText = "insert into critical_lab_result_acknowledgement_events (result_id, action, previous_status, current_status, actor, reason, expected_version, resulting_version, occurred_at) values (@resultId, 'acknowledged', 'open', 'acknowledged', @actor, @reason, @expectedVersion, @resultingVersion, @occurredAt);";
+        history.Parameters.AddWithValue("resultId", resultId); history.Parameters.AddWithValue("actor", actor.Trim()); history.Parameters.AddWithValue("reason", request.Reason.Trim()); history.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion); history.Parameters.AddWithValue("resultingVersion", Convert.ToInt32(version)); history.Parameters.AddWithValue("occurredAt", occurredAt); await history.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken); return true;
+    }
+
     public async Task<ProcedureReportReviewHistoryResponse?> GetReportReviewHistoryAsync(
         int reportId,
         CancellationToken cancellationToken)

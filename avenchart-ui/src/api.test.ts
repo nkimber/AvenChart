@@ -6,6 +6,7 @@ import {
   ApiRequestError,
   approvePrescriptionRefillRequest,
   archivePatientDocument,
+  acknowledgeCriticalLabResult,
   assignLabReportReviewer,
   bulkSignLabReports,
   completePatientDocumentOcr,
@@ -60,6 +61,7 @@ import {
   getCurrentSession,
   getAuthorizationPolicyCatalog,
   getClinicalWorkflowAssignees,
+  getCriticalLabResultQueue,
   getDocumentTemplateHistory,
   getDocumentTemplates,
   getInventoryActivityReport,
@@ -2023,6 +2025,50 @@ describe('authenticated API transport', () => {
     ])
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ body: JSON.stringify({ assignedTo: 'admin', expectedReviewVersion: 1, reason: 'Claimed for review' }) })
     expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({ body: JSON.stringify({ reports: [{ reportId: 6001, expectedReviewVersion: 5 }, { reportId: 6002, expectedReviewVersion: 2 }], reason: 'Reviewed returned local reports' }) })
+  })
+
+  it('uses the protected local critical-result acknowledgement contract', async () => {
+    const queue = {
+      totalOpen: 1,
+      results: [
+        {
+          resultId: 9002,
+          reportId: 6001,
+          patientId: 'MOD-PAT-0004',
+          patientDisplayName: 'Alex Morgan',
+          abnormal: 'critical',
+          resultDate: '2026-07-29 09:15',
+          acknowledgementStatus: 'open',
+          acknowledgementVersion: 1,
+        },
+      ],
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(queue))
+      .mockResolvedValueOnce(jsonResponse({ acknowledged: true }))
+
+    await expect(getCriticalLabResultQueue('staff-session')).resolves.toEqual(queue)
+    await expect(
+      acknowledgeCriticalLabResult('staff-session', 9002, {
+        expectedVersion: 1,
+        reason: 'Reviewed in the local clinical queue.',
+      }),
+    ).resolves.toBeUndefined()
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/procedures/critical-result-queue',
+      'http://localhost:5001/api/procedures/results/9002/critical-acknowledgement',
+    ])
+    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([
+      undefined,
+      'PUT',
+    ])
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      body: JSON.stringify({
+        expectedVersion: 1,
+        reason: 'Reviewed in the local clinical queue.',
+      }),
+    })
   })
 
   it('uses the protected patient relationship and care-team contracts', async () => {

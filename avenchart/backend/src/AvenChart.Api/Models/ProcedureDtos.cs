@@ -297,6 +297,30 @@ public sealed record ProcedureReportReviewHistoryResponse(
     int ReviewVersion,
     IReadOnlyList<ProcedureReportReviewEventItem> Events);
 
+public sealed record CriticalLabResultAcknowledgementRequest(
+    int ExpectedVersion,
+    string Reason);
+
+public sealed record CriticalLabResultQueueItem(
+    int ResultId,
+    int ReportId,
+    string PatientId,
+    string PatientDisplayName,
+    string? Code,
+    string? Text,
+    string? Result,
+    string? Units,
+    string? Abnormal,
+    string ResultDate,
+    string AcknowledgementStatus,
+    int AcknowledgementVersion,
+    string? AcknowledgedBy,
+    string? AcknowledgedAt);
+
+public sealed record CriticalLabResultQueueResponse(
+    int TotalOpen,
+    IReadOnlyList<CriticalLabResultQueueItem> Results);
+
 public sealed record ProcedureReportReviewEventItem(
     long EventId,
     string Action,

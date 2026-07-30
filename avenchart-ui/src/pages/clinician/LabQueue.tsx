@@ -9,7 +9,9 @@ import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom
 import { CheckCircle, History, RefreshCw, UserCheck } from 'lucide-react'
 import {
   assignLabReportReviewer,
+  acknowledgeCriticalLabResult,
   bulkSignLabReports,
+  getCriticalLabResultQueue,
   denyLabReportReview,
   getLabReportReviewHistory,
   getProcedureOrderQueue,
@@ -22,6 +24,7 @@ import {
   type ProcedureReportQueueItem,
   type ProcedureReportQueueResponse,
   type ProcedureReportReviewHistoryResponse,
+  type CriticalLabResultQueueResponse,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
@@ -132,10 +135,34 @@ export default function LabQueue() {
     () => new Set(),
   )
   const [bulkSigning, setBulkSigning] = useState(false)
+  const [criticalResults, setCriticalResults] =
+    useState<CriticalLabResultQueueResponse | null>(null)
   const [reviewHistoryByReport, setReviewHistoryByReport] = useState<
     Record<number, ProcedureReportReviewHistoryResponse>
   >({})
   const [historyLoadingId, setHistoryLoadingId] = useState<number | null>(null)
+
+  async function acknowledgeCritical(
+    result: NonNullable<typeof criticalResults>['results'][number],
+  ) {
+    const reason = requestReviewReason('Acknowledge this critical result', '')
+    if (!reason) return
+    try {
+      await acknowledgeCriticalLabResult(session.sessionId, result.resultId, {
+        expectedVersion: result.acknowledgementVersion,
+        reason,
+      })
+      setReload((value) => value + 1)
+      showToast('Critical result acknowledged locally.', 'success')
+    } catch (error) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : 'Critical acknowledgement failed.',
+        'error',
+      )
+    }
+  }
 
   function requestReviewReason(action: string, suggestedReason: string) {
     const reason = window.prompt(`${action} reason (1–500 characters):`, suggestedReason)
@@ -189,6 +216,11 @@ export default function LabQueue() {
     const controller = new AbortController()
     void loadReportsForCriteria(controller.signal)
     void loadOrdersForCriteria(controller.signal)
+    void getCriticalLabResultQueue(session.sessionId, controller.signal)
+      .then(setCriticalResults)
+      .catch((error: unknown) => {
+        if (!isRequestCancellation(error)) setCriticalResults(null)
+      })
     return () => controller.abort()
   }, [queryKey, reload, session.sessionId])
 
@@ -413,6 +445,29 @@ export default function LabQueue() {
           Refresh
         </button>
       </div>
+      {criticalResults && criticalResults.totalOpen > 0 && (
+        <div className="error-banner" role="alert">
+          {criticalResults.totalOpen} local critical{' '}
+          {criticalResults.totalOpen === 1 ? 'result requires' : 'results require'}{' '}
+          acknowledgement. This records local review only; it does not send an
+          external notification.
+          {criticalResults.results.slice(0, 3).map((result) => (
+            <div key={result.resultId} className="ne-actions">
+              <span>
+                {result.patientDisplayName}: {result.text ?? result.code ?? 'Result'}{' '}
+                {result.result ?? ''} {result.units ?? ''}
+              </span>
+              <button
+                className="cl-btn-secondary"
+                type="button"
+                onClick={() => void acknowledgeCritical(result)}
+              >
+                Acknowledge
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="cl-tab-bar">
         <button
