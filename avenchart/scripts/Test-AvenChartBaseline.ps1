@@ -2451,6 +2451,26 @@ catch {
 }
 
 try {
+    $legacyModuleCatalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/modules" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $legacyCustomModules = [ordered]@{
+        CLAIMREV_CONNECT = "partner-gated"
+        COMLINK_TELEHEALTH = "partner-gated"
+        DASHBOARD_CONTEXT = "decision-required"
+        DORN = "partner-gated"
+        EHI_EXPORTER = "decision-required"
+        FAX_SMS = "partner-gated"
+        PRIOR_AUTHORIZATIONS = "decision-required"
+        WENO = "partner-gated"
+    }
+    $legacyCustomModuleRows = @($legacyModuleCatalog.modules | Where-Object { $legacyCustomModules.Contains($_.key) })
+    $legacyCustomModuleCatalogPassed = $legacyCustomModuleRows.Count -eq $legacyCustomModules.Count -and @($legacyCustomModuleRows | Where-Object { $_.status -ne $legacyCustomModules[$_.key] -or $_.canChangeStatus -or $_.description -notmatch "Legacy custom-module source" -or $_.description -notmatch "Runtime enablement is unknown" }).Count -eq 0
+    Add-Check -Name "legacy custom modules are visible as governed source-present inventory records" -Result $(if ($legacyCustomModuleCatalogPassed) { "passed" } else { "failed" }) -Details @{ moduleKeys = $legacyCustomModuleRows.key; statuses = @($legacyCustomModuleRows | ForEach-Object { "$($_.key):$($_.status)" }); editableKeys = @($legacyCustomModuleRows | Where-Object canChangeStatus | ForEach-Object key) }
+}
+catch {
+    Add-Check -Name "legacy custom modules are visible as governed source-present inventory records" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $apiClientRevisionHeaders = Get-AdministrationHeaders
     $apiClientHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-clients/LOCAL_PORTAL/history" -Method Get -Headers $apiClientRevisionHeaders -TimeoutSec 20
     $apiClientBaselineRevision = $apiClientHistoryBefore.revisions | Where-Object { $_.action -eq "baseline" } | Select-Object -First 1
