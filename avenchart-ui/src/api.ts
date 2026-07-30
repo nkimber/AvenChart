@@ -4635,6 +4635,7 @@ export type EncounterTrackCatalog = {
   encounter: number
   availableTracks: EncounterTrackDefinition[]
   records: EncounterTrackRecord[]
+  isLocked: boolean
 }
 export type EncounterTrackRecordDetail = {
   record: EncounterTrackRecord
