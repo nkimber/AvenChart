@@ -3945,6 +3945,25 @@ export type MedicationListItem = {
   endDate?: string | null
   comments?: string | null
   activity: number
+  lifecycleVersion: number
+  lifecycleEventCount: number
+}
+
+export type MedicationLifecycleHistoryResponse = {
+  medicationId: string
+  currentVersion: number
+  eventCount: number
+  events: Array<{
+    eventId: number
+    action: 'created' | 'deactivated' | 'restored'
+    previousActivity?: number | null
+    currentActivity: number
+    actor: string
+    reason?: string | null
+    expectedVersion: number
+    resultingVersion: number
+    occurredAt: string
+  }>
 }
 
 export type ImmunizationListItem = {
@@ -8824,12 +8843,40 @@ export async function deactivateMedication(
   sessionId: string,
   medicationId: string,
   comments: string,
+  expectedVersion: number,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   return clinicianPut(
     sessionId,
     `/api/clinical-lists/medications/${medicationId}/deactivate`,
-    { comments },
+    { comments, expectedVersion },
+    signal,
+  )
+}
+
+export async function restoreMedication(
+  sessionId: string,
+  medicationId: string,
+  reason: string,
+  expectedVersion: number,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/medications/${medicationId}/restore`,
+    { reason, expectedVersion },
+    signal,
+  )
+}
+
+export function getMedicationLifecycleHistory(
+  sessionId: string,
+  medicationId: string,
+  signal?: AbortSignal,
+): Promise<MedicationLifecycleHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/clinical-lists/medications/${medicationId}/lifecycle-history`,
     signal,
   )
 }

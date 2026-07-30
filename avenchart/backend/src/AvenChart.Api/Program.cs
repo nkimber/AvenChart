@@ -2919,10 +2919,13 @@ clinicalLists.MapDelete("/problems/{problemId}", async (
 
 clinicalLists.MapPost("/medications", async (
         ClinicalListRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         ClinicalMedicationCreateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateMedicationAsync(request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.CreateMedicationAsync(request, session.Username, cancellationToken);
         return mutation is null
             ? Results.BadRequest("Medication could not be created from the supplied patient, title, and date.")
             : Results.Created($"/api/clinical-lists/medications/{mutation.Id}", mutation);
@@ -2931,14 +2934,53 @@ clinicalLists.MapPost("/medications", async (
 
 clinicalLists.MapPut("/medications/{medicationId}/deactivate", async (
         ClinicalListRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string medicationId,
-        ClinicalListDeactivateRequest request,
+        ClinicalMedicationDeactivateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.DeactivateMedicationAsync(medicationId, request, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.DeactivateMedicationAsync(medicationId, request, session.Username, cancellationToken);
+        return mutation.Status switch
+        {
+            ClinicalMedicationLifecycleMutationStatus.Updated => Results.Ok(mutation.Mutation),
+            ClinicalMedicationLifecycleMutationStatus.Invalid => Results.BadRequest(new { error = "A non-empty 1-500 character reason and loaded version are required." }),
+            ClinicalMedicationLifecycleMutationStatus.NotFound => Results.NotFound(),
+            _ => Results.Conflict(new { error = "The medication changed after it was loaded. Refresh and try again." })
+        };
     })
     .WithName("DeactivateClinicalMedication");
+
+clinicalLists.MapPut("/medications/{medicationId}/restore", async (
+        ClinicalListRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string medicationId,
+        ClinicalMedicationRestoreRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.RestoreMedicationAsync(medicationId, request, session.Username, cancellationToken);
+        return mutation.Status switch
+        {
+            ClinicalMedicationLifecycleMutationStatus.Updated => Results.Ok(mutation.Mutation),
+            ClinicalMedicationLifecycleMutationStatus.Invalid => Results.BadRequest(new { error = "A non-empty 1-500 character reason and loaded version are required." }),
+            ClinicalMedicationLifecycleMutationStatus.NotFound => Results.NotFound(),
+            _ => Results.Conflict(new { error = "The medication changed after it was loaded. Refresh and try again." })
+        };
+    })
+    .WithName("RestoreClinicalMedication");
+
+clinicalLists.MapGet("/medications/{medicationId}/lifecycle-history", async (
+        ClinicalListRepository repository,
+        string medicationId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetMedicationLifecycleHistoryAsync(medicationId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetClinicalMedicationLifecycleHistory");
 
 clinicalLists.MapDelete("/medications/{medicationId}", async (
         ClinicalListRepository repository,

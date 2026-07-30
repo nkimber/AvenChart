@@ -273,6 +273,7 @@ lines.push(`-- Generated from ${dataset.datasetId} ${dataset.version}`)
 lines.push('set client_min_messages to warning;')
 lines.push('begin;')
 lines.push(`
+drop table if exists medication_list_lifecycle_events;
 drop table if exists medications;
 drop table if exists inventory_patient_sales;
 drop table if exists inventory_patient_sale_batches;
@@ -1832,7 +1833,21 @@ create table medications (
   modified_date date,
   comments text,
   activity integer not null default 1,
-  end_date date
+  end_date date,
+  lifecycle_version integer not null default 1
+);
+
+create table medication_list_lifecycle_events (
+  id bigserial primary key,
+  medication_id text not null references medications(id) on delete cascade,
+  action text not null check (action in ('created', 'deactivated', 'restored')),
+  previous_activity integer,
+  current_activity integer not null,
+  actor text not null,
+  reason text,
+  expected_version integer not null,
+  resulting_version integer not null,
+  occurred_at timestamp not null
 );
 `)
 
@@ -3147,6 +3162,7 @@ create index idx_patient_document_versions_document on patient_document_versions
 create index idx_problems_pid on problems (pid);
 create index idx_allergies_pid on allergies (pid);
 create index idx_medications_pid on medications (pid);
+create index idx_medication_list_lifecycle_events_medication on medication_list_lifecycle_events (medication_id, occurred_at desc, id desc);
 create index idx_access_group_permissions_group on access_group_permissions (group_value);
 create index idx_access_group_permissions_permission on access_group_permissions (section_value, permission_value);
 create index idx_access_user_memberships_user on access_user_memberships (user_value);

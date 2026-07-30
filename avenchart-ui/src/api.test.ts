@@ -36,6 +36,7 @@ import {
   createProcedureSpecimen,
   createPrescription,
   deleteAllergy,
+  deactivateMedication,
   deleteImmunization,
   deleteMedication,
   deletePatientDocument,
@@ -68,6 +69,7 @@ import {
   getInventoryMedicationCatalog,
   getInventoryLotMetadataHistory,
   getInventoryPurchaseRequisitions,
+  getMedicationLifecycleHistory,
   getClinicalPharmacyDirectory,
   getPatientBilling,
   getPatientCareTeamOptions,
@@ -110,6 +112,7 @@ import {
   restorePatientDocument,
   reviewPatientDocument,
   refillPrescription,
+  restoreMedication,
   replyToPatientMessage,
   routePrescriptionToPharmacy,
   routePatientDocument,
@@ -1523,6 +1526,60 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
       headers: { 'X-Legacy EHR-Session': 'staff-session' },
       body: JSON.stringify({ note: 'Duplicate administration record' }),
+    })
+  })
+
+  it('uses protected versioned medication lifecycle contracts', async () => {
+    const detail = { patientId: 'MOD-PAT-0006', medications: [] }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'MED-41', detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'MED-41', detail }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          medicationId: 'MED-41',
+          currentVersion: 3,
+          eventCount: 3,
+          events: [],
+        }),
+      )
+
+    await deactivateMedication(
+      'staff-session',
+      'MED-41',
+      'No longer taking this medication.',
+      1,
+    )
+    await restoreMedication(
+      'staff-session',
+      'MED-41',
+      'Medication list reconciliation confirmed active use.',
+      2,
+    )
+    await expect(
+      getMedicationLifecycleHistory('staff-session', 'MED-41'),
+    ).resolves.toMatchObject({ currentVersion: 3, eventCount: 3 })
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/clinical-lists/medications/MED-41/deactivate',
+      'http://localhost:5001/api/clinical-lists/medications/MED-41/restore',
+      'http://localhost:5001/api/clinical-lists/medications/MED-41/lifecycle-history',
+    ])
+    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([
+      'PUT',
+      'PUT',
+      undefined,
+    ])
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      body: JSON.stringify({
+        comments: 'No longer taking this medication.',
+        expectedVersion: 1,
+      }),
+    })
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      body: JSON.stringify({
+        reason: 'Medication list reconciliation confirmed active use.',
+        expectedVersion: 2,
+      }),
     })
   })
 

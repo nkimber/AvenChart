@@ -463,11 +463,13 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
 
     public async Task<ClinicalListMutationResponse?> CreateMedicationAsync(
         ClinicalMedicationCreateRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.PatientId)
             || string.IsNullOrWhiteSpace(request.Title)
-            || !TryReadDate(request.DateTime, out var medicationDate))
+            || !TryReadDate(request.DateTime, out var medicationDate)
+            || !HasBoundedText(actor, 120))
         {
             return null;
         }
@@ -480,12 +482,14 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         var id = $"MED-MODERN-{Guid.NewGuid():N}";
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             insert into medications
-                (id, patient_id, pid, type, title, diagnosis, medication_date, modified_date, comments, activity, end_date)
+                (id, patient_id, pid, type, title, diagnosis, medication_date, modified_date, comments, activity, end_date, lifecycle_version)
             values
-                (@id, @patientId, @pid, 'medication', @title, @diagnosis, @medicationDate, @medicationDate, @comments, 1, null);
+                (@id, @patientId, @pid, 'medication', @title, @diagnosis, @medicationDate, @medicationDate, @comments, 1, null, 1);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("patientId", patient.PatientId);
@@ -496,45 +500,160 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("comments", NullableText(request.Comments));
         await command.ExecuteNonQueryAsync(cancellationToken);
 
+        await InsertMedicationLifecycleEventAsync(
+            connection, transaction, id, "created", null, 1, actor.Trim(), null, 0, 1, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
         var lists = await GetForPatientAsync(patient.PatientId, cancellationToken);
         return lists is null ? null : new ClinicalListMutationResponse(id, lists);
     }
 
-    public async Task<ClinicalListMutationResponse?> DeactivateMedicationAsync(
+    public async Task<ClinicalMedicationLifecycleMutationResult> DeactivateMedicationAsync(
         string medicationId,
-        ClinicalListDeactivateRequest request,
+        ClinicalMedicationDeactivateRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(medicationId))
+        if (string.IsNullOrWhiteSpace(medicationId)
+            || request.ExpectedVersion <= 0
+            || !HasBoundedText(request.Comments, 500)
+            || !HasBoundedText(actor, 120))
         {
-            return null;
+            return new ClinicalMedicationLifecycleMutationResult(ClinicalMedicationLifecycleMutationStatus.Invalid, null);
         }
 
         string? patientId = null;
-        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = """
                 update medications
                 set activity = 0,
                     end_date = @endDate,
-                    comments = @comments
-                where id = @id and type = 'medication'
+                    comments = @comments,
+                    lifecycle_version = lifecycle_version + 1
+                where id = @id
+                  and type = 'medication'
+                  and activity = 1
+                  and lifecycle_version = @expectedVersion
                 returning patient_id;
                 """;
+            command.Transaction = transaction;
             command.Parameters.AddWithValue("id", medicationId);
             command.Parameters.Add("endDate", NpgsqlDbType.Date).Value = DateOnly.FromDateTime(DateTime.UtcNow);
             command.Parameters.AddWithValue("comments", NullableText(request.Comments));
+            command.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion);
             patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         }
 
         if (patientId is null)
         {
-            return null;
+            await transaction.RollbackAsync(cancellationToken);
+            return await GetMedicationMutationFailureAsync(connection, medicationId, cancellationToken);
         }
 
+        await InsertMedicationLifecycleEventAsync(
+            connection, transaction, medicationId, "deactivated", 1, 0, actor.Trim(), request.Comments.Trim(),
+            request.ExpectedVersion, request.ExpectedVersion + 1, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
         var lists = await GetForPatientAsync(patientId, cancellationToken);
-        return lists is null ? null : new ClinicalListMutationResponse(medicationId, lists);
+        return lists is null
+            ? new ClinicalMedicationLifecycleMutationResult(ClinicalMedicationLifecycleMutationStatus.NotFound, null)
+            : new ClinicalMedicationLifecycleMutationResult(
+                ClinicalMedicationLifecycleMutationStatus.Updated,
+                new ClinicalListMutationResponse(medicationId, lists));
+    }
+
+    public async Task<ClinicalMedicationLifecycleMutationResult> RestoreMedicationAsync(
+        string medicationId,
+        ClinicalMedicationRestoreRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(medicationId)
+            || request.ExpectedVersion <= 0
+            || !HasBoundedText(request.Reason, 500)
+            || !HasBoundedText(actor, 120))
+        {
+            return new ClinicalMedicationLifecycleMutationResult(ClinicalMedicationLifecycleMutationStatus.Invalid, null);
+        }
+
+        string? patientId;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                update medications
+                set activity = 1,
+                    end_date = null,
+                    lifecycle_version = lifecycle_version + 1
+                where id = @id
+                  and type = 'medication'
+                  and activity = 0
+                  and lifecycle_version = @expectedVersion
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", medicationId);
+            command.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion);
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return await GetMedicationMutationFailureAsync(connection, medicationId, cancellationToken);
+        }
+
+        await InsertMedicationLifecycleEventAsync(
+            connection, transaction, medicationId, "restored", 0, 1, actor.Trim(), request.Reason.Trim(),
+            request.ExpectedVersion, request.ExpectedVersion + 1, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        var lists = await GetForPatientAsync(patientId, cancellationToken);
+        return lists is null
+            ? new ClinicalMedicationLifecycleMutationResult(ClinicalMedicationLifecycleMutationStatus.NotFound, null)
+            : new ClinicalMedicationLifecycleMutationResult(
+                ClinicalMedicationLifecycleMutationStatus.Updated,
+                new ClinicalListMutationResponse(medicationId, lists));
+    }
+
+    public async Task<ClinicalMedicationLifecycleHistoryResponse?> GetMedicationLifecycleHistoryAsync(
+        string medicationId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(medicationId)) return null;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select medication.lifecycle_version, event.id, event.action, event.previous_activity, event.current_activity,
+                   event.actor, event.reason, event.expected_version, event.resulting_version, event.occurred_at
+            from medications medication
+            left join medication_list_lifecycle_events event on event.medication_id = medication.id
+            where medication.id = @id and medication.type = 'medication'
+            order by event.occurred_at desc nulls last, event.id desc nulls last;
+            """;
+        command.Parameters.AddWithValue("id", medicationId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var currentVersion = reader.GetInt32(reader.GetOrdinal("lifecycle_version"));
+        var events = new List<ClinicalMedicationLifecycleEventItem>();
+        do
+        {
+            if (reader.IsDBNull(reader.GetOrdinal("id"))) continue;
+            events.Add(new ClinicalMedicationLifecycleEventItem(
+                reader.GetInt64(reader.GetOrdinal("id")), reader.GetString(reader.GetOrdinal("action")),
+                reader.IsDBNull(reader.GetOrdinal("previous_activity")) ? null : reader.GetInt32(reader.GetOrdinal("previous_activity")),
+                reader.GetInt32(reader.GetOrdinal("current_activity")), reader.GetString(reader.GetOrdinal("actor")),
+                ReadNullableString(reader, "reason"), reader.GetInt32(reader.GetOrdinal("expected_version")),
+                reader.GetInt32(reader.GetOrdinal("resulting_version")),
+                reader.GetDateTime(reader.GetOrdinal("occurred_at")).ToString("yyyy-MM-dd HH:mm")));
+        }
+        while (await reader.ReadAsync(cancellationToken));
+        return new ClinicalMedicationLifecycleHistoryResponse(medicationId, currentVersion, events.Count, events);
     }
 
     public async Task<bool> DeleteMedicationAsync(string medicationId, CancellationToken cancellationToken)
@@ -1749,10 +1868,12 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, title, diagnosis, medication_date, end_date, comments, activity
-            from medications
-            where pid = @pid
-            order by activity desc, medication_date desc, id;
+            select medication.id, medication.title, medication.diagnosis, medication.medication_date, medication.end_date,
+                   medication.comments, medication.activity, medication.lifecycle_version,
+                   (select count(*) from medication_list_lifecycle_events event where event.medication_id = medication.id) as lifecycle_event_count
+            from medications medication
+            where medication.pid = @pid
+            order by medication.activity desc, medication.medication_date desc, medication.id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
 
@@ -1767,7 +1888,9 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Date: ReadNullableDate(reader, "medication_date"),
                 EndDate: ReadNullableDate(reader, "end_date"),
                 Comments: ReadNullableString(reader, "comments"),
-                Activity: reader.GetInt32(reader.GetOrdinal("activity"))));
+                Activity: reader.GetInt32(reader.GetOrdinal("activity")),
+                LifecycleVersion: reader.GetInt32(reader.GetOrdinal("lifecycle_version")),
+                LifecycleEventCount: reader.GetInt32(reader.GetOrdinal("lifecycle_event_count"))));
         }
 
         return items;
@@ -2317,6 +2440,59 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         return DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+    }
+
+    private static bool HasBoundedText(string? value, int maximumLength)
+    {
+        var normalized = value?.Trim();
+        return !string.IsNullOrWhiteSpace(normalized) && normalized.Length <= maximumLength;
+    }
+
+    private async Task<ClinicalMedicationLifecycleMutationResult> GetMedicationMutationFailureAsync(
+        NpgsqlConnection connection,
+        string medicationId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select count(*) from medications where id = @id and type = 'medication';";
+        command.Parameters.AddWithValue("id", medicationId);
+        var exists = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) > 0;
+        return new ClinicalMedicationLifecycleMutationResult(
+            exists ? ClinicalMedicationLifecycleMutationStatus.Conflict : ClinicalMedicationLifecycleMutationStatus.NotFound,
+            null);
+    }
+
+    private static async Task InsertMedicationLifecycleEventAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string medicationId,
+        string action,
+        int? previousActivity,
+        int currentActivity,
+        string actor,
+        string? reason,
+        int expectedVersion,
+        int resultingVersion,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into medication_list_lifecycle_events
+                (medication_id, action, previous_activity, current_activity, actor, reason, expected_version, resulting_version, occurred_at)
+            values
+                (@medicationId, @action, @previousActivity, @currentActivity, @actor, @reason, @expectedVersion, @resultingVersion, @occurredAt);
+            """;
+        command.Parameters.AddWithValue("medicationId", medicationId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("previousActivity", previousActivity is null ? DBNull.Value : previousActivity.Value);
+        command.Parameters.AddWithValue("currentActivity", currentActivity);
+        command.Parameters.AddWithValue("actor", actor);
+        command.Parameters.AddWithValue("reason", NullableText(reason));
+        command.Parameters.AddWithValue("expectedVersion", expectedVersion);
+        command.Parameters.AddWithValue("resultingVersion", resultingVersion);
+        command.Parameters.Add("occurredAt", NpgsqlDbType.Timestamp).Value = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static bool TryReadDateTime(string value, out DateTime dateTime)

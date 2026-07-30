@@ -57,6 +57,14 @@ public sealed record ClinicalAllergyCreateRequest(
 
 public sealed record ClinicalListDeactivateRequest(string Comments);
 
+public sealed record ClinicalMedicationDeactivateRequest(
+    string Comments,
+    int ExpectedVersion);
+
+public sealed record ClinicalMedicationRestoreRequest(
+    string Reason,
+    int ExpectedVersion);
+
 public sealed record ClinicalListMutationResponse(
     string Id,
     ClinicalListsResponse Detail);
@@ -105,7 +113,38 @@ public sealed record MedicationListItem(
     string? Date,
     string? EndDate,
     string? Comments,
-    int Activity);
+    int Activity,
+    int LifecycleVersion,
+    int LifecycleEventCount);
+
+public enum ClinicalMedicationLifecycleMutationStatus
+{
+    Updated,
+    Invalid,
+    NotFound,
+    Conflict
+}
+
+public sealed record ClinicalMedicationLifecycleMutationResult(
+    ClinicalMedicationLifecycleMutationStatus Status,
+    ClinicalListMutationResponse? Mutation);
+
+public sealed record ClinicalMedicationLifecycleHistoryResponse(
+    string MedicationId,
+    int CurrentVersion,
+    int EventCount,
+    IReadOnlyList<ClinicalMedicationLifecycleEventItem> Events);
+
+public sealed record ClinicalMedicationLifecycleEventItem(
+    long EventId,
+    string Action,
+    int? PreviousActivity,
+    int CurrentActivity,
+    string Actor,
+    string? Reason,
+    int ExpectedVersion,
+    int ResultingVersion,
+    string OccurredAt);
 
 public sealed record MedicationDuplicateSummary(
     string NormalizedTitle,

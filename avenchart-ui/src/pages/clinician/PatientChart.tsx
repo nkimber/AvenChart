@@ -11,7 +11,7 @@ import {
   deleteAllergy,
   createMedication,
   deactivateMedication,
-  deleteMedication,
+  restoreMedication,
   createImmunization,
   createPrescription,
   deleteImmunization,
@@ -58,9 +58,10 @@ type VocabularyState =
 
 type LifecycleTarget = {
   type: "problem" | "allergy" | "medication" | "immunization";
-  action: "deactivate" | "delete" | "entered-in-error";
+  action: "deactivate" | "delete" | "entered-in-error" | "restore";
   id: string;
   title: string;
+  expectedVersion?: number;
 };
 
 export default function PatientChart() {
@@ -386,6 +387,19 @@ export default function PatientChart() {
             session.sessionId,
             lifecycleTarget.id,
             reason,
+            lifecycleTarget.expectedVersion ?? 0,
+          )
+        ).detail;
+      } else if (
+        lifecycleTarget.type === "medication" &&
+        lifecycleTarget.action === "restore"
+      ) {
+        detail = (
+          await restoreMedication(
+            session.sessionId,
+            lifecycleTarget.id,
+            reason,
+            lifecycleTarget.expectedVersion ?? 0,
           )
         ).detail;
       } else if (
@@ -410,11 +424,6 @@ export default function PatientChart() {
             session.sessionId,
             lifecycleTarget.id,
           );
-        } else if (lifecycleTarget.type === "medication") {
-          await deleteMedication(
-            session.sessionId,
-            lifecycleTarget.id,
-          );
         } else {
           await deleteImmunization(
             session.sessionId,
@@ -427,7 +436,9 @@ export default function PatientChart() {
       showToast(
         lifecycleTarget.action === "delete"
           ? `${lifecycleTarget.title} permanently deleted.`
-          : `${lifecycleTarget.title} moved to history.`,
+          : lifecycleTarget.action === "restore"
+            ? `${lifecycleTarget.title} restored to the active medication list.`
+            : `${lifecycleTarget.title} moved to history.`,
         "success",
       );
       cancelLifecycleAction();
@@ -944,6 +955,9 @@ export default function PatientChart() {
                     {m.comments && (
                       <p className="cl-clinical-meta">{m.comments}</p>
                     )}
+                    <p className="cl-clinical-meta">
+                      Local lifecycle version {m.lifecycleVersion} · {m.lifecycleEventCount} event{m.lifecycleEventCount === 1 ? "" : "s"}
+                    </p>
                   </div>
                   <div className="cl-lifecycle-actions">
                     <button
@@ -952,20 +966,21 @@ export default function PatientChart() {
                       aria-label={
                         m.activity === 1
                           ? `Deactivate ${m.title}`
-                          : `Delete ${m.title}`
+                          : `Restore ${m.title}`
                       }
                       disabled={working}
                       onClick={() =>
                         beginLifecycleAction({
                           type: "medication",
-                          action: m.activity === 1 ? "deactivate" : "delete",
+                          action: m.activity === 1 ? "deactivate" : "restore",
                           id: m.id,
                           title: m.title,
+                          expectedVersion: m.lifecycleVersion,
                         })
                       }
                     >
                       <X size={12} />
-                      {m.activity === 1 ? "Deactivate" : "Delete record"}
+                      {m.activity === 1 ? "Deactivate" : "Restore"}
                     </button>
                   </div>
                   {renderLifecycleConfirmation("medication", m.id)}
