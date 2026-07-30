@@ -142,6 +142,11 @@ public sealed class AuthorizationRepository(NpgsqlDataSource dataSource)
                 canonicalId,
                 request.ReferralId.Value,
                 cancellationToken);
+            await EnsureReferralEncounterIsUnlockedAsync(
+                connection,
+                transaction,
+                request.ReferralId,
+                cancellationToken);
         }
 
         var id = Guid.NewGuid();
@@ -234,6 +239,11 @@ public sealed class AuthorizationRepository(NpgsqlDataSource dataSource)
                 lockRow: true,
                 cancellationToken)
             ?? throw new ArgumentException("Authorization was not found.");
+        await EnsureReferralEncounterIsUnlockedAsync(
+            connection,
+            transaction,
+            current.ReferralId,
+            cancellationToken);
         RequireExpectedVersion(request.ExpectedVersion, current.WorkflowVersion);
         var transition = ClinicalWorkflowPolicyCatalog.RequireAuthorizationTransition(
             current.Status,
@@ -343,6 +353,11 @@ public sealed class AuthorizationRepository(NpgsqlDataSource dataSource)
                 lockRow: true,
                 cancellationToken)
             ?? throw new ArgumentException("Authorization was not found.");
+        await EnsureReferralEncounterIsUnlockedAsync(
+            connection,
+            transaction,
+            current.ReferralId,
+            cancellationToken);
         RequireExpectedVersion(request.ExpectedVersion, current.WorkflowVersion);
         ClinicalWorkflowPolicyCatalog.RequireAssignmentChange(
             current.Status,
@@ -504,11 +519,12 @@ public sealed class AuthorizationRepository(NpgsqlDataSource dataSource)
             cancellationToken);
         string? payer;
         string? service;
+        Guid? referralId;
         await using (var select = connection.CreateCommand())
         {
             select.Transaction = transaction;
             select.CommandText = """
-                select payer, service
+                select payer, service, referral_id
                 from authorizations
                 where id = @id and patient_id = @patientId
                 for update;
@@ -523,6 +539,7 @@ public sealed class AuthorizationRepository(NpgsqlDataSource dataSource)
 
             payer = reader.GetString(0);
             service = reader.GetString(1);
+            referralId = reader.IsDBNull(2) ? null : reader.GetGuid(2);
         }
 
         if (!payer.StartsWith(FixturePrefix, StringComparison.Ordinal)
@@ -531,6 +548,12 @@ public sealed class AuthorizationRepository(NpgsqlDataSource dataSource)
             throw new ArgumentException(
                 $"Only {FixturePrefix} authorization fixtures can be removed.");
         }
+
+        await EnsureReferralEncounterIsUnlockedAsync(
+            connection,
+            transaction,
+            referralId,
+            cancellationToken);
 
         await using (var deleteEvents = connection.CreateCommand())
         {
@@ -700,6 +723,35 @@ public sealed class AuthorizationRepository(NpgsqlDataSource dataSource)
         {
             throw new ArgumentException(
                 "Authorization referral does not belong to this patient.");
+        }
+    }
+
+    private static async Task EnsureReferralEncounterIsUnlockedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid? referralId,
+        CancellationToken cancellationToken)
+    {
+        if (referralId is null)
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select exists(
+              select 1
+              from referrals r
+              join encounter_signatures s on s.encounter = r.encounter_id
+              where r.id = @referralId and s.is_lock
+            );
+            """;
+        command.Parameters.AddWithValue("referralId", referralId.Value);
+        if (await command.ExecuteScalarAsync(cancellationToken) is true)
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
         }
     }
 

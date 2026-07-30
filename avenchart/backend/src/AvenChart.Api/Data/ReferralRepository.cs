@@ -28,6 +28,11 @@ public sealed class ReferralRepository(NpgsqlDataSource dataSource)
             await using var encounterCommand = connection.CreateCommand(); encounterCommand.CommandText = "select exists(select 1 from encounters where encounter = @encounterId and lower(patient_id) = lower(@patientId));";
             encounterCommand.Parameters.AddWithValue("encounterId", request.EncounterId.Value); encounterCommand.Parameters.AddWithValue("patientId", canonicalId);
             if (!(bool)(await encounterCommand.ExecuteScalarAsync(cancellationToken) ?? false)) throw new ArgumentException("Referral encounter does not belong to this patient.");
+            if (await IsEncounterLockedAsync(connection, request.EncounterId.Value, cancellationToken))
+            {
+                throw new EncounterLockConflictException(
+                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            }
         }
         var id = Guid.NewGuid(); var now = DateTimeOffset.UtcNow;
         await using var command = connection.CreateCommand();
@@ -45,6 +50,12 @@ public sealed class ReferralRepository(NpgsqlDataSource dataSource)
         var status = request.Status?.Trim().ToLowerInvariant();
         if (status is not ("sent" or "received" or "closed" or "cancelled")) throw new ArgumentException("Referral status must be sent, received, closed, or cancelled.");
         await EnsureSchemaAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); var canonicalId = await ResolvePatientIdAsync(connection, patientId, cancellationToken);
+        var encounter = await GetEncounterIdAsync(connection, canonicalId, referralId, cancellationToken);
+        if (encounter is not null && await IsEncounterLockedAsync(connection, encounter.Value, cancellationToken))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+        }
         await using var command = connection.CreateCommand();
         command.CommandText = """
             update referrals set status = @status, updated_at = @now
@@ -60,6 +71,23 @@ public sealed class ReferralRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand(); command.CommandText = "select canonical_id from patients where lower(canonical_id) = lower(@patientId) or lower(pubpid) = lower(@patientId) limit 1;"; command.Parameters.AddWithValue("patientId", patientId.Trim());
         return await command.ExecuteScalarAsync(cancellationToken) as string ?? throw new ArgumentException("Patient was not found.");
+    }
+
+    private static async Task<int?> GetEncounterIdAsync(NpgsqlConnection connection, string patientId, Guid referralId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select encounter_id from referrals where id = @referralId and patient_id = @patientId;";
+        command.Parameters.AddWithValue("referralId", referralId); command.Parameters.AddWithValue("patientId", patientId);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null or DBNull ? null : (int)result;
+    }
+
+    private static async Task<bool> IsEncounterLockedAsync(NpgsqlConnection connection, int encounter, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select exists(select 1 from encounter_signatures where encounter = @encounter and is_lock);";
+        command.Parameters.AddWithValue("encounter", encounter);
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
     }
 
     private static async Task<IReadOnlyList<ReferralItem>> ReadAsync(NpgsqlCommand command, CancellationToken cancellationToken)

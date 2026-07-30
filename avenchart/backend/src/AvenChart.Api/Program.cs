@@ -880,11 +880,13 @@ patients.MapGet("/{patientId}/referrals", async (string patientId, ReferralRepos
 patients.MapPost("/{patientId}/referrals", async (string patientId, ReferralCreateRequest request, ReferralRepository repository, CancellationToken cancellationToken) =>
 {
     try { return Results.Created($"/api/patients/{patientId}/referrals", await repository.CreateAsync(patientId, request, cancellationToken)); }
+    catch (EncounterLockConflictException ex) { return Results.Conflict(new { error = ex.Message, code = "encounter_locked" }); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("CreatePatientReferral").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 patients.MapPut("/{patientId}/referrals/{referralId:guid}/status", async (string patientId, Guid referralId, ReferralStatusRequest request, ReferralRepository repository, CancellationToken cancellationToken) =>
 {
     try { return Results.Ok(await repository.UpdateStatusAsync(patientId, referralId, request, cancellationToken)); }
+    catch (EncounterLockConflictException ex) { return Results.Conflict(new { error = ex.Message, code = "encounter_locked" }); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("UpdatePatientReferralStatus").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
@@ -915,6 +917,7 @@ patients.MapPost("/{patientId}/authorizations", async (
                 session.Username,
                 cancellationToken));
     }
+    catch (EncounterLockConflictException ex) { return Results.Conflict(new { error = ex.Message, code = "encounter_locked" }); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("CreatePatientAuthorization").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 patients.MapPut("/{patientId}/authorizations/{authorizationId:guid}/status", async (
@@ -939,6 +942,7 @@ patients.MapPut("/{patientId}/authorizations/{authorizationId:guid}/status", asy
             session.Username,
             cancellationToken));
     }
+    catch (EncounterLockConflictException ex) { return Results.Conflict(new { error = ex.Message, code = "encounter_locked" }); }
     catch (ClinicalWorkflowVersionConflictException ex)
     {
         return Results.Conflict(new
@@ -976,6 +980,7 @@ patients.MapPut("/{patientId}/authorizations/{authorizationId:guid}/assignment",
             session.Username,
             cancellationToken));
     }
+    catch (EncounterLockConflictException ex) { return Results.Conflict(new { error = ex.Message, code = "encounter_locked" }); }
     catch (ClinicalWorkflowVersionConflictException ex)
     {
         return Results.Conflict(new
@@ -1023,6 +1028,7 @@ patients.MapDelete("/{patientId}/authorizations/{authorizationId:guid}/test-fixt
             ? Results.NoContent()
             : Results.NotFound();
     }
+    catch (EncounterLockConflictException ex) { return Results.Conflict(new { error = ex.Message, code = "encounter_locked" }); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("DeletePatientAuthorizationTestFixture").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
