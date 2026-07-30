@@ -51,10 +51,10 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family:
-    'Inter',
+    "Inter",
     -apple-system,
     BlinkMacSystemFont,
-    'Segoe UI',
+    "Segoe UI",
     Helvetica,
     Arial,
     sans-serif;
@@ -8680,7 +8680,7 @@ h4 {
   cursor: pointer;
   text-align: left;
 }
-.patient-document-mode-switch button[aria-pressed='true'] {
+.patient-document-mode-switch button[aria-pressed="true"] {
   border-color: #cfd5f0;
   background: var(--surface);
   color: var(--teal);
@@ -9274,7 +9274,11 @@ h4 {
   border-radius: var(--radius-md);
   background: #101922;
   color: #f1f6f8;
-  font: 12px/1.65 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono",
+  font:
+    12px/1.65 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    "Liberation Mono",
     monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -9399,7 +9403,7 @@ h4 {
   font-weight: 700;
   cursor: pointer;
 }
-.patient-document-replacement-modes button[aria-pressed='true'] {
+.patient-document-replacement-modes button[aria-pressed="true"] {
   border-color: #cfd5f0;
   background: var(--teal-soft);
   color: var(--teal);
@@ -9717,13 +9721,13 @@ h4 {
   .patient-document-history-changes dd {
     grid-template-columns: 1fr;
   }
-  .patient-document-history-changes dd > span[aria-hidden='true'] {
+  .patient-document-history-changes dd > span[aria-hidden="true"] {
     display: none;
   }
 }
 @media (forced-colors: active) {
   .document-workspace-brief,
-  .patient-document-mode-switch button[aria-pressed='true'],
+  .patient-document-mode-switch button[aria-pressed="true"],
   .patient-document-file-picker,
   .patient-document-register-item.is-recent,
   .patient-document-register-item.is-archived,
@@ -11264,7 +11268,8 @@ h4 {
 }
 .document-ocr-textarea {
   min-height: 220px !important;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
   line-height: 1.5;
 }
 .document-ocr-current-text {
@@ -11287,7 +11292,13 @@ h4 {
   overflow: auto;
   border-top: 1px solid var(--border);
   color: var(--text);
-  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font:
+    12px/1.55 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -11558,7 +11569,13 @@ h4 {
   margin: 0;
   overflow: auto;
   color: var(--text);
-  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font:
+    12px/1.55 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -13937,6 +13954,193 @@ h4 {
   .managed-record-action-reason,
   .managed-record-classification,
   .managed-record-history {
+    border: 1px solid CanvasText;
+  }
+}
+
+.encounter-document-workspace {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.encounter-document-form,
+.encounter-document-inline-form,
+.encounter-document-preview,
+.encounter-document-history {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid #d7e5e1;
+  border-radius: 0.75rem;
+  background: #f8fbfa;
+}
+
+.encounter-document-mode-picker,
+.encounter-document-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.encounter-document-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.encounter-document-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #d7e5e1;
+  border-radius: 0.8rem;
+  background: #fff;
+}
+
+.encounter-document-card.is-archived {
+  border-style: dashed;
+  background: #f4f6f5;
+}
+
+.encounter-document-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.encounter-document-facts div {
+  min-width: 0;
+}
+
+.encounter-document-facts dt {
+  color: #667a75;
+  font-size: 0.73rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.encounter-document-facts dd {
+  overflow-wrap: anywhere;
+  margin: 0.2rem 0 0;
+  color: #253b35;
+  font-size: 0.86rem;
+}
+
+.encounter-document-preview-copy {
+  overflow: hidden;
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  border-left: 3px solid #9cc9bc;
+  border-radius: 0.25rem;
+  background: #f2f8f6;
+  color: #455d56;
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+.encounter-document-text-preview {
+  overflow: auto;
+  max-height: 22rem;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid #d5e0dd;
+  border-radius: 0.5rem;
+  background: #fff;
+  color: #1e302b;
+  font:
+    0.82rem/1.55 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+}
+
+.encounter-document-image-preview,
+.encounter-document-pdf-preview {
+  width: 100%;
+  min-height: 22rem;
+  border: 1px solid #d5e0dd;
+  border-radius: 0.5rem;
+  background: #fff;
+}
+
+.encounter-document-image-preview {
+  object-fit: contain;
+}
+
+.encounter-document-history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.encounter-document-history-grid > div {
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid #dbe7e3;
+  border-radius: 0.6rem;
+  background: #fff;
+}
+
+.encounter-document-history-grid h4 {
+  margin: 0 0 0.55rem;
+  color: #1f3e35;
+  font-size: 0.85rem;
+}
+
+.encounter-document-history-grid ol {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.encounter-document-history-grid li {
+  padding-top: 0.6rem;
+  border-top: 1px solid #e4ecea;
+}
+
+.encounter-document-history-grid li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.encounter-document-history-grid p {
+  margin: 0.2rem 0 0;
+  color: #667a75;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .encounter-document-facts,
+  .encounter-document-history-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .encounter-document-facts,
+  .encounter-document-history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .encounter-document-mode-picker > *,
+  .encounter-document-workspace .cl-inline-form-actions > * {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+@media (forced-colors: active) {
+  .encounter-document-form,
+  .encounter-document-inline-form,
+  .encounter-document-card,
+  .encounter-document-preview,
+  .encounter-document-history,
+  .encounter-document-history-grid > div {
     border: 1px solid CanvasText;
   }
 }

@@ -1,18 +1,35 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import {
   ArchiveRestore,
   ChevronRight,
+  Download,
+  ExternalLink,
+  Eye,
   FileText,
+  FileUp,
+  History,
+  Link2,
   Pencil,
   Plus,
+  RefreshCw,
   TrendingUp,
 } from "lucide-react";
 import {
+  archivePatientDocument,
   archiveEncounter,
-  archiveEncounterDocument,
-  createEncounterDocument,
+  createPatientBinaryDocument,
+  createPatientDocument,
+  createPatientExternalLinkDocument,
   createEncounterVitals,
+  downloadPatientDocument,
+  downloadPatientDocumentVersion,
+  getPatientDocumentArchiveHistory,
+  getPatientDocumentCategoryOptions,
+  getPatientDocumentMetadataHistory,
+  getPatientDocumentReviewHistory,
+  getPatientDocuments,
+  getPatientDocumentVersionHistory,
   getEncounterSoapNoteTemplates,
   getEncounterAuditHistory,
   getEncounterDetail,
@@ -22,17 +39,16 @@ import {
   reopenEncounterClinicalAlert,
   getEncounterLayoutForm,
   getEncounterLayoutForms,
-  moveEncounterDocument,
-  replaceEncounterDocumentContent,
+  replacePatientDocumentBinaryContent,
+  replacePatientDocumentContent,
+  restorePatientDocument,
+  reviewPatientDocument,
   restoreEncounter,
-  restoreEncounterDocument,
   searchEncounters,
   signEncounter,
   saveEncounterLayoutForm,
-  signEncounterDocument,
-  updateEncounterDocumentMetadata,
+  updatePatientDocumentMetadata,
   updateEncounter,
-  type EncounterDocumentAttachment,
   type EncounterDetail,
   type EncounterListItem,
   type EncounterSoapNoteTemplate,
@@ -41,6 +57,12 @@ import {
   type EncounterLayoutForm,
   type EncounterClinicalAlert,
   type EncounterClinicalAlertAcknowledgement,
+  type PatientDocumentArchiveHistoryResponse,
+  type PatientDocumentCategoryOptionsResponse,
+  type PatientDocumentItem,
+  type PatientDocumentMetadataHistoryResponse,
+  type PatientDocumentReviewHistoryResponse,
+  type PatientDocumentVersionHistoryResponse,
 } from "../../api.ts";
 import {
   getEncounterSoapNoteConflict,
@@ -165,13 +187,113 @@ type SoapConflictState = EncounterSoapNoteConflict & {
   latest?: VersionedEncounterSoapNote | null;
 };
 
+type DocumentIntakeMode = "text" | "file" | "link";
+type DocumentReplacementMode = "text" | "file";
+type DocumentReviewStatus = "pending" | "approved" | "denied";
+
 type DocumentForm = {
   categoryId: string;
   name: string;
   docDate: string;
   notes: string;
   content: string;
+  url: string;
+  reason: string;
 };
+
+type EncounterDocumentHistory = {
+  versions: PatientDocumentVersionHistoryResponse | null;
+  metadata: PatientDocumentMetadataHistoryResponse | null;
+  review: PatientDocumentReviewHistoryResponse | null;
+  archive: PatientDocumentArchiveHistoryResponse | null;
+};
+
+type EncounterDocumentHistoryState =
+  | { documentId: number; status: "loading" }
+  | {
+      documentId: number;
+      status: "ready";
+      data: EncounterDocumentHistory;
+    }
+  | { documentId: number; status: "error"; message: string };
+
+type EncounterDocumentPreviewState =
+  | { documentId: number; status: "loading" }
+  | {
+      documentId: number;
+      status: "ready";
+      kind: "text" | "image" | "pdf";
+      fileName: string;
+      contentType: string;
+      sizeBytes: number;
+      text?: string;
+      objectUrl?: string;
+      truncated: boolean;
+    }
+  | { documentId: number; status: "error"; message: string };
+
+const ENCOUNTER_DOCUMENT_TEXT_PREVIEW_LIMIT = 512 * 1024;
+const SAFE_ENCOUNTER_IMAGE_TYPES = new Set([
+  "image/avif",
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+function blankDocumentForm(categoryId: string): DocumentForm {
+  return {
+    categoryId,
+    name: "",
+    docDate: today(),
+    notes: "",
+    content: "",
+    url: "",
+    reason: "",
+  };
+}
+
+function readDocumentFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      const value = typeof reader.result === "string" ? reader.result : "";
+      const separator = value.indexOf(",");
+      if (separator < 0) {
+        reject(new Error("The selected file could not be encoded."));
+        return;
+      }
+      resolve(value.slice(separator + 1));
+    });
+    reader.addEventListener("error", () =>
+      reject(new Error("The selected file could not be read.")),
+    );
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatDocumentBytes(value?: number | null) {
+  if (value === null || value === undefined) return "Size unavailable";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function normalizeDocumentReviewStatus(value: string): DocumentReviewStatus {
+  const normalized = value.trim().toLowerCase();
+  if (["approved", "signed", "reviewed"].includes(normalized))
+    return "approved";
+  if (["denied", "rejected"].includes(normalized)) return "denied";
+  return "pending";
+}
+
+function documentTypeLabel(document: PatientDocumentItem) {
+  if (document.storageMethod === "web_url") return "External link";
+  if (document.mimetype?.startsWith("text/")) return "Text";
+  if (document.mimetype === "application/pdf") return "PDF";
+  if (document.mimetype?.startsWith("image/")) return "Image";
+  return document.mimetype || "Stored file";
+}
 
 function EncounterDocuments({
   sessionId,
@@ -184,48 +306,158 @@ function EncounterDocuments({
   targetEncounters: EncounterListItem[];
   onDetailChange: (detail: EncounterDetail) => void;
 }) {
+  const initialCategoryId = String(
+    detail.documents.find((document) => document.deleted === 0)?.categoryId ??
+      1,
+  );
+  const [documents, setDocuments] = useState<PatientDocumentItem[]>(
+    detail.documents as unknown as PatientDocumentItem[],
+  );
+  const [options, setOptions] =
+    useState<PatientDocumentCategoryOptionsResponse | null>(null);
+  const [workspaceLoading, setWorkspaceLoading] = useState(true);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [intakeMode, setIntakeMode] = useState<DocumentIntakeMode>("text");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [reviewingId, setReviewingId] = useState<number | null>(null);
   const [replacingId, setReplacingId] = useState<number | null>(null);
   const [movingId, setMovingId] = useState<number | null>(null);
+  const [archivingId, setArchivingId] = useState<number | null>(null);
+  const [historyState, setHistoryState] =
+    useState<EncounterDocumentHistoryState | null>(null);
+  const [previewState, setPreviewState] =
+    useState<EncounterDocumentPreviewState | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
+  const [replacementMode, setReplacementMode] =
+    useState<DocumentReplacementMode>("text");
   const [replacementContent, setReplacementContent] = useState("");
+  const [replacementReason, setReplacementReason] = useState("");
+  const [replacementFile, setReplacementFile] = useState<File | null>(null);
+  const [replacementFileKey, setReplacementFileKey] = useState(0);
   const [targetEncounter, setTargetEncounter] = useState("");
+  const [moveReason, setMoveReason] = useState("");
+  const [archiveReason, setArchiveReason] = useState("");
+  const [reviewForm, setReviewForm] = useState<{
+    reviewStatus: DocumentReviewStatus;
+    reason: string;
+  }>({ reviewStatus: "approved", reason: "" });
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<DocumentForm>({
-    categoryId: String(
-      detail.documents.find((document) => document.deleted === 0)?.categoryId ??
-        1,
-    ),
-    name: "",
-    docDate: today(),
-    notes: "",
-    content: "",
-  });
-  const [reviewForm, setReviewForm] = useState({
-    reviewStatus: "Reviewed",
-    reviewedBy: "",
-  });
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [form, setForm] = useState<DocumentForm>(
+    blankDocumentForm(initialCategoryId),
+  );
+  const previewObjectUrl = useRef<string | null>(null);
+  const previewRequest = useRef(0);
 
-  function openAdd() {
+  useEffect(() => {
+    let active = true;
+    setWorkspaceLoading(true);
+    setWorkspaceError(null);
+    setDocuments([]);
+    Promise.all([
+      getPatientDocuments(sessionId, detail.patientId, undefined, true),
+      getPatientDocumentCategoryOptions(sessionId),
+    ])
+      .then(([register, categoryOptions]) => {
+        if (!active) return;
+        setDocuments(
+          register.documents.filter(
+            (document) => document.encounter === detail.encounter,
+          ),
+        );
+        setOptions(categoryOptions);
+        setForm((current) => ({
+          ...current,
+          categoryId: categoryOptions.categories.some(
+            (category) => String(category.id) === current.categoryId,
+          )
+            ? current.categoryId
+            : String(categoryOptions.categories[0]?.id ?? initialCategoryId),
+        }));
+      })
+      .catch((error) => {
+        if (!active) return;
+        setWorkspaceError(
+          error instanceof Error
+            ? error.message
+            : "Encounter attachments could not be loaded.",
+        );
+      })
+      .finally(() => {
+        if (active) setWorkspaceLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [detail.encounter, detail.patientId, initialCategoryId, sessionId]);
+
+  useEffect(
+    () => () => {
+      previewRequest.current += 1;
+      if (previewObjectUrl.current) {
+        URL.revokeObjectURL(previewObjectUrl.current);
+        previewObjectUrl.current = null;
+      }
+    },
+    [],
+  );
+
+  function closePreview() {
+    previewRequest.current += 1;
+    if (previewObjectUrl.current) {
+      URL.revokeObjectURL(previewObjectUrl.current);
+      previewObjectUrl.current = null;
+    }
+    setPreviewState(null);
+  }
+
+  function closeDocumentPanels() {
     setEditingId(null);
     setReviewingId(null);
-    setForm({
-      categoryId: String(
-        detail.documents.find((document) => document.deleted === 0)
-          ?.categoryId ?? 1,
+    setReplacingId(null);
+    setMovingId(null);
+    setArchivingId(null);
+    setHistoryState(null);
+    closePreview();
+    setActionError(null);
+  }
+
+  async function refreshWorkspace() {
+    const [register, refreshed] = await Promise.all([
+      getPatientDocuments(sessionId, detail.patientId, undefined, true),
+      getEncounterDetail(sessionId, detail.encounter, undefined, true),
+    ]);
+    setDocuments(
+      register.documents.filter(
+        (document) => document.encounter === detail.encounter,
       ),
-      name: "",
-      docDate: today(),
-      notes: "",
-      content: "",
-    });
+    );
+    onDetailChange(refreshed);
+  }
+
+  function openAdd() {
+    closeDocumentPanels();
+    setForm(
+      blankDocumentForm(
+        String(
+          options?.categories[0]?.id ??
+            documents.find((document) => document.deleted === 0)?.categoryId ??
+            1,
+        ),
+      ),
+    );
+    setIntakeMode("text");
+    setSelectedFile(null);
+    setFileInputKey((current) => current + 1);
     setAddOpen(true);
   }
 
-  function openEdit(document: EncounterDocumentAttachment) {
+  function openEdit(document: PatientDocumentItem) {
+    closeDocumentPanels();
     setAddOpen(false);
-    setReviewingId(null);
     setEditingId(document.id);
     setForm({
       categoryId: String(document.categoryId),
@@ -233,90 +465,223 @@ function EncounterDocuments({
       docDate: document.docDate,
       notes: document.notes ?? "",
       content: "",
+      url: "",
+      reason: "",
     });
+  }
+
+  function handleFileSelection(file: File | null) {
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+    if (options && file.size > options.maxFileSizeBytes) {
+      setSelectedFile(null);
+      setFileInputKey((current) => current + 1);
+      setActionError(
+        `${file.name} is ${formatDocumentBytes(file.size)}. The protected service accepts up to ${formatDocumentBytes(options.maxFileSizeBytes)}.`,
+      );
+      return;
+    }
+    setSelectedFile(file);
+    setForm((current) => ({
+      ...current,
+      name: current.name.trim() ? current.name : file.name,
+    }));
+    setActionError(null);
   }
 
   async function saveDocument(event: React.FormEvent) {
     event.preventDefault();
     const categoryId = Number(form.categoryId);
     if (!Number.isInteger(categoryId) || categoryId <= 0) {
-      showToast("Enter a valid numeric category ID.", "error");
+      setActionError("Choose a filing category.");
       return;
     }
     setSaving(true);
+    setActionError(null);
     try {
-      const result =
-        editingId == null
-          ? await createEncounterDocument(sessionId, detail.encounter, {
-              categoryId,
-              name: form.name,
-              docDate: form.docDate,
-              content: form.content,
-              notes: form.notes || null,
-            })
-          : await updateEncounterDocumentMetadata(
-              sessionId,
-              detail.encounter,
-              editingId,
-              {
-                categoryId,
-                name: form.name,
-                docDate: form.docDate,
-                notes: form.notes || null,
-              },
+      if (editingId !== null) {
+        if (!form.reason.trim()) {
+          throw new Error("Explain why the filing metadata is changing.");
+        }
+        await updatePatientDocumentMetadata(sessionId, editingId, {
+          categoryId,
+          name: form.name.trim(),
+          docDate: form.docDate,
+          encounter: detail.encounter,
+          notes: form.notes.trim() || null,
+          reason: form.reason.trim(),
+        });
+        showToast("Document filing updated with change evidence.", "success");
+      } else {
+        const shared = {
+          patientId: detail.patientId,
+          categoryId,
+          name: form.name.trim(),
+          docDate: form.docDate,
+          encounter: detail.encounter,
+          notes: form.notes.trim() || null,
+        };
+        if (intakeMode === "text") {
+          if (!form.content.trim()) {
+            throw new Error("Enter the attachment text.");
+          }
+          await createPatientDocument(sessionId, {
+            ...shared,
+            content: form.content.trim(),
+          });
+        } else if (intakeMode === "file") {
+          if (!selectedFile) throw new Error("Choose a file to attach.");
+          if (options && selectedFile.size > options.maxFileSizeBytes) {
+            throw new Error(
+              `Choose a file no larger than ${formatDocumentBytes(options.maxFileSizeBytes)}.`,
             );
-      onDetailChange(result.detail);
+          }
+          await createPatientBinaryDocument(sessionId, {
+            ...shared,
+            fileName: selectedFile.name,
+            mimetype: selectedFile.type.trim() || "application/octet-stream",
+            contentBase64: await readDocumentFileAsBase64(selectedFile),
+          });
+        } else {
+          let link: URL;
+          try {
+            link = new URL(form.url.trim());
+          } catch {
+            throw new Error("Enter a complete http or https URL.");
+          }
+          if (!["http:", "https:"].includes(link.protocol)) {
+            throw new Error("External links must use http or https.");
+          }
+          await createPatientExternalLinkDocument(sessionId, {
+            ...shared,
+            url: link.toString(),
+          });
+        }
+        showToast(
+          intakeMode === "text"
+            ? "Text attachment filed."
+            : intakeMode === "file"
+              ? "File attachment uploaded."
+              : "External link attached.",
+          "success",
+        );
+      }
+      await refreshWorkspace();
       setAddOpen(false);
       setEditingId(null);
-      showToast(
-        editingId == null
-          ? "Text attachment added."
-          : "Document filing updated.",
-        "success",
-      );
-    } catch {
-      showToast(
-        editingId == null
-          ? "Could not add attachment."
-          : "Could not update document filing.",
-        "error",
+      setSelectedFile(null);
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : editingId === null
+            ? "The attachment could not be filed."
+            : "The filing metadata could not be updated.",
       );
     } finally {
       setSaving(false);
     }
   }
 
-  async function changeArchive(
-    document: EncounterDocumentAttachment,
-    restore = false,
+  function beginReplacement(document: PatientDocumentItem) {
+    closeDocumentPanels();
+    setReplacingId(document.id);
+    setReplacementMode(
+      document.mimetype?.startsWith("text/") ? "text" : "file",
+    );
+    setReplacementContent("");
+    setReplacementReason("");
+    setReplacementFile(null);
+    setReplacementFileKey((current) => current + 1);
+  }
+
+  async function replaceContent(
+    event: React.FormEvent,
+    document: PatientDocumentItem,
   ) {
-    if (
-      !restore &&
-      !window.confirm(`Archive “${document.name}”? It can be restored later.`)
-    )
+    event.preventDefault();
+    if (!replacementReason.trim()) {
+      setActionError("Explain why the protected content is changing.");
       return;
+    }
     setSaving(true);
+    setActionError(null);
     try {
-      const result = restore
-        ? await restoreEncounterDocument(
-            sessionId,
-            detail.encounter,
-            document.id,
-          )
-        : await archiveEncounterDocument(
-            sessionId,
-            detail.encounter,
-            document.id,
+      if (replacementMode === "text") {
+        if (!replacementContent.trim()) {
+          throw new Error("Enter replacement text.");
+        }
+        await replacePatientDocumentContent(sessionId, document.id, {
+          fileName: document.fileName || `${document.name}.txt`,
+          content: replacementContent.trim(),
+          reason: replacementReason.trim(),
+          expectedVersion: document.currentVersion,
+        });
+      } else {
+        if (!replacementFile) throw new Error("Choose a replacement file.");
+        if (options && replacementFile.size > options.maxFileSizeBytes) {
+          throw new Error(
+            `Choose a file no larger than ${formatDocumentBytes(options.maxFileSizeBytes)}.`,
           );
-      onDetailChange(result.detail);
-      showToast(
-        restore ? "Document restored." : "Document archived.",
-        "success",
+        }
+        await replacePatientDocumentBinaryContent(sessionId, document.id, {
+          fileName: replacementFile.name,
+          mimetype: replacementFile.type.trim() || "application/octet-stream",
+          contentBase64: await readDocumentFileAsBase64(replacementFile),
+          reason: replacementReason.trim(),
+          expectedVersion: document.currentVersion,
+        });
+      }
+      await refreshWorkspace();
+      setReplacingId(null);
+      showToast("A new protected document version was filed.", "success");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Document content could not be replaced.",
       );
-    } catch {
-      showToast(
-        restore ? "Could not restore document." : "Could not archive document.",
-        "error",
+      await refreshWorkspace().catch(() => undefined);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function moveDocument(
+    event: React.FormEvent,
+    document: PatientDocumentItem,
+  ) {
+    event.preventDefault();
+    const target = Number(targetEncounter);
+    if (!Number.isInteger(target) || target === detail.encounter) {
+      setActionError("Choose another encounter for this patient.");
+      return;
+    }
+    if (!moveReason.trim()) {
+      setActionError("Explain why the attachment is moving.");
+      return;
+    }
+    setSaving(true);
+    setActionError(null);
+    try {
+      await updatePatientDocumentMetadata(sessionId, document.id, {
+        categoryId: document.categoryId,
+        name: document.name,
+        docDate: document.docDate,
+        encounter: target,
+        notes: document.notes ?? null,
+        reason: moveReason.trim(),
+      });
+      await refreshWorkspace();
+      setMovingId(null);
+      showToast("Document moved with filing-history evidence.", "success");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "The document could not be moved.",
       );
     } finally {
       setSaving(false);
@@ -325,106 +690,342 @@ function EncounterDocuments({
 
   async function saveReview(
     event: React.FormEvent,
-    document: EncounterDocumentAttachment,
+    document: PatientDocumentItem,
   ) {
     event.preventDefault();
+    if (!reviewForm.reason.trim()) {
+      setActionError("Enter the reason for this review decision.");
+      return;
+    }
+    const expectedStatus = normalizeDocumentReviewStatus(document.reviewStatus);
     setSaving(true);
+    setActionError(null);
     try {
-      const result = await signEncounterDocument(
-        sessionId,
-        detail.encounter,
-        document.id,
-        reviewForm,
-      );
-      onDetailChange(result.detail);
+      await reviewPatientDocument(sessionId, document.id, {
+        reviewStatus: reviewForm.reviewStatus,
+        reason: reviewForm.reason.trim(),
+        expectedReviewStatus: expectedStatus,
+      });
+      await refreshWorkspace();
       setReviewingId(null);
       showToast(
-        `Document marked ${reviewForm.reviewStatus.toLowerCase()}.`,
+        reviewForm.reviewStatus === "pending"
+          ? "Document review reopened."
+          : `Document ${reviewForm.reviewStatus}.`,
         "success",
       );
-    } catch {
-      showToast("Could not record document review.", "error");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "The review decision could not be recorded.",
+      );
+      await refreshWorkspace().catch(() => undefined);
     } finally {
       setSaving(false);
     }
   }
 
-  async function replaceContent(
+  async function changeArchive(
     event: React.FormEvent,
-    document: EncounterDocumentAttachment,
+    document: PatientDocumentItem,
   ) {
     event.preventDefault();
-    if (
-      !window.confirm(
-        `Replace the current content of “${document.name}”? A new version will be retained by the protected document lifecycle.`,
-      )
-    )
-      return;
-    setSaving(true);
-    try {
-      const result = await replaceEncounterDocumentContent(
-        sessionId,
-        detail.encounter,
-        document.id,
-        { fileName: document.name, content: replacementContent },
+    if (!archiveReason.trim()) {
+      setActionError(
+        `Enter a reason to ${document.deleted ? "restore" : "archive"} this document.`,
       );
-      onDetailChange(result.detail);
-      setReplacingId(null);
-      setReplacementContent("");
-      showToast("Document content replaced as a new version.", "success");
-    } catch {
-      showToast("Could not replace document content.", "error");
+      return;
+    }
+    const expectedArchived = document.deleted !== 0;
+    setSaving(true);
+    setActionError(null);
+    try {
+      const input = {
+        reason: archiveReason.trim(),
+        expectedArchived,
+      };
+      if (expectedArchived) {
+        await restorePatientDocument(sessionId, document.id, input);
+      } else {
+        await archivePatientDocument(sessionId, document.id, input);
+      }
+      await refreshWorkspace();
+      setArchivingId(null);
+      showToast(
+        expectedArchived ? "Document restored." : "Document archived.",
+        "success",
+      );
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "The archive state could not be changed.",
+      );
+      await refreshWorkspace().catch(() => undefined);
     } finally {
       setSaving(false);
     }
   }
 
-  async function moveDocument(
-    event: React.FormEvent,
-    document: EncounterDocumentAttachment,
-  ) {
-    event.preventDefault();
-    const target = Number(targetEncounter);
-    if (!Number.isInteger(target) || target === detail.encounter) {
-      showToast("Choose another encounter for this patient.", "error");
+  async function loadHistory(document: PatientDocumentItem) {
+    if (historyState?.documentId === document.id) {
+      setHistoryState(null);
       return;
     }
-    if (!window.confirm(`Move “${document.name}” to encounter #${target}?`))
+    closeDocumentPanels();
+    setHistoryState({ documentId: document.id, status: "loading" });
+    const read = async <T,>(promise: Promise<T>): Promise<T | null> => {
+      try {
+        return await promise;
+      } catch {
+        return null;
+      }
+    };
+    const [versions, metadata, review, archive] = await Promise.all([
+      read(getPatientDocumentVersionHistory(sessionId, document.id)),
+      read(getPatientDocumentMetadataHistory(sessionId, document.id)),
+      read(getPatientDocumentReviewHistory(sessionId, document.id)),
+      read(getPatientDocumentArchiveHistory(sessionId, document.id)),
+    ]);
+    if (!versions && !metadata && !review && !archive) {
+      setHistoryState({
+        documentId: document.id,
+        status: "error",
+        message: "Document lifecycle history could not be loaded.",
+      });
       return;
-    setSaving(true);
+    }
+    setHistoryState({
+      documentId: document.id,
+      status: "ready",
+      data: { versions, metadata, review, archive },
+    });
+  }
+
+  function saveBrowserDownload(
+    file: { blob: Blob; fileName: string },
+    objectUrl?: string,
+  ) {
+    const url = objectUrl ?? URL.createObjectURL(file.blob);
+    const anchor = window.document.createElement("a");
+    anchor.href = url;
+    anchor.download = file.fileName;
+    anchor.style.display = "none";
+    window.document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    if (!objectUrl) {
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+  }
+
+  async function downloadDocument(document: PatientDocumentItem) {
+    const key = `${document.id}-current`;
+    setDownloadingKey(key);
+    setActionError(null);
     try {
-      const result = await moveEncounterDocument(
+      const file = await downloadPatientDocument(
         sessionId,
-        detail.encounter,
         document.id,
-        target,
+        document.fileName || document.name,
       );
-      onDetailChange(result.sourceDetail);
-      setMovingId(null);
-      setTargetEncounter("");
-      showToast("Document moved to the selected encounter.", "success");
-    } catch {
-      showToast("Could not move document.", "error");
+      saveBrowserDownload(file);
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Download failed.",
+      );
     } finally {
-      setSaving(false);
+      setDownloadingKey(null);
+    }
+  }
+
+  async function downloadVersion(
+    document: PatientDocumentItem,
+    version: number,
+    fileName?: string | null,
+  ) {
+    const key = `${document.id}-${version}`;
+    setDownloadingKey(key);
+    setActionError(null);
+    try {
+      const file = await downloadPatientDocumentVersion(
+        sessionId,
+        document.id,
+        version,
+        fileName || document.fileName || document.name,
+      );
+      saveBrowserDownload(file);
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Version download failed.",
+      );
+    } finally {
+      setDownloadingKey(null);
+    }
+  }
+
+  async function openPreview(document: PatientDocumentItem) {
+    if (previewState?.documentId === document.id) {
+      closePreview();
+      return;
+    }
+    closeDocumentPanels();
+    const requestId = previewRequest.current + 1;
+    previewRequest.current = requestId;
+    setPreviewState({ documentId: document.id, status: "loading" });
+    try {
+      const file = await downloadPatientDocument(
+        sessionId,
+        document.id,
+        document.fileName || document.name,
+      );
+      if (requestId !== previewRequest.current) return;
+      const contentType = file.contentType
+        .split(";", 1)[0]
+        .trim()
+        .toLowerCase();
+      if (contentType.startsWith("text/")) {
+        const truncated =
+          file.blob.size > ENCOUNTER_DOCUMENT_TEXT_PREVIEW_LIMIT;
+        const text = await file.blob
+          .slice(0, ENCOUNTER_DOCUMENT_TEXT_PREVIEW_LIMIT)
+          .text();
+        if (requestId !== previewRequest.current) return;
+        setPreviewState({
+          documentId: document.id,
+          status: "ready",
+          kind: "text",
+          fileName: file.fileName,
+          contentType,
+          sizeBytes: file.blob.size,
+          text,
+          truncated,
+        });
+        return;
+      }
+      const kind =
+        contentType === "application/pdf"
+          ? "pdf"
+          : SAFE_ENCOUNTER_IMAGE_TYPES.has(contentType)
+            ? "image"
+            : null;
+      if (!kind) {
+        throw new Error(
+          `${contentType || "This file type"} is not safe for inline preview. Use protected download.`,
+        );
+      }
+      const objectUrl = URL.createObjectURL(file.blob);
+      previewObjectUrl.current = objectUrl;
+      setPreviewState({
+        documentId: document.id,
+        status: "ready",
+        kind,
+        fileName: file.fileName,
+        contentType,
+        sizeBytes: file.blob.size,
+        objectUrl,
+        truncated: false,
+      });
+    } catch (error) {
+      if (requestId !== previewRequest.current) return;
+      setPreviewState({
+        documentId: document.id,
+        status: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The protected preview could not be loaded.",
+      });
     }
   }
 
   return (
-    <div className="cl-card">
+    <section
+      className="cl-card encounter-document-workspace"
+      aria-labelledby="encounter-attachments-title"
+    >
       <div className="cl-card-header">
-        <h2 className="cl-card-title">Attachments</h2>
-        <button
-          className="cl-btn-icon"
-          type="button"
-          aria-label="Add text attachment"
-          onClick={openAdd}
-        >
-          <Plus size={14} />
-        </button>
+        <div>
+          <h2 className="cl-card-title" id="encounter-attachments-title">
+            Attachments
+          </h2>
+          <p className="cl-empty-text">
+            Protected text, file, and external-link records for encounter #
+            {detail.encounter}
+          </p>
+        </div>
+        <div className="cl-inline-form-actions">
+          <button
+            className="cl-btn-secondary"
+            type="button"
+            onClick={() => void refreshWorkspace()}
+            disabled={workspaceLoading || saving}
+          >
+            <RefreshCw size={14} /> Refresh
+          </button>
+          <button
+            className="cl-btn-primary"
+            type="button"
+            aria-label="Add encounter attachment"
+            onClick={openAdd}
+            disabled={saving}
+          >
+            <Plus size={14} /> Add attachment
+          </button>
+        </div>
       </div>
-      {(addOpen || editingId != null) && (
-        <form onSubmit={saveDocument}>
+
+      {workspaceError && (
+        <div className="cl-inline-error" role="alert">
+          {workspaceError}
+        </div>
+      )}
+      {actionError && (
+        <div className="cl-inline-error" role="alert">
+          {actionError}
+        </div>
+      )}
+
+      {(addOpen || editingId !== null) && (
+        <form
+          className="encounter-document-form"
+          onSubmit={saveDocument}
+          aria-label={
+            editingId === null
+              ? "Add encounter attachment"
+              : "Edit attachment filing"
+          }
+        >
+          {editingId === null && (
+            <div
+              className="encounter-document-mode-picker"
+              aria-label="Attachment type"
+            >
+              {(
+                [
+                  ["text", "Text note", FileText],
+                  ["file", "Upload file", FileUp],
+                  ["link", "External link", Link2],
+                ] as const
+              ).map(([mode, label, Icon]) => (
+                <button
+                  key={mode}
+                  className={
+                    intakeMode === mode ? "cl-btn-primary" : "cl-btn-secondary"
+                  }
+                  type="button"
+                  aria-pressed={intakeMode === mode}
+                  onClick={() => {
+                    setIntakeMode(mode);
+                    setActionError(null);
+                  }}
+                >
+                  <Icon size={14} /> {label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="form-row">
             <div className="field">
               <label className="label" htmlFor="attachment-name">
@@ -463,26 +1064,47 @@ function EncounterDocuments({
             </div>
             <div className="field">
               <label className="label" htmlFor="attachment-category">
-                Category ID
+                Filing category
               </label>
-              <input
-                id="attachment-category"
-                className="input"
-                type="number"
-                min="1"
-                required
-                value={form.categoryId}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    categoryId: event.target.value,
-                  }))
-                }
-              />
+              {options ? (
+                <select
+                  id="attachment-category"
+                  className="input"
+                  required
+                  value={form.categoryId}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      categoryId: event.target.value,
+                    }))
+                  }
+                >
+                  {options.categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id="attachment-category"
+                  className="input"
+                  type="number"
+                  min="1"
+                  required
+                  value={form.categoryId}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      categoryId: event.target.value,
+                    }))
+                  }
+                />
+              )}
             </div>
           </div>
-          {editingId == null && (
-            <div className="field" style={{ marginBottom: 10 }}>
+          {editingId === null && intakeMode === "text" && (
+            <div className="field">
               <label className="label" htmlFor="attachment-content">
                 Attachment text
               </label>
@@ -501,7 +1123,50 @@ function EncounterDocuments({
               />
             </div>
           )}
-          <div className="field" style={{ marginBottom: 10 }}>
+          {editingId === null && intakeMode === "file" && (
+            <div className="field">
+              <label className="label" htmlFor="attachment-file">
+                File
+              </label>
+              <input
+                key={fileInputKey}
+                id="attachment-file"
+                className="input"
+                type="file"
+                required
+                onChange={(event) =>
+                  handleFileSelection(event.target.files?.[0] ?? null)
+                }
+              />
+              {options && (
+                <small>
+                  Maximum protected upload:{" "}
+                  {formatDocumentBytes(options.maxFileSizeBytes)}
+                </small>
+              )}
+            </div>
+          )}
+          {editingId === null && intakeMode === "link" && (
+            <div className="field">
+              <label className="label" htmlFor="attachment-url">
+                External http or https URL
+              </label>
+              <input
+                id="attachment-url"
+                className="input"
+                type="url"
+                required
+                value={form.url}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    url: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          )}
+          <div className="field">
             <label className="label" htmlFor="attachment-notes">
               Filing note
             </label>
@@ -517,12 +1182,36 @@ function EncounterDocuments({
               }
             />
           </div>
+          {editingId !== null && (
+            <div className="field">
+              <label className="label" htmlFor="attachment-change-reason">
+                Change reason
+              </label>
+              <input
+                id="attachment-change-reason"
+                className="input"
+                required
+                maxLength={250}
+                value={form.reason}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    reason: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          )}
+          <p className="cl-empty-text">
+            The patient, encounter, filing facts, protected content, and
+            lifecycle evidence remain in the shared document register.
+          </p>
           <div className="cl-inline-form-actions">
             <button className="cl-btn-primary" type="submit" disabled={saving}>
               {saving
                 ? "Saving…"
-                : editingId == null
-                  ? "Add attachment"
+                : editingId === null
+                  ? "File attachment"
                   : "Save filing"}
             </button>
             <button
@@ -532,6 +1221,7 @@ function EncounterDocuments({
               onClick={() => {
                 setAddOpen(false);
                 setEditingId(null);
+                setActionError(null);
               }}
             >
               Cancel
@@ -539,260 +1229,719 @@ function EncounterDocuments({
           </div>
         </form>
       )}
-      {detail.documents.length === 0 && !addOpen && (
-        <p className="cl-empty-text">
-          No encounter attachments. Add a text attachment to begin this local
-          workflow.
+
+      {workspaceLoading && (
+        <p className="cl-empty-text" role="status">
+          Loading protected encounter attachments…
         </p>
       )}
-      {detail.documents.map((document) => (
-        <div
-          key={document.id}
-          className="cl-soap-section"
-          style={{ opacity: document.deleted ? 0.65 : 1 }}
-        >
-          <div className="cl-card-header">
-            <p className="cl-soap-label">{document.name}</p>
-            <span className="cl-badge cl-badge-muted">
-              {document.deleted ? "Archived" : document.reviewStatus}
-            </span>
-          </div>
-          <p className="cl-empty-text">
-            {document.categoryName} · {document.docDate} ·{" "}
-            {document.versionLabel}
-            {document.reviewedBy ? ` · ${document.reviewedBy}` : ""}
-          </p>
-          {document.notes && <p className="cl-soap-text">{document.notes}</p>}
-          {!document.deleted && (
-            <div className="cl-inline-form-actions">
-              <button
-                className="cl-btn-secondary"
-                type="button"
-                onClick={() => openEdit(document)}
-                disabled={saving}
-              >
-                Edit filing
-              </button>
-              <button
-                className="cl-btn-secondary"
-                type="button"
-                onClick={() => {
-                  setReplacingId(document.id);
-                  setMovingId(null);
-                  setReviewingId(null);
-                  setReplacementContent("");
-                }}
-                disabled={saving}
-              >
-                Replace text
-              </button>
-              <button
-                className="cl-btn-secondary"
-                type="button"
-                onClick={() => {
-                  setMovingId(document.id);
-                  setReplacingId(null);
-                  setReviewingId(null);
-                  setTargetEncounter("");
-                }}
-                disabled={saving}
-              >
-                Move
-              </button>
-              <button
-                className="cl-btn-secondary"
-                type="button"
-                onClick={() => {
-                  setReviewingId(document.id);
-                  setReplacingId(null);
-                  setMovingId(null);
-                  setReviewForm({ reviewStatus: "Reviewed", reviewedBy: "" });
-                }}
-                disabled={saving}
-              >
-                Review
-              </button>
-              <button
-                className="cl-btn-secondary"
-                type="button"
-                onClick={() => changeArchive(document)}
-                disabled={saving}
-              >
-                <ArchiveRestore size={14} /> Archive
-              </button>
-            </div>
-          )}
-          {document.deleted && (
-            <div className="cl-inline-form-actions">
-              <button
-                className="cl-btn-secondary"
-                type="button"
-                onClick={() => changeArchive(document, true)}
-                disabled={saving}
-              >
-                Restore
-              </button>
-            </div>
-          )}
-          {replacingId === document.id && (
-            <form
-              onSubmit={(event) => replaceContent(event, document)}
-              style={{ marginTop: 10 }}
+      {!workspaceLoading && documents.length === 0 && !addOpen && (
+        <p className="cl-empty-text">
+          No active or archived attachments are filed to this encounter.
+        </p>
+      )}
+
+      <div className="encounter-document-list">
+        {documents.map((document) => {
+          const reviewStatus = normalizeDocumentReviewStatus(
+            document.reviewStatus,
+          );
+          const isExternal = document.storageMethod === "web_url";
+          return (
+            <article
+              key={document.id}
+              className={`encounter-document-card${
+                document.deleted ? " is-archived" : ""
+              }`}
+              data-document-name={document.name}
             >
-              <div className="field">
-                <label className="label" htmlFor={`replacement-${document.id}`}>
-                  Replacement text
-                </label>
-                <textarea
-                  id={`replacement-${document.id}`}
-                  className="textarea"
-                  rows={4}
-                  required
-                  value={replacementContent}
-                  onChange={(event) =>
-                    setReplacementContent(event.target.value)
-                  }
-                />
+              <div className="cl-card-header">
+                <div>
+                  <p className="cl-soap-label">{document.name}</p>
+                  <p className="cl-empty-text">
+                    {document.categoryName} · {document.docDate} ·{" "}
+                    {documentTypeLabel(document)}
+                  </p>
+                </div>
+                <div className="encounter-document-badges">
+                  <span className="cl-badge cl-badge-muted">
+                    {document.versionLabel}
+                  </span>
+                  <span className="cl-badge cl-badge-muted">
+                    {reviewStatus}
+                  </span>
+                  {document.deleted !== 0 && (
+                    <span className="cl-badge">Archived</span>
+                  )}
+                </div>
               </div>
+              <dl className="encounter-document-facts">
+                <div>
+                  <dt>File</dt>
+                  <dd>{document.fileName || document.name}</dd>
+                </div>
+                <div>
+                  <dt>Type and size</dt>
+                  <dd>
+                    {document.mimetype || documentTypeLabel(document)} ·{" "}
+                    {formatDocumentBytes(document.sizeBytes)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Filed</dt>
+                  <dd>{document.uploadedAt}</dd>
+                </div>
+                <div>
+                  <dt>Latest revision</dt>
+                  <dd>{document.revisionAt}</dd>
+                </div>
+              </dl>
+              {document.notes && (
+                <p className="cl-soap-text">{document.notes}</p>
+              )}
+              {document.contentPreview && !isExternal && (
+                <p className="encounter-document-preview-copy">
+                  {document.contentPreview}
+                </p>
+              )}
+              {isExternal && document.url && (
+                <p className="encounter-document-preview-copy">
+                  {document.url}
+                </p>
+              )}
+
               <div className="cl-inline-form-actions">
-                <button
-                  className="cl-btn-primary"
-                  type="submit"
-                  disabled={saving}
-                >
-                  Replace content
-                </button>
+                {!document.deleted && document.canPreviewInline && (
+                  <button
+                    className="cl-btn-secondary"
+                    type="button"
+                    onClick={() => void openPreview(document)}
+                    disabled={saving}
+                  >
+                    <Eye size={14} /> Preview
+                  </button>
+                )}
+                {!document.deleted && !isExternal && document.canDownload && (
+                  <button
+                    className="cl-btn-secondary"
+                    type="button"
+                    onClick={() => void downloadDocument(document)}
+                    disabled={
+                      saving || downloadingKey === `${document.id}-current`
+                    }
+                  >
+                    <Download size={14} />
+                    {downloadingKey === `${document.id}-current`
+                      ? "Downloading…"
+                      : "Download"}
+                  </button>
+                )}
+                {!document.deleted && isExternal && document.url && (
+                  <a
+                    className="cl-btn-secondary"
+                    href={document.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink size={14} /> Open external link
+                  </a>
+                )}
                 <button
                   className="cl-btn-secondary"
                   type="button"
+                  onClick={() => void loadHistory(document)}
                   disabled={saving}
-                  onClick={() => setReplacingId(null)}
                 >
-                  Cancel
+                  <History size={14} /> History
                 </button>
-              </div>
-            </form>
-          )}
-          {movingId === document.id && (
-            <form
-              onSubmit={(event) => moveDocument(event, document)}
-              style={{ marginTop: 10 }}
-            >
-              <div className="field">
-                <label className="label" htmlFor={`move-${document.id}`}>
-                  Target encounter
-                </label>
-                <select
-                  id={`move-${document.id}`}
-                  className="input"
-                  required
-                  value={targetEncounter}
-                  onChange={(event) => setTargetEncounter(event.target.value)}
-                >
-                  <option value="">Choose encounter</option>
-                  {targetEncounters
-                    .filter(
-                      (encounter) => encounter.encounter !== detail.encounter,
-                    )
-                    .map((encounter) => (
-                      <option
-                        key={encounter.encounter}
-                        value={encounter.encounter}
+                {!document.deleted && (
+                  <>
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      onClick={() => openEdit(document)}
+                      disabled={saving}
+                    >
+                      Edit filing
+                    </button>
+                    {!isExternal && (
+                      <button
+                        className="cl-btn-secondary"
+                        type="button"
+                        onClick={() => beginReplacement(document)}
+                        disabled={saving}
                       >
-                        #{encounter.encounter} · {encounter.date} ·{" "}
-                        {encounter.reason ?? "Visit"}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div className="cl-inline-form-actions">
-                <button
-                  className="cl-btn-primary"
-                  type="submit"
-                  disabled={saving}
-                >
-                  Move attachment
-                </button>
-                <button
-                  className="cl-btn-secondary"
-                  type="button"
-                  disabled={saving}
-                  onClick={() => setMovingId(null)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
-          {reviewingId === document.id && (
-            <form
-              onSubmit={(event) => saveReview(event, document)}
-              style={{ marginTop: 10 }}
-            >
-              <div className="form-row">
-                <div className="field">
-                  <label
-                    className="label"
-                    htmlFor={`review-status-${document.id}`}
-                  >
-                    Review decision
-                  </label>
-                  <select
-                    id={`review-status-${document.id}`}
-                    className="input"
-                    value={reviewForm.reviewStatus}
-                    onChange={(event) =>
-                      setReviewForm((current) => ({
-                        ...current,
-                        reviewStatus: event.target.value,
-                      }))
-                    }
-                  >
-                    <option>Reviewed</option>
-                    <option>Signed</option>
-                    <option>Denied</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label className="label" htmlFor={`reviewer-${document.id}`}>
-                    Reviewed by
-                  </label>
-                  <input
-                    id={`reviewer-${document.id}`}
-                    className="input"
-                    required
-                    value={reviewForm.reviewedBy}
-                    onChange={(event) =>
-                      setReviewForm((current) => ({
-                        ...current,
-                        reviewedBy: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="cl-inline-form-actions">
-                <button
-                  className="cl-btn-primary"
-                  type="submit"
-                  disabled={saving}
-                >
-                  Save review
-                </button>
+                        Replace content
+                      </button>
+                    )}
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      onClick={() => {
+                        closeDocumentPanels();
+                        setMovingId(document.id);
+                        setTargetEncounter("");
+                        setMoveReason("");
+                      }}
+                      disabled={saving}
+                    >
+                      Move
+                    </button>
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      onClick={() => {
+                        closeDocumentPanels();
+                        setReviewingId(document.id);
+                        setReviewForm({
+                          reviewStatus:
+                            reviewStatus === "pending" ? "approved" : "pending",
+                          reason: "",
+                        });
+                      }}
+                      disabled={saving}
+                    >
+                      Review
+                    </button>
+                  </>
+                )}
                 <button
                   className="cl-btn-secondary"
                   type="button"
-                  onClick={() => setReviewingId(null)}
+                  onClick={() => {
+                    closeDocumentPanels();
+                    setArchivingId(document.id);
+                    setArchiveReason("");
+                  }}
                   disabled={saving}
                 >
-                  Cancel
+                  <ArchiveRestore size={14} />{" "}
+                  {document.deleted ? "Restore" : "Archive"}
                 </button>
               </div>
-            </form>
-          )}
-        </div>
-      ))}
-    </div>
+
+              {previewState?.documentId === document.id && (
+                <section
+                  className="encounter-document-preview"
+                  aria-label={`Preview of ${document.name}`}
+                >
+                  <div className="cl-card-header">
+                    <p className="cl-soap-label">Protected preview</p>
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      onClick={closePreview}
+                    >
+                      Close
+                    </button>
+                  </div>
+                  {previewState.status === "loading" && (
+                    <p role="status">Loading protected bytes…</p>
+                  )}
+                  {previewState.status === "error" && (
+                    <div className="cl-inline-error" role="alert">
+                      {previewState.message}
+                    </div>
+                  )}
+                  {previewState.status === "ready" && (
+                    <>
+                      <p className="cl-empty-text">
+                        {previewState.fileName} · {previewState.contentType} ·{" "}
+                        {formatDocumentBytes(previewState.sizeBytes)}
+                      </p>
+                      {previewState.kind === "text" && (
+                        <pre
+                          className="encounter-document-text-preview"
+                          tabIndex={0}
+                        >
+                          {previewState.text}
+                        </pre>
+                      )}
+                      {previewState.kind === "image" &&
+                        previewState.objectUrl && (
+                          <img
+                            className="encounter-document-image-preview"
+                            src={previewState.objectUrl}
+                            alt={`Preview of ${document.name}`}
+                          />
+                        )}
+                      {previewState.kind === "pdf" &&
+                        previewState.objectUrl && (
+                          <iframe
+                            className="encounter-document-pdf-preview"
+                            src={previewState.objectUrl}
+                            title={`${document.name} PDF preview`}
+                          />
+                        )}
+                      {previewState.truncated && (
+                        <p className="cl-empty-text">
+                          Preview is limited to the first{" "}
+                          {formatDocumentBytes(
+                            ENCOUNTER_DOCUMENT_TEXT_PREVIEW_LIMIT,
+                          )}
+                          . Download to read the complete file.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </section>
+              )}
+
+              {editingId === document.id && (
+                <p className="cl-empty-text">
+                  Editing this filing in the form above.
+                </p>
+              )}
+
+              {replacingId === document.id && (
+                <form
+                  className="encounter-document-inline-form"
+                  onSubmit={(event) => replaceContent(event, document)}
+                >
+                  <div className="encounter-document-mode-picker">
+                    <button
+                      className={
+                        replacementMode === "text"
+                          ? "cl-btn-primary"
+                          : "cl-btn-secondary"
+                      }
+                      type="button"
+                      aria-pressed={replacementMode === "text"}
+                      onClick={() => setReplacementMode("text")}
+                    >
+                      Replacement text
+                    </button>
+                    <button
+                      className={
+                        replacementMode === "file"
+                          ? "cl-btn-primary"
+                          : "cl-btn-secondary"
+                      }
+                      type="button"
+                      aria-pressed={replacementMode === "file"}
+                      onClick={() => setReplacementMode("file")}
+                    >
+                      Replacement file
+                    </button>
+                  </div>
+                  {replacementMode === "text" ? (
+                    <div className="field">
+                      <label
+                        className="label"
+                        htmlFor={`replacement-${document.id}`}
+                      >
+                        Replacement text
+                      </label>
+                      <textarea
+                        id={`replacement-${document.id}`}
+                        className="textarea"
+                        rows={4}
+                        required
+                        value={replacementContent}
+                        onChange={(event) =>
+                          setReplacementContent(event.target.value)
+                        }
+                      />
+                    </div>
+                  ) : (
+                    <div className="field">
+                      <label
+                        className="label"
+                        htmlFor={`replacement-file-${document.id}`}
+                      >
+                        Replacement file
+                      </label>
+                      <input
+                        key={replacementFileKey}
+                        id={`replacement-file-${document.id}`}
+                        className="input"
+                        type="file"
+                        required
+                        onChange={(event) =>
+                          setReplacementFile(event.target.files?.[0] ?? null)
+                        }
+                      />
+                    </div>
+                  )}
+                  <div className="field">
+                    <label
+                      className="label"
+                      htmlFor={`replacement-reason-${document.id}`}
+                    >
+                      Replacement reason
+                    </label>
+                    <input
+                      id={`replacement-reason-${document.id}`}
+                      className="input"
+                      required
+                      maxLength={250}
+                      value={replacementReason}
+                      onChange={(event) =>
+                        setReplacementReason(event.target.value)
+                      }
+                    />
+                  </div>
+                  <p className="cl-empty-text">
+                    Saving appends version {document.currentVersion + 1}; it
+                    never overwrites version {document.currentVersion}.
+                  </p>
+                  <div className="cl-inline-form-actions">
+                    <button
+                      className="cl-btn-primary"
+                      type="submit"
+                      disabled={saving}
+                    >
+                      Save new version
+                    </button>
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setReplacingId(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {movingId === document.id && (
+                <form
+                  className="encounter-document-inline-form"
+                  onSubmit={(event) => moveDocument(event, document)}
+                >
+                  <div className="field">
+                    <label className="label" htmlFor={`move-${document.id}`}>
+                      Target encounter
+                    </label>
+                    <select
+                      id={`move-${document.id}`}
+                      className="input"
+                      required
+                      value={targetEncounter}
+                      onChange={(event) =>
+                        setTargetEncounter(event.target.value)
+                      }
+                    >
+                      <option value="">Choose encounter</option>
+                      {targetEncounters
+                        .filter(
+                          (encounter) =>
+                            encounter.encounter !== detail.encounter,
+                        )
+                        .map((encounter) => (
+                          <option
+                            key={encounter.encounter}
+                            value={encounter.encounter}
+                          >
+                            #{encounter.encounter} · {encounter.date} ·{" "}
+                            {encounter.reason ?? "Visit"}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label
+                      className="label"
+                      htmlFor={`move-reason-${document.id}`}
+                    >
+                      Move reason
+                    </label>
+                    <input
+                      id={`move-reason-${document.id}`}
+                      className="input"
+                      required
+                      maxLength={250}
+                      value={moveReason}
+                      onChange={(event) => setMoveReason(event.target.value)}
+                    />
+                  </div>
+                  <div className="cl-inline-form-actions">
+                    <button
+                      className="cl-btn-primary"
+                      type="submit"
+                      disabled={saving}
+                    >
+                      Move attachment
+                    </button>
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setMovingId(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {reviewingId === document.id && (
+                <form
+                  className="encounter-document-inline-form"
+                  onSubmit={(event) => saveReview(event, document)}
+                >
+                  <div className="form-row">
+                    <div className="field">
+                      <label
+                        className="label"
+                        htmlFor={`review-status-${document.id}`}
+                      >
+                        Review decision
+                      </label>
+                      <select
+                        id={`review-status-${document.id}`}
+                        className="input"
+                        value={reviewForm.reviewStatus}
+                        onChange={(event) =>
+                          setReviewForm((current) => ({
+                            ...current,
+                            reviewStatus: event.target
+                              .value as DocumentReviewStatus,
+                          }))
+                        }
+                      >
+                        {reviewStatus === "pending" ? (
+                          <>
+                            <option value="approved">Approve</option>
+                            <option value="denied">Deny</option>
+                          </>
+                        ) : (
+                          <option value="pending">Reopen review</option>
+                        )}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label
+                        className="label"
+                        htmlFor={`review-reason-${document.id}`}
+                      >
+                        Decision reason
+                      </label>
+                      <input
+                        id={`review-reason-${document.id}`}
+                        className="input"
+                        required
+                        maxLength={250}
+                        value={reviewForm.reason}
+                        onChange={(event) =>
+                          setReviewForm((current) => ({
+                            ...current,
+                            reason: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <p className="cl-empty-text">
+                    The reviewer identity comes from the authenticated session.
+                  </p>
+                  <div className="cl-inline-form-actions">
+                    <button
+                      className="cl-btn-primary"
+                      type="submit"
+                      disabled={saving}
+                    >
+                      Record decision
+                    </button>
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      onClick={() => setReviewingId(null)}
+                      disabled={saving}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {archivingId === document.id && (
+                <form
+                  className="encounter-document-inline-form"
+                  onSubmit={(event) => changeArchive(event, document)}
+                >
+                  <div className="field">
+                    <label
+                      className="label"
+                      htmlFor={`archive-reason-${document.id}`}
+                    >
+                      {document.deleted ? "Restore reason" : "Archive reason"}
+                    </label>
+                    <input
+                      id={`archive-reason-${document.id}`}
+                      className="input"
+                      required
+                      maxLength={250}
+                      value={archiveReason}
+                      onChange={(event) => setArchiveReason(event.target.value)}
+                    />
+                  </div>
+                  <div className="cl-inline-form-actions">
+                    <button
+                      className="cl-btn-primary"
+                      type="submit"
+                      disabled={saving}
+                    >
+                      {document.deleted
+                        ? "Restore document"
+                        : "Archive document"}
+                    </button>
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      onClick={() => setArchivingId(null)}
+                      disabled={saving}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {historyState?.documentId === document.id && (
+                <section
+                  className="encounter-document-history"
+                  aria-label={`Lifecycle history for ${document.name}`}
+                >
+                  {historyState.status === "loading" && (
+                    <p role="status">Loading immutable lifecycle evidence…</p>
+                  )}
+                  {historyState.status === "error" && (
+                    <div className="cl-inline-error" role="alert">
+                      {historyState.message}
+                    </div>
+                  )}
+                  {historyState.status === "ready" && (
+                    <>
+                      <div className="cl-card-header">
+                        <div>
+                          <p className="cl-soap-label">Lifecycle evidence</p>
+                          <p className="cl-empty-text">
+                            Content, filing, review, and archive histories use
+                            the shared protected document record.
+                          </p>
+                        </div>
+                        <button
+                          className="cl-btn-secondary"
+                          type="button"
+                          onClick={() => setHistoryState(null)}
+                        >
+                          Close history
+                        </button>
+                      </div>
+                      <div className="encounter-document-history-grid">
+                        <div>
+                          <h4>Content versions</h4>
+                          {historyState.data.versions ? (
+                            <ol>
+                              {historyState.data.versions.versions.map(
+                                (version) => (
+                                  <li key={version.version}>
+                                    <div>
+                                      <strong>{version.versionLabel}</strong> ·{" "}
+                                      {version.versionStatus}
+                                    </div>
+                                    <p>
+                                      {version.revisionReason ||
+                                        "Original filing"}{" "}
+                                      ·{" "}
+                                      {version.revisionActor ||
+                                        "Original actor unavailable"}{" "}
+                                      · {version.revisionAt}
+                                    </p>
+                                    <button
+                                      className="cl-link"
+                                      type="button"
+                                      disabled={
+                                        !version.canDownload ||
+                                        downloadingKey ===
+                                          `${document.id}-${version.version}`
+                                      }
+                                      onClick={() =>
+                                        void downloadVersion(
+                                          document,
+                                          version.version,
+                                          version.fileName,
+                                        )
+                                      }
+                                    >
+                                      Download version {version.version}
+                                    </button>
+                                  </li>
+                                ),
+                              )}
+                            </ol>
+                          ) : (
+                            <p>Version history unavailable.</p>
+                          )}
+                        </div>
+                        <div>
+                          <h4>Filing changes</h4>
+                          {historyState.data.metadata?.events.length ? (
+                            <ol>
+                              {historyState.data.metadata.events.map(
+                                (event) => (
+                                  <li key={event.eventId}>
+                                    <strong>{event.reason}</strong>
+                                    <p>
+                                      {event.changedFields.join(", ")} ·{" "}
+                                      {event.actor} · {event.occurredAt}
+                                    </p>
+                                  </li>
+                                ),
+                              )}
+                            </ol>
+                          ) : (
+                            <p>No filing changes retained.</p>
+                          )}
+                        </div>
+                        <div>
+                          <h4>Review decisions</h4>
+                          {historyState.data.review?.events.length ? (
+                            <ol>
+                              {historyState.data.review.events.map((event) => (
+                                <li key={event.eventId}>
+                                  <strong>{event.action}</strong>
+                                  <p>
+                                    {event.reason} · {event.actor} ·{" "}
+                                    {event.occurredAt}
+                                  </p>
+                                </li>
+                              ))}
+                            </ol>
+                          ) : (
+                            <p>No review decisions retained.</p>
+                          )}
+                        </div>
+                        <div>
+                          <h4>Archive events</h4>
+                          {historyState.data.archive?.events.length ? (
+                            <ol>
+                              {historyState.data.archive.events.map((event) => (
+                                <li key={event.eventId}>
+                                  <strong>{event.action}</strong>
+                                  <p>
+                                    {event.reason} · {event.actor} ·{" "}
+                                    {event.occurredAt}
+                                  </p>
+                                </li>
+                              ))}
+                            </ol>
+                          ) : (
+                            <p>No archive events retained.</p>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </section>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

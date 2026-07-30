@@ -7,7 +7,9 @@ using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
 
-public sealed class EncounterRepository(NpgsqlDataSource dataSource)
+public sealed class EncounterRepository(
+    NpgsqlDataSource dataSource,
+    DocumentRepository documentRepository)
 {
     private const int MaximumSearchLimit = 100;
 
@@ -206,12 +208,15 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         var signatures = await GetSignaturesForEncounterAsync(connection, detail.Encounter, cancellationToken);
         var soapNoteVersions = await GetSoapNoteVersionsAsync(connection, detail.Encounter, cancellationToken);
         var diagnosisCodes = BuildDiagnosisCodes(detail, billingLines, procedureOrders);
-        var documents = await GetDocumentsForEncounterAsync(
-            connection,
-            detail.LegacyPid,
-            detail.Encounter,
-            includeArchivedDocuments,
-            cancellationToken);
+        var patientDocuments = await documentRepository.GetForPatientAsync(
+            detail.PatientId,
+            cancellationToken,
+            includeArchivedDocuments);
+        var documents = patientDocuments?.Documents
+            .Where(document => document.Encounter == detail.Encounter)
+            .Select(MapEncounterDocument)
+            .ToArray()
+            ?? Array.Empty<EncounterDocumentAttachment>();
         return detail with
         {
             DiagnosisCodes = diagnosisCodes,
@@ -1650,6 +1655,57 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
 
         var modifier = NormalizeText(line.Modifier);
         return modifier is null ? $"{codeType} {code}" : $"{codeType} {code}-{modifier}";
+    }
+
+    private static EncounterDocumentAttachment MapEncounterDocument(PatientDocumentItem document)
+    {
+        return new EncounterDocumentAttachment(
+            Id: document.Id,
+            DocumentKey: document.DocumentKey,
+            CategoryId: document.CategoryId,
+            CategoryName: document.CategoryName,
+            Name: document.Name,
+            DocDate: document.DocDate,
+            UploadedAt: document.UploadedAt,
+            RevisionAt: document.RevisionAt,
+            CurrentVersion: document.CurrentVersion,
+            VersionLabel: document.VersionLabel,
+            VersionStatus: document.VersionStatus,
+            VersionHistoryCount: document.VersionHistoryCount,
+            HasPriorVersions: document.HasPriorVersions,
+            RevisionHash: document.RevisionHash,
+            Mimetype: document.Mimetype,
+            SizeBytes: document.SizeBytes,
+            Pages: document.Pages,
+            StorageMethod: document.StorageMethod,
+            FileName: document.FileName,
+            Url: document.Url,
+            Hash: document.Hash,
+            Notes: document.Notes,
+            Deleted: document.Deleted,
+            ReviewStatus: document.ReviewStatus,
+            ReviewedBy: document.ReviewedBy,
+            ReviewedAt: document.ReviewedAt,
+            ContentPreview: document.ContentPreview,
+            PreviewKind: document.PreviewKind,
+            PreviewStatus: document.PreviewStatus,
+            ThumbnailLabel: document.ThumbnailLabel,
+            ThumbnailText: document.ThumbnailText,
+            CanPreviewInline: document.CanPreviewInline,
+            CanDownload: document.CanDownload,
+            IsScannedAttachment: document.IsScannedAttachment,
+            ScanStatus: document.ScanStatus,
+            CaptureSource: document.CaptureSource,
+            ScanPageCount: document.ScanPageCount,
+            OcrStatus: document.OcrStatus,
+            LifecycleEvents: document.LifecycleEvents
+                .Select(lifecycle => new EncounterDocumentLifecycleEvent(
+                    lifecycle.Code,
+                    lifecycle.Label,
+                    lifecycle.OccurredAt,
+                    lifecycle.Actor,
+                    lifecycle.Detail))
+                .ToArray());
     }
 
     private static async Task<IReadOnlyList<EncounterDocumentAttachment>> GetDocumentsForEncounterAsync(
