@@ -61,6 +61,89 @@ public sealed class AuthorizationRepository(NpgsqlDataSource dataSource)
             cancellationToken);
     }
 
+    public async Task<AuthorizationWorkQueueResponse> GetWorkQueueAsync(
+        string? status,
+        string? assignedTo,
+        bool overdueOnly,
+        bool expiringOnly,
+        string? query,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStatus = status?.Trim().ToLowerInvariant() is "all" or null or "" ? null : status!.Trim().ToLowerInvariant();
+        if (normalizedStatus is not null && normalizedStatus is not ("draft" or "submitted" or "approved" or "denied" or "cancelled" or "expired"))
+        {
+            throw new ArgumentException("Authorization queue status must be draft, submitted, approved, denied, cancelled, expired, or all.");
+        }
+
+        var assigneeFilter = TrimToNull(assignedTo)?.ToLowerInvariant();
+        var queryFilter = TrimToNull(query)?.ToLowerInvariant();
+        var safeLimit = Math.Clamp(limit, 1, 100);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var count = connection.CreateCommand();
+        count.CommandText = """
+            select count(*),
+              count(*) filter (where a.status in ('draft', 'submitted', 'approved')),
+              count(*) filter (where a.status in ('draft', 'submitted', 'approved') and a.due_at is not null and a.due_at < now()),
+              count(*) filter (where a.status = 'approved' and a.expires_at is not null and a.expires_at >= now() and a.expires_at < now() + interval '30 days')
+            from authorizations a join patients p on p.canonical_id = a.patient_id
+            where (@status::text is null or a.status = @status::text)
+              and (@assignedTo::text is null or lower(coalesce(a.assigned_to, a.created_by, 'admin')) = @assignedTo::text)
+              and (@overdueOnly = false or (a.status in ('draft', 'submitted', 'approved') and a.due_at is not null and a.due_at < now()))
+              and (@expiringOnly = false or (a.status = 'approved' and a.expires_at is not null and a.expires_at >= now() and a.expires_at < now() + interval '30 days'))
+              and (@query::text is null or lower(a.payer) like '%' || @query::text || '%' or lower(a.service) like '%' || @query::text || '%' or lower(p.canonical_id) like '%' || @query::text || '%' or lower(p.pubpid) like '%' || @query::text || '%' or lower(concat(p.last_name, ', ', p.first_name)) like '%' || @query::text || '%');
+            """;
+        AddQueueParameters(count, normalizedStatus, assigneeFilter, overdueOnly, expiringOnly, queryFilter);
+        int total; int activeCount; int overdueCount; int expiringCount;
+        await using (var reader = await count.ExecuteReaderAsync(cancellationToken))
+        {
+            await reader.ReadAsync(cancellationToken);
+            total = Convert.ToInt32(reader.GetValue(0)); activeCount = Convert.ToInt32(reader.GetValue(1)); overdueCount = Convert.ToInt32(reader.GetValue(2)); expiringCount = Convert.ToInt32(reader.GetValue(3));
+        }
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            {AuthorizationProjection}
+            join patients p on p.canonical_id = a.patient_id
+            where (@status::text is null or a.status = @status::text)
+              and (@assignedTo::text is null or lower(coalesce(a.assigned_to, a.created_by, 'admin')) = @assignedTo::text)
+              and (@overdueOnly = false or (a.status in ('draft', 'submitted', 'approved') and a.due_at is not null and a.due_at < now()))
+              and (@expiringOnly = false or (a.status = 'approved' and a.expires_at is not null and a.expires_at >= now() and a.expires_at < now() + interval '30 days'))
+              and (@query::text is null or lower(a.payer) like '%' || @query::text || '%' or lower(a.service) like '%' || @query::text || '%' or lower(p.canonical_id) like '%' || @query::text || '%' or lower(p.pubpid) like '%' || @query::text || '%' or lower(concat(p.last_name, ', ', p.first_name)) like '%' || @query::text || '%')
+            order by (a.status in ('draft', 'submitted', 'approved') and a.due_at is not null and a.due_at < now()) desc, a.expires_at nulls last, a.due_at nulls last, a.requested_at desc
+            limit @limit;
+            """;
+        AddQueueParameters(command, normalizedStatus, assigneeFilter, overdueOnly, expiringOnly, queryFilter);
+        command.Parameters.AddWithValue("limit", safeLimit);
+        var items = await ReadItemsAsync(command, cancellationToken);
+        var patientIds = items.Select(item => item.PatientId).Distinct().ToArray();
+        var patients = new Dictionary<string, (string DisplayName, string Pubpid)>();
+        if (patientIds.Length > 0)
+        {
+            await using var patientCommand = connection.CreateCommand();
+            patientCommand.CommandText = "select canonical_id, trim(concat(last_name, ', ', first_name)), pubpid from patients where canonical_id = any(@ids);";
+            patientCommand.Parameters.AddWithValue("ids", patientIds);
+            await using var patientReader = await patientCommand.ExecuteReaderAsync(cancellationToken);
+            while (await patientReader.ReadAsync(cancellationToken)) patients[patientReader.GetString(0)] = (patientReader.GetString(1), patientReader.GetString(2));
+        }
+        var now = DateTimeOffset.UtcNow;
+        return new AuthorizationWorkQueueResponse(total, activeCount, overdueCount, expiringCount, items.Select(item =>
+        {
+            patients.TryGetValue(item.PatientId, out var patient);
+            var overdue = (item.Status is "draft" or "submitted" or "approved") && item.DueAt is not null && DateTimeOffset.Parse(item.DueAt) < now;
+            var expiring = item.Status == "approved" && item.ExpiresAt is not null && DateTimeOffset.Parse(item.ExpiresAt) >= now && DateTimeOffset.Parse(item.ExpiresAt) < now.AddDays(30);
+            return new AuthorizationWorkQueueItem(item, patient.DisplayName ?? item.PatientId, patient.Pubpid ?? item.PatientId, overdue, expiring);
+        }).ToArray());
+    }
+
+    private static void AddQueueParameters(NpgsqlCommand command, string? status, string? assignedTo, bool overdueOnly, bool expiringOnly, string? query)
+    {
+        command.Parameters.AddWithValue("status", (object?)status ?? DBNull.Value);
+        command.Parameters.AddWithValue("assignedTo", (object?)assignedTo ?? DBNull.Value);
+        command.Parameters.AddWithValue("overdueOnly", overdueOnly);
+        command.Parameters.AddWithValue("expiringOnly", expiringOnly);
+        command.Parameters.AddWithValue("query", (object?)query ?? DBNull.Value);
+    }
+
     public async Task<ClinicalWorkflowAssigneesResponse> GetAssigneesAsync(
         CancellationToken cancellationToken)
     {

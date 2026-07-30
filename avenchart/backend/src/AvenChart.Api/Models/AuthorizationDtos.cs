@@ -81,3 +81,17 @@ public sealed record AuthorizationWorkflowHistoryResponse(
     AuthorizationItem Authorization,
     int Total,
     IReadOnlyList<AuthorizationWorkflowEvent> Events);
+
+public sealed record AuthorizationWorkQueueItem(
+    AuthorizationItem Authorization,
+    string PatientDisplayName,
+    string Pubpid,
+    bool IsOverdue,
+    bool IsExpiring);
+
+public sealed record AuthorizationWorkQueueResponse(
+    int Total,
+    int ActiveCount,
+    int OverdueCount,
+    int ExpiringCount,
+    IReadOnlyList<AuthorizationWorkQueueItem> Items);
