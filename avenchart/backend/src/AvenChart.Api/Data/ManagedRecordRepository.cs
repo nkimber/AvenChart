@@ -845,9 +845,9 @@ public sealed class ManagedRecordRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "select exists(select 1 from encounter_signatures where encounter = @encounter and is_lock);";
+        command.CommandText = "select count(*) from encounter_signatures where encounter = @encounter and is_lock;";
         command.Parameters.AddWithValue("encounter", encounter);
-        return await command.ExecuteScalarAsync(cancellationToken) is true;
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 0) > 0;
     }
 
     private static async Task<bool> ActiveFacilityExistsAsync(

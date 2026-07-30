@@ -740,15 +740,13 @@ public sealed class AuthorizationRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            select exists(
-              select 1
-              from referrals r
-              join encounter_signatures s on s.encounter = r.encounter_id
-              where r.id = @referralId and s.is_lock
-            );
+            select count(*)
+            from referrals r
+            join encounter_signatures s on s.encounter = r.encounter_id
+            where r.id = @referralId and s.is_lock;
             """;
         command.Parameters.AddWithValue("referralId", referralId.Value);
-        if (await command.ExecuteScalarAsync(cancellationToken) is true)
+        if (Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 0) > 0)
         {
             throw new EncounterLockConflictException(
                 "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");

@@ -895,18 +895,51 @@ patients.MapGet("/{patientId}/referrals", async (string patientId, ReferralRepos
     try { return Results.Ok(await repository.GetAsync(patientId, cancellationToken)); }
     catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
 }).WithName("GetPatientReferrals");
-patients.MapPost("/{patientId}/referrals", async (string patientId, ReferralCreateRequest request, ReferralRepository repository, CancellationToken cancellationToken) =>
+patients.MapPost("/{patientId}/referrals", async (string patientId, ReferralCreateRequest request, ReferralRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
 {
-    try { return Results.Created($"/api/patients/{patientId}/referrals", await repository.CreateAsync(patientId, request, cancellationToken)); }
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        return Results.Created($"/api/patients/{patientId}/referrals", await repository.CreateAsync(patientId, request, session.Username, cancellationToken));
+    }
     catch (EncounterLockConflictException ex) { return Results.Conflict(new { error = ex.Message, code = "encounter_locked" }); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("CreatePatientReferral").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
-patients.MapPut("/{patientId}/referrals/{referralId:guid}/status", async (string patientId, Guid referralId, ReferralStatusRequest request, ReferralRepository repository, CancellationToken cancellationToken) =>
+patients.MapPut("/{patientId}/referrals/{referralId:guid}/status", async (string patientId, Guid referralId, ReferralStatusRequest request, ReferralRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
 {
-    try { return Results.Ok(await repository.UpdateStatusAsync(patientId, referralId, request, cancellationToken)); }
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        return Results.Ok(await repository.UpdateStatusAsync(patientId, referralId, request, session.Username, cancellationToken));
+    }
     catch (EncounterLockConflictException ex) { return Results.Conflict(new { error = ex.Message, code = "encounter_locked" }); }
+    catch (ClinicalWorkflowVersionConflictException ex)
+    {
+        return Results.Conflict(new { error = ex.Message, expectedVersion = ex.ExpectedVersion, currentVersion = ex.CurrentVersion, current = await repository.GetByIdAsync(patientId, referralId, cancellationToken) });
+    }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("UpdatePatientReferralStatus").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+
+patients.MapPut("/{patientId}/referrals/{referralId:guid}/assignment", async (string patientId, Guid referralId, ReferralAssignmentRequest request, ReferralRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        return Results.Ok(await repository.UpdateAssignmentAsync(patientId, referralId, request, session.Username, cancellationToken));
+    }
+    catch (EncounterLockConflictException ex) { return Results.Conflict(new { error = ex.Message, code = "encounter_locked" }); }
+    catch (ClinicalWorkflowVersionConflictException ex)
+    {
+        return Results.Conflict(new { error = ex.Message, expectedVersion = ex.ExpectedVersion, currentVersion = ex.CurrentVersion, current = await repository.GetByIdAsync(patientId, referralId, cancellationToken) });
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("UpdatePatientReferralAssignment").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+
+patients.MapGet("/{patientId}/referrals/{referralId:guid}/history", async (string patientId, Guid referralId, ReferralRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return await repository.GetHistoryAsync(patientId, referralId, cancellationToken) is { } history ? Results.Ok(history) : Results.NotFound(); }
+    catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
+}).WithName("GetPatientReferralHistory");
 
 patients.MapGet("/{patientId}/authorizations", async (string patientId, AuthorizationRepository repository, CancellationToken cancellationToken) =>
 {
