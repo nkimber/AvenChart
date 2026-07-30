@@ -8904,18 +8904,6 @@ export function getMedicationLifecycleHistory(
   )
 }
 
-export async function deleteMedication(
-  sessionId: string,
-  medicationId: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  return clinicianDelete(
-    sessionId,
-    `/api/clinical-lists/medications/${medicationId}`,
-    signal,
-  )
-}
-
 export type CreatePrescriptionInput = {
   patientId: string
   providerId?: number | null

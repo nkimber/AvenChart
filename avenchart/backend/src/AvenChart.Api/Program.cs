@@ -3002,16 +3002,6 @@ clinicalLists.MapGet("/medications/{medicationId}/lifecycle-history", async (
     })
     .WithName("GetClinicalMedicationLifecycleHistory");
 
-clinicalLists.MapDelete("/medications/{medicationId}", async (
-        ClinicalListRepository repository,
-        string medicationId,
-        CancellationToken cancellationToken) =>
-    {
-        var deleted = await repository.DeleteMedicationAsync(medicationId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    })
-    .WithName("DeleteClinicalMedication");
-
 clinicalLists.MapPut("/allergies/{allergyId}/deactivate", async (
         ClinicalListRepository repository,
         string allergyId,

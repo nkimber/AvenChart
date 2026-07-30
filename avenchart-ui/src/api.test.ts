@@ -38,7 +38,6 @@ import {
   deleteAllergy,
   deactivateMedication,
   deleteImmunization,
-  deleteMedication,
   deletePatientDocument,
   deletePatientAuthorizationTestFixture,
   deleteProcedureLabProviderOrganization,
@@ -1490,9 +1489,8 @@ describe('authenticated API transport', () => {
     )
   })
 
-  it('adopts clinical-list delete and entered-in-error contracts', async () => {
+  it('adopts non-medication clinical-list delete and entered-in-error contracts', async () => {
     fetchMock
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(
@@ -1502,7 +1500,6 @@ describe('authenticated API transport', () => {
 
     await deleteProblem('staff-session', 'PROB-41')
     await deleteAllergy('staff-session', 'ALG-41')
-    await deleteMedication('staff-session', 'MED-41')
     await markImmunizationEnteredInError(
       'staff-session',
       41,
@@ -1513,18 +1510,16 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       'http://localhost:5001/api/clinical-lists/problems/PROB-41',
       'http://localhost:5001/api/clinical-lists/allergies/ALG-41',
-      'http://localhost:5001/api/clinical-lists/medications/MED-41',
       'http://localhost:5001/api/clinical-lists/immunizations/41/entered-in-error',
       'http://localhost:5001/api/clinical-lists/immunizations/41',
     ])
     expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([
       'DELETE',
       'DELETE',
-      'DELETE',
       'PUT',
       'DELETE',
     ])
-    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
       headers: { 'X-Legacy EHR-Session': 'staff-session' },
       body: JSON.stringify({ note: 'Duplicate administration record' }),
     })

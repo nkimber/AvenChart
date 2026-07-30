@@ -704,23 +704,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 new ClinicalListMutationResponse(medicationId, lists));
     }
 
-    public async Task<bool> DeleteMedicationAsync(string medicationId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(medicationId))
-        {
-            return false;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            delete from medications
-            where id = @id and type = 'medication';
-            """;
-        command.Parameters.AddWithValue("id", medicationId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-    }
-
     public async Task<ClinicalListMutationResponse?> DeactivateAllergyAsync(
         string allergyId,
         ClinicalListDeactivateRequest request,
