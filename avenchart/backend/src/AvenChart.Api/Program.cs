@@ -3363,10 +3363,10 @@ messages.MapGet("/assignees", async (
 messages.MapGet("/{patientId}", async (
         MessageRepository repository,
         string patientId,
-        bool includeArchived,
+        bool? includeArchived,
         CancellationToken cancellationToken) =>
     {
-        var patientMessages = await repository.GetForPatientAsync(patientId, cancellationToken, includeArchived);
+        var patientMessages = await repository.GetForPatientAsync(patientId, cancellationToken, includeArchived ?? false);
         return patientMessages is null ? Results.NotFound() : Results.Ok(patientMessages);
     })
     .WithName("GetPatientMessages");
@@ -3548,6 +3548,8 @@ messages.MapPost("/{messageId}/resolve-escalation", async (MessageRepository rep
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 }).WithName("ResolveStaffMessageEscalation").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
+messages.MapPost("/{messageId}/archive", async (MessageRepository repository, AuthRepository authRepository, HttpContext httpContext, string messageId, PatientMessageArchiveRequest request, CancellationToken cancellationToken) =>
+{
     try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var result = await repository.SetArchiveAsync(messageId, true, request, session.Username, cancellationToken); return result is null ? Results.NotFound() : Results.Ok(result); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 }).WithName("ArchiveStaffMessage").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
@@ -3560,11 +3562,19 @@ messages.MapPost("/{messageId}/restore", async (MessageRepository repository, Au
 
 messages.MapPut("/{messageId}/reply", async (
         MessageRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string messageId,
         PatientMessageReplyRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.ReplyAsync(messageId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        if (!string.Equals(request.AssignedTo?.Trim(), session.Username, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest(new { error = "A staff reply must remain assigned to the authenticated user." });
+        }
+
+        var mutation = await repository.ReplyAsync(messageId, request, session.Username, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
     .WithName("ReplyToPatientMessage")
