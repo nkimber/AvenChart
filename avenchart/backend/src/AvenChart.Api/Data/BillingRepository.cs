@@ -1864,6 +1864,11 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             {
                 return null;
             }
+            if (await IsEncounterLockedAsync(connection, encounter.Encounter, cancellationToken))
+            {
+                throw new EncounterLockConflictException(
+                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            }
 
             legacyPid = patient.LegacyPid;
             var postDate = new DateOnly(2026, 6, 18);
@@ -2044,6 +2049,11 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             if (encounter is null)
             {
                 return null;
+            }
+            if (await IsEncounterLockedAsync(connection, encounter.Encounter, cancellationToken))
+            {
+                throw new EncounterLockConflictException(
+                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
             }
 
             legacyPid = patient.LegacyPid;
@@ -2468,8 +2478,29 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         int? pid = null;
         int? sessionId = null;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
-        await using (var command = connection.CreateCommand())
         {
+            await using (var lookup = connection.CreateCommand())
+            {
+                lookup.CommandText = "select pid, session_id, encounter from payment_activities where id = @id limit 1;";
+                lookup.Parameters.AddWithValue("id", activityId);
+                await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    return null;
+                }
+
+                pid = reader.GetInt32(0);
+                sessionId = reader.GetInt32(1);
+                var encounter = reader.GetInt32(2);
+                await reader.DisposeAsync();
+                if (await IsEncounterLockedAsync(connection, encounter, cancellationToken))
+                {
+                    throw new EncounterLockConflictException(
+                        "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+                }
+            }
+
+            await using var command = connection.CreateCommand();
             command.CommandText = """
                 update payment_activities
                 set deleted = now(),
@@ -2478,12 +2509,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 returning pid, session_id;
                 """;
             command.Parameters.AddWithValue("id", activityId);
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken))
-            {
-                pid = reader.GetInt32(reader.GetOrdinal("pid"));
-                sessionId = reader.GetInt32(reader.GetOrdinal("session_id"));
-            }
+            await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
         if (pid is null || sessionId is null)
@@ -2508,10 +2534,20 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         await using (var lookupCommand = connection.CreateCommand())
         {
             lookupCommand.Transaction = transaction;
-            lookupCommand.CommandText = "select session_id from payment_activities where id = @id limit 1;";
+            lookupCommand.CommandText = "select session_id, encounter from payment_activities where id = @id limit 1;";
             lookupCommand.Parameters.AddWithValue("id", activityId);
-            var result = await lookupCommand.ExecuteScalarAsync(cancellationToken);
-            sessionId = result is null ? null : Convert.ToInt32(result);
+            await using var reader = await lookupCommand.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                sessionId = reader.GetInt32(0);
+                var encounter = reader.GetInt32(1);
+                await reader.DisposeAsync();
+                if (await IsEncounterLockedAsync(connection, encounter, cancellationToken))
+                {
+                    throw new EncounterLockConflictException(
+                        "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+                }
+            }
         }
 
         if (sessionId is null)
