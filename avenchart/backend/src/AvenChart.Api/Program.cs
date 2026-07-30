@@ -2156,9 +2156,9 @@ encounters.MapGet("/{encounter:int}/tracks", async (TrackAnythingRepository repo
     (await repository.GetEncounterCatalogAsync(encounter, cancellationToken)) is { } tracks ? Results.Ok(tracks) : Results.NotFound())
     .WithName("GetEncounterTracks");
 
-encounters.MapPost("/{encounter:int}/tracks", async (TrackAnythingRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, TrackAnythingEncounterRecordCreateRequest request, CancellationToken cancellationToken) =>
+encounters.MapPost("/{encounter:int}/tracks", async (TrackAnythingRepository repository, EncounterRepository encounterRepository, AuthRepository authRepository, HttpContext httpContext, int encounter, TrackAnythingEncounterRecordCreateRequest request, CancellationToken cancellationToken) =>
 {
-    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.CreateEncounterRecordAsync(encounter, request, session.Username, cancellationToken)) is { } record ? Results.Created($"/api/encounters/{encounter}/tracks/{record.RecordId}", record) : Results.NotFound(); }
+    try { if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken)) return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" }); var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.CreateEncounterRecordAsync(encounter, request, session.Username, cancellationToken)) is { } record ? Results.Created($"/api/encounters/{encounter}/tracks/{record.RecordId}", record) : Results.NotFound(); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 })
     .WithName("CreateEncounterTrack")
@@ -2168,17 +2168,17 @@ encounters.MapGet("/{encounter:int}/tracks/{recordId:guid}", async (TrackAnythin
     (await repository.GetEncounterRecordAsync(encounter, recordId, cancellationToken)) is { } record ? Results.Ok(record) : Results.NotFound())
     .WithName("GetEncounterTrack");
 
-encounters.MapPost("/{encounter:int}/tracks/{recordId:guid}/readings", async (TrackAnythingRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, Guid recordId, TrackAnythingReadingCreateRequest request, CancellationToken cancellationToken) =>
+encounters.MapPost("/{encounter:int}/tracks/{recordId:guid}/readings", async (TrackAnythingRepository repository, EncounterRepository encounterRepository, AuthRepository authRepository, HttpContext httpContext, int encounter, Guid recordId, TrackAnythingReadingCreateRequest request, CancellationToken cancellationToken) =>
 {
-    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.AddReadingAsync(encounter, recordId, request, session.Username, cancellationToken)) is { } reading ? Results.Created($"/api/encounters/{encounter}/tracks/{recordId}/readings/{reading.ReadingId}", reading) : Results.NotFound(); }
+    try { if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken)) return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" }); var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.AddReadingAsync(encounter, recordId, request, session.Username, cancellationToken)) is { } reading ? Results.Created($"/api/encounters/{encounter}/tracks/{recordId}/readings/{reading.ReadingId}", reading) : Results.NotFound(); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 })
     .WithName("AddEncounterTrackReading")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
-encounters.MapPut("/{encounter:int}/tracks/{recordId:guid}/readings/{readingId:guid}", async (TrackAnythingRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, Guid recordId, Guid readingId, TrackAnythingReadingUpdateRequest request, CancellationToken cancellationToken) =>
+encounters.MapPut("/{encounter:int}/tracks/{recordId:guid}/readings/{readingId:guid}", async (TrackAnythingRepository repository, EncounterRepository encounterRepository, AuthRepository authRepository, HttpContext httpContext, int encounter, Guid recordId, Guid readingId, TrackAnythingReadingUpdateRequest request, CancellationToken cancellationToken) =>
 {
-    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.UpdateReadingAsync(encounter, recordId, readingId, request, session.Username, cancellationToken)) is { } reading ? Results.Ok(reading) : Results.NotFound(); }
+    try { if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken)) return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" }); var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.UpdateReadingAsync(encounter, recordId, readingId, request, session.Username, cancellationToken)) is { } reading ? Results.Ok(reading) : Results.NotFound(); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 })
     .WithName("UpdateEncounterTrackReading")
