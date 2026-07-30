@@ -25409,7 +25409,9 @@ function ProcedureSpecimenList({ specimens }: { specimens: ProcedureSpecimenItem
           <article className="procedure-specimen-card" key={specimen.id}>
             <div className="message-item-header">
               <strong>{title}</strong>
-              <span className="status-tag">{specimen.specimenCondition || specimen.specimenType || 'Specimen'}</span>
+              <span className="status-tag">
+                {specimen.specimenStatus || 'collected'} · v{specimen.specimenVersion || 1}
+              </span>
             </div>
             <div className="procedure-specimen-meta">
               <span>{specimen.accessionIdentifier ? `Accession ${specimen.accessionIdentifier}` : 'No accession'}</span>
@@ -25420,6 +25422,30 @@ function ProcedureSpecimenList({ specimens }: { specimens: ProcedureSpecimenItem
               <span>{volume || 'No volume'}</span>
             </div>
             {specimen.comments && <p className="procedure-scheduled-note">{specimen.comments}</p>}
+            <details className="procedure-result-version-history">
+              <summary>
+                {specimen.historyCount || specimen.history.length} lifecycle{' '}
+                {(specimen.historyCount || specimen.history.length) === 1 ? 'event' : 'events'}
+              </summary>
+              {specimen.history.length === 0 ? (
+                <p>History is not loaded in this view.</p>
+              ) : (
+                <ul>
+                  {specimen.history.map((event) => (
+                    <li key={event.eventId}>
+                      <strong>{event.action}</strong>
+                      {' · '}
+                      {event.previousStatus ? `${event.previousStatus} → ${event.currentStatus}` : event.currentStatus}
+                      {' · '}
+                      {event.actor}
+                      {' · '}
+                      {event.reason}
+                      {' · '}v{event.resultingVersion}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </details>
           </article>
         )
       })}

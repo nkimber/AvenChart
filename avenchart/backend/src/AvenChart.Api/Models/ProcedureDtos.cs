@@ -276,7 +276,28 @@ public sealed record ProcedureSpecimenItem(
     string? VolumeUnit,
     string? ConditionCode,
     string? SpecimenCondition,
-    string? Comments);
+    string? Comments,
+    string SpecimenStatus,
+    int SpecimenVersion,
+    int HistoryCount,
+    IReadOnlyList<ProcedureSpecimenEventItem> History);
+
+public sealed record ProcedureSpecimenEventItem(
+    long EventId,
+    string Action,
+    string? PreviousStatus,
+    string CurrentStatus,
+    string Actor,
+    string Reason,
+    int ExpectedVersion,
+    int ResultingVersion,
+    string? SpecimenIdentifier,
+    string? AccessionIdentifier,
+    string? CollectedDate,
+    string? ConditionCode,
+    string? SpecimenCondition,
+    string? Comments,
+    string OccurredAt);
 
 public sealed record ProcedureReportItem(
     int Id,
@@ -457,6 +478,28 @@ public sealed record ProcedureSpecimenCreateRequest(
     string ConditionCode,
     string SpecimenCondition,
     string Comments);
+
+public sealed record ProcedureSpecimenTransitionRequest(
+    string Action,
+    int ExpectedVersion,
+    string Reason,
+    string? SpecimenIdentifier,
+    string? AccessionIdentifier,
+    string? CollectedDate,
+    string? ConditionCode,
+    string? SpecimenCondition,
+    string? Comments);
+
+public sealed class ProcedureSpecimenLifecycleConflictException(
+    int expectedVersion,
+    int currentVersion,
+    string currentStatus,
+    string message) : Exception(message)
+{
+    public int ExpectedVersion { get; } = expectedVersion;
+    public int CurrentVersion { get; } = currentVersion;
+    public string CurrentStatus { get; } = currentStatus;
+}
 
 public sealed record ProcedureResultCreateRequest(
     int ReportId,

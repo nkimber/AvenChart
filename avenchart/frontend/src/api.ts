@@ -2012,6 +2012,24 @@ export type ProcedureReportReviewQueueFilters = {
   limit?: number
 }
 
+export type ProcedureSpecimenEventItem = {
+  eventId: number
+  action: string
+  previousStatus?: string | null
+  currentStatus: string
+  actor: string
+  reason: string
+  expectedVersion: number
+  resultingVersion: number
+  specimenIdentifier?: string | null
+  accessionIdentifier?: string | null
+  collectedDate?: string | null
+  conditionCode?: string | null
+  specimenCondition?: string | null
+  comments?: string | null
+  occurredAt: string
+}
+
 export type ProcedureSpecimenItem = {
   id: number
   specimenIdentifier?: string | null
@@ -2028,6 +2046,10 @@ export type ProcedureSpecimenItem = {
   conditionCode?: string | null
   specimenCondition?: string | null
   comments?: string | null
+  specimenStatus: string
+  specimenVersion: number
+  historyCount: number
+  history: ProcedureSpecimenEventItem[]
 }
 
 export type ProcedureOrderItem = {

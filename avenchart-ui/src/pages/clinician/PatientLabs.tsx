@@ -8,8 +8,11 @@ import {
   getProcedureResults,
   isRequestCancellation,
   searchEncounters,
+  transitionProcedureSpecimen,
   type ProcedureOrderCatalogItem,
   type ProcedureResultsResponse,
+  type ProcedureSpecimenItem,
+  type ProcedureSpecimenTransitionInput,
 } from "../../api.ts";
 import {
   LabResultFlag,
@@ -31,6 +34,302 @@ function formatDate(value?: string | null) {
 
 function today() {
   return new Date().toISOString().slice(0, 10);
+}
+
+type SpecimenAction = ProcedureSpecimenTransitionInput["action"];
+
+function specimenActions(status: string): SpecimenAction[] {
+  switch (status.toLowerCase()) {
+    case "collected":
+    case "recollected":
+      return ["label", "receive", "reject"];
+    case "labeled":
+      return ["receive", "reject"];
+    case "received":
+      return ["reject"];
+    case "rejected":
+      return ["recollect"];
+    default:
+      return [];
+  }
+}
+
+function specimenActionLabel(action: string) {
+  return action === "recollect"
+    ? "Recollect"
+    : `${action.charAt(0).toUpperCase()}${action.slice(1)}`;
+}
+
+function SpecimenLifecycleCard({
+  specimen,
+  onTransition,
+}: {
+  specimen: ProcedureSpecimenItem;
+  onTransition: (
+    specimen: ProcedureSpecimenItem,
+    input: ProcedureSpecimenTransitionInput,
+  ) => Promise<void>;
+}) {
+  const [action, setAction] = useState<SpecimenAction | null>(null);
+  const [reason, setReason] = useState("");
+  const [specimenIdentifier, setSpecimenIdentifier] = useState("");
+  const [accessionIdentifier, setAccessionIdentifier] = useState("");
+  const [collectedDate, setCollectedDate] = useState(today());
+  const [conditionCode, setConditionCode] = useState("");
+  const [specimenCondition, setSpecimenCondition] = useState("");
+  const [comments, setComments] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const actions = specimenActions(specimen.specimenStatus);
+  const title =
+    specimen.specimenIdentifier ??
+    specimen.accessionIdentifier ??
+    `Specimen ${specimen.id}`;
+
+  async function submitTransition(event: FormEvent) {
+    event.preventDefault();
+    if (!action || !reason.trim()) return;
+    if (
+      action === "recollect" &&
+      !specimenIdentifier.trim() &&
+      !accessionIdentifier.trim()
+    ) {
+      setError("Recollection requires a new specimen or accession identifier.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await onTransition(specimen, {
+        action,
+        expectedVersion: specimen.specimenVersion,
+        reason: reason.trim(),
+        specimenIdentifier:
+          action === "recollect" ? specimenIdentifier.trim() : null,
+        accessionIdentifier:
+          action === "recollect" ? accessionIdentifier.trim() : null,
+        collectedDate:
+          action === "recollect" ? `${collectedDate}T12:00:00` : null,
+        conditionCode: action === "recollect" ? conditionCode.trim() : null,
+        specimenCondition:
+          action === "recollect" ? specimenCondition.trim() : null,
+        comments: action === "recollect" ? comments.trim() : null,
+      });
+      setAction(null);
+      setReason("");
+      setSpecimenIdentifier("");
+      setAccessionIdentifier("");
+      setCollectedDate(today());
+      setConditionCode("");
+      setSpecimenCondition("");
+      setComments("");
+    } catch (transitionError) {
+      setError(
+        transitionError instanceof Error
+          ? transitionError.message
+          : "Could not change specimen status.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <article className="cl-specimen-card">
+      <div className="cl-card-header">
+        <div>
+          <h3>{title}</h3>
+          <p className="cl-table-sub">
+            Collected {formatDate(specimen.collectedDate)}
+            {specimen.specimenType ? ` · ${specimen.specimenType}` : ""}
+            {specimen.accessionIdentifier
+              ? ` · accession ${specimen.accessionIdentifier}`
+              : ""}
+          </p>
+        </div>
+        <span className="cl-badge">
+          {specimen.specimenStatus} · v{specimen.specimenVersion}
+        </span>
+      </div>
+
+      {(specimen.specimenCondition || specimen.comments) && (
+        <p className="cl-table-sub">
+          {[specimen.specimenCondition, specimen.comments]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
+
+      <div className="ne-actions" aria-label={`Actions for ${title}`}>
+        {actions.map((availableAction) => (
+          <button
+            className="cl-btn-secondary"
+            key={availableAction}
+            type="button"
+            disabled={saving}
+            onClick={() =>
+              setAction((current) =>
+                current === availableAction ? null : availableAction,
+              )
+            }
+          >
+            {specimenActionLabel(availableAction)}
+          </button>
+        ))}
+      </div>
+
+      {action && (
+        <form
+          className="cl-specimen-transition"
+          onSubmit={(event) => void submitTransition(event)}
+        >
+          <p className="cl-table-sub">
+            {specimenActionLabel(action)} from {specimen.specimenStatus}. The
+            authenticated staff member and reason will be recorded.
+          </p>
+          {action === "recollect" && (
+            <div className="cl-admin-form-grid">
+              <label className="cl-admin-field">
+                <span>New specimen identifier</span>
+                <input
+                  className="ne-input"
+                  value={specimenIdentifier}
+                  maxLength={255}
+                  onChange={(event) =>
+                    setSpecimenIdentifier(event.target.value)
+                  }
+                />
+              </label>
+              <label className="cl-admin-field">
+                <span>New accession identifier</span>
+                <input
+                  className="ne-input"
+                  value={accessionIdentifier}
+                  maxLength={255}
+                  onChange={(event) =>
+                    setAccessionIdentifier(event.target.value)
+                  }
+                />
+              </label>
+              <label className="cl-admin-field">
+                <span>Recollected date</span>
+                <input
+                  className="ne-input"
+                  type="date"
+                  value={collectedDate}
+                  required
+                  onChange={(event) => setCollectedDate(event.target.value)}
+                />
+              </label>
+              <label className="cl-admin-field">
+                <span>Condition code</span>
+                <input
+                  className="ne-input"
+                  value={conditionCode}
+                  maxLength={100}
+                  onChange={(event) => setConditionCode(event.target.value)}
+                />
+              </label>
+              <label className="cl-admin-field">
+                <span>Specimen condition</span>
+                <input
+                  className="ne-input"
+                  value={specimenCondition}
+                  maxLength={255}
+                  onChange={(event) =>
+                    setSpecimenCondition(event.target.value)
+                  }
+                />
+              </label>
+              <label className="cl-admin-field">
+                <span>Recollection comments</span>
+                <input
+                  className="ne-input"
+                  value={comments}
+                  maxLength={1000}
+                  onChange={(event) => setComments(event.target.value)}
+                />
+              </label>
+            </div>
+          )}
+          <label className="cl-admin-field">
+            <span>Reason</span>
+            <textarea
+              className="ne-input"
+              value={reason}
+              required
+              maxLength={500}
+              rows={2}
+              onChange={(event) => setReason(event.target.value)}
+            />
+          </label>
+          {error && (
+            <div className="error-banner" role="alert">
+              {error}
+            </div>
+          )}
+          <div className="ne-actions">
+            <button
+              className="cl-btn-primary"
+              type="submit"
+              disabled={
+                saving ||
+                !reason.trim() ||
+                (action === "recollect" &&
+                  !specimenIdentifier.trim() &&
+                  !accessionIdentifier.trim())
+              }
+            >
+              {saving
+                ? "Saving…"
+                : `Confirm ${specimenActionLabel(action)}`}
+            </button>
+            <button
+              className="cl-btn-secondary"
+              type="button"
+              disabled={saving}
+              onClick={() => setAction(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      <details className="cl-result-history">
+        <summary>
+          {specimen.historyCount} lifecycle{" "}
+          {specimen.historyCount === 1 ? "event" : "events"}
+        </summary>
+        {specimen.history.length === 0 ? (
+          <p className="cl-table-sub">History is not loaded in this view.</p>
+        ) : (
+          <ol className="cl-specimen-history">
+            {specimen.history.map((historyEvent) => (
+              <li key={historyEvent.eventId}>
+                <strong>{specimenActionLabel(historyEvent.action)}</strong>
+                {" · "}
+                {historyEvent.previousStatus
+                  ? `${historyEvent.previousStatus} → ${historyEvent.currentStatus}`
+                  : historyEvent.currentStatus}
+                {" · "}
+                {formatDate(historyEvent.occurredAt)}
+                {" · "}
+                {historyEvent.actor}
+                {" · "}
+                {historyEvent.reason}
+                {" · "}v{historyEvent.resultingVersion}
+                {(historyEvent.specimenIdentifier ||
+                  historyEvent.accessionIdentifier) &&
+                  ` · ${historyEvent.specimenIdentifier ?? historyEvent.accessionIdentifier}`}
+              </li>
+            ))}
+          </ol>
+        )}
+      </details>
+    </article>
+  );
 }
 
 export default function PatientLabs() {
@@ -164,6 +463,18 @@ export default function PatientLabs() {
     }
   }
 
+  async function transitionSpecimen(
+    specimen: ProcedureSpecimenItem,
+    input: ProcedureSpecimenTransitionInput,
+  ) {
+    const detail = await transitionProcedureSpecimen(
+      session.sessionId,
+      specimen.id,
+      input,
+    );
+    setState({ status: "ready", data: detail });
+  }
+
   return (
     <div className="clinician-page">
       <div className="clinician-page-header">
@@ -285,7 +596,17 @@ export default function PatientLabs() {
                 </span>
               </div>
 
-              {order.specimens.length > 0 && <p className="cl-table-sub">{order.specimens.map((specimen) => specimen.accessionIdentifier ?? specimen.specimenIdentifier ?? `Specimen ${specimen.id}`).join(" · ")}</p>}
+              {order.specimens.length > 0 && (
+                <div className="cl-specimen-list">
+                  {order.specimens.map((specimen) => (
+                    <SpecimenLifecycleCard
+                      key={specimen.id}
+                      specimen={specimen}
+                      onTransition={transitionSpecimen}
+                    />
+                  ))}
+                </div>
+              )}
 
               {order.reports.length === 0 ? (
                 <p className="cl-empty-text">

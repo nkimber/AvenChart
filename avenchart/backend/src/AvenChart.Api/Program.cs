@@ -5361,16 +5361,55 @@ procedures.MapPut("/reports/bulk-sign", async (
 
 procedures.MapPost("/specimens", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         ProcedureSpecimenCreateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateSpecimenAsync(request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.CreateSpecimenAsync(request, session.Username, cancellationToken);
         return mutation is null
             ? Results.BadRequest("Procedure specimen could not be created from the supplied order and specimen details.")
             : Results.Created($"/api/procedures/specimens/{mutation.Id}", mutation);
     })
     .WithName("CreateProcedureSpecimen")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "addonly"));
+
+procedures.MapPut("/specimens/{specimenId:int}/transition", async (
+        ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        int specimenId,
+        ProcedureSpecimenTransitionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.TransitionSpecimenAsync(
+                specimenId,
+                request,
+                session.Username,
+                cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (ProcedureSpecimenLifecycleConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                expectedVersion = exception.ExpectedVersion,
+                currentVersion = exception.CurrentVersion,
+                currentStatus = exception.CurrentStatus
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("TransitionProcedureSpecimen")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPost("/results", async (
         ProcedureRepository repository,

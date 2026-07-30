@@ -1387,7 +1387,9 @@ public sealed class EncounterRepository(
         command.CommandText = """
             select id, order_id, specimen_identifier, accession_identifier, specimen_type_code, specimen_type,
                    collection_method_code, collection_method, specimen_location_code, specimen_location,
-                   collected_date, volume_value, volume_unit, condition_code, specimen_condition, comments
+                   collected_date, volume_value, volume_unit, condition_code, specimen_condition, comments,
+                   specimen_status, specimen_version,
+                   (select count(*) from procedure_specimen_events event where event.specimen_id = lab_specimens.id) as history_count
             from lab_specimens
             where order_id = any(@orderIds)
             order by collected_date desc, id desc;
@@ -1415,7 +1417,11 @@ public sealed class EncounterRepository(
                     VolumeUnit: ReadNullableString(reader, "volume_unit"),
                     ConditionCode: ReadNullableString(reader, "condition_code"),
                     SpecimenCondition: ReadNullableString(reader, "specimen_condition"),
-                    Comments: ReadNullableString(reader, "comments"))));
+                    Comments: ReadNullableString(reader, "comments"),
+                    SpecimenStatus: reader.GetString(reader.GetOrdinal("specimen_status")),
+                    SpecimenVersion: reader.GetInt32(reader.GetOrdinal("specimen_version")),
+                    HistoryCount: Convert.ToInt32(reader.GetValue(reader.GetOrdinal("history_count"))),
+                    History: [])));
         }
 
         return rows;

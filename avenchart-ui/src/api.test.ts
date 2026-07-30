@@ -124,6 +124,7 @@ import {
   startPatientDocumentOcr,
   submitInventoryPurchaseRequisition,
   transitionPracticeSettingChangeRequest,
+  transitionProcedureSpecimen,
   updatePatientCareTeam,
   updateMedication,
   updatePatientAuthorizationAssignment,
@@ -2009,15 +2010,21 @@ describe('authenticated API transport', () => {
     const detail = { patientId: 'MOD-PAT-0004', patientDisplayName: 'Alex Morgan', counts: { orders: 1, reports: 0, results: 0, finalResults: 0 }, orders: [] }
     const order = { patientId: 'MOD-PAT-0004', providerId: null, labId: 501, encounterId: 4101, dateOrdered: '2026-07-29', priority: 'routine', status: 'pending', procedureCode: 'BMP', procedureName: 'Basic metabolic panel', procedureType: 'laboratory', diagnosis: 'Routine monitoring', instructions: '' }
     const specimen = { orderId: 7001, specimenIdentifier: 'SP-7001', accessionIdentifier: '', specimenTypeCode: '', specimenType: 'serum', collectionMethodCode: '', collectionMethod: '', specimenLocationCode: '', specimenLocation: '', collectedDate: '2026-07-29T12:00:00', volumeValue: null, volumeUnit: '', conditionCode: '', specimenCondition: '', comments: '' }
-    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 7001, detail })).mockResolvedValueOnce(jsonResponse({ id: 8001, detail }))
+    const transition = { action: 'receive' as const, expectedVersion: 1, reason: 'Received by local laboratory' }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 7001, detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 8001, detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 8001, detail }))
 
     await expect(createProcedureOrder('staff-session', order)).resolves.toEqual(detail)
     await expect(createProcedureSpecimen('staff-session', specimen)).resolves.toEqual(detail)
+    await expect(transitionProcedureSpecimen('staff-session', 8001, transition)).resolves.toEqual(detail)
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['http://localhost:5001/api/procedures/orders', 'http://localhost:5001/api/procedures/specimens'])
-    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual(['POST', 'POST'])
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['http://localhost:5001/api/procedures/orders', 'http://localhost:5001/api/procedures/specimens', 'http://localhost:5001/api/procedures/specimens/8001/transition'])
+    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual(['POST', 'POST', 'PUT'])
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ body: JSON.stringify(order) })
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ body: JSON.stringify(specimen) })
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ body: JSON.stringify(transition) })
   })
 
   it('uses protected local lab report, result, and result-correction contracts', async () => {

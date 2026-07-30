@@ -6460,6 +6460,46 @@ export type ProcedureReportItem = {
   results: ProcedureResultItem[]
 }
 
+export type ProcedureSpecimenEventItem = {
+  eventId: number
+  action: string
+  previousStatus?: string | null
+  currentStatus: string
+  actor: string
+  reason: string
+  expectedVersion: number
+  resultingVersion: number
+  specimenIdentifier?: string | null
+  accessionIdentifier?: string | null
+  collectedDate?: string | null
+  conditionCode?: string | null
+  specimenCondition?: string | null
+  comments?: string | null
+  occurredAt: string
+}
+
+export type ProcedureSpecimenItem = {
+  id: number
+  specimenIdentifier?: string | null
+  accessionIdentifier?: string | null
+  specimenTypeCode?: string | null
+  specimenType?: string | null
+  collectionMethodCode?: string | null
+  collectionMethod?: string | null
+  specimenLocationCode?: string | null
+  specimenLocation?: string | null
+  collectedDate: string
+  volumeValue?: number | null
+  volumeUnit?: string | null
+  conditionCode?: string | null
+  specimenCondition?: string | null
+  comments?: string | null
+  specimenStatus: string
+  specimenVersion: number
+  historyCount: number
+  history: ProcedureSpecimenEventItem[]
+}
+
 export type ProcedureOrderItem = {
   id: number
   encounter?: number | null
@@ -6472,16 +6512,7 @@ export type ProcedureOrderItem = {
   diagnosis?: string | null
   instructions?: string | null
   orderStatus?: string | null
-  specimens: Array<{
-    id: number
-    specimenIdentifier?: string | null
-    accessionIdentifier?: string | null
-    specimenType?: string | null
-    collectionMethod?: string | null
-    specimenLocation?: string | null
-    collectedDate: string
-    specimenCondition?: string | null
-  }>
+  specimens: ProcedureSpecimenItem[]
   reports: ProcedureReportItem[]
 }
 
@@ -6550,6 +6581,31 @@ export type ProcedureSpecimenCreateInput = {
 
 export async function createProcedureSpecimen(sessionId: string, input: ProcedureSpecimenCreateInput): Promise<ProcedureResultsResponse> {
   const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/specimens', input)
+  return result.detail
+}
+
+export type ProcedureSpecimenTransitionInput = {
+  action: 'label' | 'receive' | 'reject' | 'recollect'
+  expectedVersion: number
+  reason: string
+  specimenIdentifier?: string | null
+  accessionIdentifier?: string | null
+  collectedDate?: string | null
+  conditionCode?: string | null
+  specimenCondition?: string | null
+  comments?: string | null
+}
+
+export async function transitionProcedureSpecimen(
+  sessionId: string,
+  specimenId: number,
+  input: ProcedureSpecimenTransitionInput,
+): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPut<{ id: number; detail: ProcedureResultsResponse }>(
+    sessionId,
+    `/api/procedures/specimens/${specimenId}/transition`,
+    input,
+  )
   return result.detail
 }
 
