@@ -1473,6 +1473,11 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             {
                 return null;
             }
+            if (await IsEncounterLockedAsync(connection, encounter.Encounter, cancellationToken))
+            {
+                throw new EncounterLockConflictException(
+                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            }
 
             legacyPid = patient.LegacyPid;
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -1538,8 +1543,12 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         DateTime? processTime = TryReadOptionalDateTime(request.ProcessTime, out var parsedProcessTime) ? parsedProcessTime : null;
         int? pid = null;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
-        await using (var command = connection.CreateCommand())
         {
+            if (await GetClaimAsync(connection, claimId, cancellationToken) is null)
+            {
+                return null;
+            }
+            await using var command = connection.CreateCommand();
             command.CommandText = """
                 update claims
                 set status = @status,
@@ -1977,6 +1986,10 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (await GetClaimAsync(connection, claimId, cancellationToken) is null)
+        {
+            return false;
+        }
         await using var command = connection.CreateCommand();
         command.CommandText = "delete from claims where id = @id;";
         command.Parameters.AddWithValue("id", claimId);
@@ -2901,7 +2914,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        return new BillingClaimScrubContext(
+        var claim = new BillingClaimScrubContext(
             Id: reader.GetString(reader.GetOrdinal("id")),
             Pid: ReadInt(reader, "pid"),
             PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
@@ -2914,6 +2927,14 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             BillProcess: ReadInt(reader, "bill_process"),
             ProcessFile: ReadNullableString(reader, "process_file"),
             SubmittedClaim: ReadNullableString(reader, "submitted_claim"));
+        await reader.DisposeAsync();
+        if (await IsEncounterLockedAsync(connection, claim.Encounter, cancellationToken))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+        }
+
+        return claim;
     }
 
     private static async Task<IReadOnlyList<BillingPaymentItem>> GetPaymentsAsync(
