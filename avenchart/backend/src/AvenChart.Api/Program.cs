@@ -3942,6 +3942,10 @@ records.MapPost("/", async (
         {
             return Results.Conflict(new { error = exception.Message });
         }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
         catch (ArgumentException exception)
         {
             return Results.BadRequest(new { error = exception.Message });
@@ -3979,6 +3983,10 @@ records.MapPut("/{intakeId:guid}/classification", async (
                 currentVersion = exception.CurrentVersion,
                 currentState = exception.CurrentState
             });
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
         }
         catch (ArgumentException exception)
         {
@@ -4020,6 +4028,10 @@ records.MapPost("/{intakeId:guid}/{action}", async (
                 currentState = exception.CurrentState
             });
         }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
         catch (ArgumentException exception)
         {
             return Results.BadRequest(new { error = exception.Message });
@@ -4048,6 +4060,10 @@ records.MapDelete("/{intakeId:guid}/test-fixture", async (
             return await repository.DeleteTestFixtureAsync(intakeId, cancellationToken)
                 ? Results.NoContent()
                 : Results.NotFound();
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
         }
         catch (ArgumentException exception)
         {

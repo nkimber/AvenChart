@@ -166,6 +166,16 @@ public sealed class ManagedRecordRepository(NpgsqlDataSource dataSource)
         {
             throw new ArgumentException("Encounter does not belong to the selected patient.");
         }
+        if (input.Encounter is { } lockedEncounter
+            && await IsEncounterLockedAsync(
+                connection,
+                null,
+                lockedEncounter,
+                cancellationToken))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+        }
 
         if (input.FacilityId is { } facilityId
             && !await ActiveFacilityExistsAsync(connection, null, facilityId, cancellationToken))
@@ -381,6 +391,16 @@ public sealed class ManagedRecordRepository(NpgsqlDataSource dataSource)
             }
             else
             {
+                if (current.Encounter is { } encounter
+                    && await IsEncounterLockedAsync(
+                        connection,
+                        transaction,
+                        encounter,
+                        cancellationToken))
+                {
+                    throw new EncounterLockConflictException(
+                        "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+                }
                 documentId = await ReleaseDocumentAsync(
                     connection,
                     transaction,
@@ -508,6 +528,16 @@ public sealed class ManagedRecordRepository(NpgsqlDataSource dataSource)
         if (!current.Title.StartsWith("TMP-RECORD-", StringComparison.Ordinal))
         {
             throw new ArgumentException("Only TMP-RECORD-* managed intake fixtures can be deleted.");
+        }
+        if (current.Encounter is { } encounter
+            && await IsEncounterLockedAsync(
+                connection,
+                transaction,
+                encounter,
+                cancellationToken))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
         }
 
         await using var deleteIntake = connection.CreateCommand();
@@ -805,6 +835,19 @@ public sealed class ManagedRecordRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("encounter", encounter);
         command.Parameters.AddWithValue("patientId", patientId);
         return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task<bool> IsEncounterLockedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select exists(select 1 from encounter_signatures where encounter = @encounter and is_lock);";
+        command.Parameters.AddWithValue("encounter", encounter);
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
     }
 
     private static async Task<bool> ActiveFacilityExistsAsync(
