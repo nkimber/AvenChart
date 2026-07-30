@@ -1320,8 +1320,19 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        int? pid = null;
-        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var line = await GetBillingLineContextAsync(connection, billingLineId, cancellationToken);
+        if (line is null)
+        {
+            return null;
+        }
+
+        if (await IsEncounterLockedAsync(connection, line.Value.Encounter, cancellationToken))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+        }
+
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = """
@@ -1335,15 +1346,13 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             command.Parameters.AddWithValue("billed", request.Billed);
             command.Parameters.AddWithValue("activity", request.Activity);
             var result = await command.ExecuteScalarAsync(cancellationToken);
-            pid = result is null ? null : Convert.ToInt32(result);
+            if (result is null)
+            {
+                return null;
+            }
         }
 
-        if (pid is null)
-        {
-            return null;
-        }
-
-        var billing = await GetForPatientAsync(pid.Value.ToString(), cancellationToken);
+        var billing = await GetForPatientAsync(line.Value.Pid.ToString(), cancellationToken);
         return billing is null ? null : new BillingLineMutationResponse(billingLineId, billing);
     }
 
@@ -1360,8 +1369,19 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        int? pid = null;
-        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var line = await GetBillingLineContextAsync(connection, billingLineId, cancellationToken);
+        if (line is null)
+        {
+            return null;
+        }
+
+        if (await IsEncounterLockedAsync(connection, line.Value.Encounter, cancellationToken))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+        }
+
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = """
@@ -1381,15 +1401,13 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             command.Parameters.AddWithValue("units", request.Units);
             command.Parameters.AddWithValue("justify", request.Justify.Trim());
             var result = await command.ExecuteScalarAsync(cancellationToken);
-            pid = result is null ? null : Convert.ToInt32(result);
+            if (result is null)
+            {
+                return null;
+            }
         }
 
-        if (pid is null)
-        {
-            return null;
-        }
-
-        var billing = await GetForPatientAsync(pid.Value.ToString(), cancellationToken);
+        var billing = await GetForPatientAsync(line.Value.Pid.ToString(), cancellationToken);
         return billing is null ? null : new BillingLineMutationResponse(billingLineId, billing);
     }
 
@@ -1401,6 +1419,18 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var line = await GetBillingLineContextAsync(connection, billingLineId, cancellationToken);
+        if (line is null)
+        {
+            return false;
+        }
+
+        if (await IsEncounterLockedAsync(connection, line.Value.Encounter, cancellationToken))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+        }
+
         await using var command = connection.CreateCommand();
         command.CommandText = """
             delete from billing
@@ -2973,6 +3003,20 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         command.CommandText = "select exists(select 1 from encounter_signatures where encounter = @encounter and is_lock);";
         command.Parameters.AddWithValue("encounter", encounter);
         return await command.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
+    private static async Task<(int Pid, int Encounter)?> GetBillingLineContextAsync(
+        NpgsqlConnection connection,
+        string billingLineId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select pid, encounter from billing where id = @id limit 1;";
+        command.Parameters.AddWithValue("id", billingLineId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? (reader.GetInt32(0), reader.GetInt32(1))
+            : null;
     }
 
     private static async Task<BillingEncounterMutationContext?> GetEncounterForPatientAsync(

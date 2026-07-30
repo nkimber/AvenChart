@@ -6092,8 +6092,15 @@ billing.MapPut("/lines/{billingLineId}", async (
         BillingLineUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.UpdateLineAsync(billingLineId, request, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var mutation = await repository.UpdateLineAsync(billingLineId, request, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
     })
     .WithName("UpdateBillingLine")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
@@ -6104,8 +6111,15 @@ billing.MapPut("/lines/{billingLineId}/status", async (
         BillingLineStatusUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.UpdateLineStatusAsync(billingLineId, request, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var mutation = await repository.UpdateLineStatusAsync(billingLineId, request, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
     })
     .WithName("UpdateBillingLineStatus")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
@@ -6115,8 +6129,15 @@ billing.MapDelete("/lines/{billingLineId}", async (
         string billingLineId,
         CancellationToken cancellationToken) =>
     {
-        var deleted = await repository.DeleteLineAsync(billingLineId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
+        try
+        {
+            var deleted = await repository.DeleteLineAsync(billingLineId, cancellationToken);
+            return deleted ? Results.NoContent() : Results.NotFound();
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
     })
     .WithName("DeleteBillingLine")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
