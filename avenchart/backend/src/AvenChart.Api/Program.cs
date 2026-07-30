@@ -2146,6 +2146,7 @@ encounters.MapPost("/{encounter:int}/alerts/{ruleKey}/reopen", async (ClinicalAl
 encounters.MapPut("/{encounter:int}/forms/{layoutKey}", async (EncounterLayoutFormRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, string layoutKey, EncounterLayoutFormSaveRequest request, CancellationToken cancellationToken) =>
 {
     try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.SaveAsync(encounter, layoutKey, request, session.Username, cancellationToken)) is { } form ? Results.Ok(form) : Results.NotFound(); }
+    catch (EncounterLockConflictException exception) { return Results.Conflict(new { error = exception.Message, code = "encounter_locked" }); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 })
     .WithName("SaveEncounterLayoutForm")

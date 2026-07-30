@@ -29,6 +29,11 @@ public sealed class EncounterLayoutFormRepository(NpgsqlDataSource dataSource)
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         if (!await EncounterExistsAsync(connection, encounter, cancellationToken, transaction)) return null;
+        if (await IsEncounterLockedAsync(connection, encounter, cancellationToken, transaction))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+        }
         var definition = await LoadDefinitionAsync(connection, layoutKey, cancellationToken, transaction);
         if (definition is null) return null;
         var values = ValidateAndNormalize(definition, request.Values);
@@ -53,6 +58,15 @@ public sealed class EncounterLayoutFormRepository(NpgsqlDataSource dataSource)
     private static async Task<bool> EncounterExistsAsync(NpgsqlConnection connection, int encounter, CancellationToken cancellationToken, NpgsqlTransaction? transaction = null)
     {
         await using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "select exists(select 1 from encounters where encounter=@encounter);"; command.Parameters.AddWithValue("encounter", encounter); return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task<bool> IsEncounterLockedAsync(NpgsqlConnection connection, int encounter, CancellationToken cancellationToken, NpgsqlTransaction transaction)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select exists(select 1 from encounter_signatures where encounter=@encounter and is_lock);";
+        command.Parameters.AddWithValue("encounter", encounter);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
     private static string NormalizeLayoutKey(string key)
