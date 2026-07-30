@@ -61,6 +61,7 @@ public sealed record IntegrationInboxMessage(
     string? LastError, int Version, string? ReconciledBy, string? ReconciliationReason);
 
 public sealed record IntegrationInboxDecisionRequest(string Reason, int ExpectedVersion);
+public sealed record IntegrationInboxEvent(Guid EventLogId, string Action, string Reason, string Actor, int Version, DateTimeOffset OccurredAt);
 
 public sealed record IntegrationTransportResult(
     bool Delivered,

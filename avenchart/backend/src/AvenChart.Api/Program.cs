@@ -5575,6 +5575,9 @@ integrations.MapGet("/inbox", async (IntegrationRepository repository, string? s
     catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["status"] = [exception.Message] }); }
 }).WithName("ListIntegrationInbox");
 
+integrations.MapGet("/inbox/{inboxId:guid}/history", async (Guid inboxId, IntegrationRepository repository, CancellationToken token) =>
+    Results.Ok(await repository.GetInboxHistoryAsync(inboxId, token))).WithName("GetIntegrationInboxHistory");
+
 foreach (var action in new[] { "reconcile", "reject" })
     integrations.MapPost($"/inbox/{{inboxId:guid}}/{action}", async (Guid inboxId, IntegrationInboxDecisionRequest request, IntegrationRepository repository, AuthRepository authRepository, HttpContext context, CancellationToken token) =>
     {

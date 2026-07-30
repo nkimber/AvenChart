@@ -243,6 +243,13 @@ public sealed class IntegrationRepository(
         await using var audit = connection.CreateCommand(); audit.Transaction = transaction; audit.CommandText = "insert into integration_inbox_events(event_log_id,inbox_id,action,reason,actor,version,occurred_at) values(@event,@inbox,@action,@reason,@actor,@version,@at);"; audit.Parameters.AddWithValue("event", Guid.NewGuid()); audit.Parameters.AddWithValue("inbox", inboxId); audit.Parameters.AddWithValue("action", action); audit.Parameters.AddWithValue("reason", reason); audit.Parameters.AddWithValue("actor", actor); audit.Parameters.AddWithValue("version", result.Version); audit.Parameters.AddWithValue("at", now); await audit.ExecuteNonQueryAsync(token); await transaction.CommitAsync(token); return result;
     }
 
+    public async Task<IReadOnlyList<IntegrationInboxEvent>> GetInboxHistoryAsync(Guid inboxId, CancellationToken token)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(token); await using var command = connection.CreateCommand();
+        command.CommandText = "select event_log_id,action,reason,actor,version,occurred_at from integration_inbox_events where inbox_id=@id order by occurred_at,event_log_id;"; command.Parameters.AddWithValue("id", inboxId);
+        var history = new List<IntegrationInboxEvent>(); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) history.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt32(4), reader.GetFieldValue<DateTimeOffset>(5))); return history;
+    }
+
     private static IntegrationInboxMessage ReadInboxMessage(NpgsqlDataReader reader) => new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), JsonDocument.Parse(reader.GetString(4)).RootElement.Clone(), reader.GetString(5), reader.GetInt32(6), reader.GetFieldValue<DateTimeOffset>(7), reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8), reader.IsDBNull(9) ? null : reader.GetString(9), reader.GetInt32(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetString(12));
 
     private async Task<IntegrationOutboxMessage?> ClaimOutboxMessageAsync(Guid eventId, CancellationToken cancellationToken)
