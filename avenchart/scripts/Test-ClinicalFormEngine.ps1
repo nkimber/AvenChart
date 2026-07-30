@@ -924,6 +924,7 @@ try {
         "legacy.rosmusculoskeletal" = "joint_pain|swelling|m_redness|m_warm|m_stiffness|muscle|m_aches|fms|arthritis|loc"
         "legacy.rosneurologic" = "seizures|stroke|tia|n_numbness|n_weakness|paralysis|intellectual_decline|memory_problems|dementia|n_headache"
         "legacy.rosskin" = "s_cancer|psoriasis|s_acne|s_other|s_disease"
+        "legacy.rospsychiatric" = "p_diagnosis|p_medication|depression|anxiety|social_difficulties"
     }
     $legacyRosProof = @()
     foreach ($legacyRosEntry in $legacyRosCompatibility.GetEnumerator()) {
