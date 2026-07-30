@@ -2463,8 +2463,8 @@ try {
         WENO = "partner-gated"
     }
     $legacyCustomModuleRows = @($legacyModuleCatalog.modules | Where-Object { $legacyCustomModules.Contains($_.key) })
-    $legacyCustomModuleCatalogPassed = $legacyCustomModuleRows.Count -eq $legacyCustomModules.Count -and @($legacyCustomModuleRows | Where-Object { $_.status -ne $legacyCustomModules[$_.key] -or $_.canChangeStatus -or $_.description -notmatch "Legacy custom-module source" -or $_.description -notmatch "Runtime enablement is unknown" }).Count -eq 0
-    Add-Check -Name "legacy custom modules are visible as governed source-present inventory records" -Result $(if ($legacyCustomModuleCatalogPassed) { "passed" } else { "failed" }) -Details @{ moduleKeys = $legacyCustomModuleRows.key; statuses = @($legacyCustomModuleRows | ForEach-Object { "$($_.key):$($_.status)" }); editableKeys = @($legacyCustomModuleRows | Where-Object canChangeStatus | ForEach-Object key) }
+    $legacyCustomModuleCatalogPassed = $legacyCustomModuleRows.Count -eq $legacyCustomModules.Count -and @($legacyCustomModuleRows | Where-Object { $_.status -ne $legacyCustomModules[$_.key] -or $_.canChangeStatus -or $_.description -notmatch "Legacy custom-module source" -or $_.description -notmatch "mod_active=0, mod_ui_active=0, sql_run=0" -or $_.description -notmatch "It is disabled" }).Count -eq 0
+    Add-Check -Name "legacy custom modules are visible as governed source-present inventory records" -Result $(if ($legacyCustomModuleCatalogPassed) { "passed" } else { "failed" }) -Details @{ moduleKeys = $legacyCustomModuleRows.key; statuses = @($legacyCustomModuleRows | ForEach-Object { "$($_.key):$($_.status)" }); editableKeys = @($legacyCustomModuleRows | Where-Object canChangeStatus | ForEach-Object key); runtimeEvidence = @($legacyCustomModuleRows | ForEach-Object { "$($_.key):$($_.description -match 'mod_active=0, mod_ui_active=0, sql_run=0')" }) }
 }
 catch {
     Add-Check -Name "legacy custom modules are visible as governed source-present inventory records" -Result "failed" -Details $_.Exception.Message
