@@ -69,19 +69,11 @@ async function cleanupLifecycleFixture(
   procedureOrderIds: number[],
 ) {
   const headers = { "X-Legacy EHR-Session": sessionId };
-  for (const id of billingLineIds) {
-    await request.delete(`${apiBaseUrl}/api/billing/lines/${id}`, { headers });
-  }
-  for (const id of procedureOrderIds) {
-    await request.delete(`${apiBaseUrl}/api/procedures/orders/${id}`, {
-      headers,
-    });
-  }
-  if (documentId) {
-    await request.delete(`${apiBaseUrl}/api/documents/${documentId}`, {
-      headers,
-    });
-  }
+  void request;
+  void headers;
+  void documentId;
+  void billingLineIds;
+  void procedureOrderIds;
   if (!encounter) return;
   if (
     !Number.isInteger(encounter) ||
@@ -90,6 +82,10 @@ async function cleanupLifecycleFixture(
     throw new Error("Unsafe whole-lifecycle cleanup target.");
   }
   fixtureSql(`
+delete from billing
+where encounter = ${encounter} and code_text like '${marker}%';
+delete from lab_orders
+where encounter = ${encounter} and instructions like '${marker}%';
 delete from patient_documents
 where encounter = ${encounter} and name like '${marker}%';
 delete from clinical_notes
@@ -101,7 +97,13 @@ where encounter = ${encounter} and reason = '${marker} complete visit';
 `);
   expect(
     fixtureSql(
-      `select count(*) from encounters where encounter = ${encounter};`,
+      `select
+         (select count(*) from encounters where encounter = ${encounter})
+         + (select count(*) from billing where encounter = ${encounter} and code_text like '${marker}%')
+         + (select count(*) from lab_orders where encounter = ${encounter} and instructions like '${marker}%')
+         + (select count(*) from patient_documents where encounter = ${encounter} and name like '${marker}%')
+         + (select count(*) from clinical_notes where encounter = ${encounter} and concat_ws(' ', subjective, objective, assessment, plan) like '${marker}%')
+         + (select count(*) from encounter_audit_events where encounter = ${encounter});`,
     ),
   ).toBe("0");
 }
@@ -226,6 +228,30 @@ test("create-to-restore encounter package remains authoritative and immutable", 
     const orderResponse = await orderResponsePromise;
     procedureOrderIds.push(((await orderResponse.json()) as { id: number }).id);
 
+    await page.goto("/clinician/track-entries");
+    await page.getByLabel("Encounter number").fill(String(encounter));
+    await page.getByRole("button", { name: "Load encounter" }).click();
+    const trackSelect = page.getByLabel("Configured track");
+    await expect(trackSelect).toBeVisible({ timeout: 20_000 });
+    const trackOptions = await trackSelect.locator("option").allTextContents();
+    const trackOptionIndex = trackOptions.findIndex((option) =>
+      /\([1-9]\d* items?\)/.test(option),
+    );
+    expect(trackOptionIndex).toBeGreaterThan(0);
+    await trackSelect.selectOption({ index: trackOptionIndex });
+    await page.getByRole("button", { name: "Add track" }).click();
+    const trackInputs = page.locator(".cl-admin-form-grid input");
+    await expect(trackInputs.nth(1)).toBeVisible({ timeout: 20_000 });
+    await trackInputs.nth(1).fill(`${marker} tracked value`);
+    await page.getByRole("button", { name: "Save reading" }).click();
+    await expect(page.getByText(`${marker} tracked value`)).toBeVisible({
+      timeout: 20_000,
+    });
+
+    await page.goto(`/clinician/patients/${patientId}/encounters`);
+    await expect(encounterRow).toBeVisible({ timeout: 20_000 });
+    await encounterRow.click();
+
     const attachments = page.locator(
       '[aria-labelledby="encounter-attachments-title"]',
     );
@@ -283,6 +309,47 @@ test("create-to-restore encounter package remains authoritative and immutable", 
         .locator('[aria-labelledby="encounter-soap-note-title"]')
         .getByText(/locked by an encounter signature/i),
     ).toBeVisible();
+
+    const lockedTrackCatalogResponse = await request.get(
+      `${apiBaseUrl}/api/encounters/${encounter}/tracks`,
+      { headers: { "X-Legacy EHR-Session": apiSession.sessionId } },
+    );
+    expect(lockedTrackCatalogResponse.ok()).toBe(true);
+    expect(
+      (
+        (await lockedTrackCatalogResponse.json()) as {
+          isLocked: boolean;
+        }
+      ).isLocked,
+    ).toBe(true);
+
+    await page.goto("/clinician/track-entries");
+    await page.getByLabel("Encounter number").fill(String(encounter));
+    await page.getByRole("button", { name: "Load encounter" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Encounter documentation locked" }),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByLabel("Configured track")).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Add track" }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Save reading" }),
+    ).toBeDisabled();
+    await expect(page.getByLabel("Edit reading")).toBeDisabled();
+    const trackAccessibility = await new AxeBuilder({ page })
+      .include(".clinician-page")
+      .withTags(["wcag2a", "wcag2aa"])
+      .analyze();
+    expect(
+      trackAccessibility.violations.filter((violation) =>
+        ["serious", "critical"].includes(violation.impact ?? ""),
+      ),
+    ).toEqual([]);
+
+    await page.goto(`/clinician/patients/${patientId}/encounters`);
+    await expect(encounterRow).toBeVisible({ timeout: 20_000 });
+    await encounterRow.click();
 
     await page.getByRole("button", { name: "Archive encounter" }).click();
     await page

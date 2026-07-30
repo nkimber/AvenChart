@@ -12,6 +12,8 @@ $marker = "TMP-ENC-LIFECYCLE-$(New-Guid)"
 $headers = $null
 $encounter = $null
 $documentId = $null
+$trackRecordId = $null
+$trackReadingId = $null
 $billingLineIds = [System.Collections.Generic.List[string]]::new()
 $procedureOrderIds = [System.Collections.Generic.List[int]]::new()
 
@@ -117,6 +119,12 @@ try {
         throw "Unsafe encounter lifecycle marker."
     }
     Invoke-FixtureSql @"
+delete from billing
+where encounter not in (select encounter from encounters)
+  and code_text like 'TMP-ENC-LIFECYCLE-%';
+delete from lab_orders
+where encounter not in (select encounter from encounters)
+  and instructions like 'TMP-ENC-LIFECYCLE-%';
 delete from clinical_notes
 where encounter not in (select encounter from encounters)
   and concat_ws(' ', subjective, objective, assessment, plan) like 'TMP-ENC-LIFECYCLE-%';
@@ -203,6 +211,51 @@ where encounter not in (select encounter from encounters)
             -and $created.posCode -eq 11 `
             -and $initialArchiveVersion -ge 0) `
         @{ encounter=$encounter; provider=$created.providerName; facility=$created.facilityName; archiveVersion=$created.archiveVersion }
+
+    $trackCatalog = Invoke-JsonRequest "$ApiBaseUrl/api/encounters/$encounter/tracks"
+    $trackDefinition = @(
+        $trackCatalog.availableTracks |
+            Where-Object { @($_.items).Count -gt 0 }
+    ) | Select-Object -First 1
+    if ($null -eq $trackDefinition) {
+        throw "An active Track Anything definition with at least one item is required."
+    }
+    $trackRecord = Invoke-JsonRequest `
+        "$ApiBaseUrl/api/encounters/$encounter/tracks" `
+        "Post" `
+        @{ trackTypeId = $trackDefinition.id }
+    $trackRecordId = [string]$trackRecord.recordId
+    $trackValues = @(
+        $trackDefinition.items |
+            ForEach-Object {
+                @{
+                    itemTypeId = $_.id
+                    value = "$marker value $($_.id)"
+                }
+            }
+    )
+    $trackReading = Invoke-JsonRequest `
+        "$ApiBaseUrl/api/encounters/$encounter/tracks/$trackRecordId/readings" `
+        "Post" `
+        @{
+            recordedAt = "$today`T10:48:00Z"
+            values = $trackValues
+        }
+    $trackReadingId = [string]$trackReading.readingId
+    $trackDetail = Invoke-JsonRequest "$ApiBaseUrl/api/encounters/$encounter/tracks/$trackRecordId"
+    Add-Check `
+        "Encounter track capture is available before sign-off" `
+        (-not $trackCatalog.isLocked `
+            -and $trackRecordId `
+            -and $trackReadingId `
+            -and @($trackDetail.readings).Count -eq 1 `
+            -and @($trackDetail.readings[0].values).Count -eq @($trackDefinition.items).Count) `
+        @{
+            track=$trackDefinition.name
+            recordId=$trackRecordId
+            readingId=$trackReadingId
+            isLocked=$trackCatalog.isLocked
+        }
 
     $soapOne = Invoke-JsonRequest `
         "$ApiBaseUrl/api/encounters/$encounter/soap-notes" `
@@ -415,6 +468,45 @@ where encounter not in (select encounter from encounters)
         ($lockedSoapStatus -eq 409 -and $signatureDeleteStatus -in @(404, 405)) `
         @{ lockedSoapStatus=$lockedSoapStatus; retiredDeleteStatus=$signatureDeleteStatus }
 
+    $lockedTrackCatalog = Invoke-JsonRequest "$ApiBaseUrl/api/encounters/$encounter/tracks"
+    $lockedTrackCreateStatus = Invoke-StatusRequest `
+        "$ApiBaseUrl/api/encounters/$encounter/tracks" `
+        "Post" `
+        @{ trackTypeId = $trackDefinition.id } `
+        $headers
+    $lockedTrackReadingStatus = Invoke-StatusRequest `
+        "$ApiBaseUrl/api/encounters/$encounter/tracks/$trackRecordId/readings" `
+        "Post" `
+        @{
+            recordedAt = "$today`T11:06:00Z"
+            values = $trackValues
+        } `
+        $headers
+    $lockedTrackUpdateStatus = Invoke-StatusRequest `
+        "$ApiBaseUrl/api/encounters/$encounter/tracks/$trackRecordId/readings/$trackReadingId" `
+        "Put" `
+        @{
+            recordedAt = "$today`T11:07:00Z"
+            values = $trackValues
+        } `
+        $headers
+    $lockedTrackDetail = Invoke-JsonRequest "$ApiBaseUrl/api/encounters/$encounter/tracks/$trackRecordId"
+    Add-Check `
+        "Locking signature freezes track attachment, capture, and correction" `
+        ($lockedTrackCatalog.isLocked `
+            -and $lockedTrackCreateStatus -eq 409 `
+            -and $lockedTrackReadingStatus -eq 409 `
+            -and $lockedTrackUpdateStatus -eq 409 `
+            -and @($lockedTrackDetail.readings).Count -eq 1 `
+            -and $lockedTrackDetail.readings[0].updatedAt -eq $null) `
+        @{
+            isLocked=$lockedTrackCatalog.isLocked
+            createStatus=$lockedTrackCreateStatus
+            addReadingStatus=$lockedTrackReadingStatus
+            updateReadingStatus=$lockedTrackUpdateStatus
+            readingCount=@($lockedTrackDetail.readings).Count
+        }
+
     $archiveReason = "$marker archive after package review"
     Invoke-JsonRequest `
         "$ApiBaseUrl/api/encounters/$encounter/archive" `
@@ -494,34 +586,14 @@ where encounter not in (select encounter from encounters)
     }
 }
 finally {
-    foreach ($billingLineId in $billingLineIds) {
-        try {
-            Invoke-JsonRequest "$ApiBaseUrl/api/billing/lines/$billingLineId" "Delete" | Out-Null
-        }
-        catch {
-            Write-Warning "Could not delete billing-line fixture $billingLineId."
-        }
-    }
-    foreach ($procedureOrderId in $procedureOrderIds) {
-        try {
-            Invoke-JsonRequest "$ApiBaseUrl/api/procedures/orders/$procedureOrderId" "Delete" | Out-Null
-        }
-        catch {
-            Write-Warning "Could not delete procedure-order fixture $procedureOrderId."
-        }
-    }
-    if ($null -ne $documentId -and [int]$documentId -gt 0) {
-        try {
-            Invoke-JsonRequest "$ApiBaseUrl/api/documents/$documentId" "Delete" | Out-Null
-        }
-        catch {
-            Write-Warning "Could not delete document fixture $documentId through the API."
-        }
-    }
     if ($null -ne $encounter -and [int]$encounter -gt 0) {
         $safeEncounter = [int]$encounter
         $safeMarker = $marker.Replace("'", "''")
         Invoke-FixtureSql @"
+delete from billing
+where encounter = $safeEncounter and code_text like '$safeMarker%';
+delete from lab_orders
+where encounter = $safeEncounter and instructions like '$safeMarker%';
 delete from patient_documents where encounter = $safeEncounter and name like '$safeMarker%';
 delete from clinical_notes
 where encounter = $safeEncounter
@@ -540,7 +612,15 @@ delete from encounters where encounter = $safeEncounter and reason = '$safeMarke
                 -X `
                 -U legacy-ehr `
                 -d legacy-ehr_modernized `
-                -Atc "select count(*) from encounters where encounter = $safeEncounter;").Trim())
+                -Atc @"
+select
+  (select count(*) from encounters where encounter = $safeEncounter)
+  + (select count(*) from billing where encounter = $safeEncounter and code_text like '$safeMarker%')
+  + (select count(*) from lab_orders where encounter = $safeEncounter and instructions like '$safeMarker%')
+  + (select count(*) from patient_documents where encounter = $safeEncounter and name like '$safeMarker%')
+  + (select count(*) from clinical_notes where encounter = $safeEncounter and concat_ws(' ', subjective, objective, assessment, plan) like '$safeMarker%')
+  + (select count(*) from encounter_audit_events where encounter = $safeEncounter);
+"@).Trim())
         }
         finally {
             Pop-Location
