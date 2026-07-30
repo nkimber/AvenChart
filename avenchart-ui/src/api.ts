@@ -2025,6 +2025,45 @@ export type PatientAuthorizationWorkflowHistory = {
   events: PatientAuthorizationWorkflowEvent[]
 }
 
+export type AuthorizationWorkQueueFilters = {
+  status?: 'draft' | 'submitted' | 'approved' | 'denied' | 'cancelled' | 'expired' | 'all'
+  assignedTo?: string
+  overdueOnly?: boolean
+  expiringOnly?: boolean
+  query?: string
+  limit?: number
+}
+
+export type AuthorizationWorkQueueItem = {
+  authorization: PatientAuthorization
+  patientDisplayName: string
+  pubpid: string
+  isOverdue: boolean
+  isExpiring: boolean
+}
+
+export type AuthorizationWorkQueueResponse = {
+  total: number
+  activeCount: number
+  overdueCount: number
+  expiringCount: number
+  items: AuthorizationWorkQueueItem[]
+}
+
+export async function getAuthorizationWorkQueue(
+  sessionId: string,
+  filters: AuthorizationWorkQueueFilters = {},
+  signal?: AbortSignal,
+): Promise<AuthorizationWorkQueueResponse> {
+  const query = new URLSearchParams()
+  if (filters.status && filters.status !== 'all') query.set('status', filters.status)
+  if (filters.assignedTo?.trim()) query.set('assignedTo', filters.assignedTo.trim())
+  if (filters.overdueOnly) query.set('overdueOnly', 'true')
+  if (filters.expiringOnly) query.set('expiringOnly', 'true')
+  if (filters.query?.trim()) query.set('query', filters.query.trim())
+  if (filters.limit) query.set('limit', String(filters.limit))
+  return clinicianGet(sessionId, `/api/clinical-workflows/authorization-work-queue${query.size ? `?${query}` : ''}`, signal)
+}
 export async function getClinicalWorkflowAssignees(
   sessionId: string,
   signal?: AbortSignal,

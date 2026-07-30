@@ -68,6 +68,7 @@ const NAV_ITEMS = [
   { path: '/clinician/documents', label: 'Document queue', icon: Route },
   { path: '/clinician/document-ocr', label: 'OCR queue', icon: ScanText },
   { path: '/clinician/referrals', label: 'Referral queue', icon: ListChecks },
+  { path: '/clinician/authorizations', label: 'Authorization queue', icon: ListChecks },
   { path: '/clinician/document-templates', label: 'Document templates', icon: FileText },
   { path: '/clinician/duplicate-review', label: 'Duplicate review', icon: Users },
   { path: '/clinician/renewals', label: 'Renewals', icon: Pill },

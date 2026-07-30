@@ -30,6 +30,9 @@ const PatientReferrals = lazy(() => import('./pages/clinician/PatientReferrals.t
 const ReferralWorkQueue = lazy(
   () => import('./pages/clinician/ReferralWorkQueue.tsx'),
 )
+const AuthorizationWorkQueue = lazy(
+  () => import('./pages/clinician/AuthorizationWorkQueue.tsx'),
+)
 const PatientAuthorizations = lazy(() => import('./pages/clinician/PatientAuthorizations.tsx'))
 const PatientSdoh = lazy(() => import('./pages/clinician/PatientSdoh.tsx'))
 const PatientClinicalForms = lazy(
@@ -124,6 +127,7 @@ export default function App() {
           <Route path="documents" element={<DocumentRoutingQueue />} />
           <Route path="document-ocr" element={<DocumentOcrQueue />} />
           <Route path="referrals" element={<ReferralWorkQueue />} />
+          <Route path="authorizations" element={<AuthorizationWorkQueue />} />
           <Route path="duplicate-review" element={<DuplicateReview />} />
           <Route path="renewals" element={<PrescriptionRenewals />} />
           <Route path="reports" element={<OperationalReports />} />
