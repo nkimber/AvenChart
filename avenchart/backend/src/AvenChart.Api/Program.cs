@@ -2567,6 +2567,11 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content", async (
             return Results.NotFound();
         }
 
+        if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken))
+        {
+            return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" });
+        }
+
         if (!encounterDetail.Documents.Any(document => document.Id == documentId))
         {
             return Results.NotFound();
@@ -2618,6 +2623,11 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content/binary", 
             return Results.NotFound();
         }
 
+        if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken))
+        {
+            return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" });
+        }
+
         if (!encounterDetail.Documents.Any(document => document.Id == documentId))
         {
             return Results.NotFound();
@@ -2667,6 +2677,11 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/soft-delete", asy
         if (encounterDetail is null)
         {
             return Results.NotFound();
+        }
+
+        if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken))
+        {
+            return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" });
         }
 
         if (!encounterDetail.Documents.Any(document => document.Id == documentId))
@@ -2730,6 +2745,11 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/restore", async (
             return Results.NotFound();
         }
 
+        if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken))
+        {
+            return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" });
+        }
+
         if (!encounterDetail.Documents.Any(document => document.Id == documentId))
         {
             return Results.NotFound();
@@ -2786,6 +2806,11 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
         if (encounterDetail is null)
         {
             return Results.NotFound();
+        }
+
+        if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken))
+        {
+            return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" });
         }
 
         if (!encounterDetail.Documents.Any(document => document.Id == documentId))
