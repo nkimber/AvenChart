@@ -2457,6 +2457,11 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/metadata", async 
             return Results.NotFound();
         }
 
+        if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken))
+        {
+            return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" });
+        }
+
         if (!encounterDetail.Documents.Any(document => document.Id == documentId))
         {
             return Results.NotFound();
@@ -2516,6 +2521,12 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/move", async (
         if (targetDetail.LegacyPid != sourceDetail.LegacyPid)
         {
             return Results.BadRequest("Encounter document can only be moved to another encounter for the same patient.");
+        }
+
+        if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken)
+            || await encounterRepository.HasLockingSignatureAsync(targetDetail.Encounter, cancellationToken))
+        {
+            return Results.Conflict(new { error = "A source or target encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" });
         }
 
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
