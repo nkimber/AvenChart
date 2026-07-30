@@ -216,8 +216,8 @@ export default function PatientLabs() {
               <FlaskConical size={20} aria-hidden="true" />
             </div>
             <form className="cl-admin-form-grid" onSubmit={(event) => void submitOrder(event)}>
-              <label className="cl-admin-field"><span>Encounter</span><select className="ne-input" value={orderForm.encounterId} required onChange={(event) => setOrderForm((current) => ({ ...current, encounterId: event.target.value }))}><option value="">Select encounter</option>{encounters.map((encounter) => <option key={encounter.encounter} value={encounter.encounter}>{encounter.date} ú {encounter.reason ?? `Encounter ${encounter.encounter}`}</option>)}</select></label>
-              <label className="cl-admin-field"><span>Catalog order</span><select className="ne-input" value={orderForm.catalogId} required onChange={(event) => setOrderForm((current) => ({ ...current, catalogId: event.target.value }))}><option value="">Select local order</option>{catalog.map((item) => <option key={item.id} value={item.id}>{item.code ?? "No code"} ú {item.name}</option>)}</select></label>
+              <label className="cl-admin-field"><span>Encounter</span><select className="ne-input" value={orderForm.encounterId} required onChange={(event) => setOrderForm((current) => ({ ...current, encounterId: event.target.value }))}><option value="">Select encounter</option>{encounters.map((encounter) => <option key={encounter.encounter} value={encounter.encounter}>{encounter.date} Â· {encounter.reason ?? `Encounter ${encounter.encounter}`}</option>)}</select></label>
+              <label className="cl-admin-field"><span>Catalog order</span><select className="ne-input" value={orderForm.catalogId} required onChange={(event) => setOrderForm((current) => ({ ...current, catalogId: event.target.value }))}><option value="">Select local order</option>{catalog.map((item) => <option key={item.id} value={item.id}>{item.code ?? "No code"} Â· {item.name}</option>)}</select></label>
               <label className="cl-admin-field"><span>Priority</span><select className="ne-input" value={orderForm.priority} onChange={(event) => setOrderForm((current) => ({ ...current, priority: event.target.value }))}><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></label>
               <label className="cl-admin-field"><span>Diagnosis / reason</span><input className="ne-input" value={orderForm.diagnosis} required maxLength={255} onChange={(event) => setOrderForm((current) => ({ ...current, diagnosis: event.target.value }))} /></label>
               <label className="cl-admin-field"><span>Instructions</span><input className="ne-input" value={orderForm.instructions} maxLength={1000} onChange={(event) => setOrderForm((current) => ({ ...current, instructions: event.target.value }))} /></label>
@@ -239,7 +239,7 @@ export default function PatientLabs() {
             <h2 className="cl-card-title">Record local specimen</h2>
             <p className="cl-table-sub">Specimen capture is local evidence only. No barcode, label printer, courier, or laboratory accession integration is claimed.</p>
             <form className="cl-admin-form-grid" onSubmit={(event) => void submitSpecimen(event)}>
-              <label className="cl-admin-field"><span>Order</span><select className="ne-input" value={specimenForm.orderId} required onChange={(event) => setSpecimenForm((current) => ({ ...current, orderId: event.target.value }))}><option value="">Select local order</option>{state.data.orders.map((order) => <option key={order.id} value={order.id}>{order.code ?? "No code"} ú {order.name ?? `Order ${order.id}`}</option>)}</select></label>
+              <label className="cl-admin-field"><span>Order</span><select className="ne-input" value={specimenForm.orderId} required onChange={(event) => setSpecimenForm((current) => ({ ...current, orderId: event.target.value }))}><option value="">Select local order</option>{state.data.orders.map((order) => <option key={order.id} value={order.id}>{order.code ?? "No code"} Â· {order.name ?? `Order ${order.id}`}</option>)}</select></label>
               <label className="cl-admin-field"><span>Specimen identifier</span><input className="ne-input" value={specimenForm.specimenIdentifier} maxLength={255} onChange={(event) => setSpecimenForm((current) => ({ ...current, specimenIdentifier: event.target.value }))} /></label>
               <label className="cl-admin-field"><span>Accession identifier</span><input className="ne-input" value={specimenForm.accessionIdentifier} maxLength={255} onChange={(event) => setSpecimenForm((current) => ({ ...current, accessionIdentifier: event.target.value }))} /></label>
               <label className="cl-admin-field"><span>Specimen type</span><input className="ne-input" value={specimenForm.specimenType} maxLength={255} onChange={(event) => setSpecimenForm((current) => ({ ...current, specimenType: event.target.value }))} /></label>
@@ -277,7 +277,7 @@ export default function PatientLabs() {
                   </h2>
                   <p className="cl-table-sub">
                     Ordered {formatDate(order.orderDate)}
-                    {order.providerName ? ` ú ${order.providerName}` : ""}
+                    {order.providerName ? ` Â· ${order.providerName}` : ""}
                   </p>
                 </div>
                 <span className="cl-badge">
@@ -285,7 +285,7 @@ export default function PatientLabs() {
                 </span>
               </div>
 
-              {order.specimens.length > 0 && <p className="cl-table-sub">{order.specimens.map((specimen) => specimen.accessionIdentifier ?? specimen.specimenIdentifier ?? `Specimen ${specimen.id}`).join(" ú ")}</p>}
+              {order.specimens.length > 0 && <p className="cl-table-sub">{order.specimens.map((specimen) => specimen.accessionIdentifier ?? specimen.specimenIdentifier ?? `Specimen ${specimen.id}`).join(" Â· ")}</p>}
 
               {order.reports.length === 0 ? (
                 <p className="cl-empty-text">
@@ -302,8 +302,8 @@ export default function PatientLabs() {
                             ? `Specimen ${report.specimenNumber}`
                             : "No specimen number"}
                           {report.reviewedBy
-                            ? ` ú Reviewed by ${report.reviewedBy}`
-                            : " ú Not reviewed"}
+                            ? ` Â· Reviewed by ${report.reviewedBy}`
+                            : " Â· Not reviewed"}
                         </p>
                       </div>
                       <span className="cl-badge">
@@ -349,7 +349,7 @@ export default function PatientLabs() {
                                   {result.hasPriorVersions && (
                                     <span className="cl-table-sub">
                                       {" "}
-                                      ú corrected ({result.versionLabel})
+                                      Â· corrected ({result.versionLabel})
                                     </span>
                                   )}
                                 </td>
@@ -372,9 +372,9 @@ export default function PatientLabs() {
                                           <li key={`${result.id}-${version.version}`}>
                                             <strong>{version.versionLabel}</strong>{" "}
                                             {version.result ?? "-"} {version.units ?? ""}
-                                            {version.range ? ` ú ${version.range}` : ""}
-                                            {version.abnormal ? ` ú ${version.abnormal}` : ""}
-                                            {" ú "}{formatDate(version.capturedAt)}
+                                            {version.range ? ` Â· ${version.range}` : ""}
+                                            {version.abnormal ? ` Â· ${version.abnormal}` : ""}
+                                            {" Â· "}{formatDate(version.capturedAt)}
                                           </li>
                                         ))}
                                       </ul>

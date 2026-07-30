@@ -1117,7 +1117,7 @@ export async function downloadPatientPortalGeneratedMedicalReportPackage(
   return response.blob()
 }
 
-// ÄÄÄ Clinician API ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// --- Clinician API -----------------------------------------------------------
 
 function clinicianHeaders(sessionId: string): Record<string, string> {
   return { 'X-Legacy EHR-Session': sessionId, 'content-type': 'application/json' }
@@ -1168,7 +1168,7 @@ async function clinicianPut<T>(
   return response.json()
 }
 
-// ÄÄ Patients ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Patients ------------------------------------------------------------------
 
 export type PatientListItem = {
   canonicalId: string
@@ -1793,12 +1793,16 @@ export type PatientReferral = {
   encounterId?: number | null
   destination: string
   reason: string
+  notes?: string | null
+  requestedAt: string
   workflowVersion: number
   assignedTo: string
   assignedDisplayName: string
   dueAt?: string | null
   createdBy: string
   policyRevision: string
+  createdAt: string
+  updatedAt: string
   status: string
   externalReference?: string | null
   availableTransitions: ClinicalWorkflowTransitionOption[]
@@ -2364,7 +2368,7 @@ export async function updatePatientPortalAccountReset(
   )
 }
 
-// ÄÄ Appointments ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Appointments --------------------------------------------------------------
 
 export type AppointmentListItem = {
   id: string
@@ -3566,7 +3570,7 @@ export async function downloadInventoryActivityCsv(
   return response.blob()
 }
 
-// ÄÄ Encounters ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Encounters ----------------------------------------------------------------
 
 export type EncounterListItem = {
   id: number
@@ -4044,7 +4048,7 @@ export async function moveEncounterDocument(
   )
 }
 
-// ÄÄ Clinical Lists ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Clinical Lists ------------------------------------------------------------
 
 export type ProblemListItem = {
   id: string
@@ -4347,7 +4351,7 @@ export async function getPrescriptionRefillQueue(
   )
 }
 
-// ÄÄ Messages ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Messages ------------------------------------------------------------------
 
 export type PatientMessageItem = {
   id: string
@@ -5263,7 +5267,7 @@ export async function setDuplicateReviewDisposition(
   )
 }
 
-// ÄÄ Documents ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Documents -----------------------------------------------------------------
 
 export type PatientDocumentItem = {
   id: number
@@ -6300,7 +6304,7 @@ export async function downloadPatientDocumentVersion(
   }
 }
 
-// ÄÄ Procedures / Lab Queue ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Procedures / Lab Queue ----------------------------------------------------
 
 export type ProcedureLabProviderDirectoryResponse = {
   datasetId: string
@@ -6503,16 +6507,6 @@ export function getProcedureResults(
   )
 }
 
-export type ProcedureReportQueueItem = {
-  reportId: number
-  orderId: number
-  patientId: string
-  legacyPid: number
-  pubpid: string
-  patientDisplayName: string
-  orderDate: string
-  providerId?: number | null
-  providerName?: string | null
 export type ProcedureOrderCreateInput = {
   patientId: string
   providerId?: number | null
@@ -6546,6 +6540,16 @@ export type ProcedureSpecimenCreateInput = {
   collectedDate: string
   volumeValue?: number | null
   volumeUnit: string
+  conditionCode: string
+  specimenCondition: string
+  comments: string
+}
+
+export async function createProcedureSpecimen(sessionId: string, input: ProcedureSpecimenCreateInput): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/specimens', input)
+  return result.detail
+}
+
 export type ProcedureReportCreateInput = {
   orderId: number
   dateCollected: string
@@ -6597,16 +6601,6 @@ export type ProcedureReportQueueItem = {
   orderDate: string
   providerId?: number | null
   providerName?: string | null
-  conditionCode: string
-  specimenCondition: string
-  comments: string
-}
-
-export async function createProcedureSpecimen(sessionId: string, input: ProcedureSpecimenCreateInput): Promise<ProcedureResultsResponse> {
-  const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/specimens', input)
-  return result.detail
-}
-
   labId?: number | null
   labName?: string | null
   procedureCode?: string | null
@@ -6727,7 +6721,7 @@ export async function getProcedureOrderQueue(
   )
 }
 
-// ÄÄ Operational Reports ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Operational Reports -------------------------------------------------------
 
 export type OperationalReportCounts = {
   patients: number
@@ -7180,7 +7174,7 @@ export async function createBillingCollectionsFollowUp(
   )
 }
 
-// ÄÄ Administration ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Administration ------------------------------------------------------------
 
 export type AdministrationUserItem = {
   id: number
@@ -8734,7 +8728,7 @@ export async function getAuthenticationActivityAudit(
   )
 }
 
-// ÄÄ Write helpers ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Write helpers -------------------------------------------------------------
 
 async function clinicianDelete(
   sessionId: string,
@@ -8763,7 +8757,7 @@ async function clinicianDeleteJson<T>(
   return response.json()
 }
 
-// ÄÄ Encounter mutations ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Encounter mutations -------------------------------------------------------
 
 export type EncounterCreateInput = {
   patientId: string
@@ -8857,7 +8851,7 @@ export async function signEncounter(
   )
 }
 
-// ÄÄ Clinical list mutations ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Clinical list mutations ---------------------------------------------------
 
 export type ClinicalListMutationResponse = {
   id: string
@@ -9081,7 +9075,7 @@ export async function deactivatePrescription(
   )
 }
 
-// ÄÄ Prescription refill and audit ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Prescription refill and audit ---------------------------------------------
 
 export type PrescriptionUpdateInput = {
   expectedVersion: string
@@ -9327,12 +9321,27 @@ export async function assignLabReportReviewer(
 export async function reopenLabReportReview(
   sessionId: string,
   reportId: number,
+  body: { expectedReviewVersion: number; reason: string },
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   return clinicianPut<ProcedureMutationResponse>(
     sessionId,
     `/api/procedures/reports/${reportId}/reopen-review`,
-    undefined,
+    body,
+    signal,
+  )
+}
+
+export async function denyLabReportReview(
+  sessionId: string,
+  reportId: number,
+  body: { expectedReviewVersion: number; reason: string },
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  return clinicianPut<ProcedureMutationResponse>(
+    sessionId,
+    `/api/procedures/reports/${reportId}/deny-review`,
+    body,
     signal,
   )
 }
@@ -9358,7 +9367,7 @@ export async function bulkSignLabReports(
   )
 }
 
-// ÄÄ Message creation ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Message creation ----------------------------------------------------------
 
 export type CreatePatientMessageInput = {
   patientId: string
@@ -9523,7 +9532,7 @@ export async function createPatient(
   return clinicianPost(sessionId, '/api/patients', body, signal)
 }
 
-// ÄÄ Appointment mutations ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Appointment mutations -----------------------------------------------------
 
 export type AppointmentCreateInput = {
   patientId: string
@@ -9602,7 +9611,7 @@ export async function validateAppointmentAvailability(
   )
 }
 
-// ÄÄ Immunization mutations ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Immunization mutations ----------------------------------------------------
 
 export type ImmunizationCreateInput = {
   patientId: string
@@ -9651,7 +9660,7 @@ export async function deleteImmunization(
   )
 }
 
-// ÄÄ Portal profile mutations ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// -- Portal profile mutations --------------------------------------------------
 
 export type PatientPortalProfileDemographics = {
   firstName: string
@@ -9741,6 +9750,8 @@ export async function submitPatientPortalProfileChange(
 export type ConfigurationPackageImportRequest = {
   requestId: string
   sha256: string
+  kind: 'import' | 'rollback'
+  sourceRequestId?: string | null
   reason: string
   status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
   version: number
