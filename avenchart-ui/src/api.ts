@@ -6439,6 +6439,9 @@ export type ProcedureResultItem = {
     abnormal?: string | null
     resultDate: string
     resultStatus?: string | null
+    correctionActor?: string | null
+    correctionReason?: string | null
+    resultingVersion?: number | null
   }>
 }
 
@@ -6579,7 +6582,10 @@ export type ProcedureResultCreateInput = {
   status: string
 }
 
-export type ProcedureResultUpdateInput = Omit<ProcedureResultCreateInput, 'reportId' | 'facility' | 'comments'>
+export type ProcedureResultUpdateInput = Omit<ProcedureResultCreateInput, 'reportId' | 'facility' | 'comments'> & {
+  expectedVersion: number
+  reason: string
+}
 
 export async function createProcedureResult(sessionId: string, input: ProcedureResultCreateInput): Promise<ProcedureResultsResponse> {
   const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/results', input)

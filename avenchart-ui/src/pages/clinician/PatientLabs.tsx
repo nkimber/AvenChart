@@ -375,6 +375,9 @@ export default function PatientLabs() {
                                             {version.range ? ` · ${version.range}` : ""}
                                             {version.abnormal ? ` · ${version.abnormal}` : ""}
                                             {" · "}{formatDate(version.capturedAt)}
+                                            {version.correctionActor ? ` · corrected by ${version.correctionActor}` : ""}
+                                            {version.correctionReason ? ` · ${version.correctionReason}` : ""}
+                                            {version.resultingVersion ? ` · became Version ${version.resultingVersion}` : ""}
                                           </li>
                                         ))}
                                       </ul>

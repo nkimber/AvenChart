@@ -15194,6 +15194,7 @@ function EncounterProcedureResultCard({
   const [resultRange, setResultRange] = useState(result.range ?? '')
   const [abnormalFlag, setAbnormalFlag] = useState(result.abnormal ?? '')
   const [resultStatus, setResultStatus] = useState(result.resultStatus ?? 'corrected')
+  const [correctionReason, setCorrectionReason] = useState('')
   const [correctionStatus, setCorrectionStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
@@ -15205,6 +15206,7 @@ function EncounterProcedureResultCard({
     setResultRange(result.range ?? '')
     setAbnormalFlag(result.abnormal ?? '')
     setResultStatus(result.resultStatus ?? 'corrected')
+    setCorrectionReason('')
     setCorrectionStatus('idle')
   }, [result])
 
@@ -15222,6 +15224,8 @@ function EncounterProcedureResultCard({
         range: resultRange,
         abnormal: abnormalFlag,
         status: resultStatus,
+        expectedVersion: result.currentVersion,
+        reason: correctionReason.trim(),
       })
       setCorrectionStatus('saved')
       setIsCorrecting(false)
@@ -15331,9 +15335,23 @@ function EncounterProcedureResultCard({
                 aria-label="Encounter procedure corrected result abnormal flag"
               />
             </label>
+            <label className="filter-field procedure-order-name-field">
+              <span>Correction reason</span>
+              <input
+                value={correctionReason}
+                onChange={(event) => setCorrectionReason(event.target.value)}
+                aria-label="Encounter procedure result correction reason"
+                maxLength={500}
+                required
+              />
+            </label>
           </div>
           <div className="detail-actions compact-actions">
-            <button className="icon-text-button primary" type="submit" disabled={correctionStatus === 'saving'}>
+            <button
+              className="icon-text-button primary"
+              type="submit"
+              disabled={correctionStatus === 'saving' || !correctionReason.trim()}
+            >
               <Check size={15} />
               <span>{correctionStatus === 'saving' ? 'Saving' : 'Save Correction'}</span>
             </button>
@@ -25757,6 +25775,7 @@ function ProcedureResultCard({
   const [resultRange, setResultRange] = useState(result.range ?? '')
   const [abnormalFlag, setAbnormalFlag] = useState(result.abnormal ?? '')
   const [resultStatus, setResultStatus] = useState(result.resultStatus ?? 'corrected')
+  const [correctionReason, setCorrectionReason] = useState('')
   const [correctionStatus, setCorrectionStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
@@ -25768,6 +25787,7 @@ function ProcedureResultCard({
     setResultRange(result.range ?? '')
     setAbnormalFlag(result.abnormal ?? '')
     setResultStatus(result.resultStatus ?? 'corrected')
+    setCorrectionReason('')
     setCorrectionStatus('idle')
   }, [result])
 
@@ -25785,6 +25805,8 @@ function ProcedureResultCard({
         range: resultRange,
         abnormal: abnormalFlag,
         status: resultStatus,
+        expectedVersion: result.currentVersion,
+        reason: correctionReason.trim(),
       })
       setCorrectionStatus('saved')
       setIsCorrecting(false)
@@ -25827,6 +25849,9 @@ function ProcedureResultCard({
                 {version.text || 'Result'}: {version.result || 'No value'} {version.units || ''}
                 {version.range ? ` / Range ${version.range}` : ''}
                 {version.abnormal ? ` / ${version.abnormal}` : ''}
+                {version.correctionActor ? ` / Corrected by ${version.correctionActor}` : ''}
+                {version.correctionReason ? ` / ${version.correctionReason}` : ''}
+                {version.resultingVersion ? ` / Became Version ${version.resultingVersion}` : ''}
               </span>
             </div>
           ))}
@@ -25924,9 +25949,23 @@ function ProcedureResultCard({
                 aria-label="Procedure corrected result abnormal flag"
               />
             </label>
+            <label className="filter-field procedure-order-name-field">
+              <span>Correction reason</span>
+              <input
+                value={correctionReason}
+                onChange={(event) => setCorrectionReason(event.target.value)}
+                aria-label="Procedure result correction reason"
+                maxLength={500}
+                required
+              />
+            </label>
           </div>
           <div className="detail-actions compact-actions">
-            <button className="icon-text-button primary" type="submit" disabled={correctionStatus === 'saving'}>
+            <button
+              className="icon-text-button primary"
+              type="submit"
+              disabled={correctionStatus === 'saving' || !correctionReason.trim()}
+            >
               <Check size={15} />
               <span>{correctionStatus === 'saving' ? 'Saving' : 'Save Correction'}</span>
             </button>

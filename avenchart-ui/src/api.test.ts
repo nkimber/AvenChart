@@ -2024,7 +2024,7 @@ describe('authenticated API transport', () => {
     const detail = { patientId: 'MOD-PAT-0004', patientDisplayName: 'Alex Morgan', counts: { orders: 1, reports: 1, results: 1, finalResults: 1 }, orders: [] }
     const report = { orderId: 7001, dateCollected: '2026-07-29T12:00:00', dateReport: '2026-07-29T12:00:00', specimenNumber: 'SP-7001', reportStatus: 'received', reviewStatus: 'received', notes: '' }
     const result = { reportId: 8001, resultCode: 'GLU', resultText: 'Glucose', dateTime: '2026-07-29T12:00:00', facility: '', units: 'mg/dL', result: '95', range: '70-99', abnormal: '', comments: '', status: 'final' }
-    const correction = { resultCode: 'GLU', resultText: 'Glucose', dateTime: '2026-07-29T12:00:00', units: 'mg/dL', result: '105', range: '70-99', abnormal: 'H', status: 'corrected' }
+    const correction = { resultCode: 'GLU', resultText: 'Glucose', dateTime: '2026-07-29T12:00:00', units: 'mg/dL', result: '105', range: '70-99', abnormal: 'H', status: 'corrected', expectedVersion: 1, reason: 'Corrected after local verification' }
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 8001, detail })).mockResolvedValueOnce(jsonResponse({ id: 9001, detail })).mockResolvedValueOnce(jsonResponse({ id: 9001, detail }))
 
     await expect(createProcedureReport('staff-session', report)).resolves.toEqual(detail)
@@ -2033,6 +2033,7 @@ describe('authenticated API transport', () => {
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['http://localhost:5001/api/procedures/reports', 'http://localhost:5001/api/procedures/results', 'http://localhost:5001/api/procedures/results/9001'])
     expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual(['POST', 'POST', 'PUT'])
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ body: JSON.stringify(correction) })
   })
 
   it('uses authenticated, versioned report-review history and decision contracts', async () => {

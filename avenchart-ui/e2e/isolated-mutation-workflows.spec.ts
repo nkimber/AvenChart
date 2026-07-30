@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Dialog, type Page } from "@playwright/test";
 import { Buffer } from "node:buffer";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -260,6 +260,14 @@ test.describe("isolated mutation workflows", () => {
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     const procedureName = `Review lifecycle proof ${Date.now()}`;
     let orderId: number | null = null;
+    const answerGovernanceDialog = (dialog: Dialog) => {
+      void dialog.accept(
+        dialog.type() === "prompt"
+          ? "Temporary browser lifecycle verification."
+          : undefined,
+      );
+    };
+    page.on("dialog", answerGovernanceDialog);
 
     try {
       const createdOrder = await page.request.post(
@@ -312,7 +320,6 @@ test.describe("isolated mutation workflows", () => {
       await reportRow.getByRole("button", { name: "Claim" }).click();
       await expect(reportRow.getByText("Assigned to you")).toBeVisible();
 
-      page.once("dialog", (dialog) => dialog.accept());
       await reportRow.getByRole("button", { name: "Sign reviewed" }).click();
       await expect(reportRow).toHaveCount(0);
 
@@ -324,7 +331,6 @@ test.describe("isolated mutation workflows", () => {
         timeout: 30_000,
       });
 
-      page.once("dialog", (dialog) => dialog.accept());
       await reportRow.getByRole("button", { name: "Reopen review" }).click();
       await expect(reportRow).toHaveCount(0);
 
@@ -334,10 +340,10 @@ test.describe("isolated mutation workflows", () => {
       reportRow = page.getByRole("row").filter({ hasText: procedureName });
       await expect(reportRow).toBeVisible({ timeout: 30_000 });
       await reportRow.getByRole("checkbox").check();
-      page.once("dialog", (dialog) => dialog.accept());
       await page.getByRole("button", { name: "Sign selected (1)" }).click();
       await expect(reportRow).toHaveCount(0);
     } finally {
+      page.off("dialog", answerGovernanceDialog);
       if (orderId) {
         const deleted = await page.request.delete(
           `${apiBaseUrl}/api/procedures/orders/${orderId}`,

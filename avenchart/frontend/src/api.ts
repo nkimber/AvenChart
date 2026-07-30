@@ -1736,6 +1736,9 @@ export type ProcedureResultVersionItem = {
   abnormal?: string | null
   resultDate: string
   resultStatus?: string | null
+  correctionActor?: string | null
+  correctionReason?: string | null
+  resultingVersion?: number | null
 }
 
 export type ProcedureReportItem = {
@@ -2184,6 +2187,8 @@ export type ProcedureResultUpdateInput = {
   range: string
   abnormal: string
   status: string
+  expectedVersion: number
+  reason: string
 }
 
 export type ProcedureMutationResponse = {

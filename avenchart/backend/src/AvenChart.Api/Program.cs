@@ -5387,12 +5387,32 @@ procedures.MapPost("/results", async (
 
 procedures.MapPut("/results/{resultId:int}", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int resultId,
         ProcedureResultUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.UpdateResultAsync(resultId, request, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.UpdateResultAsync(resultId, request, session.Username, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (ProcedureResultCorrectionConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                expectedVersion = exception.ExpectedVersion,
+                currentVersion = exception.CurrentVersion,
+                reviewStatus = exception.ReviewStatus
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
     .WithName("UpdateProcedureResult")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));

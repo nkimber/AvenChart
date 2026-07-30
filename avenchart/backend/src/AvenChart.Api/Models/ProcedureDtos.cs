@@ -361,7 +361,10 @@ public sealed record ProcedureResultVersionItem(
     string? Range,
     string? Abnormal,
     string ResultDate,
-    string? ResultStatus);
+    string? ResultStatus,
+    string? CorrectionActor,
+    string? CorrectionReason,
+    int? ResultingVersion);
 
 public sealed record ProcedureOrderCreateRequest(
     string PatientId,
@@ -476,7 +479,20 @@ public sealed record ProcedureResultUpdateRequest(
     string Result,
     string Range,
     string Abnormal,
-    string Status);
+    string Status,
+    int ExpectedVersion,
+    string Reason);
+
+public sealed class ProcedureResultCorrectionConflictException(
+    int expectedVersion,
+    int currentVersion,
+    string reviewStatus,
+    string message) : Exception(message)
+{
+    public int ExpectedVersion { get; } = expectedVersion;
+    public int CurrentVersion { get; } = currentVersion;
+    public string ReviewStatus { get; } = reviewStatus;
+}
 
 public sealed record ProcedureMutationResponse(
     int Id,
