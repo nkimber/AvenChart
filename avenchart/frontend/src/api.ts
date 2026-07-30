@@ -6109,22 +6109,6 @@ export async function denyEncounterDocument(
   return response.json()
 }
 
-export async function deleteEncounterSignature(
-  encounter: number,
-  signatureId: number,
-  sessionId?: string | null,
-  signal?: AbortSignal,
-): Promise<void> {
-  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/signatures/${signatureId}`, {
-    method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
-    signal,
-  })
-  if (!response.ok && response.status !== 404) {
-    throw new Error(encounterApiError('Encounter signature delete', response.status))
-  }
-}
-
 export async function getClinicalLists(
   patientId: string,
   sessionId?: string | null,

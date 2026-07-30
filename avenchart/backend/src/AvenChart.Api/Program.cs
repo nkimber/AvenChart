@@ -2777,18 +2777,6 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
     .WithName("SignEncounterDocument")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
-encounters.MapDelete("/{encounter:int}/signatures/{signatureId:int}", async (
-        EncounterRepository repository,
-        int encounter,
-        int signatureId,
-        CancellationToken cancellationToken) =>
-    {
-        var deleted = await repository.DeleteSignatureAsync(encounter, signatureId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    })
-    .WithName("DeleteEncounterSignature")
-    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
-
 encounters.MapDelete("/{encounter:int}/vitals/{vitalsId:int}", async (
         EncounterRepository repository,
         int encounter,

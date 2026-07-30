@@ -815,19 +815,6 @@ public sealed class EncounterRepository(
         return detail is null ? null : new EncounterSignatureMutationResponse(Convert.ToInt32(id), detail);
     }
 
-    public async Task<bool> DeleteSignatureAsync(int encounter, int signatureId, CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            delete from encounter_signatures
-            where encounter = @encounter and id = @signatureId;
-            """;
-        command.Parameters.AddWithValue("encounter", encounter);
-        command.Parameters.AddWithValue("signatureId", signatureId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-    }
-
     public async Task<bool> DeleteVitalsAsync(int encounter, int vitalsId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);

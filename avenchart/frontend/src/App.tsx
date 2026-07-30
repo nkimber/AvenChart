@@ -204,7 +204,6 @@ import {
   deleteClinicalProblem,
   deleteClinicalPrescription,
   deleteEncounter,
-  deleteEncounterSignature,
   denyEncounterDocument,
   deletePatientInsurance,
   deletePatientDocument,
@@ -2779,26 +2778,6 @@ function App() {
       const message = signError instanceof Error ? signError.message : 'Encounter sign-off failed'
       setEncounterError(message)
       throw signError
-    }
-  }
-
-  async function handleEncounterSignatureDelete(encounter: EncounterDetail, signature: EncounterSignatureItem) {
-    setEncounterDetailStatus('loading')
-    setEncounterError(null)
-
-    try {
-      const sessionId = getActiveEncounterSessionId()
-      await deleteEncounterSignature(encounter.encounter, signature.id, sessionId)
-      const refreshed = await getEncounterDetail(encounter.encounter, sessionId)
-      setEncounterDetail(refreshed)
-      setSelectedEncounter(refreshed.encounter)
-      setEncounterDetailStatus('ready')
-      setEncounterRefreshKey((current) => current + 1)
-    } catch (deleteError) {
-      setEncounterDetailStatus('error')
-      const message = deleteError instanceof Error ? deleteError.message : 'Encounter signature delete failed'
-      setEncounterError(message)
-      throw deleteError
     }
   }
 
@@ -6275,7 +6254,6 @@ function App() {
             onCreateVitals={handleEncounterVitalsCreate}
             onCreateSoapNote={handleEncounterSoapCreate}
             onSignEncounter={handleEncounterSign}
-            onDeleteEncounterSignature={handleEncounterSignatureDelete}
             onCreateEncounterDocument={handleEncounterDocumentCreate}
             onCreateEncounterBinaryDocument={handleEncounterBinaryDocumentCreate}
             onCreateEncounterExternalLinkDocument={handleEncounterExternalLinkDocumentCreate}
@@ -12851,7 +12829,6 @@ function EncounterWorkspace({
   onCreateVitals,
   onCreateSoapNote,
   onSignEncounter,
-  onDeleteEncounterSignature,
   onCreateEncounterDocument,
   onCreateEncounterBinaryDocument,
   onCreateEncounterExternalLinkDocument,
@@ -12892,7 +12869,6 @@ function EncounterWorkspace({
   onCreateVitals: (encounter: EncounterDetail, input: EncounterVitalsCreateInput) => Promise<unknown>
   onCreateSoapNote: (encounter: EncounterDetail, input: EncounterSoapNoteCreateInput) => Promise<unknown>
   onSignEncounter: (encounter: EncounterDetail, input: EncounterSignInput) => Promise<EncounterSignatureMutationResponse>
-  onDeleteEncounterSignature: (encounter: EncounterDetail, signature: EncounterSignatureItem) => Promise<void>
   onCreateEncounterDocument: (
     encounter: EncounterDetail,
     input: EncounterDocumentCreateInput,
@@ -13305,20 +13281,6 @@ function EncounterWorkspace({
         isLock: signatureMode === 'locked',
         amendment: signatureAmendment,
       })
-      setSignatureStatus('saved')
-    } catch {
-      setSignatureStatus('error')
-    }
-  }
-
-  async function handleSignatureDelete(signature: EncounterSignatureItem) {
-    if (!encounterDetail) {
-      return
-    }
-
-    setSignatureStatus('saving')
-    try {
-      await onDeleteEncounterSignature(encounterDetail, signature)
       setSignatureStatus('saved')
     } catch {
       setSignatureStatus('error')
@@ -13932,8 +13894,6 @@ function EncounterWorkspace({
                   <EncounterSignatureCard
                     key={signature.id}
                     signature={signature}
-                    disabled={signatureStatus === 'saving'}
-                    onDelete={() => handleSignatureDelete(signature)}
                   />
                 ))}
                 {encounterSignatures.length === 0 && (
@@ -14802,15 +14762,7 @@ function EncounterDiagnosisCodeCard({ diagnosis }: { diagnosis: EncounterDiagnos
   )
 }
 
-function EncounterSignatureCard({
-  signature,
-  disabled,
-  onDelete,
-}: {
-  signature: EncounterSignatureItem
-  disabled: boolean
-  onDelete: () => void
-}) {
+function EncounterSignatureCard({ signature }: { signature: EncounterSignatureItem }) {
   return (
     <article className="encounter-signature-card">
       <div>
@@ -14818,16 +14770,8 @@ function EncounterSignatureCard({
         <span>{signature.signerUsername} / {signature.signedAt}</span>
         {signature.amendment && <p>{signature.amendment}</p>}
         <code>{signature.hash.slice(0, 12)}</code>
+        <p>Immutable encounter signature record</p>
       </div>
-      <button
-        className="icon-button danger"
-        type="button"
-        aria-label={`Remove encounter signature ${signature.id}`}
-        onClick={onDelete}
-        disabled={disabled}
-      >
-        <Trash2 size={15} />
-      </button>
     </article>
   )
 }
