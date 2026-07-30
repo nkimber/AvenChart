@@ -815,32 +815,6 @@ public sealed class EncounterRepository(
         return detail is null ? null : new EncounterSignatureMutationResponse(Convert.ToInt32(id), detail);
     }
 
-    public async Task<bool> DeleteVitalsAsync(int encounter, int vitalsId, CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            delete from vitals
-            where encounter = @encounter and id = @vitalsId;
-            """;
-        command.Parameters.AddWithValue("encounter", encounter);
-        command.Parameters.AddWithValue("vitalsId", vitalsId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-    }
-
-    public async Task<bool> DeleteSoapNoteAsync(int encounter, int soapNoteId, CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            delete from clinical_notes
-            where encounter = @encounter and id = @soapNoteId;
-            """;
-        command.Parameters.AddWithValue("encounter", encounter);
-        command.Parameters.AddWithValue("soapNoteId", soapNoteId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-    }
-
     public async Task<bool> DeleteAsync(int encounter, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
