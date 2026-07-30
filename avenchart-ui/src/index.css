@@ -14144,3 +14144,244 @@ h4 {
     border: 1px solid CanvasText;
   }
 }
+
+.ne-section-help {
+  margin: -0.35rem 0 1rem;
+  color: #667a75;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.ne-form-error,
+.ne-form-notice,
+.encounter-coding-notice {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.55rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.ne-form-error {
+  border: 1px solid #e6aaa0;
+  background: #fff4f1;
+  color: #7f2d1d;
+}
+
+.ne-form-notice,
+.encounter-coding-notice {
+  border: 1px solid #b9d7cc;
+  background: #f2faf7;
+  color: #285f50;
+}
+
+.ne-metadata-fieldset {
+  margin: 1.2rem 0 0;
+  padding: 1rem;
+  border: 1px solid #dbe7e3;
+  border-radius: 0.65rem;
+}
+
+.ne-metadata-fieldset legend {
+  padding: 0 0.35rem;
+  color: #1f3e35;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.ne-metadata-fieldset .ne-section-help {
+  margin-top: 0;
+}
+
+.ne-metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+}
+
+.encounter-coding-workspace {
+  display: grid;
+  gap: 1rem;
+}
+
+.encounter-coding-header {
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.encounter-coding-header .cl-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.encounter-coding-header .cl-empty-text {
+  margin: 0.35rem 0 0;
+}
+
+.encounter-coding-form {
+  padding: 1rem;
+  border: 1px solid #c7ddd5;
+  border-radius: 0.65rem;
+  background: #f7fbfa;
+}
+
+.encounter-coding-form h3 {
+  margin: 0 0 0.9rem;
+  color: #1f3e35;
+  font-size: 0.95rem;
+}
+
+.encounter-coding-form [role="alert"] {
+  margin: 0 0 0.85rem;
+  color: #8a2e1d;
+  font-size: 0.84rem;
+}
+
+.encounter-coding-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.encounter-coding-fields label {
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+  min-width: 0;
+  color: #334e47;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.encounter-coding-fields input,
+.encounter-coding-fields select,
+.encounter-coding-fields textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.35rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #b8cbc5;
+  border-radius: 0.45rem;
+  background: #fff;
+  color: #1b302b;
+  font: inherit;
+  font-weight: 400;
+}
+
+.encounter-coding-fields textarea {
+  resize: vertical;
+}
+
+.encounter-coding-fields input:focus-visible,
+.encounter-coding-fields select:focus-visible,
+.encounter-coding-fields textarea:focus-visible {
+  outline: 3px solid rgb(15 110 86 / 22%);
+  outline-offset: 1px;
+  border-color: #0f6e56;
+}
+
+.encounter-coding-field-wide {
+  grid-column: span 2;
+}
+
+.encounter-coding-form .cl-inline-form-actions {
+  margin-top: 0.9rem;
+}
+
+.encounter-coding-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.encounter-coding-grid > div {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid #dbe7e3;
+  border-radius: 0.6rem;
+  background: #fff;
+}
+
+.encounter-coding-grid h3 {
+  margin: 0 0 0.75rem;
+  color: #1f3e35;
+  font-size: 0.88rem;
+}
+
+.encounter-coding-list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.encounter-coding-list li {
+  display: grid;
+  gap: 0.25rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid #e4ecea;
+  color: #334e47;
+  overflow-wrap: anywhere;
+}
+
+.encounter-coding-list li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.encounter-coding-list span {
+  font-size: 0.82rem;
+}
+
+.encounter-coding-list small {
+  color: #667a75;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.encounter-coding-row-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.65rem;
+  color: #1f3e35;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 1050px) {
+  .encounter-coding-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .ne-metadata-grid,
+  .encounter-coding-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .encounter-coding-field-wide {
+    grid-column: auto;
+  }
+
+  .encounter-coding-header {
+    flex-direction: column;
+  }
+
+  .encounter-coding-header .cl-inline-form-actions,
+  .encounter-coding-header .cl-inline-form-actions > * {
+    width: 100%;
+  }
+}
+
+@media (forced-colors: active) {
+  .ne-metadata-fieldset,
+  .ne-form-error,
+  .ne-form-notice,
+  .encounter-coding-notice,
+  .encounter-coding-form,
+  .encounter-coding-grid > div {
+    border: 1px solid CanvasText;
+  }
+}

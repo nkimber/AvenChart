@@ -74,6 +74,7 @@ import {
 import { ClinicalAlertSeverityBadge } from "../../components/ClinicalAlertSeverityBadge.tsx";
 import { showToast } from "../../components/Toast.tsx";
 import { getClinicalAlertSeverity } from "../../domain/clinicalAlertSeverity.ts";
+import EncounterCodingPanel from "./EncounterCodingPanel.tsx";
 import type { PatientOutletContext } from "./PatientShell.tsx";
 
 // Simple SVG sparkline for a series of numeric values
@@ -3979,6 +3980,17 @@ export default function PatientEncounters() {
                     }}
                   />
 
+                  <EncounterCodingPanel
+                    sessionId={session.sessionId}
+                    detail={enc}
+                    onDetailChange={(updated) => {
+                      setDetailState({ status: "ready", data: updated });
+                      setDetailCache((current) =>
+                        new Map(current).set(updated.id, updated),
+                      );
+                    }}
+                  />
+
                   <EncounterAudit sessionId={session.sessionId} detail={enc} />
 
                   <EncounterDocuments
@@ -3994,44 +4006,6 @@ export default function PatientEncounters() {
                       );
                     }}
                   />
-
-                  {enc.diagnosisCodes.length > 0 && (
-                    <div className="cl-card">
-                      <div className="cl-card-header">
-                        <h2 className="cl-card-title">Diagnosis codes</h2>
-                      </div>
-                      <ul className="cl-clinical-list">
-                        {enc.diagnosisCodes.map((dx) => (
-                          <li key={dx.code} className="cl-clinical-row">
-                            <div>
-                              <span className="cl-dx-code">{dx.code}</span>
-                              <span>{dx.description ?? ""}</span>
-                              <p
-                                className="cl-empty-text"
-                                style={{ margin: "4px 0 0" }}
-                              >
-                                {dx.sources.join(" · ") ||
-                                  "Encounter diagnosis"}
-                                {dx.billingLineCount > 0 &&
-                                  ` · ${dx.billingLineCount} billing link${dx.billingLineCount === 1 ? "" : "s"}`}
-                                {dx.procedureOrderCount > 0 &&
-                                  ` · ${dx.procedureOrderCount} procedure link${dx.procedureOrderCount === 1 ? "" : "s"}`}
-                              </p>
-                              {dx.supportingBillingCodes.length > 0 && (
-                                <p
-                                  className="cl-empty-text"
-                                  style={{ margin: "2px 0 0" }}
-                                >
-                                  Billing support:{" "}
-                                  {dx.supportingBillingCodes.join(", ")}
-                                </p>
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
                 </>
               );
             })()}
