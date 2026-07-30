@@ -912,6 +912,39 @@ try {
         ($null -ne $rosCompositeDefinition -and $rosCompositeDefinition.contextScope -eq "encounter" -and $rosCompositeDefinition.signaturePolicy -eq "author-only" -and $rosCompositeDetail.currentRevision.status -eq "effective" -and $rosCompositeFields.Count -eq 108 -and (($rosCompositeFields.key -join "|") -eq (($rosGeneralFields + $rosSkinFields + $rosHeentFields + $rosPulmonaryFields + $rosCardiovascularFields + $rosGastrointestinalFields + $rosGenitourinaryFields + $rosMusculoskeletalFields + $rosEndocrineFields + $rosAdditionalNotesFields).key -join "|")) -and ((@($rosCompositeDetail.currentRevision.definition.sections).key -join "|") -eq "general|skin|heent|pulmonary|cardiovascular|gastrointestinal|genitourinary|musculoskeletal|endocrine|additional_notes") -and $rosCompositePreview.valid) `
         @{ definitionId=$rosCompositeDefinition.definitionId; schemaHash=$rosCompositeDetail.currentRevision.schemaHash; fieldCount=$rosCompositeFields.Count; sectionKeys=@($rosCompositeDetail.currentRevision.definition.sections).key; previewValid=$rosCompositePreview.valid }
 
+    $legacyRosCompatibility = [ordered]@{
+        "legacy.rosgeneral" = "weight_change|weakness|fatigue|anorexia|fever|chills|night_sweats|insomnia|irritability|heat_or_cold"
+        "legacy.roseyes" = "change_in_vision|glaucoma_history|eye_pain|irritation|redness|excessive_tearing|double_vision|blind_spots|photophobia"
+        "legacy.rosearnoseandthroat" = "hearing_loss|discharge|pain|vertigo|tinnitus|frequent_colds|sore_throat|sinus_problems|post_nasal_drip|nosebleed|snoring|apnea"
+        "legacy.rosbreastpulmonary" = "breast_mass|breast_discharge|biopsy|abnormal_mammogram|cough|sputum|shortness_of_breath|wheezing|hemoptsyis|asthma|copd"
+        "legacy.roscardiovascular" = "chest_pain|palpitation|syncope|pnd|doe|orthopnea|peripheal|edema|legpain_cramping|history_murmur|arrythmia|heart_problem"
+        "legacy.rosgastrointestinal" = "dysphagia|heartburn|bloating|belching|flatulence|nausea|vomiting|hematemesis|gastro_pain|food_intolerance|hepatitis|jaundice|hematochezia|changed_bowel|diarrhea|constipation"
+        "legacy.rosurinary" = "polyuria|polydypsia|dysuria|hematuria|frequency|urgency|incontinence|renal_stones|utis|hesitancy|dribbling|stream|nocturia|erections|ejaculations"
+    }
+    $legacyRosProof = @()
+    foreach ($legacyRosEntry in $legacyRosCompatibility.GetEnumerator()) {
+        $definition = @($catalog.definitions | Where-Object { $_.stableKey -eq $legacyRosEntry.Key }) | Select-Object -First 1
+        $detail = if ($null -ne $definition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($definition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+        $fields = @($detail.currentRevision.definition.fields)
+        $firstField = $fields | Select-Object -First 1
+        $previewValues = [ordered]@{}
+        if ($null -ne $firstField) { $previewValues[$firstField.key] = "yes" }
+        $preview = if ($null -ne $detail -and $null -ne $firstField) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$detail.currentRevision.definition; values=$previewValues } } else { $null }
+        $legacyRosProof += [pscustomobject]@{ stableKey=$legacyRosEntry.Key; definition=$definition; detail=$detail; fields=$fields; expectedFields=$legacyRosEntry.Value; preview=$preview }
+    }
+    Add-Check `
+        "Legacy form_ros sections preserve three-state storage vocabulary as constrained select fields" `
+        (@($legacyRosProof | Where-Object {
+            $null -eq $_.definition `
+                -or $_.definition.contextScope -ne "encounter" `
+                -or $_.definition.signaturePolicy -ne "author-only" `
+                -or $_.detail.currentRevision.status -ne "effective" `
+                -or ($_.fields.key -join "|") -ne $_.expectedFields `
+                -or @($_.fields | Where-Object { $_.type -ne "select" -or $null -ne $_.maxLength -or ($_.options.code -join "|") -ne "yes|no|na" -or ($_.options.display -join "|") -ne "YES|NO|N/A" }).Count -gt 0 `
+                -or -not $_.preview.valid
+        }).Count -eq 0) `
+        @($legacyRosProof | ForEach-Object { @{ stableKey=$_.stableKey; definitionId=$_.definition.definitionId; fields=$_.fields.key; previewValid=$_.preview.valid } })
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `

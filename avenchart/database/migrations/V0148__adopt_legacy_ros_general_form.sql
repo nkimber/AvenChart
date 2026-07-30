@@ -1,9 +1,9 @@
-insert into clinical_form_definitions(definition_id,stable_key,latest_revision,effective_revision,created_at,created_by,updated_at,updated_by)
-values('90f00000-0000-4000-8000-000000000036','legacy.rosgeneral',1,null,now(),'legacy-adoption-seed',now(),'legacy-adoption-seed')
+﻿insert into clinical_form_definitions(definition_id,stable_key,latest_revision,effective_revision,created_at,created_by,updated_at,updated_by)
+values('90f00000-0000-4000-8000-000000000043','legacy.rosgeneral',1,null,now(),'legacy-adoption-seed',now(),'legacy-adoption-seed')
 on conflict(stable_key) do nothing;
 
 with fields as (
-  select jsonb_agg(jsonb_build_object('key',key,'sectionKey','general','label',label,'type','text','sequence',sequence,'required',false,'accessibilityLabel',label,'helpText','Legacy three-state Review of Systems value: Yes, No, or N/A.','maxLength',3,'minimum',null,'maximum',null,'precision',null,'unit',null,'codeSystem',null,'options',jsonb_build_array(jsonb_build_object('value','Yes','label','Yes'),jsonb_build_object('value','No','label','No'),jsonb_build_object('value','N/A','label','N/A')),'repeatMinimum',null,'repeatMaximum',null,'children','[]'::jsonb,'readOnly',false) order by sequence) value
+  select jsonb_agg(jsonb_build_object('key',key,'sectionKey','general','label',label,'type','select','sequence',sequence,'required',false,'accessibilityLabel',label,'helpText','Legacy three-state Review of Systems value. Stored codes yes/no/na retain legacy YES/NO/N/A displays.','maxLength',null,'minimum',null,'maximum',null,'precision',null,'unit',null,'codeSystem',null,'options',jsonb_build_array(jsonb_build_object('code','yes','display','YES'),jsonb_build_object('code','no','display','NO'),jsonb_build_object('code','na','display','N/A')),'repeatMinimum',null,'repeatMaximum',null,'children','[]'::jsonb,'readOnly',false) order by sequence) value
   from (values
     ('weight_change','Weight change',10),('weakness','Weakness',20),('fatigue','Fatigue',30),('anorexia','Anorexia',40),('fever','Fever',50),('chills','Chills',60),('night_sweats','Night sweats',70),('insomnia','Insomnia',80),('irritability','Irritability',90),('heat_or_cold','Heat or cold intolerance',100)
   ) as source(key,label,sequence)
