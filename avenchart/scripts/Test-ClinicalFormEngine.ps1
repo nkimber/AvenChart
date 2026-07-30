@@ -920,6 +920,7 @@ try {
         "legacy.roscardiovascular" = "chest_pain|palpitation|syncope|pnd|doe|orthopnea|peripheal|edema|legpain_cramping|history_murmur|arrythmia|heart_problem"
         "legacy.rosgastrointestinal" = "dysphagia|heartburn|bloating|belching|flatulence|nausea|vomiting|hematemesis|gastro_pain|food_intolerance|hepatitis|jaundice|hematochezia|changed_bowel|diarrhea|constipation"
         "legacy.rosurinary" = "polyuria|polydypsia|dysuria|hematuria|frequency|urgency|incontinence|renal_stones|utis|hesitancy|dribbling|stream|nocturia|erections|ejaculations"
+        "legacy.rosreproductive" = "g|p|ap|lc|mearche|menopause|lmp|f_frequency|f_flow|f_symptoms|abnormal_hair_growth|f_hirsutism"
     }
     $legacyRosProof = @()
     foreach ($legacyRosEntry in $legacyRosCompatibility.GetEnumerator()) {
