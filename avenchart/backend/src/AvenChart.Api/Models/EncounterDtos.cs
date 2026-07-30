@@ -168,6 +168,27 @@ public sealed record EncounterVitals(
     int? OxygenSaturation);
 
 public sealed record EncounterSoapNote(
+    int Id,
+    int Version,
+    string NoteDateTime,
+    string SavedAt,
+    string? SavedBy,
+    string EvidenceSource,
+    bool IsLocked,
+    string? Subjective,
+    string? Objective,
+    string? Assessment,
+    string? Plan,
+    IReadOnlyList<EncounterSoapNoteVersion> Versions);
+
+public sealed record EncounterSoapNoteVersion(
+    int Id,
+    int Version,
+    int? SupersedesNoteId,
+    string NoteDateTime,
+    string SavedAt,
+    string? SavedBy,
+    string EvidenceSource,
     string? Subjective,
     string? Objective,
     string? Assessment,
@@ -229,11 +250,22 @@ public sealed record EncounterSoapNoteCreateRequest(
     string? Subjective,
     string? Objective,
     string? Assessment,
-    string? Plan);
+    string? Plan,
+    int? ExpectedVersion);
 
 public sealed record EncounterFormMutationResponse(
     int Id,
     EncounterDetail Detail);
+
+public sealed class EncounterSoapNoteConflictException(
+    string message,
+    int currentVersion,
+    bool isLocked) : Exception(message)
+{
+    public int CurrentVersion { get; } = currentVersion;
+
+    public bool IsLocked { get; } = isLocked;
+}
 
 public sealed record EncounterLayoutFormOption(string Key, string Title, string Value, bool IsDefault);
 public sealed record EncounterLayoutFormField(string Key, string GroupKey, string Label, string FieldType, bool Required, int MaxLength, string DefaultValue, IReadOnlyList<EncounterLayoutFormOption> Options);

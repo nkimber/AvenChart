@@ -12,7 +12,6 @@ import {
   archiveEncounter,
   archiveEncounterDocument,
   createEncounterDocument,
-  createEncounterSoapNote,
   createEncounterVitals,
   getEncounterSoapNoteTemplates,
   getEncounterAuditHistory,
@@ -43,6 +42,13 @@ import {
   type EncounterClinicalAlert,
   type EncounterClinicalAlertAcknowledgement,
 } from "../../api.ts";
+import {
+  getEncounterSoapNoteConflict,
+  getVersionedEncounterDetail,
+  saveEncounterSoapNote,
+  type EncounterSoapNoteConflict,
+  type VersionedEncounterSoapNote,
+} from "../../api/encounterSoapNotes.ts";
 import { ClinicalAlertSeverityBadge } from "../../components/ClinicalAlertSeverityBadge.tsx";
 import { showToast } from "../../components/Toast.tsx";
 import { getClinicalAlertSeverity } from "../../domain/clinicalAlertSeverity.ts";
@@ -154,6 +160,10 @@ const BLANK_VITALS = {
 };
 const BLANK_SOAP = { subjective: "", objective: "", assessment: "", plan: "" };
 const today = () => new Date().toISOString().slice(0, 10);
+
+type SoapConflictState = EncounterSoapNoteConflict & {
+  latest?: VersionedEncounterSoapNote | null;
+};
 
 type DocumentForm = {
   categoryId: string;
@@ -1550,6 +1560,12 @@ export default function PatientEncounters() {
   const [addSoapOpen, setAddSoapOpen] = useState(false);
   const [vitalsForm, setVitalsForm] = useState(BLANK_VITALS);
   const [soapForm, setSoapForm] = useState(BLANK_SOAP);
+  const [soapDraftVersion, setSoapDraftVersion] = useState(0);
+  const [soapDraftDirty, setSoapDraftDirty] = useState(false);
+  const [soapConflict, setSoapConflict] = useState<SoapConflictState | null>(
+    null,
+  );
+  const [soapSaveError, setSoapSaveError] = useState<string | null>(null);
   const [soapTemplates, setSoapTemplates] = useState<
     EncounterSoapNoteTemplate[]
   >([]);
@@ -1612,6 +1628,15 @@ export default function PatientEncounters() {
       cancelled = true;
     };
   }, [session.sessionId]);
+
+  useEffect(() => {
+    if (!soapDraftDirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [soapDraftDirty]);
 
   async function changeArchiveState(encounter: number, restore = false) {
     if (
@@ -1694,12 +1719,24 @@ export default function PatientEncounters() {
   );
 
   function openEncounter(id: number) {
+    if (
+      addSoapOpen &&
+      soapDraftDirty &&
+      !window.confirm(
+        "Discard the unsaved SOAP draft and open another encounter?",
+      )
+    )
+      return;
     setSelectedId(id);
     setAddVitalsOpen(false);
     setAddSoapOpen(false);
     setEditSummaryOpen(false);
     setVitalsForm(BLANK_VITALS);
     setSoapForm(BLANK_SOAP);
+    setSoapDraftVersion(0);
+    setSoapDraftDirty(false);
+    setSoapConflict(null);
+    setSoapSaveError(null);
     setDetailState({ status: "loading", id });
     getEncounterDetail(session.sessionId, id, undefined, true)
       .then((data) => {
@@ -1752,20 +1789,133 @@ export default function PatientEncounters() {
   async function handleAddSoap(e: React.FormEvent) {
     e.preventDefault();
     if (selectedId == null) return;
+    if (!Object.values(soapForm).some((value) => value.trim())) {
+      setSoapSaveError("Enter content in at least one SOAP section.");
+      return;
+    }
     setSaving(true);
+    setSoapSaveError(null);
     try {
-      await createEncounterSoapNote(session.sessionId, selectedId, {
-        dateTime: new Date().toISOString().replace("T", " ").slice(0, 19),
-        ...soapForm,
-      });
-      showToast("SOAP note saved.", "success");
+      const result = await saveEncounterSoapNote(
+        session.sessionId,
+        selectedId,
+        {
+          dateTime: new Date().toISOString().replace("T", " ").slice(0, 19),
+          expectedVersion: soapDraftVersion,
+          ...soapForm,
+        },
+      );
+      const savedNote = result.detail.soapNote;
+      setDetailState({ status: "ready", data: result.detail });
+      setDetailCache((current) =>
+        new Map(current).set(result.detail.id, result.detail),
+      );
+      showToast(
+        `SOAP note version ${savedNote?.version ?? soapDraftVersion + 1} saved.`,
+        "success",
+      );
       setAddSoapOpen(false);
       setSoapForm(BLANK_SOAP);
-      openEncounter(selectedId);
-    } catch {
-      showToast("Could not save SOAP note.", "error");
+      setSoapDraftVersion(savedNote?.version ?? soapDraftVersion + 1);
+      setSoapDraftDirty(false);
+      setSoapConflict(null);
+    } catch (error) {
+      const conflict = getEncounterSoapNoteConflict(error);
+      if (conflict) {
+        let latest: VersionedEncounterSoapNote | null | undefined;
+        try {
+          const refreshed = getVersionedEncounterDetail(
+            await getEncounterDetail(
+              session.sessionId,
+              selectedId,
+              undefined,
+              true,
+            ),
+          );
+          latest = refreshed.soapNote;
+          setDetailState({ status: "ready", data: refreshed });
+          setDetailCache((current) =>
+            new Map(current).set(refreshed.id, refreshed),
+          );
+        } catch {
+          latest = undefined;
+        }
+        setSoapConflict({ ...conflict, latest });
+        setSoapSaveError(
+          conflict.isLocked
+            ? "The draft was not saved because this encounter is locked."
+            : "The draft was not saved. Review the newer server version before choosing how to continue.",
+        );
+      } else {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not save the SOAP note.";
+        setSoapSaveError(message);
+        showToast("Could not save SOAP note.", "error");
+      }
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openSoapDraft(encounter: EncounterDetail) {
+    const current = getVersionedEncounterDetail(encounter).soapNote;
+    const locked =
+      current?.isLocked ??
+      encounter.signatures.some((signature) => signature.isLock);
+    if (locked) {
+      showToast(
+        "This encounter is locked. Use the governed amendment workflow for clinical changes.",
+        "error",
+      );
+      return;
+    }
+    setSoapForm({
+      subjective: current?.subjective ?? "",
+      objective: current?.objective ?? "",
+      assessment: current?.assessment ?? "",
+      plan: current?.plan ?? "",
+    });
+    setSoapDraftVersion(current?.version ?? 0);
+    setSoapDraftDirty(false);
+    setSoapConflict(null);
+    setSoapSaveError(null);
+    setAddSoapOpen(true);
+    setAddVitalsOpen(false);
+  }
+
+  function cancelSoapDraft() {
+    if (soapDraftDirty && !window.confirm("Discard the unsaved SOAP draft?"))
+      return;
+    setAddSoapOpen(false);
+    setSoapForm(BLANK_SOAP);
+    setSoapDraftVersion(0);
+    setSoapDraftDirty(false);
+    setSoapConflict(null);
+    setSoapSaveError(null);
+  }
+
+  function acceptLatestSoapVersion(keepDraft: boolean) {
+    const latest = soapConflict?.latest;
+    if (!latest) return;
+    if (!keepDraft) {
+      setSoapForm({
+        subjective: latest.subjective ?? "",
+        objective: latest.objective ?? "",
+        assessment: latest.assessment ?? "",
+        plan: latest.plan ?? "",
+      });
+      setSoapDraftDirty(false);
+    }
+    setSoapDraftVersion(latest.version);
+    setSoapConflict(null);
+    setSoapSaveError(null);
+    if (keepDraft) {
+      showToast(
+        `Draft rebased on SOAP version ${latest.version}. Review it before saving.`,
+        "success",
+      );
     }
   }
 
@@ -1786,6 +1936,9 @@ export default function PatientEncounters() {
       assessment: template.assessment,
       plan: template.plan,
     });
+    setSoapDraftDirty(true);
+    setSoapConflict(null);
+    setSoapSaveError(null);
   }
 
   return (
@@ -1908,6 +2061,7 @@ export default function PatientEncounters() {
                 key={enc.encounter}
                 className={`cl-encounter-item${selectedId === enc.encounter ? " cl-encounter-item-active" : ""}`}
                 type="button"
+                data-encounter={enc.encounter}
                 onClick={() => openEncounter(enc.encounter)}
               >
                 <div className="cl-encounter-item-inner">
@@ -1960,6 +2114,11 @@ export default function PatientEncounters() {
           {detailState.status === "ready" &&
             (() => {
               const { data: enc } = detailState;
+              const versionedEncounter = getVersionedEncounterDetail(enc);
+              const soapNote = versionedEncounter.soapNote;
+              const soapLocked =
+                soapNote?.isLocked ??
+                enc.signatures.some((signature) => signature.isLock);
               return (
                 <>
                   <div className="cl-card">
@@ -2311,30 +2470,128 @@ export default function PatientEncounters() {
                     )}
                   </div>
 
-                  <div className="cl-card">
+                  <div
+                    className="cl-card"
+                    aria-labelledby="encounter-soap-note-title"
+                  >
                     <div className="cl-card-header">
-                      <h2 className="cl-card-title">SOAP note</h2>
+                      <h2
+                        className="cl-card-title"
+                        id="encounter-soap-note-title"
+                      >
+                        SOAP note
+                      </h2>
                       <button
                         className="cl-btn-icon"
                         type="button"
-                        aria-label="Add SOAP note"
-                        onClick={() => {
-                          setAddSoapOpen((o) => !o);
-                          setAddVitalsOpen(false);
-                          if (enc.soapNote)
-                            setSoapForm({
-                              subjective: enc.soapNote.subjective ?? "",
-                              objective: enc.soapNote.objective ?? "",
-                              assessment: enc.soapNote.assessment ?? "",
-                              plan: enc.soapNote.plan ?? "",
-                            });
-                        }}
+                        aria-label={
+                          soapLocked
+                            ? "SOAP note locked"
+                            : soapNote
+                              ? "Edit SOAP note draft"
+                              : "Add SOAP note draft"
+                        }
+                        title={
+                          soapLocked
+                            ? "A locking signature prevents direct SOAP edits."
+                            : undefined
+                        }
+                        disabled={soapLocked || saving}
+                        onClick={() =>
+                          addSoapOpen ? cancelSoapDraft() : openSoapDraft(enc)
+                        }
                       >
-                        <Plus size={14} />
+                        {soapNote ? <Pencil size={14} /> : <Plus size={14} />}
                       </button>
                     </div>
+                    {soapLocked && (
+                      <p className="cl-soap-lock-notice" role="status">
+                        This SOAP note is locked by an encounter signature.
+                        Clinical changes must use the governed amendment
+                        workflow.
+                      </p>
+                    )}
                     {addSoapOpen && (
                       <form onSubmit={handleAddSoap}>
+                        <div className="cl-soap-draft-status" role="status">
+                          <strong>Unsaved draft</strong>
+                          <span>
+                            Based on saved SOAP version {soapDraftVersion}.
+                            Nothing changes in the chart until you save a new
+                            version.
+                          </span>
+                        </div>
+                        {soapSaveError && (
+                          <p className="cl-soap-save-error" role="alert">
+                            {soapSaveError}
+                          </p>
+                        )}
+                        {soapConflict && (
+                          <div className="cl-soap-conflict" role="alert">
+                            <strong>
+                              {soapConflict.isLocked
+                                ? "Encounter locked"
+                                : "A newer SOAP version was saved"}
+                            </strong>
+                            <p>{soapConflict.message}</p>
+                            {soapConflict.latest && !soapConflict.isLocked && (
+                              <>
+                                <div className="cl-soap-conflict-latest">
+                                  <span>
+                                    Server version {soapConflict.latest.version}
+                                  </span>
+                                  <span>
+                                    Saved {soapConflict.latest.savedAt}
+                                    {soapConflict.latest.savedBy
+                                      ? ` by ${soapConflict.latest.savedBy}`
+                                      : ""}
+                                  </span>
+                                  {(
+                                    [
+                                      "subjective",
+                                      "objective",
+                                      "assessment",
+                                      "plan",
+                                    ] as const
+                                  ).map((field) =>
+                                    soapConflict.latest?.[field] ? (
+                                      <p key={field}>
+                                        <strong
+                                          style={{
+                                            textTransform: "capitalize",
+                                          }}
+                                        >
+                                          {field}:
+                                        </strong>{" "}
+                                        {soapConflict.latest[field]}
+                                      </p>
+                                    ) : null,
+                                  )}
+                                </div>
+                                <div className="cl-inline-form-actions">
+                                  <button
+                                    className="cl-btn-secondary"
+                                    type="button"
+                                    onClick={() =>
+                                      acceptLatestSoapVersion(false)
+                                    }
+                                  >
+                                    Use latest saved note
+                                  </button>
+                                  <button
+                                    className="cl-btn-secondary"
+                                    type="button"
+                                    onClick={() =>
+                                      acceptLatestSoapVersion(true)
+                                    }
+                                  >
+                                    Keep draft after review
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
                         <div
                           className="form-row"
                           style={{ alignItems: "end", marginBottom: 12 }}
@@ -2414,12 +2671,15 @@ export default function PatientEncounters() {
                               className="textarea"
                               rows={3}
                               value={soapForm[field]}
-                              onChange={(e) =>
+                              onChange={(e) => {
                                 setSoapForm((f) => ({
                                   ...f,
                                   [field]: e.target.value,
-                                }))
-                              }
+                                }));
+                                setSoapDraftDirty(true);
+                                setSoapConflict(null);
+                                setSoapSaveError(null);
+                              }}
                             />
                           </div>
                         ))}
@@ -2429,34 +2689,52 @@ export default function PatientEncounters() {
                             type="submit"
                             disabled={saving}
                           >
-                            {saving ? "Saving…" : "Save SOAP note"}
+                            {saving ? "Saving…" : "Save new version"}
                           </button>
                           <button
                             className="cl-btn-secondary"
                             type="button"
-                            onClick={() => setAddSoapOpen(false)}
+                            onClick={cancelSoapDraft}
+                            disabled={saving}
                           >
-                            Cancel
+                            Discard draft
                           </button>
                         </div>
                       </form>
                     )}
-                    {enc.soapNote &&
-                    (enc.soapNote.subjective ??
-                      enc.soapNote.objective ??
-                      enc.soapNote.assessment ??
-                      enc.soapNote.plan)
+                    {soapNote && (
+                      <div className="cl-soap-version-summary">
+                        <span className="cl-badge cl-badge-muted">
+                          Saved version {soapNote.version}
+                        </span>
+                        <span>
+                          Saved {soapNote.savedAt}
+                          {soapNote.savedBy ? ` by ${soapNote.savedBy}` : ""}
+                        </span>
+                        {soapNote.evidenceSource === "migration-backfill" && (
+                          <span>
+                            Existing note discovered during migration; no author
+                            identity was invented.
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {soapNote &&
+                    (soapNote.subjective ??
+                      soapNote.objective ??
+                      soapNote.assessment ??
+                      soapNote.plan)
                       ? [
                           {
                             label: "Subjective",
-                            text: enc.soapNote.subjective,
+                            text: soapNote.subjective,
                           },
-                          { label: "Objective", text: enc.soapNote.objective },
+                          { label: "Objective", text: soapNote.objective },
                           {
                             label: "Assessment",
-                            text: enc.soapNote.assessment,
+                            text: soapNote.assessment,
                           },
-                          { label: "Plan", text: enc.soapNote.plan },
+                          { label: "Plan", text: soapNote.plan },
                         ]
                           .filter((s) => s.text)
                           .map((s) => (
@@ -2471,12 +2749,63 @@ export default function PatientEncounters() {
                             <button
                               className="cl-link"
                               type="button"
-                              onClick={() => setAddSoapOpen(true)}
+                              onClick={() => openSoapDraft(enc)}
+                              disabled={soapLocked}
                             >
-                              Add note
+                              {soapLocked ? "Note locked" : "Add note"}
                             </button>
                           </p>
                         )}
+                    {soapNote && soapNote.versions.length > 0 && (
+                      <details className="cl-soap-history">
+                        <summary>
+                          SOAP version history ({soapNote.versions.length})
+                        </summary>
+                        <div className="cl-soap-history-list">
+                          {soapNote.versions.map((version) => (
+                            <article
+                              className="cl-soap-history-item"
+                              key={version.id}
+                            >
+                              <div className="cl-card-header">
+                                <strong>Version {version.version}</strong>
+                                <span>
+                                  {version.savedAt}
+                                  {version.savedBy
+                                    ? ` · ${version.savedBy}`
+                                    : " · author unavailable"}
+                                </span>
+                              </div>
+                              {version.evidenceSource ===
+                                "migration-backfill" && (
+                                <p className="cl-empty-text">
+                                  Migration-discovered evidence
+                                </p>
+                              )}
+                              {(
+                                [
+                                  "subjective",
+                                  "objective",
+                                  "assessment",
+                                  "plan",
+                                ] as const
+                              ).map((field) =>
+                                version[field] ? (
+                                  <p key={field}>
+                                    <strong
+                                      style={{ textTransform: "capitalize" }}
+                                    >
+                                      {field}:
+                                    </strong>{" "}
+                                    {version[field]}
+                                  </p>
+                                ) : null,
+                              )}
+                            </article>
+                          ))}
+                        </div>
+                      </details>
+                    )}
                   </div>
 
                   <EncounterClinicalAlerts

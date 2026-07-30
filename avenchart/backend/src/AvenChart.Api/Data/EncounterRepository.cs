@@ -124,6 +124,12 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 v.respiration,
                 v.bmi,
                 v.oxygen_saturation,
+                cn.id as soap_note_id,
+                cn.version as soap_note_version,
+                cn.note_datetime as soap_note_datetime,
+                cn.saved_at as soap_note_saved_at,
+                cn.saved_by as soap_note_saved_by,
+                cn.evidence_source as soap_note_evidence_source,
                 cn.subjective,
                 cn.objective,
                 cn.assessment,
@@ -144,7 +150,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 select *
                 from clinical_notes
                 where pid = e.pid and encounter = e.encounter
-                order by note_datetime desc, id desc
+                order by version desc, id desc
                 limit 1
             ) cn on true
             where e.encounter = @encounter;
@@ -198,6 +204,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         var claims = await GetClaimsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var procedureOrders = await GetProcedureOrdersForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var signatures = await GetSignaturesForEncounterAsync(connection, detail.Encounter, cancellationToken);
+        var soapNoteVersions = await GetSoapNoteVersionsAsync(connection, detail.Encounter, cancellationToken);
         var diagnosisCodes = BuildDiagnosisCodes(detail, billingLines, procedureOrders);
         var documents = await GetDocumentsForEncounterAsync(
             connection,
@@ -214,6 +221,13 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             ProcedureOrders = procedureOrders,
             Signatures = signatures,
             AmendmentHistory = BuildAmendmentHistory(signatures),
+            SoapNote = detail.SoapNote is null
+                ? null
+                : detail.SoapNote with
+                {
+                    IsLocked = signatures.Any(signature => signature.IsLock),
+                    Versions = soapNoteVersions
+                },
             Documents = documents
         };
     }
@@ -531,64 +545,180 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
     public async Task<EncounterFormMutationResponse?> CreateSoapNoteAsync(
         int encounter,
         EncounterSoapNoteCreateRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         if (!TryParseDateTime(request.DateTime, out var noteDateTime))
         {
-            return null;
+            throw new ArgumentException("SOAP note date/time must be a valid ISO-style timestamp.");
+        }
+        noteDateTime = DateTime.SpecifyKind(noteDateTime, DateTimeKind.Unspecified);
+
+        var savedBy = NormalizeText(actor)
+            ?? throw new ArgumentException("An authenticated staff identity is required.");
+        var subjective = NormalizeSoapField(request.Subjective, "Subjective");
+        var objective = NormalizeSoapField(request.Objective, "Objective");
+        var assessment = NormalizeSoapField(request.Assessment, "Assessment");
+        var plan = NormalizeSoapField(request.Plan, "Plan");
+        if (subjective is null && objective is null && assessment is null && plan is null)
+        {
+            throw new ArgumentException("At least one SOAP section is required.");
+        }
+
+        if (request.ExpectedVersion is < 0)
+        {
+            throw new ArgumentException("Expected version cannot be negative.");
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            with selected_encounter as (
-                select patient_id, pid, encounter
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        string patientId;
+        int pid;
+        bool isLocked;
+        await using (var encounterCommand = connection.CreateCommand())
+        {
+            encounterCommand.Transaction = transaction;
+            encounterCommand.CommandText = """
+                select
+                    patient_id,
+                    pid,
+                    exists (
+                        select 1
+                        from encounter_signatures signature
+                        where signature.encounter = encounters.encounter
+                          and signature.is_lock
+                    ) as is_locked
                 from encounters
                 where encounter = @encounter
-                limit 1
-            ),
-            next_id as (
-                select coalesce(max(id), 0) + 1 as id
+                for update;
+                """;
+            encounterCommand.Parameters.AddWithValue("encounter", encounter);
+            await using var encounterReader = await encounterCommand.ExecuteReaderAsync(cancellationToken);
+            if (!await encounterReader.ReadAsync(cancellationToken))
+            {
+                throw new ArgumentException("The encounter was not found.");
+            }
+
+            patientId = encounterReader.GetString(encounterReader.GetOrdinal("patient_id"));
+            pid = encounterReader.GetInt32(encounterReader.GetOrdinal("pid"));
+            isLocked = encounterReader.GetBoolean(encounterReader.GetOrdinal("is_locked"));
+        }
+
+        var currentVersion = 0;
+        int? currentNoteId = null;
+        string? currentSubjective = null;
+        string? currentObjective = null;
+        string? currentAssessment = null;
+        string? currentPlan = null;
+        await using (var currentCommand = connection.CreateCommand())
+        {
+            currentCommand.Transaction = transaction;
+            currentCommand.CommandText = """
+                select id, version, subjective, objective, assessment, plan
                 from clinical_notes
-            )
+                where encounter = @encounter
+                order by version desc, id desc
+                limit 1
+                for update;
+                """;
+            currentCommand.Parameters.AddWithValue("encounter", encounter);
+            await using var currentReader = await currentCommand.ExecuteReaderAsync(cancellationToken);
+            if (await currentReader.ReadAsync(cancellationToken))
+            {
+                currentNoteId = currentReader.GetInt32(currentReader.GetOrdinal("id"));
+                currentVersion = currentReader.GetInt32(currentReader.GetOrdinal("version"));
+                currentSubjective = ReadNullableString(currentReader, "subjective");
+                currentObjective = ReadNullableString(currentReader, "objective");
+                currentAssessment = ReadNullableString(currentReader, "assessment");
+                currentPlan = ReadNullableString(currentReader, "plan");
+            }
+        }
+
+        if (isLocked)
+        {
+            throw new EncounterSoapNoteConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.",
+                currentVersion,
+                true);
+        }
+
+        if (request.ExpectedVersion is { } expectedVersion && expectedVersion != currentVersion)
+        {
+            throw new EncounterSoapNoteConflictException(
+                $"SOAP note version {currentVersion} is current; the submitted draft was based on version {expectedVersion}.",
+                currentVersion,
+                false);
+        }
+
+        if (currentNoteId is not null
+            && string.Equals(currentSubjective, subjective, StringComparison.Ordinal)
+            && string.Equals(currentObjective, objective, StringComparison.Ordinal)
+            && string.Equals(currentAssessment, assessment, StringComparison.Ordinal)
+            && string.Equals(currentPlan, plan, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The SOAP draft does not change the current saved version.");
+        }
+
+        var savedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
             insert into clinical_notes (
                 id,
                 patient_id,
                 pid,
                 encounter,
                 note_datetime,
+                version,
+                supersedes_note_id,
+                saved_at,
+                saved_by,
+                evidence_source,
                 subjective,
                 objective,
                 assessment,
                 plan
             )
-            select
-                next_id.id,
-                selected_encounter.patient_id,
-                selected_encounter.pid,
-                selected_encounter.encounter,
+            values (
+                nextval('clinical_note_id_seq'),
+                @patientId,
+                @pid,
+                @encounter,
                 @noteDateTime,
+                @version,
+                @supersedesNoteId,
+                @savedAt,
+                @savedBy,
+                'runtime',
                 @subjective,
                 @objective,
                 @assessment,
                 @plan
-            from selected_encounter
-            cross join next_id
+            )
             returning id;
             """;
+        command.Parameters.Add("patientId", NpgsqlDbType.Text).Value = patientId;
+        command.Parameters.AddWithValue("pid", pid);
         command.Parameters.AddWithValue("encounter", encounter);
         command.Parameters.Add("noteDateTime", NpgsqlDbType.Timestamp).Value = noteDateTime;
-        AddNullableText(command, "subjective", NormalizeText(request.Subjective));
-        AddNullableText(command, "objective", NormalizeText(request.Objective));
-        AddNullableText(command, "assessment", NormalizeText(request.Assessment));
-        AddNullableText(command, "plan", NormalizeText(request.Plan));
+        command.Parameters.AddWithValue("version", currentVersion + 1);
+        command.Parameters.Add("supersedesNoteId", NpgsqlDbType.Integer).Value =
+            currentNoteId is null ? DBNull.Value : currentNoteId.Value;
+        command.Parameters.Add("savedAt", NpgsqlDbType.Timestamp).Value = savedAt;
+        command.Parameters.Add("savedBy", NpgsqlDbType.Text).Value = savedBy;
+        AddNullableText(command, "subjective", subjective);
+        AddNullableText(command, "objective", objective);
+        AddNullableText(command, "assessment", assessment);
+        AddNullableText(command, "plan", plan);
 
         var id = await command.ExecuteScalarAsync(cancellationToken);
         if (id is null || id is DBNull)
         {
-            return null;
+            throw new InvalidOperationException("SOAP note persistence did not return an identifier.");
         }
 
+        await transaction.CommitAsync(cancellationToken);
         var detail = await GetByEncounterAsync(encounter, cancellationToken);
         return detail is null ? null : new EncounterFormMutationResponse(Convert.ToInt32(id), detail);
     }
@@ -895,17 +1025,76 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
 
     private static EncounterSoapNote? ReadSoapNote(DbDataReader reader)
     {
+        var noteIdOrdinal = reader.GetOrdinal("soap_note_id");
+        if (reader.IsDBNull(noteIdOrdinal))
+        {
+            return null;
+        }
+
         var subjective = ReadNullableString(reader, "subjective");
         var objective = ReadNullableString(reader, "objective");
         var assessment = ReadNullableString(reader, "assessment");
         var plan = ReadNullableString(reader, "plan");
 
-        if (subjective is null && objective is null && assessment is null && plan is null)
+        return new EncounterSoapNote(
+            Id: reader.GetInt32(noteIdOrdinal),
+            Version: reader.GetInt32(reader.GetOrdinal("soap_note_version")),
+            NoteDateTime: ReadDateTime(reader, "soap_note_datetime"),
+            SavedAt: ReadDateTime(reader, "soap_note_saved_at"),
+            SavedBy: ReadNullableString(reader, "soap_note_saved_by"),
+            EvidenceSource: reader.GetString(reader.GetOrdinal("soap_note_evidence_source")),
+            IsLocked: false,
+            Subjective: subjective,
+            Objective: objective,
+            Assessment: assessment,
+            Plan: plan,
+            Versions: Array.Empty<EncounterSoapNoteVersion>());
+    }
+
+    private static async Task<IReadOnlyList<EncounterSoapNoteVersion>> GetSoapNoteVersionsAsync(
+        NpgsqlConnection connection,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                id,
+                version,
+                supersedes_note_id,
+                note_datetime,
+                saved_at,
+                saved_by,
+                evidence_source,
+                subjective,
+                objective,
+                assessment,
+                plan
+            from clinical_notes
+            where encounter = @encounter
+            order by version desc, id desc;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+
+        var versions = new List<EncounterSoapNoteVersion>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
-            return null;
+            versions.Add(new EncounterSoapNoteVersion(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                Version: reader.GetInt32(reader.GetOrdinal("version")),
+                SupersedesNoteId: ReadNullableInt(reader, "supersedes_note_id"),
+                NoteDateTime: ReadDateTime(reader, "note_datetime"),
+                SavedAt: ReadDateTime(reader, "saved_at"),
+                SavedBy: ReadNullableString(reader, "saved_by"),
+                EvidenceSource: reader.GetString(reader.GetOrdinal("evidence_source")),
+                Subjective: ReadNullableString(reader, "subjective"),
+                Objective: ReadNullableString(reader, "objective"),
+                Assessment: ReadNullableString(reader, "assessment"),
+                Plan: ReadNullableString(reader, "plan")));
         }
 
-        return new EncounterSoapNote(subjective, objective, assessment, plan);
+        return versions;
     }
 
     private static readonly IReadOnlyList<EncounterSoapNoteTemplateOption> SoapNoteTemplateOptions =

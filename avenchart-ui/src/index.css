@@ -4212,6 +4212,85 @@ a {
   line-height: 1.6;
   white-space: pre-wrap;
 }
+.cl-soap-draft-status,
+.cl-soap-lock-notice,
+.cl-soap-version-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.cl-soap-draft-status {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
+  background: var(--warning-surface);
+}
+.cl-soap-draft-status strong,
+.cl-soap-lock-notice {
+  color: var(--text);
+}
+.cl-soap-save-error,
+.cl-soap-conflict {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--danger-surface);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cl-soap-conflict > p {
+  margin: 6px 0 0;
+}
+.cl-soap-conflict-latest {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.cl-soap-conflict-latest p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.cl-soap-history {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.cl-soap-history > summary {
+  cursor: pointer;
+  color: var(--teal);
+  font-size: 13px;
+  font-weight: 700;
+}
+.cl-soap-history-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+.cl-soap-history-item {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cl-soap-history-item p {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
 
 /* Diagnosis code chip */
 .cl-dx-code {

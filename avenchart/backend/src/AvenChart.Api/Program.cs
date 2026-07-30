@@ -2239,14 +2239,41 @@ encounters.MapPost("/{encounter:int}/vitals", async (
 
 encounters.MapPost("/{encounter:int}/soap-notes", async (
         EncounterRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int encounter,
         EncounterSoapNoteCreateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var response = await repository.CreateSoapNoteAsync(encounter, request, cancellationToken);
-        return response is null
-            ? Results.BadRequest("SOAP note could not be recorded for the supplied encounter.")
-            : Results.Created($"/api/encounters/{encounter}/soap-notes/{response.Id}", response);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var response = await repository.CreateSoapNoteAsync(
+                encounter,
+                request,
+                session.Username,
+                cancellationToken);
+            return response is null
+                ? Results.BadRequest("SOAP note could not be recorded for the supplied encounter.")
+                : Results.Created($"/api/encounters/{encounter}/soap-notes/{response.Id}", response);
+        }
+        catch (EncounterSoapNoteConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                code = exception.IsLocked ? "encounter_locked" : "soap_note_version_conflict",
+                currentVersion = exception.CurrentVersion,
+                isLocked = exception.IsLocked
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["soapNote"] = [exception.Message]
+            });
+        }
     })
     .WithName("CreateEncounterSoapNote")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
