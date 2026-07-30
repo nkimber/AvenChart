@@ -16,6 +16,7 @@ public sealed class IntegrationRepository(
     };
 
     private const int MaximumAutomaticAttempts = 3;
+    private static readonly TimeSpan DispatchLease = TimeSpan.FromMinutes(5);
 
     public async Task<IntegrationOutboxMessage> QueueAsync(
         IntegrationOutboxQueueRequest request,
@@ -224,6 +225,7 @@ public sealed class IntegrationRepository(
         var now = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await RecoverExpiredDispatchLeaseAsync(connection, transaction, eventId, now, cancellationToken);
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -251,6 +253,41 @@ public sealed class IntegrationRepository(
         await reader.DisposeAsync();
         await transaction.CommitAsync(cancellationToken);
         return await GetOutboxMessageAsync(connection, eventId, cancellationToken);
+    }
+
+    private static async Task RecoverExpiredDispatchLeaseAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid eventId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            update integration_outbox
+            set status = 'retry-scheduled', available_at = @now, locked_at = null,
+              last_error = 'The prior local dispatch claim exceeded its five-minute lease.', updated_at = @now
+            where event_id = @event_id and status = 'dispatching' and locked_at <= @lease_expired_at
+            returning attempt_count;
+            """;
+        command.Parameters.AddWithValue("event_id", eventId);
+        command.Parameters.AddWithValue("now", now);
+        command.Parameters.AddWithValue("lease_expired_at", now.Subtract(DispatchLease));
+        var attemptCount = await command.ExecuteScalarAsync(cancellationToken);
+        if (attemptCount is int recoveredAttemptCount)
+        {
+            await WriteOutboxEventAsync(
+                connection,
+                transaction,
+                eventId,
+                "lease-recovered",
+                "The prior local dispatch claim exceeded its five-minute lease.",
+                "local-dispatch-lease-recovery",
+                recoveredAttemptCount,
+                now,
+                cancellationToken);
+        }
     }
 
     private async Task<IntegrationOutboxMessage> CompleteDispatchAsync(
