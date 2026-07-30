@@ -271,6 +271,8 @@ public sealed class EncounterSoapNoteConflictException(
     public bool IsLocked { get; } = isLocked;
 }
 
+public sealed class EncounterLockConflictException(string message) : Exception(message);
+
 public sealed record EncounterLayoutFormOption(string Key, string Title, string Value, bool IsDefault);
 public sealed record EncounterLayoutFormField(string Key, string GroupKey, string Label, string FieldType, bool Required, int MaxLength, string DefaultValue, IReadOnlyList<EncounterLayoutFormOption> Options);
 public sealed record EncounterLayoutFormGroup(string Key, string Title, IReadOnlyList<EncounterLayoutFormField> Fields);

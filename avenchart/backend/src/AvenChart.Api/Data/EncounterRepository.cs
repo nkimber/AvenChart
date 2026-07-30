@@ -387,6 +387,11 @@ public sealed class EncounterRepository(
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (await IsEncounterLockedAsync(connection, encounter, cancellationToken))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+        }
         var prior = await ReadSummaryAuditValuesAsync(connection, encounter, cancellationToken);
         if (prior is null)
         {
@@ -480,6 +485,11 @@ public sealed class EncounterRepository(
         var bmi = ComputeBmi(request.Weight, request.Height);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (await IsEncounterLockedAsync(connection, encounter, cancellationToken))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+        }
         await using var command = connection.CreateCommand();
         command.CommandText = """
             with selected_encounter as (
@@ -2001,6 +2011,17 @@ public sealed class EncounterRepository(
             ReadNullableString(reader, "reason"), ReadNullableString(reader, "sensitivity"),
             ReadNullableString(reader, "referral_source"), ReadNullableString(reader, "external_id"),
             ReadNullableInt(reader, "pos_code"), ReadNullableString(reader, "billing_note"));
+    }
+
+    private static async Task<bool> IsEncounterLockedAsync(
+        NpgsqlConnection connection,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select exists(select 1 from encounter_signatures where encounter = @encounter and is_lock);";
+        command.Parameters.AddWithValue("encounter", encounter);
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
     }
 
     private static async Task RecordSummaryAuditAsync(NpgsqlConnection connection, int encounter, string username, IReadOnlyList<string> changedFields, CancellationToken cancellationToken)

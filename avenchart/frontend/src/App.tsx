@@ -13649,6 +13649,7 @@ function EncounterWorkspace({
   const archivedAttachedDocuments = attachedDocuments.filter((document) => document.deleted !== 0)
   const activeAttachedDocumentCount = attachedDocuments.length - archivedAttachedDocuments.length
   const encounterSignatures = encounterDetail?.signatures ?? []
+  const encounterLockedBySignature = encounterSignatures.some((signature) => signature.isLock)
   const encounterAmendmentHistory = encounterDetail?.amendmentHistory ?? []
   const encounterBillingLines = encounterDetail?.billingLines ?? []
   const encounterBillingTotal = encounterBillingLines.reduce((sum, line) => sum + (line.fee ?? 0), 0)
@@ -13921,6 +13922,12 @@ function EncounterWorkspace({
                 <Field label="BMI" value={encounterDetail.vitals?.bmi} />
               </InfoPanel>
             </div>
+
+            {encounterLockedBySignature && (
+              <div className="status-banner" role="status">
+                A locking signature prevents summary, vital-sign, and SOAP-note changes. Use the governed amendment workflow for corrections.
+              </div>
+            )}
 
             <section className="info-panel encounter-signature-panel" aria-label="Encounter sign-off">
               <div className="panel-heading">
@@ -14592,7 +14599,7 @@ function EncounterWorkspace({
                 </div>
               </div>
               <div className="detail-actions">
-                <button className="icon-text-button primary" type="submit" disabled={summaryStatus === 'saving'}>
+                <button className="icon-text-button primary" type="submit" disabled={summaryStatus === 'saving' || encounterLockedBySignature}>
                   <Check size={16} />
                   <span>{summaryStatus === 'saving' ? 'Saving' : 'Update'}</span>
                 </button>
@@ -14727,7 +14734,7 @@ function EncounterWorkspace({
                 </label>
               </div>
               <div className="detail-actions">
-                <button className="icon-text-button primary" type="submit" disabled={vitalsStatus === 'saving'}>
+                <button className="icon-text-button primary" type="submit" disabled={vitalsStatus === 'saving' || encounterLockedBySignature}>
                   <HeartPulse size={16} />
                   <span>{vitalsStatus === 'saving' ? 'Saving' : 'Record'}</span>
                 </button>

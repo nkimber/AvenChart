@@ -2218,9 +2218,16 @@ encounters.MapPut("/{encounter:int}", async (
         EncounterUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var encounterDetail = await repository.UpdateSummaryAsync(encounter, request, session.Username, cancellationToken);
-        return encounterDetail is null ? Results.NotFound() : Results.Ok(encounterDetail);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var encounterDetail = await repository.UpdateSummaryAsync(encounter, request, session.Username, cancellationToken);
+            return encounterDetail is null ? Results.NotFound() : Results.Ok(encounterDetail);
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
     })
     .WithName("UpdateEncounter")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
@@ -2235,10 +2242,17 @@ encounters.MapPost("/{encounter:int}/vitals", async (
         EncounterVitalsCreateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var response = await repository.CreateVitalsAsync(encounter, request, cancellationToken);
-        return response is null
-            ? Results.BadRequest("Vitals could not be recorded for the supplied encounter.")
-            : Results.Created($"/api/encounters/{encounter}/vitals/{response.Id}", response);
+        try
+        {
+            var response = await repository.CreateVitalsAsync(encounter, request, cancellationToken);
+            return response is null
+                ? Results.BadRequest("Vitals could not be recorded for the supplied encounter.")
+                : Results.Created($"/api/encounters/{encounter}/vitals/{response.Id}", response);
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
     })
     .WithName("CreateEncounterVitals")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
