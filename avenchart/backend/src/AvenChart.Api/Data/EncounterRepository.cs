@@ -472,6 +472,12 @@ public sealed class EncounterRepository(
         return new EncounterAuditHistoryResponse(encounter, events.Count, events);
     }
 
+    public async Task<bool> HasLockingSignatureAsync(int encounter, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        return await IsEncounterLockedAsync(connection, encounter, cancellationToken);
+    }
+
     public async Task<EncounterFormMutationResponse?> CreateVitalsAsync(
         int encounter,
         EncounterVitalsCreateRequest request,

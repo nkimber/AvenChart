@@ -2329,6 +2329,11 @@ encounters.MapPost("/{encounter:int}/documents", async (
             return Results.NotFound();
         }
 
+        if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken))
+        {
+            return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" });
+        }
+
         var mutation = await documentRepository.CreateAsync(
             new PatientDocumentCreateRequest(
                 PatientId: encounterDetail.PatientId,
@@ -2363,6 +2368,11 @@ encounters.MapPost("/{encounter:int}/documents/binary", async (
         if (encounterDetail is null)
         {
             return Results.NotFound();
+        }
+
+        if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken))
+        {
+            return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" });
         }
 
         var mutation = await documentRepository.CreateBinaryAsync(
@@ -2401,6 +2411,11 @@ encounters.MapPost("/{encounter:int}/documents/external-link", async (
         if (encounterDetail is null)
         {
             return Results.NotFound();
+        }
+
+        if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken))
+        {
+            return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" });
         }
 
         var mutation = await documentRepository.CreateExternalLinkAsync(
