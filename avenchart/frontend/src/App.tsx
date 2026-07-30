@@ -55,6 +55,7 @@ import {
   getClinicalPrescriptionAuditHistory,
   searchClinicalMedicationVocabulary,
   getEncounterDetail,
+  getEncounterAuditHistory,
   getEncounterSoapNoteTemplates,
   getPatientChart,
   getPatientCareTeamOptions,
@@ -337,6 +338,7 @@ import {
   type EncounterBinaryDocumentCreateInput,
   type EncounterDiagnosisCode,
   type EncounterDetail,
+  type EncounterAuditHistoryResponse,
   type EncounterDocumentCreateInput,
   type EncounterDocumentAttachment,
   type EncounterExternalLinkDocumentCreateInput,
@@ -12960,6 +12962,9 @@ function EncounterWorkspace({
   const [summaryPosCode, setSummaryPosCode] = useState('')
   const [summaryBillingNote, setSummaryBillingNote] = useState('')
   const [summaryStatus, setSummaryStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [encounterAuditHistory, setEncounterAuditHistory] = useState<EncounterAuditHistoryResponse | null>(null)
+  const [encounterAuditStatus, setEncounterAuditStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [encounterAuditError, setEncounterAuditError] = useState<string | null>(null)
 
   const [vitalsDateTime, setVitalsDateTime] = useState('2026-06-18T10:05')
   const [vitalsSystolic, setVitalsSystolic] = useState('128')
@@ -13212,6 +13217,19 @@ function EncounterWorkspace({
       setSummaryStatus('saved')
     } catch {
       setSummaryStatus('error')
+    }
+  }
+
+  async function handleAuditHistory() {
+    if (!encounterDetail || !sessionId) return
+    setEncounterAuditStatus('loading')
+    setEncounterAuditError(null)
+    try {
+      setEncounterAuditHistory(await getEncounterAuditHistory(encounterDetail.encounter, sessionId))
+      setEncounterAuditStatus('ready')
+    } catch (error) {
+      setEncounterAuditStatus('error')
+      setEncounterAuditError(error instanceof Error ? error.message : 'Encounter audit history load failed')
     }
   }
 
@@ -14542,10 +14560,30 @@ function EncounterWorkspace({
                   <Archive size={16} />
                   <span>Archive</span>
                 </button>
+                <button className="icon-text-button" type="button" onClick={() => void handleAuditHistory()} disabled={summaryStatus === 'saving'}>
+                  <ClipboardList size={16} />
+                  <span>History</span>
+                </button>
                 {summaryStatus === 'saved' && <span className="save-note">Saved</span>}
                 {summaryStatus === 'error' && <span className="save-note error">Action failed</span>}
               </div>
             </form>
+            {encounterAuditStatus === 'loading' && <div className="timeline-placeholder">Loading encounter history</div>}
+            {encounterAuditError && <div className="status-banner error">{encounterAuditError}</div>}
+            {encounterAuditHistory && (
+              <section className="statement-batch-summary" aria-label="Encounter history">
+                <Field label="History events" value={encounterAuditHistory.eventCount} />
+                <div className="statement-batch-list">
+                  {encounterAuditHistory.events.map((event) => (
+                    <article className="statement-batch-row" key={event.eventId}>
+                      <strong>{event.action}</strong>
+                      <span>{event.username} · {event.occurredAt.slice(0, 16).replace('T', ' ')}</span>
+                      <span>{event.changedFields.join(', ') || 'No changed fields'}</span>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <form className="appointment-mutation-panel" onSubmit={handleVitalsSubmit} aria-label="Record vitals">
               <div className="panel-heading compact-heading">

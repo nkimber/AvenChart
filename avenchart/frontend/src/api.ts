@@ -897,6 +897,20 @@ export type EncounterDetail = EncounterListItem & {
   documents: EncounterDocumentAttachment[]
 }
 
+export type EncounterAuditEventItem = {
+  eventId: string
+  occurredAt: string
+  username: string
+  action: string
+  changedFields: string[]
+}
+
+export type EncounterAuditHistoryResponse = {
+  encounter: number
+  eventCount: number
+  events: EncounterAuditEventItem[]
+}
+
 export type EncounterCreateInput = {
   patientId: string
   providerId?: number | null
@@ -5772,6 +5786,21 @@ export async function getEncounterDetail(
   return response.json()
 }
 
+export async function getEncounterAuditHistory(
+  encounter: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<EncounterAuditHistoryResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/audit`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(encounterApiError('Encounter audit history', response.status))
+  }
+  return response.json()
+}
+
 export async function getEncounterSoapNoteTemplates(
   sessionId?: string | null,
   signal?: AbortSignal,
@@ -5843,12 +5872,14 @@ export async function archiveEncounter(
 
 export async function restoreEncounter(
   encounter: number,
+  reason: string,
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/restore`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify({ reason }),
     signal,
   })
   if (!response.ok) {
