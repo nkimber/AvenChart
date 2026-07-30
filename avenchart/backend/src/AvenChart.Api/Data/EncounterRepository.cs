@@ -90,6 +90,7 @@ public sealed class EncounterRepository(
         bool includeArchivedDocuments = false)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureEncounterArchiveColumnAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select
@@ -115,6 +116,7 @@ public sealed class EncounterRepository(
                 e.pos_code,
                 e.billing_note,
                 e.source_appointment_id,
+                e.archive_version,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 f.name as facility_name,
                 v.bps,
@@ -190,6 +192,7 @@ public sealed class EncounterRepository(
             PosCode: ReadNullableInt(reader, "pos_code"),
             BillingNote: ReadNullableString(reader, "billing_note"),
             SourceAppointmentId: ReadNullableString(reader, "source_appointment_id"),
+            ArchiveVersion: reader.GetInt32(reader.GetOrdinal("archive_version")),
             Vitals: ReadVitals(reader),
             SoapNote: ReadSoapNote(reader),
             BillingLineCount: reader.GetInt32(reader.GetOrdinal("billing_line_count")),
@@ -823,11 +826,12 @@ public sealed class EncounterRepository(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             update encounters
-            set archived_at = now()
+            set archived_at = now(), archive_version = archive_version + 1
             where encounter = @encounter
-              and archived_at is null;
+              and archived_at is null and archive_version = @expectedArchiveVersion;
             """;
         command.Parameters.AddWithValue("encounter", encounter);
+        command.Parameters.AddWithValue("expectedArchiveVersion", request.ExpectedArchiveVersion);
         var archived = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
         if (archived) await RecordAuditAsync(connection, encounter, username, "archived", [$"reason:{reason}"], cancellationToken);
         return archived;
@@ -841,11 +845,12 @@ public sealed class EncounterRepository(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             update encounters
-            set archived_at = null
+            set archived_at = null, archive_version = archive_version + 1
             where encounter = @encounter
-              and archived_at is not null;
+              and archived_at is not null and archive_version = @expectedArchiveVersion;
             """;
         command.Parameters.AddWithValue("encounter", encounter);
+        command.Parameters.AddWithValue("expectedArchiveVersion", request.ExpectedArchiveVersion);
         var restored = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
         if (restored) await RecordAuditAsync(connection, encounter, username, "restored", [$"reason:{reason}"], cancellationToken);
         return restored;
@@ -913,7 +918,7 @@ public sealed class EncounterRepository(
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = "alter table encounters add column if not exists archived_at timestamp null;";
+        command.CommandText = "alter table encounters add column if not exists archived_at timestamp null; alter table encounters add column if not exists archive_version integer not null default 1;";
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

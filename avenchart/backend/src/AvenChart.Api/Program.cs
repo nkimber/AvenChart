@@ -2086,7 +2086,7 @@ encounters.MapGet("/", async (
 
 encounters.MapPut("/{encounter:int}/archive", async (EncounterRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, EncounterArchiveRequest request, CancellationToken cancellationToken) =>
 {
-    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return await repository.ArchiveAsync(encounter, request, session.Username, cancellationToken) ? Results.NoContent() : Results.NotFound(); }
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return await repository.ArchiveAsync(encounter, request, session.Username, cancellationToken) ? Results.NoContent() : Results.Conflict(new { error = "The encounter is missing, already archived, or has changed. Reload and try again." }); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 })
     .WithName("ArchiveEncounter")
@@ -2094,7 +2094,7 @@ encounters.MapPut("/{encounter:int}/archive", async (EncounterRepository reposit
 
 encounters.MapPut("/{encounter:int}/restore", async (EncounterRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, EncounterArchiveRequest request, CancellationToken cancellationToken) =>
 {
-    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return await repository.RestoreAsync(encounter, request, session.Username, cancellationToken) ? Results.NoContent() : Results.NotFound(); }
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return await repository.RestoreAsync(encounter, request, session.Username, cancellationToken) ? Results.NoContent() : Results.Conflict(new { error = "The encounter is missing, already restored, or has changed. Reload and try again." }); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 })
     .WithName("RestoreEncounter")

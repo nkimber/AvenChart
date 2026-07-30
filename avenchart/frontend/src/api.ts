@@ -886,6 +886,7 @@ export type EncounterDetail = EncounterListItem & {
   dateTime: string
   billingNote?: string | null
   sourceAppointmentId?: string | null
+  archiveVersion: number
   vitals?: EncounterVitals | null
   soapNote?: EncounterSoapNote | null
   diagnosisCodes: EncounterDiagnosisCode[]
@@ -5856,13 +5857,14 @@ export async function updateEncounter(
 export async function archiveEncounter(
   encounter: number,
   reason: string,
+  expectedArchiveVersion: number,
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/archive`, {
     method: 'PUT',
     headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
-    body: JSON.stringify({ reason }),
+    body: JSON.stringify({ reason, expectedArchiveVersion }),
     signal,
   })
   if (!response.ok) {
@@ -5873,13 +5875,14 @@ export async function archiveEncounter(
 export async function restoreEncounter(
   encounter: number,
   reason: string,
+  expectedArchiveVersion: number,
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/restore`, {
     method: 'PUT',
     headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
-    body: JSON.stringify({ reason }),
+    body: JSON.stringify({ reason, expectedArchiveVersion }),
     signal,
   })
   if (!response.ok) {

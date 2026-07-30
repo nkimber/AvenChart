@@ -56,6 +56,7 @@ public sealed record EncounterDetail(
     int? PosCode,
     string? BillingNote,
     string? SourceAppointmentId,
+    int ArchiveVersion,
     EncounterVitals? Vitals,
     EncounterSoapNote? SoapNote,
     int BillingLineCount,

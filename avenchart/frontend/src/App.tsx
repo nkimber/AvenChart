@@ -2706,7 +2706,7 @@ function App() {
       if (!reason) {
         throw new Error('An archive reason is required')
       }
-      await archiveEncounter(encounter.encounter, reason, sessionId)
+      await archiveEncounter(encounter.encounter, reason, encounter.archiveVersion, sessionId)
       setSelectedEncounter(null)
       setEncounterDetail(null)
       setEncounterDetailStatus('idle')
