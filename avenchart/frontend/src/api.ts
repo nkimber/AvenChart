@@ -5824,18 +5824,33 @@ export async function updateEncounter(
   return response.json()
 }
 
-export async function deleteEncounter(
+export async function archiveEncounter(
   encounter: number,
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}`, {
-    method: 'DELETE',
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/archive`, {
+    method: 'PUT',
     headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(encounterApiError('Encounter delete', response.status))
+    throw new Error(encounterApiError('Encounter archive', response.status))
+  }
+}
+
+export async function restoreEncounter(
+  encounter: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/restore`, {
+    method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(encounterApiError('Encounter restore', response.status))
   }
 }
 

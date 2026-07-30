@@ -2777,17 +2777,6 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
     .WithName("SignEncounterDocument")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
-encounters.MapDelete("/{encounter:int}", async (
-        EncounterRepository repository,
-        int encounter,
-        CancellationToken cancellationToken) =>
-    {
-        var deleted = await repository.DeleteAsync(encounter, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    })
-    .WithName("DeleteEncounter")
-    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
-
 var clinicalLists = app.MapGroup("/api/clinical-lists").WithTags("Clinical Lists");
 RequireAccessPermission(clinicalLists, "patients", "med", "view");
 

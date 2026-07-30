@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type Re
 import DOMPurify from 'dompurify'
 import {
   Activity,
+  Archive,
   Building2,
   Ban,
   CalendarDays,
@@ -203,7 +204,7 @@ import {
   deleteClinicalMedication,
   deleteClinicalProblem,
   deleteClinicalPrescription,
-  deleteEncounter,
+  archiveEncounter,
   denyEncounterDocument,
   deletePatientInsurance,
   deletePatientDocument,
@@ -2693,20 +2694,20 @@ function App() {
     }
   }
 
-  async function handleEncounterDelete(encounter: EncounterDetail) {
+  async function handleEncounterArchive(encounter: EncounterDetail) {
     setEncounterDetailStatus('loading')
     setEncounterError(null)
 
     try {
       const sessionId = getActiveEncounterSessionId()
-      await deleteEncounter(encounter.encounter, sessionId)
+      await archiveEncounter(encounter.encounter, sessionId)
       setSelectedEncounter(null)
       setEncounterDetail(null)
       setEncounterDetailStatus('idle')
       setEncounterRefreshKey((current) => current + 1)
     } catch (deleteError) {
       setEncounterDetailStatus('error')
-      const message = deleteError instanceof Error ? deleteError.message : 'Encounter delete failed'
+      const message = deleteError instanceof Error ? deleteError.message : 'Encounter archive failed'
       setEncounterError(message)
       throw deleteError
     }
@@ -6250,7 +6251,7 @@ function App() {
             onIncludeArchivedDocumentsChange={setEncounterIncludeArchivedDocuments}
             onCreateEncounter={handleEncounterCreate}
             onUpdateEncounter={handleEncounterUpdate}
-            onDeleteEncounter={handleEncounterDelete}
+            onArchiveEncounter={handleEncounterArchive}
             onCreateVitals={handleEncounterVitalsCreate}
             onCreateSoapNote={handleEncounterSoapCreate}
             onSignEncounter={handleEncounterSign}
@@ -12825,7 +12826,7 @@ function EncounterWorkspace({
   onIncludeArchivedDocumentsChange,
   onCreateEncounter,
   onUpdateEncounter,
-  onDeleteEncounter,
+  onArchiveEncounter,
   onCreateVitals,
   onCreateSoapNote,
   onSignEncounter,
@@ -12865,7 +12866,7 @@ function EncounterWorkspace({
   onIncludeArchivedDocumentsChange: (value: boolean) => void
   onCreateEncounter: (input: EncounterCreateInput) => Promise<EncounterDetail>
   onUpdateEncounter: (encounter: EncounterDetail, update: EncounterUpdateInput) => Promise<EncounterDetail>
-  onDeleteEncounter: (encounter: EncounterDetail) => Promise<void>
+  onArchiveEncounter: (encounter: EncounterDetail) => Promise<void>
   onCreateVitals: (encounter: EncounterDetail, input: EncounterVitalsCreateInput) => Promise<unknown>
   onCreateSoapNote: (encounter: EncounterDetail, input: EncounterSoapNoteCreateInput) => Promise<unknown>
   onSignEncounter: (encounter: EncounterDetail, input: EncounterSignInput) => Promise<EncounterSignatureMutationResponse>
@@ -13196,14 +13197,14 @@ function EncounterWorkspace({
     }
   }
 
-  async function handleDeleteClick() {
+  async function handleArchiveClick() {
     if (!encounterDetail) {
       return
     }
 
     setSummaryStatus('saving')
     try {
-      await onDeleteEncounter(encounterDetail)
+      await onArchiveEncounter(encounterDetail)
       setSummaryStatus('saved')
     } catch {
       setSummaryStatus('error')
@@ -14531,11 +14532,11 @@ function EncounterWorkspace({
                 <button
                   className="icon-text-button danger"
                   type="button"
-                  onClick={handleDeleteClick}
+                  onClick={handleArchiveClick}
                   disabled={summaryStatus === 'saving'}
                 >
-                  <Trash2 size={16} />
-                  <span>Delete</span>
+                  <Archive size={16} />
+                  <span>Archive</span>
                 </button>
                 {summaryStatus === 'saved' && <span className="save-note">Saved</span>}
                 {summaryStatus === 'error' && <span className="save-note error">Action failed</span>}

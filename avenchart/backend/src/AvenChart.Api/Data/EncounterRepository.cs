@@ -815,35 +815,6 @@ public sealed class EncounterRepository(
         return detail is null ? null : new EncounterSignatureMutationResponse(Convert.ToInt32(id), detail);
     }
 
-    public async Task<bool> DeleteAsync(int encounter, CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            with deleted_notes as (
-                delete from clinical_notes
-                where encounter = @encounter
-            ),
-            deleted_vitals as (
-                delete from vitals
-                where encounter = @encounter
-            ),
-            deleted_signatures as (
-                delete from encounter_signatures
-                where encounter = @encounter
-            ),
-            deleted_encounter as (
-                delete from encounters
-                where encounter = @encounter
-                returning 1
-            )
-            select count(*) from deleted_encounter;
-            """;
-        command.Parameters.AddWithValue("encounter", encounter);
-        var deleted = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(deleted) > 0;
-    }
-
     public async Task<bool> ArchiveAsync(int encounter, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
