@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import {
   archivePatientDocument,
-  archiveEncounter,
   createPatientBinaryDocument,
   createPatientDocument,
   createPatientExternalLinkDocument,
@@ -43,9 +42,7 @@ import {
   replacePatientDocumentContent,
   restorePatientDocument,
   reviewPatientDocument,
-  restoreEncounter,
   searchEncounters,
-  signEncounter,
   saveEncounterLayoutForm,
   updatePatientDocumentMetadata,
   updateEncounter,
@@ -64,6 +61,14 @@ import {
   type PatientDocumentReviewHistoryResponse,
   type PatientDocumentVersionHistoryResponse,
 } from "../../api.ts";
+import {
+  archiveEncounterWithReason,
+  asEncounterLifecycleDetail,
+  EncounterLifecycleConflictError,
+  LOCAL_ENCOUNTER_SIGNATURE_POLICY,
+  restoreEncounterWithReason,
+  signEncounterUnderLocalPolicy,
+} from "../../api/encounterLifecycle.ts";
 import {
   getEncounterSoapNoteConflict,
   getVersionedEncounterDetail,
@@ -1959,44 +1964,65 @@ function EncounterSignatures({
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<"signature" | "amendment">("signature");
+  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
-    signerUsername: username,
     isLock: false,
     amendment: "",
   });
 
-  function openForm() {
-    setForm({ signerUsername: username, isLock: false, amendment: "" });
+  function openForm(nextMode: "signature" | "amendment") {
+    setMode(nextMode);
+    setForm({
+      isLock: nextMode === "amendment",
+      amendment: "",
+    });
+    setError(null);
     setOpen(true);
   }
 
   async function saveSignature(event: React.FormEvent) {
     event.preventDefault();
+    const amendment = form.amendment.trim();
+    if (mode === "amendment" && !amendment) {
+      setError("Enter the correction or amendment that must be preserved.");
+      return;
+    }
     if (
       !window.confirm(
-        form.isLock
-          ? "Record and lock this encounter signature?"
-          : "Record this encounter signature?",
+        mode === "amendment"
+          ? "Append and sign this amendment? Existing signed evidence will not change."
+          : form.isLock
+            ? "Record this signature and lock direct SOAP changes?"
+            : "Record this encounter signature?",
       )
     )
       return;
     setSaving(true);
+    setError(null);
     try {
-      const result = await signEncounter(sessionId, detail.encounter, {
-        signerUsername: form.signerUsername,
-        signedAt: new Date().toISOString(),
-        isLock: form.isLock,
-        amendment: form.amendment || null,
-      });
+      const result = await signEncounterUnderLocalPolicy(
+        sessionId,
+        detail.encounter,
+        {
+          isLock: mode === "amendment" ? true : form.isLock,
+          amendment: mode === "amendment" ? amendment : null,
+        },
+      );
       onDetailChange(result.detail);
       setOpen(false);
       showToast(
-        form.amendment
-          ? "Signature and amendment recorded."
+        mode === "amendment"
+          ? "Signed amendment appended."
           : "Encounter signature recorded.",
         "success",
       );
-    } catch {
+    } catch (caught) {
+      const message =
+        caught instanceof Error
+          ? caught.message
+          : "Could not record encounter signature.";
+      setError(message);
       showToast("Could not record encounter signature.", "error");
     } finally {
       setSaving(false);
@@ -2004,78 +2030,115 @@ function EncounterSignatures({
   }
 
   return (
-    <div className="cl-card">
+    <section className="cl-card" aria-labelledby="encounter-signatures-title">
       <div className="cl-card-header">
-        <h2 className="cl-card-title">Signatures and amendments</h2>
-        <button
-          className="cl-btn-secondary"
-          type="button"
-          onClick={openForm}
-          disabled={saving}
-        >
-          Record signature
-        </button>
+        <h2 className="cl-card-title" id="encounter-signatures-title">
+          Signatures and amendments
+        </h2>
+        <div className="cl-inline-form-actions">
+          <button
+            className="cl-btn-secondary"
+            type="button"
+            onClick={() => openForm("signature")}
+            disabled={saving}
+          >
+            Record signature
+          </button>
+          {detail.signatures.length > 0 && (
+            <button
+              className="cl-btn-secondary"
+              type="button"
+              onClick={() => openForm("amendment")}
+              disabled={saving}
+            >
+              Add signed amendment
+            </button>
+          )}
+        </div>
       </div>
+      <p className="cl-empty-text">
+        Local append-only policy {LOCAL_ENCOUNTER_SIGNATURE_POLICY}. The
+        authenticated session ({username}) supplies signer identity, and the API
+        supplies signed time. Existing signatures are immutable; corrections are
+        appended as signed amendments.
+      </p>
       {open && (
         <form onSubmit={saveSignature}>
+          <h3 className="cl-soap-label">
+            {mode === "amendment"
+              ? "Append a signed amendment"
+              : "Record encounter signature"}
+          </h3>
           <div className="form-row">
             <div className="field">
-              <label className="label" htmlFor="encounter-signer">
-                Signer
-              </label>
-              <input
-                id="encounter-signer"
-                className="input"
-                readOnly
-                value={form.signerUsername}
-              />
+              <span className="label">Signer</span>
+              <p className="cl-empty-text">
+                {username} (authenticated session)
+              </p>
             </div>
-            <div className="field">
-              <label className="label" htmlFor="encounter-lock">
-                Lock encounter
+            {mode === "signature" && (
+              <div className="field">
+                <label className="label" htmlFor="encounter-lock">
+                  Direct SOAP changes
+                </label>
+                <select
+                  id="encounter-lock"
+                  className="input"
+                  value={form.isLock ? "locked" : "open"}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      isLock: event.target.value === "locked",
+                    }))
+                  }
+                >
+                  <option value="open">Remain open</option>
+                  <option value="locked">Lock after signature</option>
+                </select>
+              </div>
+            )}
+          </div>
+          {mode === "amendment" && (
+            <div className="field" style={{ marginBottom: 10 }}>
+              <label className="label" htmlFor="encounter-amendment">
+                Correction or amendment
               </label>
-              <select
-                id="encounter-lock"
-                className="input"
-                value={form.isLock ? "yes" : "no"}
+              <textarea
+                id="encounter-amendment"
+                className="textarea"
+                rows={3}
+                required
+                value={form.amendment}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
-                    isLock: event.target.value === "yes",
+                    amendment: event.target.value,
                   }))
                 }
-              >
-                <option value="no">No — signature only</option>
-                <option value="yes">Yes — lock this signature</option>
-              </select>
+              />
             </div>
-          </div>
-          <div className="field" style={{ marginBottom: 10 }}>
-            <label className="label" htmlFor="encounter-amendment">
-              Amendment note (optional)
-            </label>
-            <textarea
-              id="encounter-amendment"
-              className="textarea"
-              rows={3}
-              value={form.amendment}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  amendment: event.target.value,
-                }))
-              }
-            />
-          </div>
+          )}
+          {error && (
+            <p className="cl-soap-save-error" role="alert">
+              {error}
+            </p>
+          )}
           <div className="cl-inline-form-actions">
             <button className="cl-btn-primary" type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Record signature"}
+              {saving
+                ? "Saving…"
+                : mode === "amendment"
+                  ? "Append signed amendment"
+                  : "Record signature"}
             </button>
             <button
               className="cl-btn-secondary"
               type="button"
               disabled={saving}
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false);
+                setError(null);
+              }}
             >
               Cancel
             </button>
@@ -2110,7 +2173,7 @@ function EncounterSignatures({
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -2726,6 +2789,13 @@ export default function PatientEncounters() {
   const [saving, setSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [encounterArchiveAction, setEncounterArchiveAction] = useState<{
+    restore: boolean;
+    reason: string;
+  } | null>(null);
+  const [encounterArchiveError, setEncounterArchiveError] = useState<
+    string | null
+  >(null);
   const [editSummaryOpen, setEditSummaryOpen] = useState(false);
   const [summaryForm, setSummaryForm] = useState({
     reason: "",
@@ -2788,38 +2858,75 @@ export default function PatientEncounters() {
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, [soapDraftDirty]);
 
-  async function changeArchiveState(encounter: number, restore = false) {
-    if (
-      !restore &&
-      !window.confirm(
-        "Archive this encounter? Its notes, vitals, signatures, and documents remain intact and can be restored.",
-      )
-    )
+  async function changeArchiveState(
+    detail: EncounterDetail,
+    restore: boolean,
+    reason: string,
+  ) {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) {
+      setEncounterArchiveError(
+        `Enter the reason this encounter is being ${restore ? "restored" : "archived"}.`,
+      );
       return;
+    }
+    const lifecycle = asEncounterLifecycleDetail(detail);
     setArchiving(true);
+    setEncounterArchiveError(null);
     try {
-      if (restore) await restoreEncounter(session.sessionId, encounter);
-      else await archiveEncounter(session.sessionId, encounter);
+      if (restore) {
+        await restoreEncounterWithReason(
+          session.sessionId,
+          lifecycle.encounter,
+          lifecycle.archiveVersion,
+          normalizedReason,
+        );
+      } else {
+        await archiveEncounterWithReason(
+          session.sessionId,
+          lifecycle.encounter,
+          lifecycle.archiveVersion,
+          normalizedReason,
+        );
+      }
       showToast(
         restore ? "Encounter restored." : "Encounter archived.",
         "success",
       );
+      setEncounterArchiveAction(null);
       setSelectedId(null);
       setDetailState({ status: "idle" });
+      if (restore) setShowArchived(false);
       const response = await searchEncounters(session.sessionId, {
         patientId,
         fromDate: "1900-01-01",
         limit: 50,
-        archived: showArchived,
+        archived: restore ? false : showArchived,
       });
       setListState({ status: "ready", data: response.encounters });
-    } catch {
-      showToast(
-        restore
-          ? "Could not restore encounter."
-          : "Could not archive encounter.",
-        "error",
-      );
+    } catch (caught) {
+      const fallback = restore
+        ? "Could not restore encounter."
+        : "Could not archive encounter.";
+      const message = caught instanceof Error ? caught.message : fallback;
+      setEncounterArchiveError(message);
+      showToast(fallback, "error");
+      if (caught instanceof EncounterLifecycleConflictError) {
+        try {
+          const refreshed = await getEncounterDetail(
+            session.sessionId,
+            lifecycle.encounter,
+            undefined,
+            true,
+          );
+          setDetailState({ status: "ready", data: refreshed });
+          setDetailCache((current) =>
+            new Map(current).set(refreshed.id, refreshed),
+          );
+        } catch {
+          // Keep the conflict visible if authoritative refresh also fails.
+        }
+      }
     } finally {
       setArchiving(false);
     }
@@ -2881,6 +2988,8 @@ export default function PatientEncounters() {
     setAddVitalsOpen(false);
     setAddSoapOpen(false);
     setEditSummaryOpen(false);
+    setEncounterArchiveAction(null);
+    setEncounterArchiveError(null);
     setVitalsForm(BLANK_VITALS);
     setSoapForm(BLANK_SOAP);
     setSoapDraftVersion(0);
@@ -3172,6 +3281,8 @@ export default function PatientEncounters() {
           onClick={() => {
             setSelectedId(null);
             setDetailState({ status: "idle" });
+            setEncounterArchiveAction(null);
+            setEncounterArchiveError(null);
             setShowArchived((value) => !value);
           }}
           style={{ marginRight: 8 }}
@@ -3265,6 +3376,8 @@ export default function PatientEncounters() {
             (() => {
               const { data: enc } = detailState;
               const versionedEncounter = getVersionedEncounterDetail(enc);
+              const lifecycleEncounter = asEncounterLifecycleDetail(enc);
+              const encounterArchived = Boolean(lifecycleEncounter.archivedAt);
               const soapNote = versionedEncounter.soapNote;
               const soapLocked =
                 soapNote?.isLocked ??
@@ -3442,18 +3555,105 @@ export default function PatientEncounters() {
                         className="cl-btn-secondary"
                         type="button"
                         disabled={archiving}
-                        onClick={() =>
-                          changeArchiveState(enc.encounter, showArchived)
-                        }
+                        onClick={() => {
+                          setEncounterArchiveError(null);
+                          setEncounterArchiveAction({
+                            restore: encounterArchived,
+                            reason: "",
+                          });
+                        }}
                       >
                         {archiving
                           ? "Saving…"
-                          : showArchived
+                          : encounterArchived
                             ? "Restore encounter"
                             : "Archive encounter"}
                       </button>
                     </div>
+                    {encounterArchiveAction && (
+                      <form
+                        className="cl-inline-edit-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void changeArchiveState(
+                            enc,
+                            encounterArchiveAction.restore,
+                            encounterArchiveAction.reason,
+                          );
+                        }}
+                      >
+                        <div className="field">
+                          <label
+                            className="label"
+                            htmlFor="encounter-archive-reason"
+                          >
+                            {encounterArchiveAction.restore
+                              ? "Restore reason"
+                              : "Archive reason"}
+                          </label>
+                          <textarea
+                            id="encounter-archive-reason"
+                            className="textarea"
+                            rows={3}
+                            maxLength={500}
+                            required
+                            value={encounterArchiveAction.reason}
+                            onChange={(event) =>
+                              setEncounterArchiveAction((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      reason: event.target.value,
+                                    }
+                                  : current,
+                              )
+                            }
+                          />
+                        </div>
+                        <p className="cl-empty-text">
+                          Loaded archive version{" "}
+                          {lifecycleEncounter.archiveVersion}. Notes, vitals,
+                          signatures, charges, orders, and attachments remain
+                          intact.
+                        </p>
+                        {encounterArchiveError && (
+                          <p className="cl-soap-save-error" role="alert">
+                            {encounterArchiveError}
+                          </p>
+                        )}
+                        <div className="cl-inline-form-actions">
+                          <button
+                            className="cl-btn-primary"
+                            type="submit"
+                            disabled={archiving}
+                          >
+                            {archiving
+                              ? "Saving…"
+                              : encounterArchiveAction.restore
+                                ? "Restore encounter"
+                                : "Archive encounter"}
+                          </button>
+                          <button
+                            className="cl-btn-secondary"
+                            type="button"
+                            disabled={archiving}
+                            onClick={() => {
+                              setEncounterArchiveAction(null);
+                              setEncounterArchiveError(null);
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    )}
                     <ul className="fact-list">
+                      {lifecycleEncounter.archivedAt && (
+                        <li className="fact-row">
+                          <span>Archived</span>
+                          <span>{lifecycleEncounter.archivedAt}</span>
+                        </li>
+                      )}
                       {enc.providerName && (
                         <li className="fact-row">
                           <span>Provider</span>

@@ -5,12 +5,12 @@ import {
   createEncounterVitals,
   createEncounterSoapNote,
   getAppointmentSchedulingOptions,
-  signEncounter,
   searchPatients,
   type AppointmentSchedulingOptionsResponse,
   type EncounterDetail,
 } from '../../api.ts'
 import { createCompleteEncounter } from '../../api/encounterCoding.ts'
+import { signEncounterUnderLocalPolicy } from '../../api/encounterLifecycle.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
@@ -258,11 +258,13 @@ export default function NewEncounter() {
     if (!encounter) return
     setSaving(true)
     try {
-      await signEncounter(session.sessionId, encounter.encounter, {
-        signerUsername: session.username,
-        signedAt: new Date().toISOString(),
-        isLock: false,
-      })
+      await signEncounterUnderLocalPolicy(
+        session.sessionId,
+        encounter.encounter,
+        {
+          isLock: false,
+        },
+      )
       showToast('Encounter signed.', 'success')
       navigateToEncounter()
     } catch {
