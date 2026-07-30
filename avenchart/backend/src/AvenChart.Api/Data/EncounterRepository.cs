@@ -1180,7 +1180,10 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, order_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at, notes
+            select id, order_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at,
+                   review_version,
+                   (select count(*) from lab_report_review_events event where event.report_id = lab_reports.id) as review_history_count,
+                   notes
             from lab_reports
             where order_id = any(@orderIds)
             order by report_date desc, id desc;
@@ -1836,6 +1839,17 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
     {
         var trimmed = value?.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
+    private static string? NormalizeSoapField(string? value, string fieldName)
+    {
+        var normalized = NormalizeText(value);
+        if (normalized is { Length: > 10_000 })
+        {
+            throw new ArgumentException($"{fieldName} cannot exceed 10,000 characters.");
+        }
+
+        return normalized;
     }
 
     private static bool TryParseDateTime(string? value, out DateTime parsed)

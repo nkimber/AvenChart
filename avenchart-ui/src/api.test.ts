@@ -41,6 +41,7 @@ import {
   deletePatientAuthorizationTestFixture,
   deleteProcedureLabProviderOrganization,
   deleteProcedureOrderCatalogItem,
+  denyLabReportReview,
   deleteProblem,
   decidePrescriptionRefillRequest,
   decideInventoryPurchaseRequisition,
@@ -96,6 +97,7 @@ import {
   getProcedureLabProviderAddressBook,
   getProcedureLabProviders,
   getProcedureOrderCatalog,
+  getLabReportReviewHistory,
   getProcedureReportQueue,
   getStaffMessageInbox,
   logout,
@@ -1952,7 +1954,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual(['POST', 'POST', 'PUT'])
   })
 
-  it('uses the protected assign, sign, reopen, and bulk-sign report contracts', async () => {
+  it('uses authenticated, versioned report-review history and decision contracts', async () => {
     const detail = {
       patientId: 'MOD-PAT-0004',
       patientDisplayName: 'Alex Morgan',
@@ -1963,6 +1965,8 @@ describe('authenticated API transport', () => {
       .mockResolvedValueOnce(jsonResponse({ id: 6001, detail }))
       .mockResolvedValueOnce(jsonResponse({ id: 6001, detail }))
       .mockResolvedValueOnce(jsonResponse({ id: 6001, detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 6001, detail }))
+      .mockResolvedValueOnce(jsonResponse({ reportId: 6001, reviewVersion: 4, events: [{ eventId: 9, action: 'signed', previousStatus: 'assigned', currentStatus: 'reviewed', actor: 'admin', expectedVersion: 3, resultingVersion: 4, occurredAt: '2026-07-27 23:45' }] }))
       .mockResolvedValueOnce(
         jsonResponse({
           requestedCount: 2,
@@ -1975,24 +1979,38 @@ describe('authenticated API transport', () => {
 
     await assignLabReportReviewer('staff-session', 6001, {
       assignedTo: 'admin',
-      assignedAt: '2026-07-27T23:44:00Z',
+      expectedReviewVersion: 1,
+      reason: 'Claimed for review',
     })
     await signLabReport('staff-session', 6001, {
-      reviewedBy: 'admin',
-      reviewedAt: '2026-07-27T23:45:00Z',
+      expectedReviewVersion: 2,
+      reason: 'Reviewed result',
     })
-    await reopenLabReportReview('staff-session', 6001)
+    await denyLabReportReview('staff-session', 6001, {
+      expectedReviewVersion: 3,
+      reason: 'Needs local clarification',
+    })
+    await reopenLabReportReview('staff-session', 6001, {
+      expectedReviewVersion: 4,
+      reason: 'Clarification received',
+    })
+    const history = await getLabReportReviewHistory('staff-session', 6001)
     const bulk = await bulkSignLabReports('staff-session', {
-      reportIds: [6001, 6002],
-      reviewedBy: 'admin',
-      reviewedAt: '2026-07-27T23:45:00Z',
+      reports: [
+        { reportId: 6001, expectedReviewVersion: 5 },
+        { reportId: 6002, expectedReviewVersion: 2 },
+      ],
+      reason: 'Reviewed returned local reports',
     })
 
     expect(bulk).toMatchObject({ requestedCount: 2, signedCount: 2 })
+    expect(history.events[0]).toMatchObject({ action: 'signed', resultingVersion: 4 })
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       'http://localhost:5001/api/procedures/reports/6001/review-assignment',
       'http://localhost:5001/api/procedures/reports/6001/sign',
+      'http://localhost:5001/api/procedures/reports/6001/deny-review',
       'http://localhost:5001/api/procedures/reports/6001/reopen-review',
+      'http://localhost:5001/api/procedures/reports/6001/review-history',
       'http://localhost:5001/api/procedures/reports/bulk-sign',
     ])
     expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([
@@ -2000,10 +2018,11 @@ describe('authenticated API transport', () => {
       'PUT',
       'PUT',
       'PUT',
+      undefined,
+      'PUT',
     ])
-    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
-      body: undefined,
-    })
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ body: JSON.stringify({ assignedTo: 'admin', expectedReviewVersion: 1, reason: 'Claimed for review' }) })
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({ body: JSON.stringify({ reports: [{ reportId: 6001, expectedReviewVersion: 5 }, { reportId: 6002, expectedReviewVersion: 2 }], reason: 'Reviewed returned local reports' }) })
   })
 
   it('uses the protected patient relationship and care-team contracts', async () => {

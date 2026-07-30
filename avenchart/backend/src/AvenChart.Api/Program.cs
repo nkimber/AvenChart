@@ -4829,6 +4829,16 @@ procedures.MapGet("/report-review-queue", async (
     })
     .WithName("GetProcedureReportReviewQueue");
 
+procedures.MapGet("/reports/{reportId:int}/review-history", async (
+        ProcedureRepository repository,
+        int reportId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetReportReviewHistoryAsync(reportId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetProcedureReportReviewHistory");
+
 procedures.MapGet("/order-queue", async (
         ProcedureRepository repository,
         string? status,
@@ -4945,54 +4955,124 @@ procedures.MapPut("/reports/{reportId:int}", async (
 
 procedures.MapPut("/reports/{reportId:int}/sign", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int reportId,
         ProcedureReportSignRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.SignReportAsync(reportId, request, cancellationToken);
-        return mutation is null
-            ? Results.BadRequest("Procedure report could not be signed from the supplied review details.")
-            : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.SignReportAsync(reportId, request, session.Username, cancellationToken);
+            return mutation is null
+                ? Results.BadRequest("Procedure report could not be signed from the supplied review details.")
+                : Results.Ok(mutation);
+        }
+        catch (ProcedureReportReviewConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, expectedVersion = exception.ExpectedVersion, currentVersion = exception.CurrentVersion, currentStatus = exception.CurrentStatus });
+        }
+        catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
     })
     .WithName("SignProcedureReport")
     .AddEndpointFilter(AccessPermissionFilter("patients", "sign", "write"));
 
+procedures.MapPut("/reports/{reportId:int}/deny-review", async (
+        ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        int reportId,
+        ProcedureReportReviewDecisionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.DenyReportReviewAsync(reportId, request, session.Username, cancellationToken);
+            return mutation is null
+                ? Results.BadRequest("Procedure report review could not be denied from the supplied details.")
+                : Results.Ok(mutation);
+        }
+        catch (ProcedureReportReviewConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, expectedVersion = exception.ExpectedVersion, currentVersion = exception.CurrentVersion, currentStatus = exception.CurrentStatus });
+        }
+        catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+    })
+    .WithName("DenyProcedureReportReview")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "sign", "write"));
+
 procedures.MapPut("/reports/{reportId:int}/review-assignment", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int reportId,
         ProcedureReportReviewAssignmentRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.AssignReportReviewerAsync(reportId, request, cancellationToken);
-        return mutation is null
-            ? Results.BadRequest("Procedure report reviewer assignment could not be saved from the supplied details.")
-            : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.AssignReportReviewerAsync(reportId, request, session.Username, cancellationToken);
+            return mutation is null
+                ? Results.BadRequest("Procedure report reviewer assignment could not be saved from the supplied details.")
+                : Results.Ok(mutation);
+        }
+        catch (ProcedureReportReviewConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, expectedVersion = exception.ExpectedVersion, currentVersion = exception.CurrentVersion, currentStatus = exception.CurrentStatus });
+        }
+        catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
     })
     .WithName("AssignProcedureReportReviewer")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPut("/reports/{reportId:int}/reopen-review", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int reportId,
+        ProcedureReportReviewDecisionRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.ReopenReportReviewAsync(reportId, cancellationToken);
-        return mutation is null
-            ? Results.BadRequest("Procedure report review could not be reopened.")
-            : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.ReopenReportReviewAsync(reportId, request, session.Username, cancellationToken);
+            return mutation is null
+                ? Results.BadRequest("Procedure report review could not be reopened.")
+                : Results.Ok(mutation);
+        }
+        catch (ProcedureReportReviewConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, expectedVersion = exception.ExpectedVersion, currentVersion = exception.CurrentVersion, currentStatus = exception.CurrentStatus });
+        }
+        catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
     })
     .WithName("ReopenProcedureReportReview")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPut("/reports/bulk-sign", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         ProcedureReportBulkSignRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.BulkSignReportsAsync(request, cancellationToken);
-        return mutation is null
-            ? Results.BadRequest("Procedure reports could not be bulk signed from the supplied review details.")
-            : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.BulkSignReportsAsync(request, session.Username, cancellationToken);
+            return mutation is null
+                ? Results.BadRequest("Procedure reports could not be bulk signed from the supplied review details.")
+                : Results.Ok(mutation);
+        }
+        catch (ProcedureReportReviewConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, expectedVersion = exception.ExpectedVersion, currentVersion = exception.CurrentVersion, currentStatus = exception.CurrentStatus });
+        }
+        catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
     })
     .WithName("BulkSignProcedureReports")
     .AddEndpointFilter(AccessPermissionFilter("patients", "sign", "write"));

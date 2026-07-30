@@ -6,10 +6,12 @@ import {
   type FormEvent,
 } from 'react'
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom'
-import { CheckCircle, RefreshCw, UserCheck } from 'lucide-react'
+import { CheckCircle, History, RefreshCw, UserCheck } from 'lucide-react'
 import {
   assignLabReportReviewer,
   bulkSignLabReports,
+  denyLabReportReview,
+  getLabReportReviewHistory,
   getProcedureOrderQueue,
   getProcedureReportQueue,
   isRequestCancellation,
@@ -19,6 +21,7 @@ import {
   type ProcedureQueueFilters,
   type ProcedureReportQueueItem,
   type ProcedureReportQueueResponse,
+  type ProcedureReportReviewHistoryResponse,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
@@ -94,6 +97,7 @@ function formatDateTime(value?: string | null) {
 function reviewStatusClass(status?: string | null) {
   if (status?.toLowerCase() === 'reviewed') return 'cl-badge-green'
   if (status?.toLowerCase() === 'assigned') return 'cl-badge-blue'
+  if (status?.toLowerCase() === 'denied') return 'cl-badge-red'
   return 'cl-badge-amber'
 }
 
@@ -128,6 +132,16 @@ export default function LabQueue() {
     () => new Set(),
   )
   const [bulkSigning, setBulkSigning] = useState(false)
+  const [reviewHistoryByReport, setReviewHistoryByReport] = useState<
+    Record<number, ProcedureReportReviewHistoryResponse>
+  >({})
+  const [historyLoadingId, setHistoryLoadingId] = useState<number | null>(null)
+
+  function requestReviewReason(action: string, suggestedReason: string) {
+    const reason = window.prompt(`${action} reason (1–500 characters):`, suggestedReason)
+    const normalized = reason?.trim() ?? ''
+    return normalized.length > 0 && normalized.length <= 500 ? normalized : null
+  }
 
   function loadReports(signal?: AbortSignal) {
     setReportState({ status: 'loading' })
@@ -224,13 +238,16 @@ export default function LabQueue() {
   }
 
   function claimReport(report: ProcedureReportQueueItem) {
+    const reason = requestReviewReason('Assign this report to yourself', 'Claimed for local review')
+    if (!reason) return Promise.resolve()
     return runReportAction(
       report.reportId,
       'Report assigned to you.',
       () =>
         assignLabReportReviewer(session.sessionId, report.reportId, {
           assignedTo: session.username,
-          assignedAt: new Date().toISOString(),
+          expectedReviewVersion: report.reviewVersion,
+          reason,
         }),
     )
   }
@@ -243,13 +260,15 @@ export default function LabQueue() {
     ) {
       return Promise.resolve()
     }
+    const reason = requestReviewReason('Sign this report as reviewed', 'Reviewed local report')
+    if (!reason) return Promise.resolve()
     return runReportAction(
       report.reportId,
       'Report signed as reviewed.',
       () =>
         signLabReport(session.sessionId, report.reportId, {
-          reviewedBy: session.username,
-          reviewedAt: new Date().toISOString(),
+          expectedReviewVersion: report.reviewVersion,
+          reason,
         }),
     )
   }
@@ -262,6 +281,8 @@ export default function LabQueue() {
     ) {
       return Promise.resolve()
     }
+    const reason = requestReviewReason('Reopen this report review', 'Reopened for local review')
+    if (!reason) return Promise.resolve()
     return runReportAction(
       report.reportId,
       'Report review reopened.',
@@ -269,8 +290,46 @@ export default function LabQueue() {
         reopenLabReportReview(
           session.sessionId,
           report.reportId,
+          { expectedReviewVersion: report.reviewVersion, reason },
         ),
     )
+  }
+
+  function denyReport(report: ProcedureReportQueueItem) {
+    const reason = requestReviewReason('Deny this report review', '')
+    if (!reason) return Promise.resolve()
+    return runReportAction(
+      report.reportId,
+      'Report review denied locally.',
+      () =>
+        denyLabReportReview(session.sessionId, report.reportId, {
+          expectedReviewVersion: report.reviewVersion,
+          reason,
+        }),
+    )
+  }
+
+  async function toggleReviewHistory(report: ProcedureReportQueueItem) {
+    if (reviewHistoryByReport[report.reportId]) {
+      setReviewHistoryByReport((current) => {
+        const next = { ...current }
+        delete next[report.reportId]
+        return next
+      })
+      return
+    }
+    setHistoryLoadingId(report.reportId)
+    try {
+      const history = await getLabReportReviewHistory(session.sessionId, report.reportId)
+      setReviewHistoryByReport((current) => ({ ...current, [report.reportId]: history }))
+    } catch (error) {
+      setActionError({
+        id: report.reportId,
+        message: error instanceof Error ? error.message : 'Could not load review history.',
+      })
+    } finally {
+      setHistoryLoadingId(null)
+    }
   }
 
   async function handleBulkSign() {
@@ -285,10 +344,14 @@ export default function LabQueue() {
     }
     setBulkSigning(true)
     try {
+      const reports = reportData?.reports
+        .filter((report) => selectedReports.has(report.reportId))
+        .map((report) => ({ reportId: report.reportId, expectedReviewVersion: report.reviewVersion })) ?? []
+      const reason = requestReviewReason('Sign the selected reports as reviewed', 'Bulk local report review')
+      if (!reason || reports.length === 0) return
       const result = await bulkSignLabReports(session.sessionId, {
-        reportIds,
-        reviewedBy: session.username,
-        reviewedAt: new Date().toISOString(),
+        reports,
+        reason,
       })
       setSelectedReports(new Set())
       setReload((value) => value + 1)
@@ -311,7 +374,11 @@ export default function LabQueue() {
   const orderData = orderState.status === 'ready' ? orderState.data : null
   const eligibleReportIds =
     reportData?.reports
-      .filter((report) => report.reviewStatus?.toLowerCase() !== 'reviewed')
+      .filter((report) =>
+        ['received', 'assigned'].includes(
+          report.reviewStatus?.toLowerCase() ?? 'received',
+        ),
+      )
       .map((report) => report.reportId) ?? []
   const allEligibleSelected =
     eligibleReportIds.length > 0 &&
@@ -611,14 +678,17 @@ export default function LabQueue() {
                         {reportData.reports.map((report) => {
                           const isReviewed =
                             report.reviewStatus?.toLowerCase() === 'reviewed'
+                          const isDenied =
+                            report.reviewStatus?.toLowerCase() === 'denied'
+                          const isTerminal = isReviewed || isDenied
                           const isAssignedToUser =
-                            !isReviewed &&
+                            !isTerminal &&
                             report.reviewedBy === session.username
                           const busy = actionId === report.reportId
                           return (
                             <tr key={report.reportId}>
                               <td>
-                                {!isReviewed ? (
+                                {!isTerminal ? (
                                   <input
                                     type="checkbox"
                                     aria-label={`Select report ${report.reportId} for ${report.patientDisplayName}`}
@@ -688,7 +758,7 @@ export default function LabQueue() {
                                 </span>
                                 <p className="cl-table-sub">
                                   {report.reviewedBy
-                                    ? `${isReviewed ? 'Reviewed' : 'Assigned'} by ${report.reviewedBy}`
+                                    ? `${isReviewed ? 'Reviewed' : isDenied ? 'Denied' : 'Assigned'} by ${report.reviewedBy}`
                                     : 'No reviewer assigned'}
                                   {report.reviewedAt
                                     ? ` · ${formatDateTime(report.reviewedAt)}`
@@ -697,7 +767,7 @@ export default function LabQueue() {
                               </td>
                               <td>
                                 <div className="ne-actions">
-                                  {!isReviewed && !isAssignedToUser && (
+                                  {!isTerminal && !isAssignedToUser && (
                                     <button
                                       className="cl-btn-secondary"
                                       type="button"
@@ -720,7 +790,7 @@ export default function LabQueue() {
                                       Assigned to you
                                     </span>
                                   )}
-                                  {!isReviewed && (
+                                  {!isTerminal && (
                                     <button
                                       className="cl-btn-primary"
                                       type="button"
@@ -734,7 +804,17 @@ export default function LabQueue() {
                                       {busy ? 'Signing…' : 'Sign reviewed'}
                                     </button>
                                   )}
-                                  {isReviewed && (
+                                  {!isTerminal && (
+                                    <button
+                                      className="cl-btn-secondary"
+                                      type="button"
+                                      disabled={actionId !== null}
+                                      onClick={() => void denyReport(report)}
+                                    >
+                                      {busy ? 'Saving…' : 'Deny review'}
+                                    </button>
+                                  )}
+                                  {isTerminal && (
                                     <button
                                       className="cl-btn-secondary"
                                       type="button"
@@ -744,7 +824,30 @@ export default function LabQueue() {
                                       {busy ? 'Reopening…' : 'Reopen review'}
                                     </button>
                                   )}
+                                  <button
+                                    className="cl-btn-secondary"
+                                    type="button"
+                                    disabled={historyLoadingId === report.reportId}
+                                    onClick={() => void toggleReviewHistory(report)}
+                                  >
+                                    <History size={14} aria-hidden="true" />
+                                    {historyLoadingId === report.reportId
+                                      ? 'Loading history…'
+                                      : reviewHistoryByReport[report.reportId]
+                                        ? 'Hide history'
+                                        : `History (${report.reviewHistoryCount})`}
+                                  </button>
                                 </div>
+                                {reviewHistoryByReport[report.reportId] && (
+                                  <ol className="cl-table-sub" aria-label={`Review history for report ${report.reportId}`}>
+                                    {reviewHistoryByReport[report.reportId].events.map((event) => (
+                                      <li key={event.eventId}>
+                                        {event.action} · {event.previousStatus ?? 'none'} → {event.currentStatus} · {event.actor} · {formatDateTime(event.occurredAt)}
+                                        {event.reason ? ` · ${event.reason}` : ''}
+                                      </li>
+                                    ))}
+                                  </ol>
+                                )}
                                 {actionError?.id === report.reportId && (
                                   <p className="field-error" role="alert">
                                     {actionError.message}

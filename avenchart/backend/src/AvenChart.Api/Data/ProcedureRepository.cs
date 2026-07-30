@@ -5,6 +5,17 @@ using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
 
+public sealed class ProcedureReportReviewConflictException(
+    int expectedVersion,
+    int currentVersion,
+    string currentStatus)
+    : Exception($"The report review changed after it was loaded (expected version {expectedVersion}; current version {currentVersion}).")
+{
+    public int ExpectedVersion { get; } = expectedVersion;
+    public int CurrentVersion { get; } = currentVersion;
+    public string CurrentStatus { get; } = currentStatus;
+}
+
 public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 {
     private const int MaximumReviewQueueLimit = 100;
@@ -127,6 +138,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 coalesce(lr.review_status, '') as review_status,
                 lr.reviewed_by,
                 lr.reviewed_at,
+                lr.review_version,
+                (select count(*) from lab_report_review_events lrrh where lrrh.report_id = lr.id) as review_history_count,
                 lr.specimen_number,
                 lr.notes
             from lab_reports lr
@@ -176,6 +189,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     ReviewStatus: ReadNullableString(reader, "review_status"),
                     ReviewedBy: ReadNullableString(reader, "reviewed_by"),
                     ReviewedAt: ReadNullableDateTime(reader, "reviewed_at"),
+                    ReviewVersion: reader.GetInt32(reader.GetOrdinal("review_version")),
+                    ReviewHistoryCount: Convert.ToInt32(reader.GetValue(reader.GetOrdinal("review_history_count"))),
                     SpecimenNumber: ReadNullableString(reader, "specimen_number"),
                     Notes: ReadNullableString(reader, "notes")));
             }
@@ -195,6 +210,61 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             ReviewedReports: reviewedReports,
             UnreviewedReports: unreviewedReports,
             Reports: reports);
+    }
+
+    public async Task<ProcedureReportReviewHistoryResponse?> GetReportReviewHistoryAsync(
+        int reportId,
+        CancellationToken cancellationToken)
+    {
+        if (reportId <= 0)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select lr.id as report_id, lr.review_version,
+                   event.id as event_id, event.action, event.previous_status, event.current_status,
+                   event.assigned_to, event.actor, event.reason, event.expected_version,
+                   event.resulting_version, event.occurred_at
+            from lab_reports lr
+            left join lab_report_review_events event on event.report_id = lr.id
+            where lr.id = @reportId
+            order by event.occurred_at desc nulls last, event.id desc nulls last;
+            """;
+        command.Parameters.AddWithValue("reportId", reportId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var version = reader.GetInt32(reader.GetOrdinal("review_version"));
+        var events = new List<ProcedureReportReviewEventItem>();
+        do
+        {
+            if (reader.IsDBNull(reader.GetOrdinal("event_id")))
+            {
+                continue;
+            }
+
+            events.Add(new ProcedureReportReviewEventItem(
+                EventId: reader.GetInt64(reader.GetOrdinal("event_id")),
+                Action: reader.GetString(reader.GetOrdinal("action")),
+                PreviousStatus: ReadNullableString(reader, "previous_status"),
+                CurrentStatus: reader.GetString(reader.GetOrdinal("current_status")),
+                AssignedTo: ReadNullableString(reader, "assigned_to"),
+                Actor: reader.GetString(reader.GetOrdinal("actor")),
+                Reason: ReadNullableString(reader, "reason"),
+                ExpectedVersion: reader.GetInt32(reader.GetOrdinal("expected_version")),
+                ResultingVersion: reader.GetInt32(reader.GetOrdinal("resulting_version")),
+                OccurredAt: reader.GetDateTime(reader.GetOrdinal("occurred_at")).ToString("yyyy-MM-dd HH:mm")));
+        }
+        while (await reader.ReadAsync(cancellationToken));
+
+        return new ProcedureReportReviewHistoryResponse(reportId, version, events);
     }
 
     public async Task<ProcedureOrderQueueResponse> GetOrderQueueAsync(
@@ -1248,7 +1318,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             insert into lab_reports
                 (id, order_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at, notes)
             values
-                (@id, @orderId, @dateCollected, @reportDate, @specimenNumber, @status, @reviewStatus, null, null, @notes);
+                (@id, @orderId, @dateCollected, @reportDate, @specimenNumber, @status, 'received', null, null, @notes);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("orderId", order.Id);
@@ -1256,7 +1326,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("reportDate", NpgsqlDbType.Timestamp).Value = reportDate;
         command.Parameters.AddWithValue("specimenNumber", request.SpecimenNumber.Trim());
         command.Parameters.AddWithValue("status", request.ReportStatus.Trim());
-        command.Parameters.AddWithValue("reviewStatus", request.ReviewStatus.Trim());
         command.Parameters.AddWithValue("notes", request.Notes?.Trim() ?? string.Empty);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -1293,9 +1362,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 report_date = @reportDate,
                 specimen_number = @specimenNumber,
                 status = @status,
-                review_status = @reviewStatus,
-                reviewed_by = case when @reviewStatus = 'reviewed' then reviewed_by else null end,
-                reviewed_at = case when @reviewStatus = 'reviewed' then reviewed_at else null end,
                 notes = @notes
             where id = @id;
             """;
@@ -1304,7 +1370,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("reportDate", NpgsqlDbType.Timestamp).Value = reportDate;
         command.Parameters.AddWithValue("specimenNumber", request.SpecimenNumber.Trim());
         command.Parameters.AddWithValue("status", request.ReportStatus.Trim());
-        command.Parameters.AddWithValue("reviewStatus", request.ReviewStatus.Trim());
         command.Parameters.AddWithValue("notes", request.Notes?.Trim() ?? string.Empty);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -1315,153 +1380,175 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     public async Task<ProcedureMutationResponse?> SignReportAsync(
         int reportId,
         ProcedureReportSignRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         if (reportId <= 0
-            || string.IsNullOrWhiteSpace(request.ReviewedBy)
-            || !TryReadDateTime(request.ReviewedAt, out var reviewedAt))
+            || request.ExpectedReviewVersion <= 0
+            || !HasBoundedReason(request.Reason)
+            || string.IsNullOrWhiteSpace(actor))
         {
             return null;
         }
 
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var report = await GetReportMutationContextAsync(connection, reportId, cancellationToken);
-        if (report is null)
-        {
-            return null;
-        }
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update lab_reports
-            set review_status = 'reviewed',
-                reviewed_by = @reviewedBy,
-                reviewed_at = @reviewedAt
-            where id = @id;
-            """;
-        command.Parameters.AddWithValue("id", report.Id);
-        command.Parameters.AddWithValue("reviewedBy", request.ReviewedBy.Trim());
-        command.Parameters.Add("reviewedAt", NpgsqlDbType.Timestamp).Value = reviewedAt;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-
-        var detail = await GetForPatientAsync(report.PatientId, cancellationToken);
-        return detail is null ? null : new ProcedureMutationResponse(report.Id, detail);
+        return await TransitionReportReviewAsync(
+            reportId,
+            request.ExpectedReviewVersion,
+            "reviewed",
+            "signed",
+            actor.Trim(),
+            actor.Trim(),
+            request.Reason.Trim(),
+            ["received", "assigned"],
+            cancellationToken);
     }
 
     public async Task<ProcedureMutationResponse?> AssignReportReviewerAsync(
         int reportId,
         ProcedureReportReviewAssignmentRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         if (reportId <= 0
             || string.IsNullOrWhiteSpace(request.AssignedTo)
-            || !TryReadDateTime(request.AssignedAt, out var assignedAt))
+            || request.ExpectedReviewVersion <= 0
+            || !HasBoundedReason(request.Reason)
+            || string.IsNullOrWhiteSpace(actor))
         {
             return null;
         }
 
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var report = await GetReportMutationContextAsync(connection, reportId, cancellationToken);
-        if (report is null)
-        {
-            return null;
-        }
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update lab_reports
-            set review_status = 'assigned',
-                reviewed_by = @assignedTo,
-                reviewed_at = @assignedAt
-            where id = @id;
-            """;
-        command.Parameters.AddWithValue("id", report.Id);
-        command.Parameters.AddWithValue("assignedTo", request.AssignedTo.Trim());
-        command.Parameters.Add("assignedAt", NpgsqlDbType.Timestamp).Value = assignedAt;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-
-        var detail = await GetForPatientAsync(report.PatientId, cancellationToken);
-        return detail is null ? null : new ProcedureMutationResponse(report.Id, detail);
+        return await TransitionReportReviewAsync(
+            reportId,
+            request.ExpectedReviewVersion,
+            "assigned",
+            "assigned",
+            request.AssignedTo.Trim(),
+            actor.Trim(),
+            request.Reason.Trim(),
+            ["received", "assigned"],
+            cancellationToken);
     }
 
     public async Task<ProcedureMutationResponse?> ReopenReportReviewAsync(
         int reportId,
+        ProcedureReportReviewDecisionRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
-        if (reportId <= 0)
+        if (reportId <= 0
+            || request.ExpectedReviewVersion <= 0
+            || !HasBoundedReason(request.Reason)
+            || string.IsNullOrWhiteSpace(actor))
         {
             return null;
         }
 
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var report = await GetReportMutationContextAsync(connection, reportId, cancellationToken);
-        if (report is null)
+        return await TransitionReportReviewAsync(
+            reportId,
+            request.ExpectedReviewVersion,
+            "received",
+            "reopened",
+            null,
+            actor.Trim(),
+            request.Reason.Trim(),
+            ["reviewed", "denied"],
+            cancellationToken);
+    }
+
+    public async Task<ProcedureMutationResponse?> DenyReportReviewAsync(
+        int reportId,
+        ProcedureReportReviewDecisionRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        if (reportId <= 0
+            || request.ExpectedReviewVersion <= 0
+            || !HasBoundedReason(request.Reason)
+            || string.IsNullOrWhiteSpace(actor))
         {
             return null;
         }
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update lab_reports
-            set review_status = 'received',
-                reviewed_by = null,
-                reviewed_at = null
-            where id = @id;
-            """;
-        command.Parameters.AddWithValue("id", report.Id);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-
-        var detail = await GetForPatientAsync(report.PatientId, cancellationToken);
-        return detail is null ? null : new ProcedureMutationResponse(report.Id, detail);
+        return await TransitionReportReviewAsync(
+            reportId,
+            request.ExpectedReviewVersion,
+            "denied",
+            "denied",
+            actor.Trim(),
+            actor.Trim(),
+            request.Reason.Trim(),
+            ["received", "assigned"],
+            cancellationToken);
     }
 
     public async Task<ProcedureReportBulkSignResponse?> BulkSignReportsAsync(
         ProcedureReportBulkSignRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
-        var reportIds = (request.ReportIds ?? Array.Empty<int>())
-            .Where(id => id > 0)
-            .Distinct()
-            .OrderBy(id => id)
+        var requested = (request.Reports ?? Array.Empty<ProcedureReportBulkSignItem>())
+            .Where(item => item.ReportId > 0 && item.ExpectedReviewVersion > 0)
+            .GroupBy(item => item.ReportId)
+            .Select(group => group.Single())
+            .OrderBy(item => item.ReportId)
             .ToArray();
 
-        if (reportIds.Length == 0
-            || string.IsNullOrWhiteSpace(request.ReviewedBy)
-            || !TryReadDateTime(request.ReviewedAt, out var reviewedAt))
+        if (requested.Length == 0
+            || requested.Length != (request.Reports?.Count ?? 0)
+            || !HasBoundedReason(request.Reason)
+            || string.IsNullOrWhiteSpace(actor))
         {
             return null;
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update lab_reports
-            set review_status = 'reviewed',
-                reviewed_by = @reviewedBy,
-                reviewed_at = @reviewedAt
-            where id = any(@reportIds)
-              and coalesce(review_status, '') <> 'reviewed'
-            returning id;
-            """;
-        command.Parameters.Add("reportIds", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = reportIds;
-        command.Parameters.AddWithValue("reviewedBy", request.ReviewedBy.Trim());
-        command.Parameters.Add("reviewedAt", NpgsqlDbType.Timestamp).Value = reviewedAt;
-
-        var signedReportIds = new List<int>();
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var contexts = await GetReportReviewContextsAsync(
+            connection,
+            transaction,
+            requested.Select(item => item.ReportId).ToArray(),
+            cancellationToken);
+        if (contexts.Count != requested.Length)
         {
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                signedReportIds.Add(reader.GetInt32(0));
-            }
+            throw new ArgumentException("One or more selected reports no longer exist.");
         }
 
+        foreach (var item in requested)
+        {
+            var context = contexts[item.ReportId];
+            if (context.ReviewVersion != item.ExpectedReviewVersion)
+            {
+                throw new ProcedureReportReviewConflictException(
+                    item.ExpectedReviewVersion,
+                    context.ReviewVersion,
+                    context.ReviewStatus);
+            }
+
+            if (context.ReviewStatus is not ("received" or "assigned"))
+            {
+                throw new ArgumentException($"Report {item.ReportId} cannot be signed from {context.ReviewStatus}.");
+            }
+
+            await ApplyReviewTransitionAsync(
+                connection,
+                transaction,
+                context,
+                "reviewed",
+                "signed",
+                actor.Trim(),
+                actor.Trim(),
+                request.Reason.Trim(),
+                cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+
         return new ProcedureReportBulkSignResponse(
-            RequestedCount: reportIds.Length,
-            SignedCount: signedReportIds.Count,
-            SignedReportIds: signedReportIds.Order().ToArray(),
-            ReviewedBy: request.ReviewedBy.Trim(),
-            ReviewedAt: reviewedAt.ToString("yyyy-MM-dd HH:mm"));
+            RequestedCount: requested.Length,
+            SignedCount: requested.Length,
+            SignedReportIds: requested.Select(item => item.ReportId).ToArray(),
+            ReviewedBy: actor.Trim(),
+            ReviewedAt: DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm"));
     }
 
     public async Task<ProcedureMutationResponse?> CreateSpecimenAsync(
@@ -1849,7 +1936,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, order_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at, notes
+            select id, order_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at,
+                   review_version,
+                   (select count(*) from lab_report_review_events lrrh where lrrh.report_id = lab_reports.id) as review_history_count,
+                   notes
             from lab_reports
             where order_id = any(@orderIds)
             order by report_date desc, id desc;
@@ -1873,6 +1963,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     ReviewStatus: ReadNullableString(reader, "review_status"),
                     ReviewedBy: ReadNullableString(reader, "reviewed_by"),
                     ReviewedAt: ReadNullableDateTime(reader, "reviewed_at"),
+                    ReviewVersion: reader.GetInt32(reader.GetOrdinal("review_version")),
+                    ReviewHistoryCount: Convert.ToInt32(reader.GetValue(reader.GetOrdinal("review_history_count"))),
                     Notes: ReadNullableString(reader, "notes"),
                     Results: [])));
         }
@@ -2066,6 +2158,146 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         return rows;
+    }
+
+    private async Task<ProcedureMutationResponse?> TransitionReportReviewAsync(
+        int reportId,
+        int expectedVersion,
+        string targetStatus,
+        string action,
+        string? assignedTo,
+        string actor,
+        string reason,
+        IReadOnlyCollection<string> allowedStatuses,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var contexts = await GetReportReviewContextsAsync(connection, transaction, [reportId], cancellationToken);
+        if (!contexts.TryGetValue(reportId, out var context))
+        {
+            return null;
+        }
+
+        if (context.ReviewVersion != expectedVersion)
+        {
+            throw new ProcedureReportReviewConflictException(expectedVersion, context.ReviewVersion, context.ReviewStatus);
+        }
+
+        if (!allowedStatuses.Contains(context.ReviewStatus, StringComparer.Ordinal))
+        {
+            throw new ArgumentException($"Report {reportId} cannot transition from {context.ReviewStatus} to {targetStatus}.");
+        }
+
+        await ApplyReviewTransitionAsync(
+            connection,
+            transaction,
+            context,
+            targetStatus,
+            action,
+            assignedTo,
+            actor,
+            reason,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        var detail = await GetForPatientAsync(context.PatientId, cancellationToken);
+        return detail is null ? null : new ProcedureMutationResponse(reportId, detail);
+    }
+
+    private static async Task<Dictionary<int, ProcedureReportReviewContext>> GetReportReviewContextsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        IReadOnlyList<int> reportIds,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select lr.id, lo.patient_id, coalesce(lr.review_status, 'received') as review_status, lr.review_version
+            from lab_reports lr
+            inner join lab_orders lo on lo.id = lr.order_id
+            where lr.id = any(@reportIds)
+            order by lr.id
+            for update;
+            """;
+        command.Parameters.Add("reportIds", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = reportIds.ToArray();
+
+        var contexts = new Dictionary<int, ProcedureReportReviewContext>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var id = reader.GetInt32(reader.GetOrdinal("id"));
+            contexts[id] = new ProcedureReportReviewContext(
+                id,
+                reader.GetString(reader.GetOrdinal("patient_id")),
+                reader.GetString(reader.GetOrdinal("review_status")),
+                reader.GetInt32(reader.GetOrdinal("review_version")));
+        }
+        return contexts;
+    }
+
+    private static async Task ApplyReviewTransitionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        ProcedureReportReviewContext context,
+        string targetStatus,
+        string action,
+        string? assignedTo,
+        string actor,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var occurredAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        var resultingVersion = context.ReviewVersion + 1;
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = """
+                update lab_reports
+                set review_status = @reviewStatus,
+                    reviewed_by = @reviewedBy,
+                    reviewed_at = @reviewedAt,
+                    review_version = @reviewVersion
+                where id = @id and review_version = @expectedVersion;
+                """;
+            update.Parameters.AddWithValue("id", context.Id);
+            update.Parameters.AddWithValue("reviewStatus", targetStatus);
+            update.Parameters.AddWithValue("reviewedBy", (object?)assignedTo ?? DBNull.Value);
+            update.Parameters.AddWithValue("reviewedAt", assignedTo is null ? DBNull.Value : occurredAt);
+            update.Parameters.AddWithValue("reviewVersion", resultingVersion);
+            update.Parameters.AddWithValue("expectedVersion", context.ReviewVersion);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new ProcedureReportReviewConflictException(context.ReviewVersion, context.ReviewVersion, context.ReviewStatus);
+            }
+        }
+
+        await using var history = connection.CreateCommand();
+        history.Transaction = transaction;
+        history.CommandText = """
+            insert into lab_report_review_events
+                (report_id, action, previous_status, current_status, assigned_to, actor, reason, expected_version, resulting_version, occurred_at)
+            values
+                (@reportId, @action, @previousStatus, @currentStatus, @assignedTo, @actor, @reason, @expectedVersion, @resultingVersion, @occurredAt);
+            """;
+        history.Parameters.AddWithValue("reportId", context.Id);
+        history.Parameters.AddWithValue("action", action);
+        history.Parameters.AddWithValue("previousStatus", context.ReviewStatus);
+        history.Parameters.AddWithValue("currentStatus", targetStatus);
+        history.Parameters.AddWithValue("assignedTo", (object?)assignedTo ?? DBNull.Value);
+        history.Parameters.AddWithValue("actor", actor);
+        history.Parameters.AddWithValue("reason", reason);
+        history.Parameters.AddWithValue("expectedVersion", context.ReviewVersion);
+        history.Parameters.AddWithValue("resultingVersion", resultingVersion);
+        history.Parameters.AddWithValue("occurredAt", occurredAt);
+        await history.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static bool HasBoundedReason(string? reason)
+    {
+        var length = reason?.Trim().Length ?? 0;
+        return length is >= 1 and <= 500;
     }
 
     private static async Task<ProcedureEncounterMutationContext?> GetEncounterForPatientAsync(
@@ -2816,6 +3048,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private sealed record ProcedureOrderMutationContext(int Id, string PatientId, int LegacyPid);
 
     private sealed record ProcedureReportMutationContext(int Id, string PatientId, int LegacyPid);
+
+    private sealed record ProcedureReportReviewContext(
+        int Id,
+        string PatientId,
+        string ReviewStatus,
+        int ReviewVersion);
 
     private sealed record ProcedureResultMutationContext(int Id, string PatientId, int LegacyPid);
 

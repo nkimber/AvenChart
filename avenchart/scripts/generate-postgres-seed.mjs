@@ -296,6 +296,14 @@ drop table if exists problems;
 drop table if exists clinical_form_migration_manifest_events;
 drop table if exists clinical_form_migration_manifests;
 drop table if exists legacy_clinical_form_snapshots;
+drop table if exists clinical_form_instance_events;
+drop table if exists clinical_form_signatures;
+drop table if exists clinical_form_instances;
+drop table if exists clinical_form_definition_events;
+alter table if exists clinical_form_definitions
+  drop constraint if exists clinical_form_definitions_effective_revision_fkey;
+drop table if exists clinical_form_revisions;
+drop table if exists clinical_form_definitions;
 drop table if exists saved_report_run_events;
 drop table if exists saved_report_runs;
 drop table if exists saved_report_definition_events;
@@ -336,6 +344,7 @@ drop table if exists address_book_contacts;
 drop table if exists office_notes;
 drop table if exists procedure_result_versions;
 drop table if exists lab_results;
+drop table if exists lab_report_review_events;
 drop table if exists lab_reports;
 drop table if exists lab_specimens;
 drop table if exists lab_orders;
@@ -1576,7 +1585,22 @@ create table lab_reports (
   review_status text,
   reviewed_by text,
   reviewed_at timestamp,
+  review_version integer not null default 1,
   notes text
+);
+
+create table lab_report_review_events (
+  id bigserial primary key,
+  report_id integer not null references lab_reports(id) on delete cascade,
+  action text not null,
+  previous_status text,
+  current_status text not null,
+  assigned_to text,
+  actor text not null,
+  reason text,
+  expected_version integer not null,
+  resulting_version integer not null,
+  occurred_at timestamp not null
 );
 
 create table lab_specimens (
@@ -2815,6 +2839,7 @@ copyRows('lab_reports', [
   'review_status',
   'reviewed_by',
   'reviewed_at',
+  'review_version',
   'notes',
 ], dataset.labReports.map((report) => {
   const reviewStatus = report.reviewStatus ?? (report.status === 'complete' ? 'reviewed' : 'pending')
@@ -2828,6 +2853,7 @@ copyRows('lab_reports', [
     reviewStatus,
     reviewStatus === 'reviewed' ? 'admin' : null,
     reviewStatus === 'reviewed' ? report.date : null,
+    1,
     report.notes ?? 'Gold dataset result',
   ]
 }))
@@ -3076,6 +3102,7 @@ create index idx_lab_orders_lab_id on lab_orders (lab_id);
 create index idx_lab_order_catalog_parent_id on lab_order_catalog (parent_id);
 create index idx_lab_order_catalog_lab_id on lab_order_catalog (lab_id);
 create index idx_lab_reports_date on lab_reports (report_date);
+create index idx_lab_report_review_events_report on lab_report_review_events (report_id, occurred_at desc, id desc);
 create index idx_lab_results_date on lab_results (result_date);
 create index idx_procedure_result_versions_result on procedure_result_versions (result_id, version_no desc);
 create index idx_messages_pid on messages (pid);

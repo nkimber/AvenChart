@@ -46,6 +46,8 @@ public sealed record ProcedureReportReviewQueueItem(
     string? ReviewStatus,
     string? ReviewedBy,
     string? ReviewedAt,
+    int ReviewVersion,
+    int ReviewHistoryCount,
     string? SpecimenNumber,
     string? Notes);
 
@@ -285,8 +287,27 @@ public sealed record ProcedureReportItem(
     string? ReviewStatus,
     string? ReviewedBy,
     string? ReviewedAt,
+    int ReviewVersion,
+    int ReviewHistoryCount,
     string? Notes,
     IReadOnlyList<ProcedureResultItem> Results);
+
+public sealed record ProcedureReportReviewHistoryResponse(
+    int ReportId,
+    int ReviewVersion,
+    IReadOnlyList<ProcedureReportReviewEventItem> Events);
+
+public sealed record ProcedureReportReviewEventItem(
+    long EventId,
+    string Action,
+    string? PreviousStatus,
+    string CurrentStatus,
+    string? AssignedTo,
+    string Actor,
+    string? Reason,
+    int ExpectedVersion,
+    int ResultingVersion,
+    string OccurredAt);
 
 public sealed record ProcedureResultItem(
     int Id,
@@ -366,17 +387,25 @@ public sealed record ProcedureReportUpdateRequest(
     string Notes);
 
 public sealed record ProcedureReportSignRequest(
-    string ReviewedBy,
-    string ReviewedAt);
+    int ExpectedReviewVersion,
+    string Reason);
 
 public sealed record ProcedureReportReviewAssignmentRequest(
     string AssignedTo,
-    string AssignedAt);
+    int ExpectedReviewVersion,
+    string Reason);
+
+public sealed record ProcedureReportReviewDecisionRequest(
+    int ExpectedReviewVersion,
+    string Reason);
 
 public sealed record ProcedureReportBulkSignRequest(
-    IReadOnlyList<int> ReportIds,
-    string ReviewedBy,
-    string ReviewedAt);
+    IReadOnlyList<ProcedureReportBulkSignItem> Reports,
+    string Reason);
+
+public sealed record ProcedureReportBulkSignItem(
+    int ReportId,
+    int ExpectedReviewVersion);
 
 public sealed record ProcedureReportBulkSignResponse(
     int RequestedCount,

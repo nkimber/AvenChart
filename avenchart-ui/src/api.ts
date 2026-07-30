@@ -6296,6 +6296,8 @@ export type ProcedureReportItem = {
   reviewStatus?: string | null
   reviewedBy?: string | null
   reviewedAt?: string | null
+  reviewVersion: number
+  reviewHistoryCount: number
   notes?: string | null
   results: ProcedureResultItem[]
 }
@@ -6463,6 +6465,8 @@ export async function createProcedureSpecimen(sessionId: string, input: Procedur
   reviewStatus?: string | null
   reviewedBy?: string | null
   reviewedAt?: string | null
+  reviewVersion: number
+  reviewHistoryCount: number
   specimenNumber?: string | null
   notes?: string | null
 }
@@ -9038,17 +9042,46 @@ export async function getPrescriptionAuditHistory(
   )
 }
 
-// ÄÄ Lab report sign ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// â”€â”€ Lab report sign â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type ProcedureMutationResponse = {
   id: number
   detail: ProcedureResultsResponse
 }
 
+export type ProcedureReportReviewHistoryResponse = {
+  reportId: number
+  reviewVersion: number
+  events: Array<{
+    eventId: number
+    action: string
+    previousStatus?: string | null
+    currentStatus: string
+    assignedTo?: string | null
+    actor: string
+    reason?: string | null
+    expectedVersion: number
+    resultingVersion: number
+    occurredAt: string
+  }>
+}
+
+export function getLabReportReviewHistory(
+  sessionId: string,
+  reportId: number,
+  signal?: AbortSignal,
+): Promise<ProcedureReportReviewHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/procedures/reports/${reportId}/review-history`,
+    signal,
+  )
+}
+
 export async function signLabReport(
   sessionId: string,
   reportId: number,
-  body: { reviewedBy: string; reviewedAt: string },
+  body: { expectedReviewVersion: number; reason: string },
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   return clinicianPut<ProcedureMutationResponse>(
@@ -9062,7 +9095,7 @@ export async function signLabReport(
 export async function assignLabReportReviewer(
   sessionId: string,
   reportId: number,
-  body: { assignedTo: string; assignedAt: string },
+  body: { assignedTo: string; expectedReviewVersion: number; reason: string },
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   return clinicianPut<ProcedureMutationResponse>(
@@ -9096,7 +9129,7 @@ export type ProcedureReportBulkSignResponse = {
 
 export async function bulkSignLabReports(
   sessionId: string,
-  body: { reportIds: number[]; reviewedBy: string; reviewedAt: string },
+  body: { reports: Array<{ reportId: number; expectedReviewVersion: number }>; reason: string },
   signal?: AbortSignal,
 ): Promise<ProcedureReportBulkSignResponse> {
   return clinicianPut<ProcedureReportBulkSignResponse>(
@@ -9130,7 +9163,7 @@ export async function createPatientMessage(
   return result.detail
 }
 
-// ÄÄ Patient mutations ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+// â”€â”€ Patient mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type PatientContactUpdate = {
   phoneHome: string
