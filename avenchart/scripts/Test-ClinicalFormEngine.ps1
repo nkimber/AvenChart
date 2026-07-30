@@ -951,6 +951,16 @@ try {
         }).Count -eq 0) `
         @($legacyRosProof | ForEach-Object { @{ stableKey=$_.stableKey; definitionId=$_.definition.definitionId; fields=$_.fields.key; previewValid=$_.preview.valid } })
 
+    $legacyRosCompositeDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.ros" }) | Select-Object -First 1
+    $legacyRosCompositeDetail = if ($null -ne $legacyRosCompositeDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($legacyRosCompositeDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $legacyRosCompositeFields = @($legacyRosCompositeDetail.currentRevision.definition.fields)
+    $legacyRosCompositeSourceFields = @($legacyRosProof | ForEach-Object { $_.fields })
+    $legacyRosCompositePreview = if ($null -ne $legacyRosCompositeDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$legacyRosCompositeDetail.currentRevision.definition; values=@{ weight_change="yes"; change_in_vision="no"; hearing_loss="na"; breast_mass="yes"; chest_pain="no"; dysphagia="na"; polyuria="yes"; g="no"; joint_pain="na"; seizures="yes"; s_cancer="no"; p_diagnosis="na"; thyroid_problems="yes" } } } else { $null }
+    Add-Check `
+        "Legacy form_ros composition presents every adopted section as one encounter form without PHP execution" `
+        ($null -ne $legacyRosCompositeDefinition -and $legacyRosCompositeDefinition.contextScope -eq "encounter" -and $legacyRosCompositeDefinition.signaturePolicy -eq "author-only" -and $legacyRosCompositeDetail.currentRevision.status -eq "effective" -and $legacyRosCompositeFields.Count -eq 137 -and (($legacyRosCompositeFields.key -join "|") -eq ($legacyRosCompositeSourceFields.key -join "|")) -and ((@($legacyRosCompositeDetail.currentRevision.definition.sections).key -join "|") -eq "general|eyes|ear_nose_throat|breast_pulmonary|cardiovascular|gastrointestinal|urinary|reproductive|musculoskeletal|neurologic|skin|psychiatric|endocrine_hematologic_allergy") -and $legacyRosCompositePreview.valid) `
+        @{ definitionId=$legacyRosCompositeDefinition.definitionId; schemaHash=$legacyRosCompositeDetail.currentRevision.schemaHash; fieldCount=$legacyRosCompositeFields.Count; sectionKeys=@($legacyRosCompositeDetail.currentRevision.definition.sections).key; previewValid=$legacyRosCompositePreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
