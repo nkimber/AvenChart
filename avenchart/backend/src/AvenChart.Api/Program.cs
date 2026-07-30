@@ -6073,8 +6073,15 @@ billing.MapPost("/lines", async (
         BillingLineCreateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateLineAsync(request, cancellationToken);
-        return mutation is null ? Results.BadRequest() : Results.Created($"/api/billing/lines/{mutation.Id}", mutation);
+        try
+        {
+            var mutation = await repository.CreateLineAsync(request, cancellationToken);
+            return mutation is null ? Results.BadRequest() : Results.Created($"/api/billing/lines/{mutation.Id}", mutation);
+        }
+        catch (EncounterLockConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
     })
     .WithName("CreateBillingLine")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
