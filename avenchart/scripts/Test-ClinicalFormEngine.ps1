@@ -922,6 +922,7 @@ try {
         "legacy.rosurinary" = "polyuria|polydypsia|dysuria|hematuria|frequency|urgency|incontinence|renal_stones|utis|hesitancy|dribbling|stream|nocturia|erections|ejaculations"
         "legacy.rosreproductive" = "g|p|ap|lc|mearche|menopause|lmp|f_frequency|f_flow|f_symptoms|abnormal_hair_growth|f_hirsutism"
         "legacy.rosmusculoskeletal" = "joint_pain|swelling|m_redness|m_warm|m_stiffness|muscle|m_aches|fms|arthritis|loc"
+        "legacy.rosneurologic" = "seizures|stroke|tia|n_numbness|n_weakness|paralysis|intellectual_decline|memory_problems|dementia|n_headache"
     }
     $legacyRosProof = @()
     foreach ($legacyRosEntry in $legacyRosCompatibility.GetEnumerator()) {
