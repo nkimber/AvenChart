@@ -2126,18 +2126,18 @@ encounters.MapGet("/{encounter:int}/alerts/history", async (ClinicalAlertEvaluat
     (await repository.GetHistoryAsync(encounter, cancellationToken)) is { } history ? Results.Ok(history) : Results.NotFound())
     .WithName("GetEncounterClinicalAlertHistory");
 
-encounters.MapPost("/{encounter:int}/alerts/{ruleKey}/acknowledge", async (ClinicalAlertEvaluationRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, string ruleKey, CancellationToken cancellationToken) =>
+encounters.MapPost("/{encounter:int}/alerts/{ruleKey}/acknowledge", async (ClinicalAlertEvaluationRepository repository, EncounterRepository encounterRepository, AuthRepository authRepository, HttpContext httpContext, int encounter, string ruleKey, CancellationToken cancellationToken) =>
 {
-    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.AcknowledgeAsync(encounter, ruleKey, session.Username, cancellationToken)) is { } alerts ? Results.Ok(alerts) : Results.NotFound(); }
+    try { if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken)) return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" }); var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.AcknowledgeAsync(encounter, ruleKey, session.Username, cancellationToken)) is { } alerts ? Results.Ok(alerts) : Results.NotFound(); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
     catch (InvalidOperationException exception) { return Results.BadRequest(new { error = exception.Message }); }
 })
     .WithName("AcknowledgeEncounterClinicalAlert")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
-encounters.MapPost("/{encounter:int}/alerts/{ruleKey}/reopen", async (ClinicalAlertEvaluationRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, string ruleKey, CancellationToken cancellationToken) =>
+encounters.MapPost("/{encounter:int}/alerts/{ruleKey}/reopen", async (ClinicalAlertEvaluationRepository repository, EncounterRepository encounterRepository, AuthRepository authRepository, HttpContext httpContext, int encounter, string ruleKey, CancellationToken cancellationToken) =>
 {
-    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.ReopenAsync(encounter, ruleKey, session.Username, cancellationToken)) is { } alerts ? Results.Ok(alerts) : Results.NotFound(); }
+    try { if (await encounterRepository.HasLockingSignatureAsync(encounter, cancellationToken)) return Results.Conflict(new { error = "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.", code = "encounter_locked" }); var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.ReopenAsync(encounter, ruleKey, session.Username, cancellationToken)) is { } alerts ? Results.Ok(alerts) : Results.NotFound(); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 })
     .WithName("ReopenEncounterClinicalAlert")
