@@ -1793,8 +1793,23 @@ export type PatientReferral = {
   encounterId?: number | null
   destination: string
   reason: string
+  workflowVersion: number
+  assignedTo: string
+  assignedDisplayName: string
+  dueAt?: string | null
+  createdBy: string
+  policyRevision: string
   status: string
   externalReference?: string | null
+  availableTransitions: ClinicalWorkflowTransitionOption[]
+}
+
+export type PatientReferralWorkflowEvent = PatientAuthorizationWorkflowEvent
+
+export type PatientReferralWorkflowHistory = {
+  referral: PatientReferral
+  total: number
+  events: PatientReferralWorkflowEvent[]
   notes?: string | null
   requestedAt: string
   createdAt: string
@@ -1815,6 +1830,9 @@ export async function createPatientReferral(
   body: {
     encounterId?: number | null
     destination: string
+    assignedTo?: string
+    dueAt?: string
+    workflowReason?: string
     reason: string
     externalReference?: string
     notes?: string
@@ -1831,14 +1849,47 @@ export async function updatePatientReferralStatus(
   sessionId: string,
   patientId: string,
   referralId: string,
-  status: 'sent' | 'received' | 'closed' | 'cancelled',
+  body: {
+    status: 'sent' | 'received' | 'closed' | 'cancelled'
+    expectedVersion: number
+    reasonCode: string
+    reason: string
+  },
 ): Promise<PatientReferral> {
   return clinicianPut(
     sessionId,
     `/api/patients/${encodeURIComponent(patientId)}/referrals/${referralId}/status`,
-    {
-      status,
-    },
+    body,
+  )
+}
+
+export async function updatePatientReferralAssignment(
+  sessionId: string,
+  patientId: string,
+  referralId: string,
+  body: {
+    assignedTo: string
+    dueAt?: string
+    expectedVersion: number
+    reasonCode: 'responsibility-transfer'
+    reason: string
+  },
+): Promise<PatientReferral> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/referrals/${referralId}/assignment`,
+    body,
+  )
+}
+
+export async function getPatientReferralHistory(
+  sessionId: string,
+  patientId: string,
+  referralId: string,
+): Promise<PatientReferralWorkflowHistory> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/referrals/${referralId}/history`,
   )
 }
 export async function getPatientPrintableOutput(
