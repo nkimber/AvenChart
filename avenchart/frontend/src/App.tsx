@@ -242,6 +242,7 @@ import {
   archivePatientMessage,
   transmitProcedureOrder,
   rescheduleAppointmentOccurrence,
+  restoreEncounter,
   restoreEncounterDocument,
   restoreAppointmentOccurrence,
   restorePatientDocument,
@@ -690,6 +691,7 @@ function App() {
   const [encounterDetailStatus, setEncounterDetailStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [encounterError, setEncounterError] = useState<string | null>(null)
   const [encounterRefreshKey, setEncounterRefreshKey] = useState(0)
+  const [encounterShowArchived, setEncounterShowArchived] = useState(false)
   const [encounterIncludeArchivedDocuments, setEncounterIncludeArchivedDocuments] = useState(false)
   const [encounterSoapNoteTemplates, setEncounterSoapNoteTemplates] =
     useState<EncounterSoapNoteTemplateCatalogResponse | null>(null)
@@ -1160,7 +1162,13 @@ function App() {
       setEncounterError(null)
 
       try {
-        const result = await searchEncounters(encounterPatientId, encounterFromDate, openEmrSessionId, controller.signal)
+        const result = await searchEncounters(
+          encounterPatientId,
+          encounterFromDate,
+          openEmrSessionId,
+          controller.signal,
+          encounterShowArchived,
+        )
         setEncounterResult(result)
         setEncounterStatus('ready')
 
@@ -1185,7 +1193,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, encounterPatientId, encounterFromDate, encounterRefreshKey, openEmrSessionId])
+  }, [activeModule, encounterPatientId, encounterFromDate, encounterRefreshKey, encounterShowArchived, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'encounters') {
@@ -2716,6 +2724,30 @@ function App() {
       const message = deleteError instanceof Error ? deleteError.message : 'Encounter archive failed'
       setEncounterError(message)
       throw deleteError
+    }
+  }
+
+  async function handleEncounterRestore(encounter: EncounterDetail) {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const sessionId = getActiveEncounterSessionId()
+      const reason = window.prompt('Why is this encounter being restored?')?.trim()
+      if (!reason) {
+        throw new Error('A restore reason is required')
+      }
+      await restoreEncounter(encounter.encounter, reason, encounter.archiveVersion, sessionId)
+      setEncounterShowArchived(false)
+      setSelectedEncounter(null)
+      setEncounterDetail(null)
+      setEncounterDetailStatus('idle')
+      setEncounterRefreshKey((current) => current + 1)
+    } catch (restoreError) {
+      setEncounterDetailStatus('error')
+      const message = restoreError instanceof Error ? restoreError.message : 'Encounter restore failed'
+      setEncounterError(message)
+      throw restoreError
     }
   }
 
@@ -6245,6 +6277,7 @@ function App() {
             soapNoteTemplates={encounterSoapNoteTemplates}
             soapNoteTemplateStatus={encounterSoapNoteTemplateStatus}
             soapNoteTemplateError={encounterSoapNoteTemplateError}
+            showArchived={encounterShowArchived}
             includeArchivedDocuments={encounterIncludeArchivedDocuments}
             sessionId={openEmrSessionId}
             onEncounterSessionActive={(sessionId) => {
@@ -6254,10 +6287,12 @@ function App() {
             onPatientIdChange={setEncounterPatientId}
             onFromDateChange={setEncounterFromDate}
             onSelectEncounter={setSelectedEncounter}
+            onShowArchivedChange={setEncounterShowArchived}
             onIncludeArchivedDocumentsChange={setEncounterIncludeArchivedDocuments}
             onCreateEncounter={handleEncounterCreate}
             onUpdateEncounter={handleEncounterUpdate}
             onArchiveEncounter={handleEncounterArchive}
+            onRestoreEncounter={handleEncounterRestore}
             onCreateVitals={handleEncounterVitalsCreate}
             onCreateSoapNote={handleEncounterSoapCreate}
             onSignEncounter={handleEncounterSign}
@@ -12823,16 +12858,19 @@ function EncounterWorkspace({
   soapNoteTemplates,
   soapNoteTemplateStatus,
   soapNoteTemplateError,
+  showArchived,
   includeArchivedDocuments,
   sessionId,
   onEncounterSessionActive,
   onPatientIdChange,
   onFromDateChange,
   onSelectEncounter,
+  onShowArchivedChange,
   onIncludeArchivedDocumentsChange,
   onCreateEncounter,
   onUpdateEncounter,
   onArchiveEncounter,
+  onRestoreEncounter,
   onCreateVitals,
   onCreateSoapNote,
   onSignEncounter,
@@ -12863,16 +12901,19 @@ function EncounterWorkspace({
   soapNoteTemplates: EncounterSoapNoteTemplateCatalogResponse | null
   soapNoteTemplateStatus: 'idle' | 'loading' | 'ready' | 'error'
   soapNoteTemplateError: string | null
+  showArchived: boolean
   includeArchivedDocuments: boolean
   sessionId: string | null
   onEncounterSessionActive: (sessionId: string) => void
   onPatientIdChange: (value: string) => void
   onFromDateChange: (value: string) => void
   onSelectEncounter: (encounter: number) => void
+  onShowArchivedChange: (value: boolean) => void
   onIncludeArchivedDocumentsChange: (value: boolean) => void
   onCreateEncounter: (input: EncounterCreateInput) => Promise<EncounterDetail>
   onUpdateEncounter: (encounter: EncounterDetail, update: EncounterUpdateInput) => Promise<EncounterDetail>
   onArchiveEncounter: (encounter: EncounterDetail) => Promise<void>
+  onRestoreEncounter: (encounter: EncounterDetail) => Promise<void>
   onCreateVitals: (encounter: EncounterDetail, input: EncounterVitalsCreateInput) => Promise<unknown>
   onCreateSoapNote: (encounter: EncounterDetail, input: EncounterSoapNoteCreateInput) => Promise<unknown>
   onSignEncounter: (encounter: EncounterDetail, input: EncounterSignInput) => Promise<EncounterSignatureMutationResponse>
@@ -13214,6 +13255,20 @@ function EncounterWorkspace({
     setSummaryStatus('saving')
     try {
       await onArchiveEncounter(encounterDetail)
+      setSummaryStatus('saved')
+    } catch {
+      setSummaryStatus('error')
+    }
+  }
+
+  async function handleRestoreClick() {
+    if (!encounterDetail) {
+      return
+    }
+
+    setSummaryStatus('saving')
+    try {
+      await onRestoreEncounter(encounterDetail)
       setSummaryStatus('saved')
     } catch {
       setSummaryStatus('error')
@@ -13673,9 +13728,20 @@ function EncounterWorkspace({
           </label>
         </div>
 
+        <label className="inline-toggle">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(event) => onShowArchivedChange(event.target.checked)}
+            aria-label="Show archived encounters"
+            disabled={encounterLocked}
+          />
+          <span>Show archived encounters</span>
+        </label>
+
         <div className="result-meta">
           <span>{searchStatus === 'loading' ? 'Searching' : `${searchResult?.totalMatches ?? 0} encounters`}</span>
-          <span>Clinical history</span>
+          <span>{showArchived ? 'Archived clinical history' : 'Clinical history'}</span>
         </div>
 
         {searchStatus === 'error' && <div className="status-banner error">{error}</div>}
@@ -13685,6 +13751,7 @@ function EncounterWorkspace({
             <EncounterResult
               key={encounter.encounter}
               encounter={encounter}
+              archived={showArchived}
               selected={encounter.encounter === selectedEncounter}
               onSelect={() => onSelectEncounter(encounter.encounter)}
             />
@@ -13841,6 +13908,7 @@ function EncounterWorkspace({
                 <Field label="External ID" value={encounterDetail.externalId} />
                 <Field label="POS code" value={encounterDetail.posCode} />
                 <Field label="Billing note" value={encounterDetail.billingNote} />
+                {encounterDetail.archivedAt && <Field label="Archived at" value={encounterDetail.archivedAt} />}
               </InfoPanel>
 
               <InfoPanel title="Assessment" icon={ClipboardList}>
@@ -14551,15 +14619,27 @@ function EncounterWorkspace({
                   <Check size={16} />
                   <span>{summaryStatus === 'saving' ? 'Saving' : 'Update'}</span>
                 </button>
-                <button
-                  className="icon-text-button danger"
-                  type="button"
-                  onClick={handleArchiveClick}
-                  disabled={summaryStatus === 'saving'}
-                >
-                  <Archive size={16} />
-                  <span>Archive</span>
-                </button>
+                {encounterDetail.archivedAt ? (
+                  <button
+                    className="icon-text-button primary"
+                    type="button"
+                    onClick={handleRestoreClick}
+                    disabled={summaryStatus === 'saving'}
+                  >
+                    <RotateCcw size={16} />
+                    <span>Restore</span>
+                  </button>
+                ) : (
+                  <button
+                    className="icon-text-button danger"
+                    type="button"
+                    onClick={handleArchiveClick}
+                    disabled={summaryStatus === 'saving'}
+                  >
+                    <Archive size={16} />
+                    <span>Archive</span>
+                  </button>
+                )}
                 <button className="icon-text-button" type="button" onClick={() => void handleAuditHistory()} disabled={summaryStatus === 'saving'}>
                   <ClipboardList size={16} />
                   <span>History</span>
@@ -24432,10 +24512,12 @@ function AppointmentResult({
 
 function EncounterResult({
   encounter,
+  archived,
   selected,
   onSelect,
 }: {
   encounter: EncounterListItem
+  archived: boolean
   selected: boolean
   onSelect: () => void
 }) {
@@ -24443,6 +24525,7 @@ function EncounterResult({
     <button type="button" className={selected ? 'appointment-result selected' : 'appointment-result'} onClick={onSelect}>
       <div className="appointment-result-main">
         <span className="patient-name">{encounter.reason ?? 'Clinical encounter'}</span>
+        {archived && <span className="status-tag danger">Archived</span>}
         <span className="status-tag">{encounter.diagnosisCode ?? 'Dx'}</span>
       </div>
       <div className="patient-result-sub">

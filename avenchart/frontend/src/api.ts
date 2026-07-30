@@ -886,6 +886,7 @@ export type EncounterDetail = EncounterListItem & {
   dateTime: string
   billingNote?: string | null
   sourceAppointmentId?: string | null
+  archivedAt?: string | null
   archiveVersion: number
   vitals?: EncounterVitals | null
   soapNote?: EncounterSoapNote | null
@@ -5748,6 +5749,7 @@ export async function searchEncounters(
   fromDate: string,
   sessionId?: string | null,
   signal?: AbortSignal,
+  archived = false,
 ): Promise<EncounterSearchResponse> {
   const params = new URLSearchParams()
   if (patientId.trim()) {
@@ -5755,6 +5757,9 @@ export async function searchEncounters(
   }
   if (fromDate.trim()) {
     params.set('from', fromDate.trim())
+  }
+  if (archived) {
+    params.set('archived', 'true')
   }
   params.set('limit', '25')
 

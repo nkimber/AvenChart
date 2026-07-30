@@ -56,6 +56,7 @@ public sealed record EncounterDetail(
     int? PosCode,
     string? BillingNote,
     string? SourceAppointmentId,
+    string? ArchivedAt,
     int ArchiveVersion,
     EncounterVitals? Vitals,
     EncounterSoapNote? SoapNote,
@@ -234,7 +235,7 @@ public sealed record EncounterUpdateRequest(
     int? PosCode,
     string? BillingNote);
 
-public sealed record EncounterArchiveRequest(string Reason);
+public sealed record EncounterArchiveRequest(string Reason, int ExpectedArchiveVersion);
 
 public sealed record EncounterVitalsCreateRequest(
     string DateTime,
