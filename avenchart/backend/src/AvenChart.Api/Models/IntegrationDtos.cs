@@ -55,6 +55,13 @@ public sealed record IntegrationInboxReceipt(
     bool Duplicate,
     DateTimeOffset ReceivedAt);
 
+public sealed record IntegrationInboxMessage(
+    Guid InboxId, string Source, string SourceMessageId, string MessageType, JsonElement Payload,
+    string Status, int AttemptCount, DateTimeOffset ReceivedAt, DateTimeOffset? ProcessedAt,
+    string? LastError, int Version, string? ReconciledBy, string? ReconciliationReason);
+
+public sealed record IntegrationInboxDecisionRequest(string Reason, int ExpectedVersion);
+
 public sealed record IntegrationTransportResult(
     bool Delivered,
     string Outcome,

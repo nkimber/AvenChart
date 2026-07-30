@@ -1,0 +1,2 @@
+alter table integration_inbox add column if not exists version integer not null default 1, add column if not exists reconciled_by text, add column if not exists reconciliation_reason text;
+create table if not exists integration_inbox_events (event_log_id uuid primary key, inbox_id uuid not null references integration_inbox(inbox_id), action text not null check (action in ('reconcile','reject')), reason text not null, actor text not null, version integer not null, occurred_at timestamptz not null);

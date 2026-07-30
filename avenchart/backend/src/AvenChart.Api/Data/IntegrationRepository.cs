@@ -220,6 +220,31 @@ public sealed class IntegrationRepository(
             existingReader.GetGuid(0), existingReader.GetString(1), existingReader.GetString(2), existingReader.GetString(3), Duplicate: true, existingReader.GetFieldValue<DateTimeOffset>(4));
     }
 
+    public async Task<IReadOnlyList<IntegrationInboxMessage>> GetInboxAsync(string? status, int limit, CancellationToken token)
+    {
+        var normalized = NormalizeOptional(status);
+        if (normalized is not null && normalized is not ("received" or "reconciled" or "rejected")) throw new ArgumentException("The integration inbox status is not recognized.");
+        await using var connection = await dataSource.OpenConnectionAsync(token); await using var command = connection.CreateCommand();
+        command.CommandText = "select inbox_id,source,source_message_id,message_type,payload,status,attempt_count,received_at,processed_at,last_error,version,reconciled_by,reconciliation_reason from integration_inbox where (@status is null or status=@status) order by received_at desc limit @limit;";
+        command.Parameters.AddWithValue("status", (object?)normalized ?? DBNull.Value); command.Parameters.AddWithValue("limit", Math.Clamp(limit, 1, 100));
+        var messages = new List<IntegrationInboxMessage>(); await using var reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token)) messages.Add(ReadInboxMessage(reader)); return messages;
+    }
+
+    public async Task<IntegrationInboxMessage> DecideInboxAsync(Guid inboxId, string action, IntegrationInboxDecisionRequest request, string actor, CancellationToken token)
+    {
+        if (action is not ("reconcile" or "reject")) throw new ArgumentException("The integration inbox action is not supported.");
+        var reason = request.Reason?.Trim(); if (string.IsNullOrWhiteSpace(reason) || reason.Length > 500) throw new ArgumentException("A decision reason of 500 characters or fewer is required.");
+        var status = action == "reconcile" ? "reconciled" : "rejected"; var now = DateTimeOffset.UtcNow;
+        await using var connection = await dataSource.OpenConnectionAsync(token); await using var transaction = await connection.BeginTransactionAsync(token); await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "update integration_inbox set status=@status,processed_at=@now,reconciled_by=@actor,reconciliation_reason=@reason,version=version+1 where inbox_id=@id and status='received' and version=@version returning inbox_id,source,source_message_id,message_type,payload,status,attempt_count,received_at,processed_at,last_error,version,reconciled_by,reconciliation_reason;";
+        command.Parameters.AddWithValue("status", status); command.Parameters.AddWithValue("now", now); command.Parameters.AddWithValue("actor", actor); command.Parameters.AddWithValue("reason", reason); command.Parameters.AddWithValue("id", inboxId); command.Parameters.AddWithValue("version", request.ExpectedVersion);
+        await using var reader = await command.ExecuteReaderAsync(token); if (!await reader.ReadAsync(token)) throw new InvalidOperationException("The inbox message is not received at the expected version."); var result = ReadInboxMessage(reader); await reader.DisposeAsync();
+        await using var audit = connection.CreateCommand(); audit.Transaction = transaction; audit.CommandText = "insert into integration_inbox_events(event_log_id,inbox_id,action,reason,actor,version,occurred_at) values(@event,@inbox,@action,@reason,@actor,@version,@at);"; audit.Parameters.AddWithValue("event", Guid.NewGuid()); audit.Parameters.AddWithValue("inbox", inboxId); audit.Parameters.AddWithValue("action", action); audit.Parameters.AddWithValue("reason", reason); audit.Parameters.AddWithValue("actor", actor); audit.Parameters.AddWithValue("version", result.Version); audit.Parameters.AddWithValue("at", now); await audit.ExecuteNonQueryAsync(token); await transaction.CommitAsync(token); return result;
+    }
+
+    private static IntegrationInboxMessage ReadInboxMessage(NpgsqlDataReader reader) => new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), JsonDocument.Parse(reader.GetString(4)).RootElement.Clone(), reader.GetString(5), reader.GetInt32(6), reader.GetFieldValue<DateTimeOffset>(7), reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8), reader.IsDBNull(9) ? null : reader.GetString(9), reader.GetInt32(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetString(12));
+
     private async Task<IntegrationOutboxMessage?> ClaimOutboxMessageAsync(Guid eventId, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;

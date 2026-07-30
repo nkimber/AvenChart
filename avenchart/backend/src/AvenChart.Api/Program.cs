@@ -5569,6 +5569,20 @@ integrations.MapPost("/inbox", async (
     })
     .WithName("ReceiveIntegrationInbox");
 
+integrations.MapGet("/inbox", async (IntegrationRepository repository, string? status, int? limit, CancellationToken token) =>
+{
+    try { return Results.Ok(await repository.GetInboxAsync(status, limit ?? 25, token)); }
+    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["status"] = [exception.Message] }); }
+}).WithName("ListIntegrationInbox");
+
+foreach (var action in new[] { "reconcile", "reject" })
+    integrations.MapPost($"/inbox/{{inboxId:guid}}/{action}", async (Guid inboxId, IntegrationInboxDecisionRequest request, IntegrationRepository repository, AuthRepository authRepository, HttpContext context, CancellationToken token) =>
+    {
+        try { var session = await GetSessionFromHeaderAsync(authRepository, context, token); return Results.Ok(await repository.DecideInboxAsync(inboxId, action, request, session.Username, token)); }
+        catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = [exception.Message] }); }
+        catch (InvalidOperationException exception) { return Results.Conflict(new { error = exception.Message }); }
+    }).WithName($"{action}IntegrationInbox");
+
 var inventory = app.MapGroup("/api/inventory").WithTags("Inventory");
 RequireAccessPermission(inventory, "inventory", "reporting", "view");
 
