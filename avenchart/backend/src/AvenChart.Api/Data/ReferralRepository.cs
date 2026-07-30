@@ -38,6 +38,57 @@ public sealed class ReferralRepository(NpgsqlDataSource dataSource)
         return await ReadReferralAsync(connection, null, canonicalId, referralId, false, cancellationToken);
     }
 
+    public async Task<ReferralWorkQueueResponse> GetWorkQueueAsync(
+        string? status,
+        string? assignedTo,
+        bool overdueOnly,
+        string? query,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStatus = status?.Trim().ToLowerInvariant() is "all" or null or "" ? null : status!.Trim().ToLowerInvariant();
+        if (normalizedStatus is not null && normalizedStatus is not ("draft" or "sent" or "received" or "closed" or "cancelled"))
+        {
+            throw new ArgumentException("Referral queue status must be draft, sent, received, closed, cancelled, or all.");
+        }
+
+        var assigneeFilter = TrimToNull(assignedTo)?.ToLowerInvariant();
+        var queryFilter = TrimToNull(query)?.ToLowerInvariant();
+        var safeLimit = Math.Clamp(limit, 1, 100);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var count = connection.CreateCommand();
+        count.CommandText = """
+            select count(*) as total,
+              count(*) filter (where r.status in ('draft', 'sent', 'received')) as active_count,
+              count(*) filter (where r.status in ('draft', 'sent', 'received') and r.due_at is not null and r.due_at < now()) as overdue_count
+            from referrals r join patients p on p.canonical_id = r.patient_id
+            where (@status::text is null or r.status = @status::text)
+              and (@assignedTo::text is null or lower(coalesce(r.assigned_to, r.created_by, 'admin')) = @assignedTo::text)
+              and (@overdueOnly = false or (r.status in ('draft', 'sent', 'received') and r.due_at is not null and r.due_at < now()))
+              and (@query::text is null or lower(r.destination) like '%' || @query::text || '%' or lower(r.reason) like '%' || @query::text || '%' or lower(p.canonical_id) like '%' || @query::text || '%' or lower(p.pubpid) like '%' || @query::text || '%' or lower(concat(p.last_name, ', ', p.first_name)) like '%' || @query::text || '%');
+            """;
+        count.Parameters.AddWithValue("status", (object?)normalizedStatus ?? DBNull.Value); count.Parameters.AddWithValue("assignedTo", (object?)assigneeFilter ?? DBNull.Value); count.Parameters.AddWithValue("overdueOnly", overdueOnly); count.Parameters.AddWithValue("query", (object?)queryFilter ?? DBNull.Value);
+        int total; int activeCount; int overdueCount;
+        await using (var reader = await count.ExecuteReaderAsync(cancellationToken)) { await reader.ReadAsync(cancellationToken); total = Convert.ToInt32(reader.GetValue(0)); activeCount = Convert.ToInt32(reader.GetValue(1)); overdueCount = Convert.ToInt32(reader.GetValue(2)); }
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            select r.id, r.patient_id, r.encounter_id, r.destination, r.reason, r.status, r.external_reference, r.notes, r.requested_at, r.workflow_version, coalesce(r.assigned_to, r.created_by, 'admin') as assigned_to, coalesce(a.display_name, r.assigned_to, r.created_by, 'Unassigned') as assigned_display_name, r.due_at, coalesce(r.created_by, 'legacy') as created_by, r.created_at, r.updated_at, trim(concat(p.last_name, ', ', p.first_name)) as patient_display_name, p.pubpid, (r.status in ('draft', 'sent', 'received') and r.due_at is not null and r.due_at < now()) as is_overdue
+            from referrals r join patients p on p.canonical_id = r.patient_id left join auth_accounts a on lower(a.username) = lower(r.assigned_to)
+            where (@status::text is null or r.status = @status::text) and (@assignedTo::text is null or lower(coalesce(r.assigned_to, r.created_by, 'admin')) = @assignedTo::text) and (@overdueOnly = false or (r.status in ('draft', 'sent', 'received') and r.due_at is not null and r.due_at < now())) and (@query::text is null or lower(r.destination) like '%' || @query::text || '%' or lower(r.reason) like '%' || @query::text || '%' or lower(p.canonical_id) like '%' || @query::text || '%' or lower(p.pubpid) like '%' || @query::text || '%' or lower(concat(p.last_name, ', ', p.first_name)) like '%' || @query::text || '%')
+            order by (r.status in ('draft', 'sent', 'received') and r.due_at is not null and r.due_at < now()) desc, r.due_at nulls last, r.requested_at desc limit @limit;
+            """;
+        command.Parameters.AddWithValue("status", (object?)normalizedStatus ?? DBNull.Value); command.Parameters.AddWithValue("assignedTo", (object?)assigneeFilter ?? DBNull.Value); command.Parameters.AddWithValue("overdueOnly", overdueOnly); command.Parameters.AddWithValue("query", (object?)queryFilter ?? DBNull.Value); command.Parameters.AddWithValue("limit", safeLimit);
+        var items = new List<ReferralWorkQueueItem>();
+        await using var itemReader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await itemReader.ReadAsync(cancellationToken))
+        {
+            var statusValue = itemReader.GetString(5);
+            var referral = new ReferralItem(itemReader.GetGuid(0), itemReader.GetString(1), itemReader.IsDBNull(2) ? null : itemReader.GetInt32(2), itemReader.GetString(3), itemReader.GetString(4), statusValue, ReadNullableString(itemReader, 6), ReadNullableString(itemReader, 7), itemReader.GetFieldValue<DateTimeOffset>(8).ToString("O"), itemReader.GetInt32(9), itemReader.GetString(10), itemReader.GetString(11), itemReader.IsDBNull(12) ? null : itemReader.GetFieldValue<DateTimeOffset>(12).ToString("O"), itemReader.GetString(13), ClinicalWorkflowPolicyCatalog.Revision, itemReader.GetFieldValue<DateTimeOffset>(14).ToString("O"), itemReader.GetFieldValue<DateTimeOffset>(15).ToString("O"), ClinicalWorkflowPolicyCatalog.GetAvailableReferralTransitions(statusValue));
+            items.Add(new ReferralWorkQueueItem(referral, itemReader.GetString(16), itemReader.GetString(17), itemReader.GetBoolean(18)));
+        }
+        return new ReferralWorkQueueResponse(total, activeCount, overdueCount, items);
+    }
+
     public async Task<ReferralItem> CreateAsync(string patientId, ReferralCreateRequest request, string actor, CancellationToken cancellationToken)
     {
         var destination = RequireText(request.Destination, "Referral destination", 240);

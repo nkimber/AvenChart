@@ -62,3 +62,15 @@ public sealed record ReferralWorkflowHistoryResponse(
     ReferralItem Referral,
     int Total,
     IReadOnlyList<ReferralWorkflowEvent> Events);
+
+public sealed record ReferralWorkQueueItem(
+    ReferralItem Referral,
+    string PatientDisplayName,
+    string Pubpid,
+    bool IsOverdue);
+
+public sealed record ReferralWorkQueueResponse(
+    int Total,
+    int ActiveCount,
+    int OverdueCount,
+    IReadOnlyList<ReferralWorkQueueItem> Items);

@@ -875,6 +875,32 @@ clinicalWorkflows.MapGet("/assignees", async (
     Results.Ok(await repository.GetAssigneesAsync(cancellationToken)))
     .WithName("GetClinicalWorkflowAssignees");
 
+clinicalWorkflows.MapGet("/referral-work-queue", async (
+        ReferralRepository repository,
+        string? status,
+        string? assignedTo,
+        bool? overdueOnly,
+        string? query,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Ok(await repository.GetWorkQueueAsync(
+                status,
+                assignedTo,
+                overdueOnly ?? false,
+                query,
+                limit ?? 25,
+                cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("GetReferralWorkQueue");
+
 patients.MapGet("/", async (
         PatientRepository repository,
         string? search,
