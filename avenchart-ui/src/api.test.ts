@@ -24,9 +24,11 @@ import {
   createInventoryPatientSale,
   createInventoryCountReconciliation,
   createInventoryExpiryDisposition,
+  createInventoryAccountingIntegrationChangeRequest,
   createInventoryLotDestruction,
   createInventoryPurchaseReceipt,
   createInventoryPurchaseRequisition,
+  createInventoryReplenishmentPolicyChangeRequest,
   createInventoryTransaction,
   createInventoryTransfer,
   createPatientBinaryDocument,
@@ -74,9 +76,14 @@ import {
   getDocumentTemplateHistory,
   getDocumentTemplates,
   getInventoryActivityReport,
+  getInventoryAccountingIntegrationChangeRequest,
+  getInventoryAccountingIntegrationDecision,
   getInventoryMedicationCatalog,
   getInventoryLotMetadataHistory,
   getInventoryPurchaseRequisitions,
+  getInventoryReplenishmentPolicies,
+  getInventoryReplenishmentPolicyChangeRequest,
+  getInventoryReplenishmentRecommendations,
   getMedicationLifecycleHistory,
   getClinicalPharmacyDirectory,
   getPatientBilling,
@@ -133,6 +140,8 @@ import {
   signLabReport,
   startPatientDocumentOcr,
   submitInventoryPurchaseRequisition,
+  transitionInventoryAccountingIntegrationChangeRequest,
+  transitionInventoryReplenishmentPolicyChangeRequest,
   transitionPracticeSettingChangeRequest,
   updatePatientCareTeam,
   updateMedication,
@@ -2774,6 +2783,109 @@ describe('authenticated API transport', () => {
     ])
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       headers: { 'X-Legacy EHR-Session': 'staff-session' },
+    })
+  })
+
+  it('uses the governed inventory accounting and replenishment contracts', async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({}))
+
+    const accountingDefinition = {
+      mode: 'integration_accepted' as const,
+      financeOwner: 'Practice Finance',
+      effectiveDate: '2026-08-01',
+      mappingReference: 'MAP-42',
+      reconciliationReference: 'REC-42',
+      rationale: 'Adopt the reviewed local accounting contract.',
+    }
+    await getInventoryAccountingIntegrationDecision('staff-session')
+    await createInventoryAccountingIntegrationChangeRequest('staff-session', {
+      proposedDefinition: accountingDefinition,
+      reason: 'Submit the reviewed accounting contract.',
+    })
+    await getInventoryAccountingIntegrationChangeRequest(
+      'staff-session',
+      'accounting-request-1',
+    )
+    await transitionInventoryAccountingIntegrationChangeRequest(
+      'staff-session',
+      'accounting-request-1',
+      'approve',
+      { expectedVersion: 2, note: 'Finance owner approved.' },
+    )
+
+    const replenishmentDefinition = {
+      itemId: 10004,
+      facilityId: 13,
+      reorderPoint: 12,
+      targetQuantity: 36,
+      leadTimeDays: 4,
+      safetyStock: 6,
+      preferredVendorId: 'vendor-1',
+      packSize: 12,
+      approvalThreshold: 144,
+      effectiveDate: '2026-08-01',
+      approvalReference: 'SUPPLY-42',
+      rationale: 'Use the reviewed local replenishment threshold.',
+    }
+    await getInventoryReplenishmentPolicies('staff-session')
+    await createInventoryReplenishmentPolicyChangeRequest('staff-session', {
+      proposedDefinition: replenishmentDefinition,
+      reason: 'Submit the reviewed replenishment policy.',
+    })
+    await getInventoryReplenishmentPolicyChangeRequest(
+      'staff-session',
+      'replenishment-request-1',
+    )
+    await transitionInventoryReplenishmentPolicyChangeRequest(
+      'staff-session',
+      'replenishment-request-1',
+      'submit',
+      { expectedVersion: 1 },
+    )
+    await getInventoryReplenishmentRecommendations('staff-session')
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/inventory/accounting-integration-decision',
+      'http://localhost:5001/api/inventory/accounting-integration-change-requests',
+      'http://localhost:5001/api/inventory/accounting-integration-change-requests/accounting-request-1',
+      'http://localhost:5001/api/inventory/accounting-integration-change-requests/accounting-request-1/approve',
+      'http://localhost:5001/api/inventory/replenishment-policies',
+      'http://localhost:5001/api/inventory/replenishment-policy-change-requests',
+      'http://localhost:5001/api/inventory/replenishment-policy-change-requests/replenishment-request-1',
+      'http://localhost:5001/api/inventory/replenishment-policy-change-requests/replenishment-request-1/submit',
+      'http://localhost:5001/api/inventory/replenishment-recommendations',
+    ])
+    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([
+      undefined,
+      'POST',
+      undefined,
+      'POST',
+      undefined,
+      'POST',
+      undefined,
+      'POST',
+      undefined,
+    ])
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      body: JSON.stringify({
+        proposedDefinition: accountingDefinition,
+        reason: 'Submit the reviewed accounting contract.',
+      }),
+    })
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+      body: JSON.stringify({
+        expectedVersion: 2,
+        note: 'Finance owner approved.',
+      }),
+    })
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({
+      body: JSON.stringify({
+        proposedDefinition: replenishmentDefinition,
+        reason: 'Submit the reviewed replenishment policy.',
+      }),
+    })
+    expect(fetchMock.mock.calls[7]?.[1]).toMatchObject({
+      body: JSON.stringify({ expectedVersion: 1 }),
     })
   })
 
