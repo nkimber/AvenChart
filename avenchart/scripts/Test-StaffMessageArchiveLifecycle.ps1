@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 param([string]$ApiBaseUrl = "http://localhost:5001")
 $ErrorActionPreference = "Stop"; $root = Resolve-Path (Join-Path $PSScriptRoot ".."); $checks = [Collections.Generic.List[object]]::new(); $messageId = $null; $marker = "TMP-MESSAGE-ARCHIVE-$([Guid]::NewGuid().ToString('N').Substring(0,8))"
 function Add-Check([string]$Name,[bool]$Passed,[object]$Details) { $checks.Add([ordered]@{name=$Name;status=if($Passed){'passed'}else{'failed'};details=$Details}) }

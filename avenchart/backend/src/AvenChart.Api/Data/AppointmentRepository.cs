@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using System.Data.Common;
 using System.Globalization;
 using Npgsql;
@@ -1085,7 +1088,17 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     {
         var rootAppointmentId = ParseOccurrenceReference(appointmentId).RootAppointmentId;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var currentStatus = await GetStatusForUpdateAsync(connection, transaction, rootAppointmentId, cancellationToken);
+        if (currentStatus is null)
+        {
+            return null;
+        }
+
+        var nextStatus = NormalizeAppointmentStatus(request.Status);
+        EnsureValidAppointmentStatusTransition(currentStatus, nextStatus);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             update appointments
             set status = @status,
@@ -1094,10 +1107,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             returning id;
             """;
         command.Parameters.AddWithValue("appointmentId", rootAppointmentId);
-        command.Parameters.AddWithValue("status", NormalizeText(request.Status) ?? "-");
+        command.Parameters.AddWithValue("status", nextStatus);
         command.Parameters.Add("title", NpgsqlDbType.Text).Value = NormalizeText(request.Title) ?? (object)DBNull.Value;
 
         var updatedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return updatedId is null ? null : await GetByIdAsync(updatedId, cancellationToken);
     }
 
@@ -1115,6 +1129,18 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
         var rootAppointmentId = ParseOccurrenceReference(appointmentId).RootAppointmentId;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var currentStatus = await GetStatusForUpdateAsync(connection, transaction, rootAppointmentId, cancellationToken);
+        if (currentStatus is null)
+        {
+            return null;
+        }
+
+        var requestedStatus = request.Status is null ? null : NormalizeAppointmentStatus(request.Status);
+        if (requestedStatus is not null)
+        {
+            EnsureValidAppointmentStatusTransition(currentStatus, requestedStatus);
+        }
         await ValidateActiveSchedulingReferencesAsync(
             connection,
             request.ProviderId,
@@ -1122,6 +1148,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             request.BillingLocationId,
             cancellationToken);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             update appointments
             set provider_id = coalesce((select id from staff where id = @providerId), provider_id),
@@ -1156,7 +1183,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("durationMinutes", request.DurationMinutes);
         command.Parameters.Add("categoryId", NpgsqlDbType.Integer).Value = request.CategoryId is null ? DBNull.Value : request.CategoryId.Value;
         command.Parameters.AddWithValue("title", NormalizeText(request.Title) ?? "Appointment");
-        command.Parameters.Add("status", NpgsqlDbType.Text).Value = NormalizeText(request.Status) ?? (object)DBNull.Value;
+        command.Parameters.Add("status", NpgsqlDbType.Text).Value = requestedStatus ?? (object)DBNull.Value;
         command.Parameters.Add("room", NpgsqlDbType.Text).Value = NormalizeText(request.Room) ?? (object)DBNull.Value;
         command.Parameters.Add("comments", NpgsqlDbType.Text).Value = NormalizeText(request.Comments) ?? (object)DBNull.Value;
         AddRecurrenceParameters(
@@ -1172,6 +1199,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             request.RecurrenceExdates);
 
         var updatedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return updatedId is null ? null : await GetByIdAsync(updatedId, cancellationToken);
     }
 
@@ -1416,7 +1444,13 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
         var rescheduledAppointmentId = $"APPT-MODERN-OCCURRENCE-{Guid.NewGuid():N}";
         var rescheduledTitle = NormalizeText(request.Title) ?? source.Title ?? "Appointment";
-        var rescheduledStatus = NormalizeText(request.Status) ?? source.Status ?? "-";
+        var rescheduledStatus = request.Status is null
+            ? NormalizeText(source.Status) ?? "-"
+            : NormalizeAppointmentStatus(request.Status);
+        if (request.Status is not null)
+        {
+            EnsureValidAppointmentStatusTransition(source.Status, rescheduledStatus);
+        }
         var rescheduledRoom = request.Room is null ? source.Room : NormalizeText(request.Room);
         var rescheduledComments = request.Comments is null ? source.Comments : NormalizeText(request.Comments);
 
@@ -2673,6 +2707,62 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
     private static bool IsActiveAppointmentStatus(string? status) =>
         !string.Equals(status, "x", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<string?> GetStatusForUpdateAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string appointmentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select coalesce(status, '-') from appointments where id=@appointmentId for update;";
+        command.Parameters.AddWithValue("appointmentId", appointmentId);
+        return (string?)await command.ExecuteScalarAsync(cancellationToken);
+    }
+
+    private static string NormalizeAppointmentStatus(string? value)
+    {
+        var normalized = NormalizeText(value)?.ToLowerInvariant();
+        return normalized switch
+        {
+            null or "" or "-" or "scheduled" or "booked" or "confirmed" => "-",
+            "~" or "pending" or "requested" or "request" => "~",
+            "!" or "follow-up needed" or "left-message" or "left message" => "!",
+            "@" or "arrived" or "checked-in" or "checked in" => "@",
+            ">" or "in-room" or "in room" or "roomed" => ">",
+            "<" or "checked-out" or "checked out" or "complete" or "completed" => "<",
+            "?" or "no-show" or "no show" or "noshow" => "?",
+            "x" or "cancelled" or "canceled" or "cancel" or "cancelled by patient" or "canceled by patient" => "x",
+            _ => throw new ArgumentException("Select a supported appointment status.")
+        };
+    }
+
+    private static void EnsureValidAppointmentStatusTransition(string? currentValue, string next)
+    {
+        string? current = null;
+        try { current = NormalizeAppointmentStatus(currentValue); }
+        catch (ArgumentException) { /* Unknown historical status may be corrected to any supported state. */ }
+        if (current is null || current == next)
+        {
+            return;
+        }
+
+        var allowed = current switch
+        {
+            "-" => new[] { "~", "@", "?", "x" },
+            "~" or "!" => new[] { "-", "@", "?", "x" },
+            "@" => new[] { ">", "?", "x" },
+            ">" => new[] { "<", "x" },
+            "<" => Array.Empty<string>(),
+            "?" or "x" => new[] { "-" },
+            _ => Array.Empty<string>()
+        };
+        if (!allowed.Contains(next, StringComparer.Ordinal))
+        {
+            throw new ArgumentException($"Appointment status {current} cannot move directly to {next}.");
+        }
+    }
 
     private static AppointmentOccurrenceReference ParseOccurrenceReference(string appointmentId)
     {

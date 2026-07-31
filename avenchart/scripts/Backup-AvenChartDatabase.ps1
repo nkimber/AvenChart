@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 param([string]$OutputDirectory,[int]$PostgresWaitSeconds = 90)
 $ErrorActionPreference = 'Stop'
 $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot '..')

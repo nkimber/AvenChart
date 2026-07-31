@@ -1,8 +1,12 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { HeartPulse, ShieldCheck } from 'lucide-react'
 import { loginPatientPortal } from '../api.ts'
 import { savePortalSession } from '../auth/session.ts'
+import LegalAttribution from '../components/LegalAttribution.tsx'
 import { PatientIllustration } from '../illustrations.tsx'
 
 export default function PortalLogin() {
@@ -101,6 +105,7 @@ export default function PortalLogin() {
               {status === 'checking' ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+          <LegalAttribution />
         </div>
       </div>
     </div>

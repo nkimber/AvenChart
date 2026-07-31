@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 namespace AvenChart.Api.Models;
 
 public sealed record ProcedureResultsResponse(
@@ -277,27 +280,9 @@ public sealed record ProcedureSpecimenItem(
     string? ConditionCode,
     string? SpecimenCondition,
     string? Comments,
-    string SpecimenStatus,
-    int SpecimenVersion,
-    int HistoryCount,
-    IReadOnlyList<ProcedureSpecimenEventItem> History);
-
-public sealed record ProcedureSpecimenEventItem(
-    long EventId,
-    string Action,
-    string? PreviousStatus,
-    string CurrentStatus,
-    string Actor,
-    string Reason,
-    int ExpectedVersion,
-    int ResultingVersion,
-    string? SpecimenIdentifier,
-    string? AccessionIdentifier,
-    string? CollectedDate,
-    string? ConditionCode,
-    string? SpecimenCondition,
-    string? Comments,
-    string OccurredAt);
+    string LifecycleStatus,
+    int LifecycleVersion,
+    int LifecycleHistoryCount);
 
 public sealed record ProcedureReportItem(
     int Id,
@@ -382,10 +367,7 @@ public sealed record ProcedureResultVersionItem(
     string? Range,
     string? Abnormal,
     string ResultDate,
-    string? ResultStatus,
-    string? CorrectionActor,
-    string? CorrectionReason,
-    int? ResultingVersion);
+    string? ResultStatus);
 
 public sealed record ProcedureOrderCreateRequest(
     string PatientId,
@@ -479,27 +461,26 @@ public sealed record ProcedureSpecimenCreateRequest(
     string SpecimenCondition,
     string Comments);
 
-public sealed record ProcedureSpecimenTransitionRequest(
-    string Action,
+public sealed record ProcedureSpecimenLifecycleTransitionRequest(
+    string Status,
     int ExpectedVersion,
-    string Reason,
-    string? SpecimenIdentifier,
-    string? AccessionIdentifier,
-    string? CollectedDate,
-    string? ConditionCode,
-    string? SpecimenCondition,
-    string? Comments);
+    string Reason);
 
-public sealed class ProcedureSpecimenLifecycleConflictException(
-    int expectedVersion,
-    int currentVersion,
-    string currentStatus,
-    string message) : Exception(message)
-{
-    public int ExpectedVersion { get; } = expectedVersion;
-    public int CurrentVersion { get; } = currentVersion;
-    public string CurrentStatus { get; } = currentStatus;
-}
+public sealed record ProcedureSpecimenLifecycleHistoryResponse(
+    int SpecimenId,
+    int LifecycleVersion,
+    IReadOnlyList<ProcedureSpecimenLifecycleEventItem> Events);
+
+public sealed record ProcedureSpecimenLifecycleEventItem(
+    long EventId,
+    string Action,
+    string? PreviousStatus,
+    string CurrentStatus,
+    string Actor,
+    string Reason,
+    int ExpectedVersion,
+    int ResultingVersion,
+    string OccurredAt);
 
 public sealed record ProcedureResultCreateRequest(
     int ReportId,
@@ -522,20 +503,7 @@ public sealed record ProcedureResultUpdateRequest(
     string Result,
     string Range,
     string Abnormal,
-    string Status,
-    int ExpectedVersion,
-    string Reason);
-
-public sealed class ProcedureResultCorrectionConflictException(
-    int expectedVersion,
-    int currentVersion,
-    string reviewStatus,
-    string message) : Exception(message)
-{
-    public int ExpectedVersion { get; } = expectedVersion;
-    public int CurrentVersion { get; } = currentVersion;
-    public string ReviewStatus { get; } = reviewStatus;
-}
+    string Status);
 
 public sealed record ProcedureMutationResponse(
     int Id,

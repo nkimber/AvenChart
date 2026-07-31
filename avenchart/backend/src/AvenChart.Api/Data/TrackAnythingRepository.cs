@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using Npgsql;
 using AvenChart.Api.Models;
 
@@ -49,7 +52,6 @@ public sealed class TrackAnythingRepository(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         if (!await EncounterExistsAsync(connection, encounter, cancellationToken)) return null;
-        var isLocked = await IsEncounterLockedAsync(connection, encounter, cancellationToken);
         var definitions = await GetDefinitionsAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "select record_id,encounter,track_type_id,track_name,created_at,created_by from encounter_track_records where encounter=@encounter order by created_at desc,record_id desc;";
@@ -57,7 +59,7 @@ public sealed class TrackAnythingRepository(NpgsqlDataSource dataSource)
         var records = new List<TrackAnythingEncounterRecord>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken)) records.Add(ReadRecord(reader));
-        return new TrackAnythingEncounterCatalog(encounter, definitions, records, isLocked);
+        return new TrackAnythingEncounterCatalog(encounter, definitions, records);
     }
 
     public async Task<TrackAnythingEncounterRecord?> CreateEncounterRecordAsync(int encounter, TrackAnythingEncounterRecordCreateRequest request, string username, CancellationToken cancellationToken)
@@ -279,17 +281,6 @@ public sealed class TrackAnythingRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "select exists(select 1 from encounters where encounter=@encounter);";
-        command.Parameters.AddWithValue("encounter", encounter);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
-    }
-
-    private static async Task<bool> IsEncounterLockedAsync(
-        NpgsqlConnection connection,
-        int encounter,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = "select exists(select 1 from encounter_signatures where encounter=@encounter and is_lock);";
         command.Parameters.AddWithValue("encounter", encounter);
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }

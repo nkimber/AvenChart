@@ -1,11 +1,20 @@
-import { useEffect, useEffectEvent, useState } from "react";
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { useEffect, useEffectEvent, useState, type FormEvent } from "react";
 import { Search, Send, WalletCards } from "lucide-react";
 import {
+  createBillingAdjustmentReversal,
   createBillingCollectionsFollowUp,
+  createBillingInsurancePayment,
+  createBillingInsuranceReversal,
+  createBillingPatientPayment,
+  createBillingPatientRefund,
   dispatchBillingStatementBatch,
   getBillingCollectionsWorkQueue,
   getBillingStatementBatch,
   getPatientBilling,
+  importBillingEobBatch,
   type CollectionsWorkQueueResponse,
   type PatientBillingResponse,
   type StatementBatchResponse,
@@ -42,6 +51,9 @@ export default function BillingWorkspace() {
   );
   const [followUpNote, setFollowUpNote] = useState("");
   const [savingFollowUp, setSavingFollowUp] = useState(false);
+  const [paymentAction, setPaymentAction] = useState<"patient-payment" | "patient-refund" | "insurance-payment" | "insurance-reversal" | "adjustment-reversal" | "eob-batch">("patient-payment");
+  const [paymentForm, setPaymentForm] = useState({ encounter: "", payerId: "", payerName: "", reference: "", amount: "", adjustmentAmount: "", reasonCode: "", payerClaimNumber: "", memo: "", paymentMethod: "check" });
+  const [savingPayment, setSavingPayment] = useState(false);
 
   function load() {
     setBatchError(null);
@@ -138,6 +150,43 @@ export default function BillingWorkspace() {
       showToast("Could not create the collections follow-up.", "error");
     } finally {
       setSavingFollowUp(false);
+    }
+  }
+
+  async function submitPayment(event: FormEvent) {
+    event.preventDefault();
+    if (!patientAccount || savingPayment) return;
+    const encounter = Number(paymentForm.encounter);
+    const amount = Number(paymentForm.amount);
+    const adjustmentAmount = Number(paymentForm.adjustmentAmount || 0);
+    const payerId = Number(paymentForm.payerId);
+    if ((paymentAction !== "eob-batch" && (!Number.isInteger(encounter) || amount <= 0)) || (["insurance-payment", "insurance-reversal", "adjustment-reversal"].includes(paymentAction) && (!Number.isInteger(payerId) || !paymentForm.payerName.trim()))) {
+      showToast("Complete the required payment details before posting.", "error");
+      return;
+    }
+    if (!window.confirm(`Post this local ${paymentAction.replaceAll("-", " ")}?`)) return;
+    const common = { patientId: patientAccount.patientId, encounter, reference: paymentForm.reference.trim() || `LOCAL-${Date.now()}`, postDate: new Date().toISOString().slice(0, 10), checkDate: null, depositDate: null, paymentMethod: paymentForm.paymentMethod, codeType: null, code: null, modifier: null, memo: paymentForm.memo.trim() };
+    setSavingPayment(true);
+    try {
+      const detail = paymentAction === "patient-payment"
+        ? await createBillingPatientPayment(session.sessionId, { ...common, payAmount: amount })
+        : paymentAction === "patient-refund"
+          ? await createBillingPatientRefund(session.sessionId, { ...common, refundAmount: amount })
+          : paymentAction === "insurance-payment"
+            ? await createBillingInsurancePayment(session.sessionId, { ...common, payerId, payerName: paymentForm.payerName.trim(), payAmount: amount, adjustmentAmount, reasonCode: paymentForm.reasonCode.trim() || "contractual", payerClaimNumber: paymentForm.payerClaimNumber.trim() || null })
+            : paymentAction === "insurance-reversal"
+              ? await createBillingInsuranceReversal(session.sessionId, { ...common, payerId, payerName: paymentForm.payerName.trim(), reversalAmount: amount, payerClaimNumber: paymentForm.payerClaimNumber.trim() || null })
+              : paymentAction === "adjustment-reversal"
+                ? await createBillingAdjustmentReversal(session.sessionId, { ...common, payerId, payerName: paymentForm.payerName.trim(), adjustmentAmount: amount, payerClaimNumber: paymentForm.payerClaimNumber.trim() || null })
+                : await importBillingEobBatch(session.sessionId, patientAccount.patientId);
+      setPatientAccount(detail);
+      setPaymentForm((current) => ({ ...current, reference: "", amount: "", adjustmentAmount: "", reasonCode: "", payerClaimNumber: "", memo: "" }));
+      showToast(`Local ${paymentAction.replaceAll("-", " ")} posted.`, "success");
+      load();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not post the local billing activity.", "error");
+    } finally {
+      setSavingPayment(false);
     }
   }
 
@@ -265,6 +314,21 @@ export default function BillingWorkspace() {
                 <span className="cl-stat-tile-label">Account balance</span>
               </div>
             </div>
+          </section>
+          <section className="cl-card" aria-label="Local payment and remittance posting">
+            <h3 className="cl-card-title">Post local payment or remittance</h3>
+            <p className="cl-empty-text">Posts to the local billing ledger only. It does not send a payer transaction or represent clearinghouse adjudication.</p>
+            <form className="cl-admin-form-grid" onSubmit={(event) => void submitPayment(event)}>
+              <label className="cl-admin-field"><span>Activity</span><select className="ne-input" value={paymentAction} onChange={(event) => setPaymentAction(event.target.value as typeof paymentAction)}><option value="patient-payment">Patient payment</option><option value="patient-refund">Patient refund</option><option value="insurance-payment">Insurance payment / adjustment</option><option value="insurance-reversal">Insurance payment reversal</option><option value="adjustment-reversal">Adjustment reversal</option><option value="eob-batch">Import local EOB batch</option></select></label>
+              {paymentAction !== "eob-batch" && <label className="cl-admin-field"><span>Encounter</span><select className="ne-input" value={paymentForm.encounter} required onChange={(event) => setPaymentForm((current) => ({ ...current, encounter: event.target.value }))}><option value="">Select encounter</option>{patientAccount.encounters.map((item) => <option key={item.encounter} value={item.encounter}>#{item.encounter} · {item.date} · {money(item.balanceAmount)}</option>)}</select></label>}
+              {paymentAction !== "eob-batch" && <label className="cl-admin-field"><span>{paymentAction === "insurance-payment" ? "Payment amount" : "Amount"}</span><input className="ne-input" type="number" min="0.01" step="0.01" value={paymentForm.amount} required onChange={(event) => setPaymentForm((current) => ({ ...current, amount: event.target.value }))} /></label>}
+              {paymentAction !== "eob-batch" && <label className="cl-admin-field"><span>Reference</span><input className="ne-input" value={paymentForm.reference} maxLength={255} onChange={(event) => setPaymentForm((current) => ({ ...current, reference: event.target.value }))} /></label>}
+              {paymentAction !== "eob-batch" && <label className="cl-admin-field"><span>Method</span><select className="ne-input" value={paymentForm.paymentMethod} onChange={(event) => setPaymentForm((current) => ({ ...current, paymentMethod: event.target.value }))}><option value="check">Check</option><option value="cash">Cash</option><option value="card">Card</option><option value="electronic_payment">Electronic payment</option></select></label>}
+              {["insurance-payment", "insurance-reversal", "adjustment-reversal"].includes(paymentAction) && <><label className="cl-admin-field"><span>Payer ID</span><input className="ne-input" inputMode="numeric" value={paymentForm.payerId} required onChange={(event) => setPaymentForm((current) => ({ ...current, payerId: event.target.value }))} /></label><label className="cl-admin-field"><span>Payer name</span><input className="ne-input" value={paymentForm.payerName} required onChange={(event) => setPaymentForm((current) => ({ ...current, payerName: event.target.value }))} /></label><label className="cl-admin-field"><span>Payer claim number</span><input className="ne-input" value={paymentForm.payerClaimNumber} onChange={(event) => setPaymentForm((current) => ({ ...current, payerClaimNumber: event.target.value }))} /></label></>}
+              {paymentAction === "insurance-payment" && <><label className="cl-admin-field"><span>Adjustment amount</span><input className="ne-input" type="number" min="0" step="0.01" value={paymentForm.adjustmentAmount} onChange={(event) => setPaymentForm((current) => ({ ...current, adjustmentAmount: event.target.value }))} /></label><label className="cl-admin-field"><span>Adjustment reason</span><input className="ne-input" value={paymentForm.reasonCode} onChange={(event) => setPaymentForm((current) => ({ ...current, reasonCode: event.target.value }))} /></label></>}
+              {paymentAction !== "eob-batch" && <label className="cl-admin-field"><span>Memo</span><input className="ne-input" value={paymentForm.memo} maxLength={1000} onChange={(event) => setPaymentForm((current) => ({ ...current, memo: event.target.value }))} /></label>}
+              <div className="ne-actions"><button className="cl-btn-primary" type="submit" disabled={savingPayment}>{savingPayment ? "Posting…" : paymentAction === "eob-batch" ? "Import local EOB batch" : "Post activity"}</button></div>
+            </form>
           </section>
           <div className="billing-account-columns">
             <section className="cl-card">

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import {
@@ -16,12 +19,14 @@ import {
 } from '../../api.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 import InventoryActivityPanel from './InventoryActivityPanel.tsx'
+import InventoryAccountingIntegrationPanel from './InventoryAccountingIntegrationPanel.tsx'
 import InventoryControlledCountsPanel from './InventoryControlledCountsPanel.tsx'
 import InventoryCostPolicyGovernancePanel from './InventoryCostPolicyGovernancePanel.tsx'
 import InventoryDispensingPanel from './InventoryDispensingPanel.tsx'
 import InventoryMedicationLinksPanel from './InventoryMedicationLinksPanel.tsx'
 import InventoryReceivingPanel from './InventoryReceivingPanel.tsx'
 import InventoryReplenishmentPanel from './InventoryReplenishmentPanel.tsx'
+import InventoryReplenishmentPolicyGovernancePanel from './InventoryReplenishmentPolicyGovernancePanel.tsx'
 import InventoryRequisitionsPanel from './InventoryRequisitionsPanel.tsx'
 import InventoryStockActionsPanel from './InventoryStockActionsPanel.tsx'
 
@@ -255,11 +260,21 @@ export default function InventoryWorkspace() {
 
           <InventoryCostPolicyGovernancePanel sessionId={session.sessionId} />
 
+          <InventoryAccountingIntegrationPanel sessionId={session.sessionId} />
+
+          <InventoryReplenishmentPolicyGovernancePanel
+            facilities={data.facilities}
+            items={data.items}
+            onChanged={handleInventoryWorkflowChanged}
+            sessionId={session.sessionId}
+          />
+
           <InventoryReplenishmentPanel
             asOfDate={data.asOfDate}
             datasetId={data.datasetId}
             datasetVersion={data.datasetVersion}
-            items={data.items}
+            refreshToken={workflowRefreshToken}
+            sessionId={session.sessionId}
           />
 
           <InventoryActivityPanel

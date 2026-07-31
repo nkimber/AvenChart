@@ -1,5 +1,9 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { Link } from 'react-router-dom'
 import { ArrowRight, ShieldCheck, Stethoscope, Users } from 'lucide-react'
+import LegalAttribution from '../components/LegalAttribution.tsx'
 import { WelcomeIllustration } from '../illustrations.tsx'
 
 export default function EntryChooser() {
@@ -64,6 +68,7 @@ export default function EntryChooser() {
               <ArrowRight className="chooser-tile-arrow" size={18} />
             </Link>
           </div>
+          <LegalAttribution />
         </div>
       </div>
     </div>

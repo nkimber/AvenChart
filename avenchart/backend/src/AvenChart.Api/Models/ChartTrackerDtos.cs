@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 namespace AvenChart.Api.Models;
 public sealed record ChartTrackerPatient(string PatientId,string PublicId,string DisplayName,string DateOfBirth,ChartTrackerEvent? Current);
 public sealed record ChartTrackerEvent(Guid Id,string? Location,int? UserId,string? UserName,string RecordedAt);

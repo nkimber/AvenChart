@@ -1,56 +1,66 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { useEffect, useMemo, useState } from 'react'
-import type { InventoryItem } from '../../api.ts'
+import {
+  getInventoryReplenishmentRecommendations,
+  type InventoryReplenishmentRecommendation,
+} from '../../api.ts'
 
 type Props = {
   asOfDate: string
   datasetId: string
   datasetVersion: string
-  items: InventoryItem[]
+  refreshToken: number
+  sessionId: string
 }
+
+type LoadState =
+  | { status: 'loading' }
+  | { status: 'ready'; recommendations: InventoryReplenishmentRecommendation[] }
+  | { status: 'error' }
 
 const ITEMS_PER_PAGE = 6
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(value)
-}
 
 export default function InventoryReplenishmentPanel({
   asOfDate,
   datasetId,
   datasetVersion,
-  items,
+  refreshToken,
+  sessionId,
 }: Props) {
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
+  const [state, setState] = useState<LoadState>({ status: 'loading' })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setState({ status: 'loading' })
+    void getInventoryReplenishmentRecommendations(sessionId, controller.signal)
+      .then((recommendations) => setState({ status: 'ready', recommendations }))
+      .catch(() => {
+        if (!controller.signal.aborted) setState({ status: 'error' })
+      })
+    return () => controller.abort()
+  }, [refreshToken, sessionId])
+
   const candidates = useMemo(
-    () =>
-      items
-        .filter((item) => item.belowReorderPoint)
-        .map((item) => ({
-          ...item,
-          recommendedQuantity: Math.max(
-            0,
-            item.preferredQuantity - item.quantityOnHand,
-          ),
-        }))
-        .sort(
-          (left, right) =>
-            right.recommendedQuantity - left.recommendedQuantity ||
-            left.itemCode.localeCompare(right.itemCode),
-        ),
-    [items],
+    () => (state.status === 'ready' ? state.recommendations : []),
+    [state],
   )
   const filteredCandidates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
     return candidates.filter(
       (item) =>
         !normalizedQuery ||
-        [item.itemCode, item.name, item.category, item.unit].some((value) =>
-          value.toLowerCase().includes(normalizedQuery),
-        ),
+        [
+          item.itemCode,
+          item.itemName,
+          item.facilityCode,
+          item.facilityName,
+          item.unit,
+          item.preferredVendorName ?? '',
+        ].some((value) => value.toLowerCase().includes(normalizedQuery)),
     )
   }, [candidates, query])
   const pageCount = Math.max(
@@ -70,22 +80,23 @@ export default function InventoryReplenishmentPanel({
     <section className="cl-card inventory-replenishment">
       <div className="cl-card-header">
         <div>
-          <h2 className="cl-card-title">Replenishment planning</h2>
+          <h2 className="cl-card-title">Governed replenishment planning</h2>
           <p className="cl-card-subtitle">
-            Review active items at or below their configured reorder point and
-            the quantity needed to reach their preferred target.
+            Approved, effective item-and-facility policies identify stock at or
+            below its reorder point and calculate a pack-rounded request.
           </p>
         </div>
         <span className="cl-badge cl-badge-muted">
-          {candidates.length} candidate{candidates.length === 1 ? '' : 's'}
+          {state.status === 'loading'
+            ? 'Loading'
+            : `${candidates.length} candidate${candidates.length === 1 ? '' : 's'}`}
         </span>
       </div>
 
       <div className="hint-banner">
-        This is a read-only aggregate planning projection. Reorder points,
-        preferred targets, facility allocation, valuation method, approvals, and
-        decision evidence are not owner-approved production policy. Requisition
-        creation is intentionally unavailable here.
+        A recommendation is not an order. It cannot reserve stock, create or
+        prefill a requisition, approve purchasing, receive goods, value
+        inventory, or post accounting activity.
       </div>
 
       <dl className="inventory-replenishment-facts">
@@ -104,19 +115,19 @@ export default function InventoryReplenishmentPanel({
           <dd>{new Date(`${asOfDate}T00:00:00`).toLocaleDateString()}</dd>
         </div>
         <div>
-          <dt>Candidate rule</dt>
-          <dd>Aggregate on hand ≤ reorder point</dd>
+          <dt>Recommendation formula</dt>
+          <dd>Round up policy target or reorder plus safety stock to pack size</dd>
         </div>
       </dl>
 
       <div className="inventory-replenishment-filter">
         <label className="cl-admin-field">
-          <span>Search replenishment candidates</span>
+          <span>Search governed candidates</span>
           <input
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Item code, name, category, or stocking unit"
+            placeholder="Item, facility, stocking unit, or preferred vendor"
           />
         </label>
         <span className="cl-badge cl-badge-muted">
@@ -124,71 +135,76 @@ export default function InventoryReplenishmentPanel({
         </span>
       </div>
 
-      {visibleCandidates.length === 0 ? (
+      {state.status === 'loading' && (
+        <div className="empty-state" aria-live="polite">
+          <p className="empty-state-text">Loading approved replenishment policy evidence.</p>
+        </div>
+      )}
+      {state.status === 'error' && (
+        <div className="error-banner" role="alert">
+          Could not load governed replenishment recommendations. Try refreshing
+          the Inventory workspace.
+        </div>
+      )}
+      {state.status === 'ready' && visibleCandidates.length === 0 && (
         <div className="empty-state">
           <p className="empty-state-text">
             {candidates.length === 0
-              ? 'No active items are at or below their configured reorder point.'
-              : 'No replenishment candidates match this search.'}
+              ? 'No approved, effective replenishment policy is currently at or below its reorder point.'
+              : 'No governed replenishment candidates match this search.'}
           </p>
         </div>
-      ) : (
+      )}
+      {state.status === 'ready' && visibleCandidates.length > 0 && (
         <div
           className="cl-table-scroll"
           role="region"
-          aria-label="Replenishment candidates"
+          aria-label="Governed replenishment candidates"
           tabIndex={0}
         >
           <table className="cl-table inventory-replenishment-table">
             <thead>
               <tr>
-                <th>Item</th>
-                <th>Aggregate on hand</th>
-                <th>Reorder point</th>
-                <th>Preferred target</th>
-                <th>Projected need</th>
-                <th>Current lot value</th>
-                <th>Planning status</th>
+                <th>Item / facility</th>
+                <th>On hand / reorder</th>
+                <th>Target / safety / lead time</th>
+                <th>Pack-rounded recommendation</th>
+                <th>Policy evidence</th>
               </tr>
             </thead>
             <tbody>
               {visibleCandidates.map((item) => (
-                <tr key={item.itemId}>
+                <tr key={item.policyId}>
                   <td>
                     <strong>{item.itemCode}</strong>
                     <span className="inventory-table-secondary">
-                      {item.name} / {item.category}
+                      {item.itemName} · {item.facilityCode} / {item.facilityName}
                     </span>
                   </td>
                   <td>
-                    {item.quantityOnHand} {item.unit}
-                  </td>
-                  <td>
-                    {item.reorderPoint} {item.unit}
-                  </td>
-                  <td>
-                    {item.preferredQuantity} {item.unit}
-                  </td>
-                  <td>
-                    <strong>
-                      {item.recommendedQuantity} {item.unit}
-                    </strong>
+                    {item.onHand} / {item.reorderPoint} {item.unit}
                     <span className="inventory-table-secondary">
-                      Preferred target minus aggregate on hand
+                      Aggregate active-lot quantity
                     </span>
                   </td>
                   <td>
-                    {formatCurrency(item.inventoryValue)}
+                    {item.targetQuantity} / {item.safetyStock} {item.unit} · {item.leadTimeDays} days
                     <span className="inventory-table-secondary">
-                      Current local lot carrying value
+                      Preferred vendor: {item.preferredVendorName ?? 'Not assigned'}
+                    </span>
+                  </td>
+                  <td>
+                    <strong>{item.recommendedQuantity} {item.unit}</strong>
+                    <span className="inventory-table-secondary">
+                      Pack size {item.packSize}; approval threshold {item.approvalThreshold}
                     </span>
                   </td>
                   <td>
                     <span className="cl-badge cl-badge-amber">
-                      At or below reorder
+                      Policy rev. {item.policyRevision}
                     </span>
                     <span className="inventory-table-secondary">
-                      No approved decision recorded
+                      Effective {new Date(`${item.effectiveDate}T00:00:00`).toLocaleDateString()} · {item.approvalReference}
                     </span>
                   </td>
                 </tr>
@@ -200,7 +216,7 @@ export default function InventoryReplenishmentPanel({
 
       <div
         className="inventory-lot-pagination"
-        aria-label="Replenishment candidate pages"
+        aria-label="Governed replenishment candidate pages"
       >
         <button
           className="cl-btn-secondary"
@@ -221,15 +237,6 @@ export default function InventoryReplenishmentPanel({
         >
           Next
         </button>
-      </div>
-
-      <div className="inventory-replenishment-decision">
-        <strong>Requisition creation is policy-gated</strong>
-        <span>
-          Use the separate Purchase requisitions workflow for an authorized
-          request. This projection does not create, prefill, approve, reserve,
-          receive, value, or post inventory.
-        </span>
       </div>
     </section>
   )

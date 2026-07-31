@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { MapPin, Search, UserRound } from "lucide-react";

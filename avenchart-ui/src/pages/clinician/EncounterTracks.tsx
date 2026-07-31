@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
@@ -9,7 +12,6 @@ import {
   Search,
 } from "lucide-react";
 import {
-  ApiRequestError,
   addEncounterTrackReading,
   createEncounterTrack,
   getEncounterTrack,
@@ -22,8 +24,6 @@ import { showToast } from "../../components/Toast.tsx";
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
 
 const localNow = () => new Date().toISOString().slice(0, 16);
-const lockedMessage =
-  "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.";
 
 export default function EncounterTracks() {
   const { session } = useOutletContext<ClinicianOutletContext>();
@@ -102,13 +102,8 @@ export default function EncounterTracks() {
       setSelectedTrackId("");
       await loadCatalog(record.recordId);
       showToast("Track added to this encounter.", "success");
-    } catch (error) {
-      showToast(
-        error instanceof ApiRequestError && error.status === 409
-          ? lockedMessage
-          : "The track could not be added to this encounter.",
-        "error",
-      );
+    } catch {
+      showToast("The track could not be added to this encounter.", "error");
     }
   }
 
@@ -144,11 +139,9 @@ export default function EncounterTracks() {
           : "Timestamped track reading saved.",
         "success",
       );
-    } catch (error) {
+    } catch {
       showToast(
-        error instanceof ApiRequestError && error.status === 409
-          ? lockedMessage
-          : "Enter at least one value and include every captured item.",
+        "Enter at least one value and include every captured item.",
         "error",
       );
     }
@@ -198,12 +191,6 @@ export default function EncounterTracks() {
       </section>
       {catalog ? (
         <>
-          {catalog.isLocked ? (
-            <section className="cl-card" role="status">
-              <h2 className="cl-card-title">Encounter documentation locked</h2>
-              <p className="cl-empty-text">{lockedMessage}</p>
-            </section>
-          ) : null}
           <section className="cl-card">
             <h2 className="cl-card-title">Add a track</h2>
             <div className="cl-actions">
@@ -212,7 +199,6 @@ export default function EncounterTracks() {
                 value={selectedTrackId}
                 onChange={(event) => setSelectedTrackId(event.target.value)}
                 aria-label="Configured track"
-                disabled={catalog.isLocked}
               >
                 <option value="">Select configured track</option>
                 {catalog.availableTracks.map((track) => (
@@ -226,7 +212,7 @@ export default function EncounterTracks() {
               </select>
               <button
                 className="cl-btn-secondary"
-                disabled={catalog.isLocked || !selectedTrackId}
+                disabled={!selectedTrackId}
                 onClick={() => void createRecord()}
               >
                 <Plus size={15} /> Add track
@@ -291,7 +277,6 @@ export default function EncounterTracks() {
                           onChange={(event) =>
                             setRecordedAt(event.target.value)
                           }
-                          disabled={catalog.isLocked}
                         />
                       </label>
                       {detail.items.map((item) => (
@@ -306,14 +291,12 @@ export default function EncounterTracks() {
                                 [item.id]: event.target.value,
                               }))
                             }
-                            disabled={catalog.isLocked}
                           />
                         </label>
                       ))}
                     </div>
                     <button
                       className="cl-btn-primary"
-                      disabled={catalog.isLocked}
                       onClick={() => void saveReading()}
                     >
                       <Save size={15} />{" "}
@@ -366,7 +349,6 @@ export default function EncounterTracks() {
                               className="cl-icon-button"
                               onClick={() => editReading(reading.readingId)}
                               aria-label="Edit reading"
-                              disabled={catalog.isLocked}
                             >
                               <Pencil size={15} />
                             </button>

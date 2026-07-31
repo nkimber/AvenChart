@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { AlertTriangle, Plus, Search, X } from "lucide-react";
@@ -853,6 +856,17 @@ export default function PatientChart() {
                     )}
                   </div>
                   <div className="cl-lifecycle-actions">
+                    {m.activity === 1 && (
+                      <button
+                        className="cl-clinical-action"
+                        type="button"
+                        aria-label={`Edit ${m.title}`}
+                        disabled={working}
+                        onClick={() => void editMedication(m)}
+                      >
+                        Edit
+                      </button>
+                    )}
                     <button
                       className="cl-clinical-action"
                       type="button"
@@ -997,17 +1011,6 @@ export default function PatientChart() {
                     </p>
                   </div>
                   <div className="cl-lifecycle-actions">
-                    {m.activity === 1 && (
-                      <button
-                        className="cl-clinical-action"
-                        type="button"
-                        aria-label={`Edit ${m.title}`}
-                        disabled={working}
-                        onClick={() => void editMedication(m)}
-                      >
-                        Edit
-                      </button>
-                    )}
                     <button
                       className="cl-clinical-action"
                       type="button"

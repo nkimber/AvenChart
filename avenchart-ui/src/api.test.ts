@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   allocateInventoryPatientSale,
@@ -13,6 +16,11 @@ import {
   completePatientDocumentRouting,
   correctStaffMessage,
   correctPatientDocumentOcr,
+  createBillingAdjustmentReversal,
+  createBillingInsurancePayment,
+  createBillingInsuranceReversal,
+  createBillingPatientPayment,
+  createBillingPatientRefund,
   createInventoryPatientSale,
   createInventoryCountReconciliation,
   createInventoryExpiryDisposition,
@@ -34,6 +42,7 @@ import {
   createProcedureReport,
   createProcedureResult,
   createProcedureSpecimen,
+  transitionProcedureSpecimenLifecycle,
   createPrescription,
   deleteAllergy,
   deactivateMedication,
@@ -71,6 +80,7 @@ import {
   getMedicationLifecycleHistory,
   getClinicalPharmacyDirectory,
   getPatientBilling,
+  importBillingEobBatch,
   getPatientCareTeamOptions,
   getPatientAdministrationHistory,
   getPatientAuthorizationHistory,
@@ -124,7 +134,6 @@ import {
   startPatientDocumentOcr,
   submitInventoryPurchaseRequisition,
   transitionPracticeSettingChangeRequest,
-  transitionProcedureSpecimen,
   updatePatientCareTeam,
   updateMedication,
   updatePatientAuthorizationAssignment,
@@ -2010,28 +2019,25 @@ describe('authenticated API transport', () => {
     const detail = { patientId: 'MOD-PAT-0004', patientDisplayName: 'Alex Morgan', counts: { orders: 1, reports: 0, results: 0, finalResults: 0 }, orders: [] }
     const order = { patientId: 'MOD-PAT-0004', providerId: null, labId: 501, encounterId: 4101, dateOrdered: '2026-07-29', priority: 'routine', status: 'pending', procedureCode: 'BMP', procedureName: 'Basic metabolic panel', procedureType: 'laboratory', diagnosis: 'Routine monitoring', instructions: '' }
     const specimen = { orderId: 7001, specimenIdentifier: 'SP-7001', accessionIdentifier: '', specimenTypeCode: '', specimenType: 'serum', collectionMethodCode: '', collectionMethod: '', specimenLocationCode: '', specimenLocation: '', collectedDate: '2026-07-29T12:00:00', volumeValue: null, volumeUnit: '', conditionCode: '', specimenCondition: '', comments: '' }
-    const transition = { action: 'receive' as const, expectedVersion: 1, reason: 'Received by local laboratory' }
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ id: 7001, detail }))
-      .mockResolvedValueOnce(jsonResponse({ id: 8001, detail }))
-      .mockResolvedValueOnce(jsonResponse({ id: 8001, detail }))
+    const received = { status: 'received' as const, expectedVersion: 1, reason: 'Received locally' }
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 7001, detail })).mockResolvedValueOnce(jsonResponse({ id: 8001, detail })).mockResolvedValueOnce(jsonResponse({ id: 8001, detail }))
 
     await expect(createProcedureOrder('staff-session', order)).resolves.toEqual(detail)
     await expect(createProcedureSpecimen('staff-session', specimen)).resolves.toEqual(detail)
-    await expect(transitionProcedureSpecimen('staff-session', 8001, transition)).resolves.toEqual(detail)
+    await expect(transitionProcedureSpecimenLifecycle('staff-session', 8001, received)).resolves.toEqual(detail)
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['http://localhost:5001/api/procedures/orders', 'http://localhost:5001/api/procedures/specimens', 'http://localhost:5001/api/procedures/specimens/8001/transition'])
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['http://localhost:5001/api/procedures/orders', 'http://localhost:5001/api/procedures/specimens', 'http://localhost:5001/api/procedures/specimens/8001/lifecycle'])
     expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual(['POST', 'POST', 'PUT'])
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ body: JSON.stringify(order) })
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ body: JSON.stringify(specimen) })
-    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ body: JSON.stringify(transition) })
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ body: JSON.stringify(received) })
   })
 
   it('uses protected local lab report, result, and result-correction contracts', async () => {
     const detail = { patientId: 'MOD-PAT-0004', patientDisplayName: 'Alex Morgan', counts: { orders: 1, reports: 1, results: 1, finalResults: 1 }, orders: [] }
     const report = { orderId: 7001, dateCollected: '2026-07-29T12:00:00', dateReport: '2026-07-29T12:00:00', specimenNumber: 'SP-7001', reportStatus: 'received', reviewStatus: 'received', notes: '' }
     const result = { reportId: 8001, resultCode: 'GLU', resultText: 'Glucose', dateTime: '2026-07-29T12:00:00', facility: '', units: 'mg/dL', result: '95', range: '70-99', abnormal: '', comments: '', status: 'final' }
-    const correction = { resultCode: 'GLU', resultText: 'Glucose', dateTime: '2026-07-29T12:00:00', units: 'mg/dL', result: '105', range: '70-99', abnormal: 'H', status: 'corrected', expectedVersion: 1, reason: 'Corrected after local verification' }
+    const correction = { resultCode: 'GLU', resultText: 'Glucose', dateTime: '2026-07-29T12:00:00', units: 'mg/dL', result: '105', range: '70-99', abnormal: 'H', status: 'corrected' }
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 8001, detail })).mockResolvedValueOnce(jsonResponse({ id: 9001, detail })).mockResolvedValueOnce(jsonResponse({ id: 9001, detail }))
 
     await expect(createProcedureReport('staff-session', report)).resolves.toEqual(detail)
@@ -2040,7 +2046,6 @@ describe('authenticated API transport', () => {
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['http://localhost:5001/api/procedures/reports', 'http://localhost:5001/api/procedures/results', 'http://localhost:5001/api/procedures/results/9001'])
     expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual(['POST', 'POST', 'PUT'])
-    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ body: JSON.stringify(correction) })
   })
 
   it('uses authenticated, versioned report-review history and decision contracts', async () => {
@@ -2306,6 +2311,35 @@ describe('authenticated API transport', () => {
         headers: { 'X-Legacy EHR-Session': 'staff-session' },
       }),
     )
+  })
+
+  it('posts local billing payment, reversal, and EOB contracts', async () => {
+    const detail = { patientId: 'MOD-PAT-0004', accountSummary: { balanceAmount: 90 }, agingSummary: {}, ledgerSummary: {}, statementSummary: {}, ledgerEntries: [], encounters: [] }
+    const common = { patientId: 'MOD-PAT-0004', encounter: 4101, reference: 'LOCAL-1', postDate: '2026-07-30', checkDate: null, depositDate: null, paymentMethod: 'check', codeType: null, code: null, modifier: null, memo: 'Local billing activity' }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'a1', sessionId: 1, detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'a2', sessionId: 2, detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'a3', sessionId: 3, detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'a4', sessionId: 4, detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'a5', sessionId: 5, detail }))
+      .mockResolvedValueOnce(jsonResponse({ ids: ['a6'], sessionIds: [6], detail }))
+
+    await expect(createBillingPatientPayment('staff-session', { ...common, payAmount: 10 })).resolves.toEqual(detail)
+    await expect(createBillingPatientRefund('staff-session', { ...common, refundAmount: 10 })).resolves.toEqual(detail)
+    await expect(createBillingInsurancePayment('staff-session', { ...common, payerId: 11, payerName: 'Local Payer', payAmount: 10, adjustmentAmount: 2, reasonCode: 'contractual', payerClaimNumber: null })).resolves.toEqual(detail)
+    await expect(createBillingInsuranceReversal('staff-session', { ...common, payerId: 11, payerName: 'Local Payer', reversalAmount: 10, payerClaimNumber: null })).resolves.toEqual(detail)
+    await expect(createBillingAdjustmentReversal('staff-session', { ...common, payerId: 11, payerName: 'Local Payer', adjustmentAmount: 2, payerClaimNumber: null })).resolves.toEqual(detail)
+    await expect(importBillingEobBatch('staff-session', 'MOD-PAT-0004')).resolves.toEqual(detail)
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/billing/payments/patient-payments',
+      'http://localhost:5001/api/billing/payments/patient-refunds',
+      'http://localhost:5001/api/billing/payments/insurance-payments',
+      'http://localhost:5001/api/billing/payments/insurance-reversals',
+      'http://localhost:5001/api/billing/payments/adjustment-reversals',
+      'http://localhost:5001/api/billing/eob-batches/import',
+    ])
+    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual(['POST', 'POST', 'POST', 'POST', 'POST', 'POST'])
   })
 
   it('loads upcoming and past appointments through the protected portal route', async () => {

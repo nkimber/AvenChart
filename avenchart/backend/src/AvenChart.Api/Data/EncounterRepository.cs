@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
@@ -1389,7 +1392,7 @@ public sealed class EncounterRepository(
                    collection_method_code, collection_method, specimen_location_code, specimen_location,
                    collected_date, volume_value, volume_unit, condition_code, specimen_condition, comments,
                    specimen_status, specimen_version,
-                   (select count(*) from procedure_specimen_events event where event.specimen_id = lab_specimens.id) as history_count
+                   (select count(*) from procedure_specimen_events event where event.specimen_id = lab_specimens.id) as lifecycle_history_count
             from lab_specimens
             where order_id = any(@orderIds)
             order by collected_date desc, id desc;
@@ -1418,10 +1421,9 @@ public sealed class EncounterRepository(
                     ConditionCode: ReadNullableString(reader, "condition_code"),
                     SpecimenCondition: ReadNullableString(reader, "specimen_condition"),
                     Comments: ReadNullableString(reader, "comments"),
-                    SpecimenStatus: reader.GetString(reader.GetOrdinal("specimen_status")),
-                    SpecimenVersion: reader.GetInt32(reader.GetOrdinal("specimen_version")),
-                    HistoryCount: Convert.ToInt32(reader.GetValue(reader.GetOrdinal("history_count"))),
-                    History: [])));
+                    LifecycleStatus: reader.GetString(reader.GetOrdinal("specimen_status")),
+                    LifecycleVersion: reader.GetInt32(reader.GetOrdinal("specimen_version")),
+                    LifecycleHistoryCount: Convert.ToInt32(reader.GetValue(reader.GetOrdinal("lifecycle_history_count"))))));
         }
 
         return rows;

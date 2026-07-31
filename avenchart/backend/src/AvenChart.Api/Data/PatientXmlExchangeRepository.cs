@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using System.Security.Cryptography;using System.Text;using System.Text.Json;using System.Xml;using System.Xml.Linq;using Npgsql;using NpgsqlTypes;using AvenChart.Api.Models;
 namespace AvenChart.Api.Data;
 public sealed class PatientXmlExchangeRepository(NpgsqlDataSource source)

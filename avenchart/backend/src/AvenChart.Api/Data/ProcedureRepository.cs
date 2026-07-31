@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using System.Data.Common;
 using Npgsql;
 using NpgsqlTypes;
@@ -229,7 +232,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             inner join lab_orders lo on lo.id = lr.order_id
             inner join patients p on p.legacy_pid = lo.pid
             left join critical_lab_result_acknowledgements ack on ack.result_id = lres.id
-            where lower(coalesce(lres.abnormal, '')) in ('critical', 'panic', 'hh', 'll', 'c')
+            where lower(coalesce(lres.abnormal, '')) in ('critical', 'panic', 'hh', 'll')
               and coalesce(ack.status, 'open') = 'open'
             order by lres.result_date desc, lres.id desc;
             """;
@@ -260,7 +263,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             insert into critical_lab_result_acknowledgements (result_id, status, version, acknowledged_by, acknowledged_at, acknowledgement_reason)
             select @resultId, 'acknowledged', 2, @actor, @occurredAt, @reason
-            where exists (select 1 from lab_results where id = @resultId and lower(coalesce(abnormal, '')) in ('critical', 'panic', 'hh', 'll', 'c'))
+            where exists (select 1 from lab_results where id = @resultId and lower(coalesce(abnormal, '')) in ('critical', 'panic', 'hh', 'll'))
             on conflict (result_id) do update set status = 'acknowledged', version = critical_lab_result_acknowledgements.version + 1, acknowledged_by = excluded.acknowledged_by, acknowledged_at = excluded.acknowledged_at, acknowledgement_reason = excluded.acknowledgement_reason
             where critical_lab_result_acknowledgements.status = 'open' and critical_lab_result_acknowledgements.version = @expectedVersion
             returning version;
@@ -1655,12 +1658,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     public async Task<ProcedureMutationResponse?> CreateSpecimenAsync(
         ProcedureSpecimenCreateRequest request,
-        string actor,
         CancellationToken cancellationToken)
     {
         if (request.OrderId <= 0
             || (string.IsNullOrWhiteSpace(request.SpecimenIdentifier) && string.IsNullOrWhiteSpace(request.AccessionIdentifier))
-            || string.IsNullOrWhiteSpace(actor)
             || !TryReadDateTime(request.CollectedDate, out var collectedDate)
             || request.VolumeValue < 0)
         {
@@ -1674,8 +1675,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        var id = await GetNextIntIdAsync(connection, "lab_specimens", "id", cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var id = await GetNextIntIdAsync(connection, "lab_specimens", "id", transaction, cancellationToken);
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -1683,12 +1684,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 (id, order_id, specimen_identifier, accession_identifier, specimen_type_code, specimen_type,
                  collection_method_code, collection_method, specimen_location_code, specimen_location,
                  collected_date, volume_value, volume_unit, condition_code, specimen_condition, comments,
-                 specimen_status, specimen_version, updated_by, updated_at)
+                 specimen_status, specimen_version)
             values
                 (@id, @orderId, @specimenIdentifier, @accessionIdentifier, @specimenTypeCode, @specimenType,
                  @collectionMethodCode, @collectionMethod, @specimenLocationCode, @specimenLocation,
                  @collectedDate, @volumeValue, @volumeUnit, @conditionCode, @specimenCondition, @comments,
-                 'collected', 1, @actor, current_timestamp);
+                 'collected', 1);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("orderId", order.Id);
@@ -1706,146 +1707,147 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("conditionCode", NormalizeText(request.ConditionCode) ?? string.Empty);
         command.Parameters.AddWithValue("specimenCondition", NormalizeText(request.SpecimenCondition) ?? string.Empty);
         command.Parameters.AddWithValue("comments", NormalizeText(request.Comments) ?? string.Empty);
-        command.Parameters.AddWithValue("actor", actor.Trim());
         await command.ExecuteNonQueryAsync(cancellationToken);
-        await InsertSpecimenEventAsync(
-            connection,
-            transaction,
-            id,
-            "collect",
-            null,
-            "collected",
-            actor.Trim(),
-            "Initial local specimen collection.",
-            0,
-            1,
-            cancellationToken);
+        await using (var history = connection.CreateCommand())
+        {
+            history.Transaction = transaction;
+            history.CommandText = """
+                insert into procedure_specimen_events
+                    (specimen_id, action, previous_status, current_status, actor, reason, expected_version, resulting_version, occurred_at)
+                values (@specimenId, 'collect', null, 'collected', 'local-user', 'Local specimen collected.', 0, 1, @occurredAt);
+                """;
+            history.Parameters.AddWithValue("specimenId", id);
+            history.Parameters.Add("occurredAt", NpgsqlDbType.Timestamp).Value = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await history.ExecuteNonQueryAsync(cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(order.PatientId, cancellationToken);
         return detail is null ? null : new ProcedureMutationResponse(id, detail);
     }
 
-    public async Task<ProcedureMutationResponse?> TransitionSpecimenAsync(
+    public async Task<ProcedureMutationResponse?> TransitionSpecimenLifecycleAsync(
         int specimenId,
-        ProcedureSpecimenTransitionRequest request,
+        ProcedureSpecimenLifecycleTransitionRequest request,
         string actor,
         CancellationToken cancellationToken)
     {
-        var action = NormalizeText(request.Action)?.ToLowerInvariant();
-        var reason = NormalizeText(request.Reason);
-        if (specimenId <= 0
-            || action is null
+        var targetStatus = NormalizeText(request.Status)?.ToLowerInvariant();
+        if (specimenId <= 0 || request.ExpectedVersion <= 0 || !HasBoundedReason(request.Reason)
             || string.IsNullOrWhiteSpace(actor)
-            || request.ExpectedVersion <= 0
-            || reason is null
-            || reason.Length > 500)
-        {
-            throw new ArgumentException("A specimen action, current expected version, authenticated actor, and reason are required.");
-        }
-
-        if (action is not ("label" or "receive" or "reject" or "recollect"))
-        {
-            throw new ArgumentException($"Unsupported specimen action '{request.Action}'.");
-        }
-
-        DateTime? recollectedDate = null;
-        if (action == "recollect")
-        {
-            if (string.IsNullOrWhiteSpace(request.SpecimenIdentifier)
-                && string.IsNullOrWhiteSpace(request.AccessionIdentifier))
-            {
-                throw new ArgumentException("Recollection requires a new specimen or accession identifier.");
-            }
-
-            if (!TryReadDateTime(request.CollectedDate ?? string.Empty, out var parsedCollectedDate))
-            {
-                throw new ArgumentException("Recollection requires a valid collection date.");
-            }
-
-            recollectedDate = parsedCollectedDate;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var specimen = await GetSpecimenMutationContextAsync(connection, transaction, specimenId, cancellationToken);
-        if (specimen is null)
+            || targetStatus is not ("labeled" or "received" or "rejected" or "recollected"))
         {
             return null;
         }
 
-        if (specimen.SpecimenVersion != request.ExpectedVersion)
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        string? patientId;
+        string? currentStatus;
+        await using (var context = connection.CreateCommand())
         {
-            throw new ProcedureSpecimenLifecycleConflictException(
-                request.ExpectedVersion,
-                specimen.SpecimenVersion,
-                specimen.SpecimenStatus,
-                $"The specimen changed after it was loaded. Expected version {request.ExpectedVersion}; current version is {specimen.SpecimenVersion}.");
+            context.Transaction = transaction;
+            context.CommandText = """
+                select p.canonical_id, specimen.specimen_status
+                from lab_specimens specimen
+                inner join lab_orders orders on orders.id = specimen.order_id
+                inner join patients p on p.legacy_pid = orders.pid
+                where specimen.id = @specimenId
+                for update;
+                """;
+            context.Parameters.AddWithValue("specimenId", specimenId);
+            await using var reader = await context.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) return null;
+            patientId = reader.GetString(0);
+            currentStatus = reader.GetString(1);
         }
 
-        if (action == "recollect"
-            && string.Equals(NormalizeText(request.SpecimenIdentifier) ?? string.Empty, specimen.SpecimenIdentifier, StringComparison.Ordinal)
-            && string.Equals(NormalizeText(request.AccessionIdentifier) ?? string.Empty, specimen.AccessionIdentifier, StringComparison.Ordinal))
+        var allowed = (currentStatus, targetStatus) switch
         {
-            throw new ArgumentException("Recollection requires a replacement specimen or accession identity.");
+            ("collected", "labeled") or ("collected", "received") or ("collected", "rejected")
+                or ("labeled", "received") or ("labeled", "rejected") or ("rejected", "recollected") => true,
+            _ => false
+        };
+        if (!allowed) return null;
+
+        var occurredAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        await using var update = connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText = """
+            update lab_specimens
+            set specimen_status = @targetStatus, specimen_version = specimen_version + 1
+            where id = @specimenId and specimen_status = @currentStatus and specimen_version = @expectedVersion
+            returning specimen_version;
+            """;
+        update.Parameters.AddWithValue("targetStatus", targetStatus);
+        update.Parameters.AddWithValue("specimenId", specimenId);
+        update.Parameters.AddWithValue("currentStatus", currentStatus);
+        update.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion);
+        var resultingVersion = await update.ExecuteScalarAsync(cancellationToken);
+        if (resultingVersion is null) return null;
+
+        await using (var history = connection.CreateCommand())
+        {
+            history.Transaction = transaction;
+            history.CommandText = """
+                insert into procedure_specimen_events
+                    (specimen_id, action, previous_status, current_status, actor, reason, expected_version, resulting_version, occurred_at)
+                values (@specimenId, @action, @previousStatus, @currentStatus, @actor, @reason, @expectedVersion, @resultingVersion, @occurredAt);
+                """;
+            history.Parameters.AddWithValue("specimenId", specimenId);
+            history.Parameters.AddWithValue("action", targetStatus switch { "labeled" => "label", "received" => "receive", "rejected" => "reject", _ => "recollect" });
+            history.Parameters.AddWithValue("previousStatus", currentStatus);
+            history.Parameters.AddWithValue("currentStatus", targetStatus);
+            history.Parameters.AddWithValue("actor", actor.Trim());
+            history.Parameters.AddWithValue("reason", request.Reason.Trim());
+            history.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion);
+            history.Parameters.AddWithValue("resultingVersion", Convert.ToInt32(resultingVersion));
+            history.Parameters.AddWithValue("occurredAt", occurredAt);
+            await history.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        var nextStatus = ResolveSpecimenStatus(action, specimen.SpecimenStatus);
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = action == "recollect"
-            ? """
-              update lab_specimens
-              set specimen_identifier = @specimenIdentifier,
-                  accession_identifier = @accessionIdentifier,
-                  collected_date = @collectedDate,
-                  condition_code = @conditionCode,
-                  specimen_condition = @specimenCondition,
-                  comments = @comments,
-                  specimen_status = @nextStatus,
-                  specimen_version = specimen_version + 1,
-                  updated_by = @actor,
-                  updated_at = current_timestamp
-              where id = @specimenId;
-              """
-            : """
-              update lab_specimens
-              set specimen_status = @nextStatus,
-                  specimen_version = specimen_version + 1,
-                  updated_by = @actor,
-                  updated_at = current_timestamp
-              where id = @specimenId;
-              """;
-        command.Parameters.AddWithValue("specimenId", specimen.Id);
-        command.Parameters.AddWithValue("nextStatus", nextStatus);
-        command.Parameters.AddWithValue("actor", actor.Trim());
-        if (action == "recollect")
-        {
-            command.Parameters.AddWithValue("specimenIdentifier", NormalizeText(request.SpecimenIdentifier) ?? string.Empty);
-            command.Parameters.AddWithValue("accessionIdentifier", NormalizeText(request.AccessionIdentifier) ?? string.Empty);
-            command.Parameters.Add("collectedDate", NpgsqlDbType.Timestamp).Value = recollectedDate!.Value;
-            command.Parameters.AddWithValue("conditionCode", NormalizeText(request.ConditionCode) ?? string.Empty);
-            command.Parameters.AddWithValue("specimenCondition", NormalizeText(request.SpecimenCondition) ?? string.Empty);
-            command.Parameters.AddWithValue("comments", NormalizeText(request.Comments) ?? string.Empty);
-        }
-
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        await InsertSpecimenEventAsync(
-            connection,
-            transaction,
-            specimen.Id,
-            action,
-            specimen.SpecimenStatus,
-            nextStatus,
-            actor.Trim(),
-            reason,
-            request.ExpectedVersion,
-            request.ExpectedVersion + 1,
-            cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new ProcedureMutationResponse(specimenId, detail);
+    }
 
-        var detail = await GetForPatientAsync(specimen.PatientId, cancellationToken);
-        return detail is null ? null : new ProcedureMutationResponse(specimen.Id, detail);
+    public async Task<ProcedureSpecimenLifecycleHistoryResponse?> GetSpecimenLifecycleHistoryAsync(
+        int specimenId,
+        CancellationToken cancellationToken)
+    {
+        if (specimenId <= 0) return null;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select specimen.id as specimen_id, specimen.specimen_version,
+                   event.id as event_id, event.action, event.previous_status, event.current_status,
+                   event.actor, event.reason, event.expected_version, event.resulting_version, event.occurred_at
+            from lab_specimens specimen
+            left join procedure_specimen_events event on event.specimen_id = specimen.id
+            where specimen.id = @specimenId
+            order by event.occurred_at desc nulls last, event.id desc nulls last;
+            """;
+        command.Parameters.AddWithValue("specimenId", specimenId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var lifecycleVersion = reader.GetInt32(reader.GetOrdinal("specimen_version"));
+        var events = new List<ProcedureSpecimenLifecycleEventItem>();
+        do
+        {
+            if (reader.IsDBNull(reader.GetOrdinal("event_id"))) continue;
+            events.Add(new ProcedureSpecimenLifecycleEventItem(
+                reader.GetInt64(reader.GetOrdinal("event_id")),
+                reader.GetString(reader.GetOrdinal("action")),
+                ReadNullableString(reader, "previous_status"),
+                reader.GetString(reader.GetOrdinal("current_status")),
+                reader.GetString(reader.GetOrdinal("actor")),
+                reader.GetString(reader.GetOrdinal("reason")),
+                reader.GetInt32(reader.GetOrdinal("expected_version")),
+                reader.GetInt32(reader.GetOrdinal("resulting_version")),
+                reader.GetDateTime(reader.GetOrdinal("occurred_at")).ToString("yyyy-MM-dd HH:mm")));
+        }
+        while (await reader.ReadAsync(cancellationToken));
+        return new ProcedureSpecimenLifecycleHistoryResponse(specimenId, lifecycleVersion, events);
     }
 
     public async Task<ProcedureMutationResponse?> CreateResultAsync(
@@ -1896,82 +1898,28 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     public async Task<ProcedureMutationResponse?> UpdateResultAsync(
         int resultId,
         ProcedureResultUpdateRequest request,
-        string actor,
         CancellationToken cancellationToken)
     {
-        var correctionReason = NormalizeText(request.Reason);
-        if (resultId <= 0)
+        if (resultId <= 0
+            || string.IsNullOrWhiteSpace(request.ResultCode)
+            || string.IsNullOrWhiteSpace(request.ResultText)
+            || string.IsNullOrWhiteSpace(request.Result)
+            || string.IsNullOrWhiteSpace(request.Status)
+            || !TryReadDateTime(request.DateTime, out var resultDate))
         {
             return null;
         }
 
-        if (string.IsNullOrWhiteSpace(request.ResultCode)
-            || string.IsNullOrWhiteSpace(request.ResultText)
-            || string.IsNullOrWhiteSpace(request.Result)
-            || string.IsNullOrWhiteSpace(request.Status)
-            || string.IsNullOrWhiteSpace(actor)
-            || request.ExpectedVersion <= 0
-            || correctionReason is null
-            || correctionReason.Length > 500
-            || !TryReadDateTime(request.DateTime, out var resultDate))
-        {
-            throw new ArgumentException("A changed result, current expected version, and correction reason are required.");
-        }
-
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await EnsureProcedureResultVersionTableAsync(connection, cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var result = await GetResultMutationContextAsync(connection, transaction, resultId, cancellationToken);
+        var result = await GetResultMutationContextAsync(connection, resultId, cancellationToken);
         if (result is null)
         {
             return null;
         }
 
-        if (result.CurrentVersion != request.ExpectedVersion)
-        {
-            throw new ProcedureResultCorrectionConflictException(
-                request.ExpectedVersion,
-                result.CurrentVersion,
-                result.ReviewStatus,
-                $"The result changed after it was loaded. Expected version {request.ExpectedVersion}; current version is {result.CurrentVersion}.");
-        }
-
-        if (result.ReviewStatus is "reviewed" or "denied")
-        {
-            throw new ProcedureResultCorrectionConflictException(
-                request.ExpectedVersion,
-                result.CurrentVersion,
-                result.ReviewStatus,
-                $"The report review is {result.ReviewStatus}. Reopen review before correcting a result.");
-        }
-
-        var normalizedCode = request.ResultCode.Trim();
-        var normalizedText = request.ResultText.Trim();
-        var normalizedUnits = request.Units?.Trim() ?? string.Empty;
-        var normalizedResult = request.Result.Trim();
-        var normalizedRange = request.Range?.Trim() ?? string.Empty;
-        var normalizedAbnormal = request.Abnormal?.Trim() ?? string.Empty;
-        var normalizedStatus = request.Status.Trim();
-        if (string.Equals(result.Code, normalizedCode, StringComparison.Ordinal)
-            && string.Equals(result.Text, normalizedText, StringComparison.Ordinal)
-            && string.Equals(result.Units, normalizedUnits, StringComparison.Ordinal)
-            && string.Equals(result.Result, normalizedResult, StringComparison.Ordinal)
-            && string.Equals(result.Range, normalizedRange, StringComparison.Ordinal)
-            && string.Equals(result.Abnormal, normalizedAbnormal, StringComparison.Ordinal)
-            && result.ResultDate == resultDate
-            && string.Equals(result.ResultStatus, normalizedStatus, StringComparison.Ordinal))
-        {
-            throw new ArgumentException("A correction must change at least one result field.");
-        }
-
-        await SnapshotCurrentProcedureResultVersionAsync(
-            connection,
-            transaction,
-            result.Id,
-            result.CurrentVersion,
-            actor.Trim(),
-            correctionReason,
-            cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await SnapshotCurrentProcedureResultVersionAsync(connection, transaction, result.Id, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -1988,14 +1936,14 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             where id = @id;
             """;
         command.Parameters.AddWithValue("id", result.Id);
-        command.Parameters.AddWithValue("code", normalizedCode);
-        command.Parameters.AddWithValue("text", normalizedText);
-        command.Parameters.AddWithValue("units", normalizedUnits);
-        command.Parameters.AddWithValue("result", normalizedResult);
-        command.Parameters.AddWithValue("range", normalizedRange);
-        command.Parameters.AddWithValue("abnormal", normalizedAbnormal);
+        command.Parameters.AddWithValue("code", request.ResultCode.Trim());
+        command.Parameters.AddWithValue("text", request.ResultText.Trim());
+        command.Parameters.AddWithValue("units", request.Units?.Trim() ?? string.Empty);
+        command.Parameters.AddWithValue("result", request.Result.Trim());
+        command.Parameters.AddWithValue("range", request.Range?.Trim() ?? string.Empty);
+        command.Parameters.AddWithValue("abnormal", request.Abnormal?.Trim() ?? string.Empty);
         command.Parameters.Add("resultDate", NpgsqlDbType.Timestamp).Value = resultDate;
-        command.Parameters.AddWithValue("status", normalizedStatus);
+        command.Parameters.AddWithValue("status", request.Status.Trim());
         await command.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -2190,7 +2138,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                    collection_method_code, collection_method, specimen_location_code, specimen_location,
                    collected_date, volume_value, volume_unit, condition_code, specimen_condition, comments,
                    specimen_status, specimen_version,
-                   (select count(*) from procedure_specimen_events event where event.specimen_id = lab_specimens.id) as history_count
+                   (select count(*) from procedure_specimen_events event where event.specimen_id = lab_specimens.id) as lifecycle_history_count
             from lab_specimens
             where order_id = any(@orderIds)
             order by collected_date desc, id desc;
@@ -2198,88 +2146,30 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("orderIds", orderIds.ToArray());
 
         var rows = new List<ProcedureSpecimenRow>();
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-        {
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                rows.Add(new ProcedureSpecimenRow(
-                    OrderId: reader.GetInt32(reader.GetOrdinal("order_id")),
-                    Specimen: new ProcedureSpecimenItem(
-                        Id: reader.GetInt32(reader.GetOrdinal("id")),
-                        SpecimenIdentifier: ReadNullableString(reader, "specimen_identifier"),
-                        AccessionIdentifier: ReadNullableString(reader, "accession_identifier"),
-                        SpecimenTypeCode: ReadNullableString(reader, "specimen_type_code"),
-                        SpecimenType: ReadNullableString(reader, "specimen_type"),
-                        CollectionMethodCode: ReadNullableString(reader, "collection_method_code"),
-                        CollectionMethod: ReadNullableString(reader, "collection_method"),
-                        SpecimenLocationCode: ReadNullableString(reader, "specimen_location_code"),
-                        SpecimenLocation: ReadNullableString(reader, "specimen_location"),
-                        CollectedDate: reader.GetDateTime(reader.GetOrdinal("collected_date")).ToString("yyyy-MM-dd HH:mm"),
-                        VolumeValue: ReadNullableDecimal(reader, "volume_value"),
-                        VolumeUnit: ReadNullableString(reader, "volume_unit"),
-                        ConditionCode: ReadNullableString(reader, "condition_code"),
-                        SpecimenCondition: ReadNullableString(reader, "specimen_condition"),
-                        Comments: ReadNullableString(reader, "comments"),
-                        SpecimenStatus: reader.GetString(reader.GetOrdinal("specimen_status")),
-                        SpecimenVersion: reader.GetInt32(reader.GetOrdinal("specimen_version")),
-                        HistoryCount: Convert.ToInt32(reader.GetValue(reader.GetOrdinal("history_count"))),
-                        History: [])));
-            }
-        }
-
-        var history = await GetSpecimenHistoryAsync(connection, rows.Select(row => row.Specimen.Id).ToArray(), cancellationToken);
-        return rows
-            .Select(row => row with
-            {
-                Specimen = row.Specimen with { History = history.GetValueOrDefault(row.Specimen.Id, []) }
-            })
-            .ToList();
-    }
-
-    private static async Task<IReadOnlyDictionary<int, List<ProcedureSpecimenEventItem>>> GetSpecimenHistoryAsync(
-        NpgsqlConnection connection,
-        IReadOnlyList<int> specimenIds,
-        CancellationToken cancellationToken)
-    {
-        if (specimenIds.Count == 0)
-        {
-            return new Dictionary<int, List<ProcedureSpecimenEventItem>>();
-        }
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select specimen_id, id, action, previous_status, current_status, actor, reason,
-                   expected_version, resulting_version, specimen_identifier, accession_identifier,
-                   collected_date, condition_code, specimen_condition, comments, occurred_at
-            from procedure_specimen_events
-            where specimen_id = any(@specimenIds)
-            order by specimen_id, occurred_at desc, id desc;
-            """;
-        command.Parameters.AddWithValue("specimenIds", specimenIds.ToArray());
-
-        var rows = new Dictionary<int, List<ProcedureSpecimenEventItem>>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var specimenId = reader.GetInt32(reader.GetOrdinal("specimen_id"));
-            var events = rows.GetValueOrDefault(specimenId) ?? [];
-            events.Add(new ProcedureSpecimenEventItem(
-                EventId: reader.GetInt64(reader.GetOrdinal("id")),
-                Action: reader.GetString(reader.GetOrdinal("action")),
-                PreviousStatus: ReadNullableString(reader, "previous_status"),
-                CurrentStatus: reader.GetString(reader.GetOrdinal("current_status")),
-                Actor: reader.GetString(reader.GetOrdinal("actor")),
-                Reason: reader.GetString(reader.GetOrdinal("reason")),
-                ExpectedVersion: reader.GetInt32(reader.GetOrdinal("expected_version")),
-                ResultingVersion: reader.GetInt32(reader.GetOrdinal("resulting_version")),
-                SpecimenIdentifier: ReadNullableString(reader, "specimen_identifier"),
-                AccessionIdentifier: ReadNullableString(reader, "accession_identifier"),
-                CollectedDate: ReadNullableDateTime(reader, "collected_date"),
-                ConditionCode: ReadNullableString(reader, "condition_code"),
-                SpecimenCondition: ReadNullableString(reader, "specimen_condition"),
-                Comments: ReadNullableString(reader, "comments"),
-                OccurredAt: reader.GetDateTime(reader.GetOrdinal("occurred_at")).ToString("yyyy-MM-dd HH:mm")));
-            rows[specimenId] = events;
+            rows.Add(new ProcedureSpecimenRow(
+                OrderId: reader.GetInt32(reader.GetOrdinal("order_id")),
+                Specimen: new ProcedureSpecimenItem(
+                    Id: reader.GetInt32(reader.GetOrdinal("id")),
+                    SpecimenIdentifier: ReadNullableString(reader, "specimen_identifier"),
+                    AccessionIdentifier: ReadNullableString(reader, "accession_identifier"),
+                    SpecimenTypeCode: ReadNullableString(reader, "specimen_type_code"),
+                    SpecimenType: ReadNullableString(reader, "specimen_type"),
+                    CollectionMethodCode: ReadNullableString(reader, "collection_method_code"),
+                    CollectionMethod: ReadNullableString(reader, "collection_method"),
+                    SpecimenLocationCode: ReadNullableString(reader, "specimen_location_code"),
+                    SpecimenLocation: ReadNullableString(reader, "specimen_location"),
+                    CollectedDate: reader.GetDateTime(reader.GetOrdinal("collected_date")).ToString("yyyy-MM-dd HH:mm"),
+                    VolumeValue: ReadNullableDecimal(reader, "volume_value"),
+                    VolumeUnit: ReadNullableString(reader, "volume_unit"),
+                    ConditionCode: ReadNullableString(reader, "condition_code"),
+                    SpecimenCondition: ReadNullableString(reader, "specimen_condition"),
+                    Comments: ReadNullableString(reader, "comments"),
+                    LifecycleStatus: reader.GetString(reader.GetOrdinal("specimen_status")),
+                    LifecycleVersion: reader.GetInt32(reader.GetOrdinal("specimen_version")),
+                    LifecycleHistoryCount: Convert.ToInt32(reader.GetValue(reader.GetOrdinal("lifecycle_history_count"))))));
         }
 
         return rows;
@@ -2389,10 +2279,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 Range: row.Range,
                 Abnormal: row.Abnormal,
                 ResultDate: row.ResultDate.ToString("yyyy-MM-dd HH:mm"),
-                ResultStatus: row.ResultStatus,
-                CorrectionActor: null,
-                CorrectionReason: null,
-                ResultingVersion: null);
+                ResultStatus: row.ResultStatus);
             var versionHistory = new List<ProcedureResultVersionItem> { currentHistory };
             versionHistory.AddRange(historyByResult.GetValueOrDefault(row.Id, []));
             rows.Add(new ProcedureResultRow(
@@ -2439,11 +2326,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
               unique (result_id, version_no)
             );
 
-            alter table procedure_result_versions
-              add column if not exists correction_actor text,
-              add column if not exists correction_reason text,
-              add column if not exists resulting_version integer;
-
             create index if not exists idx_procedure_result_versions_result
               on procedure_result_versions (result_id, version_no desc);
             """;
@@ -2454,21 +2336,17 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int resultId,
-        int currentVersion,
-        string actor,
-        string reason,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             insert into procedure_result_versions (
-              result_id, version_no, captured_at, code, text, units, result, range, abnormal, result_date, result_status,
-              correction_actor, correction_reason, resulting_version
+              result_id, version_no, captured_at, code, text, units, result, range, abnormal, result_date, result_status
             )
             select
               lr.id,
-              @currentVersion,
+              coalesce((select max(v.version_no) from procedure_result_versions v where v.result_id = lr.id), 0) + 1,
               current_timestamp,
               lr.code,
               lr.text,
@@ -2477,18 +2355,11 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
               lr.range,
               lr.abnormal,
               lr.result_date,
-              lr.result_status,
-              @actor,
-              @reason,
-              @resultingVersion
+              lr.result_status
             from lab_results lr
             where lr.id = @resultId;
             """;
         command.Parameters.AddWithValue("resultId", resultId);
-        command.Parameters.AddWithValue("currentVersion", currentVersion);
-        command.Parameters.AddWithValue("actor", actor);
-        command.Parameters.AddWithValue("reason", reason);
-        command.Parameters.AddWithValue("resultingVersion", currentVersion + 1);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -2504,8 +2375,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select result_id, version_no, captured_at, code, text, units, result, range, abnormal, result_date, result_status,
-                   correction_actor, correction_reason, resulting_version
+            select result_id, version_no, captured_at, code, text, units, result, range, abnormal, result_date, result_status
             from procedure_result_versions
             where result_id = any(@resultIds)
             order by result_id, version_no desc;
@@ -2534,10 +2404,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 Range: ReadNullableString(reader, "range"),
                 Abnormal: ReadNullableString(reader, "abnormal"),
                 ResultDate: resultDate,
-                ResultStatus: ReadNullableString(reader, "result_status"),
-                CorrectionActor: ReadNullableString(reader, "correction_actor"),
-                CorrectionReason: ReadNullableString(reader, "correction_reason"),
-                ResultingVersion: ReadNullableInt(reader, "resulting_version")));
+                ResultStatus: ReadNullableString(reader, "result_status")));
             rows[resultId] = resultRows;
         }
 
@@ -2778,22 +2645,17 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     private static async Task<ProcedureResultMutationContext?> GetResultMutationContextAsync(
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
         int resultId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
         command.CommandText = """
-            select lrs.id, lo.patient_id, lo.pid, coalesce(lr.review_status, 'received') as review_status,
-                   coalesce((select max(v.version_no) from procedure_result_versions v where v.result_id = lrs.id), 0) + 1 as current_version,
-                   lrs.code, lrs.text, lrs.units, lrs.result, lrs.range, lrs.abnormal, lrs.result_date, lrs.result_status
+            select lrs.id, lo.patient_id, lo.pid
             from lab_results lrs
             inner join lab_reports lr on lr.id = lrs.report_id
             inner join lab_orders lo on lo.id = lr.order_id
             where lrs.id = @id
-            limit 1
-            for update of lrs;
+            limit 1;
             """;
         command.Parameters.AddWithValue("id", resultId);
 
@@ -2806,102 +2668,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return new ProcedureResultMutationContext(
             Id: reader.GetInt32(reader.GetOrdinal("id")),
             PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
-            LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
-            ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")).Trim().ToLowerInvariant(),
-            CurrentVersion: reader.GetInt32(reader.GetOrdinal("current_version")),
-            Code: ReadNullableString(reader, "code") ?? string.Empty,
-            Text: ReadNullableString(reader, "text") ?? string.Empty,
-            Units: ReadNullableString(reader, "units") ?? string.Empty,
-            Result: ReadNullableString(reader, "result") ?? string.Empty,
-            Range: ReadNullableString(reader, "range") ?? string.Empty,
-            Abnormal: ReadNullableString(reader, "abnormal") ?? string.Empty,
-            ResultDate: reader.GetDateTime(reader.GetOrdinal("result_date")),
-            ResultStatus: ReadNullableString(reader, "result_status") ?? string.Empty);
-    }
-
-    private static async Task<ProcedureSpecimenMutationContext?> GetSpecimenMutationContextAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        int specimenId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            select specimen.id, orders.patient_id, specimen.specimen_status, specimen.specimen_version,
-                   specimen.specimen_identifier, specimen.accession_identifier
-            from lab_specimens specimen
-            inner join lab_orders orders on orders.id = specimen.order_id
-            where specimen.id = @specimenId
-            limit 1
-            for update of specimen;
-            """;
-        command.Parameters.AddWithValue("specimenId", specimenId);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return new ProcedureSpecimenMutationContext(
-            Id: reader.GetInt32(reader.GetOrdinal("id")),
-            PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
-            SpecimenStatus: reader.GetString(reader.GetOrdinal("specimen_status")).Trim().ToLowerInvariant(),
-            SpecimenVersion: reader.GetInt32(reader.GetOrdinal("specimen_version")),
-            SpecimenIdentifier: ReadNullableString(reader, "specimen_identifier") ?? string.Empty,
-            AccessionIdentifier: ReadNullableString(reader, "accession_identifier") ?? string.Empty);
-    }
-
-    private static string ResolveSpecimenStatus(string action, string currentStatus)
-    {
-        return (action, currentStatus) switch
-        {
-            ("label", "collected" or "recollected") => "labeled",
-            ("receive", "collected" or "labeled" or "recollected") => "received",
-            ("reject", "collected" or "labeled" or "received" or "recollected") => "rejected",
-            ("recollect", "rejected") => "recollected",
-            _ => throw new ArgumentException($"Specimen action '{action}' is not allowed from status '{currentStatus}'.")
-        };
-    }
-
-    private static async Task InsertSpecimenEventAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        int specimenId,
-        string action,
-        string? previousStatus,
-        string currentStatus,
-        string actor,
-        string reason,
-        int expectedVersion,
-        int resultingVersion,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            insert into procedure_specimen_events
-                (specimen_id, action, previous_status, current_status, actor, reason,
-                 expected_version, resulting_version, specimen_identifier, accession_identifier,
-                 collected_date, condition_code, specimen_condition, comments, occurred_at)
-            select
-                specimen.id, @action, @previousStatus, @currentStatus, @actor, @reason,
-                @expectedVersion, @resultingVersion, specimen.specimen_identifier,
-                specimen.accession_identifier, specimen.collected_date, specimen.condition_code,
-                specimen.specimen_condition, specimen.comments, current_timestamp
-            from lab_specimens specimen
-            where specimen.id = @specimenId;
-            """;
-        command.Parameters.AddWithValue("specimenId", specimenId);
-        command.Parameters.AddWithValue("action", action);
-        command.Parameters.AddWithValue("previousStatus", (object?)previousStatus ?? DBNull.Value);
-        command.Parameters.AddWithValue("currentStatus", currentStatus);
-        command.Parameters.AddWithValue("actor", actor);
-        command.Parameters.AddWithValue("reason", reason);
-        command.Parameters.AddWithValue("expectedVersion", expectedVersion);
-        command.Parameters.AddWithValue("resultingVersion", resultingVersion);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")));
     }
 
     private static async Task<int> GetNextIntIdAsync(
@@ -3551,28 +3318,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         string ReviewStatus,
         int ReviewVersion);
 
-    private sealed record ProcedureSpecimenMutationContext(
-        int Id,
-        string PatientId,
-        string SpecimenStatus,
-        int SpecimenVersion,
-        string SpecimenIdentifier,
-        string AccessionIdentifier);
-
-    private sealed record ProcedureResultMutationContext(
-        int Id,
-        string PatientId,
-        int LegacyPid,
-        string ReviewStatus,
-        int CurrentVersion,
-        string Code,
-        string Text,
-        string Units,
-        string Result,
-        string Range,
-        string Abnormal,
-        DateTime ResultDate,
-        string ResultStatus);
+    private sealed record ProcedureResultMutationContext(int Id, string PatientId, int LegacyPid);
 
     private readonly record struct OrderCatalogMutationValues(
         int? ParentId,

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 

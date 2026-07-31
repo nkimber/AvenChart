@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { useEffect, useState, type FormEvent } from "react";
 import { useOutletContext } from "react-router-dom";
 import { FlaskConical, Plus } from "lucide-react";
@@ -6,13 +9,13 @@ import {
   createProcedureSpecimen,
   getProcedureOrderCatalog,
   getProcedureResults,
+  getProcedureSpecimenLifecycleHistory,
   isRequestCancellation,
   searchEncounters,
-  transitionProcedureSpecimen,
+  transitionProcedureSpecimenLifecycle,
   type ProcedureOrderCatalogItem,
+  type ProcedureSpecimenLifecycleHistoryResponse,
   type ProcedureResultsResponse,
-  type ProcedureSpecimenItem,
-  type ProcedureSpecimenTransitionInput,
 } from "../../api.ts";
 import {
   LabResultFlag,
@@ -20,6 +23,7 @@ import {
 } from "../../components/LabResultFlag.tsx";
 import type { PatientOutletContext } from "./PatientShell.tsx";
 import LabReportAndResultCapture from "./LabReportAndResultCapture.tsx";
+import { showToast } from "../../components/Toast.tsx";
 
 type AsyncState<T> =
   | { status: "loading" }
@@ -27,309 +31,13 @@ type AsyncState<T> =
   | { status: "error"; message: string };
 
 function formatDate(value?: string | null) {
-  if (!value) return "-";
+  if (!value) return "—";
   const parsed = new Date(value);
   return Number.isNaN(parsed.valueOf()) ? value : parsed.toLocaleDateString();
 }
 
 function today() {
   return new Date().toISOString().slice(0, 10);
-}
-
-type SpecimenAction = ProcedureSpecimenTransitionInput["action"];
-
-function specimenActions(status: string): SpecimenAction[] {
-  switch (status.toLowerCase()) {
-    case "collected":
-    case "recollected":
-      return ["label", "receive", "reject"];
-    case "labeled":
-      return ["receive", "reject"];
-    case "received":
-      return ["reject"];
-    case "rejected":
-      return ["recollect"];
-    default:
-      return [];
-  }
-}
-
-function specimenActionLabel(action: string) {
-  return action === "recollect"
-    ? "Recollect"
-    : `${action.charAt(0).toUpperCase()}${action.slice(1)}`;
-}
-
-function SpecimenLifecycleCard({
-  specimen,
-  onTransition,
-}: {
-  specimen: ProcedureSpecimenItem;
-  onTransition: (
-    specimen: ProcedureSpecimenItem,
-    input: ProcedureSpecimenTransitionInput,
-  ) => Promise<void>;
-}) {
-  const [action, setAction] = useState<SpecimenAction | null>(null);
-  const [reason, setReason] = useState("");
-  const [specimenIdentifier, setSpecimenIdentifier] = useState("");
-  const [accessionIdentifier, setAccessionIdentifier] = useState("");
-  const [collectedDate, setCollectedDate] = useState(today());
-  const [conditionCode, setConditionCode] = useState("");
-  const [specimenCondition, setSpecimenCondition] = useState("");
-  const [comments, setComments] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const actions = specimenActions(specimen.specimenStatus);
-  const title =
-    specimen.specimenIdentifier ??
-    specimen.accessionIdentifier ??
-    `Specimen ${specimen.id}`;
-
-  async function submitTransition(event: FormEvent) {
-    event.preventDefault();
-    if (!action || !reason.trim()) return;
-    if (
-      action === "recollect" &&
-      !specimenIdentifier.trim() &&
-      !accessionIdentifier.trim()
-    ) {
-      setError("Recollection requires a new specimen or accession identifier.");
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-    try {
-      await onTransition(specimen, {
-        action,
-        expectedVersion: specimen.specimenVersion,
-        reason: reason.trim(),
-        specimenIdentifier:
-          action === "recollect" ? specimenIdentifier.trim() : null,
-        accessionIdentifier:
-          action === "recollect" ? accessionIdentifier.trim() : null,
-        collectedDate:
-          action === "recollect" ? `${collectedDate}T12:00:00` : null,
-        conditionCode: action === "recollect" ? conditionCode.trim() : null,
-        specimenCondition:
-          action === "recollect" ? specimenCondition.trim() : null,
-        comments: action === "recollect" ? comments.trim() : null,
-      });
-      setAction(null);
-      setReason("");
-      setSpecimenIdentifier("");
-      setAccessionIdentifier("");
-      setCollectedDate(today());
-      setConditionCode("");
-      setSpecimenCondition("");
-      setComments("");
-    } catch (transitionError) {
-      setError(
-        transitionError instanceof Error
-          ? transitionError.message
-          : "Could not change specimen status.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <article className="cl-specimen-card">
-      <div className="cl-card-header">
-        <div>
-          <h3>{title}</h3>
-          <p className="cl-table-sub">
-            Collected {formatDate(specimen.collectedDate)}
-            {specimen.specimenType ? ` · ${specimen.specimenType}` : ""}
-            {specimen.accessionIdentifier
-              ? ` · accession ${specimen.accessionIdentifier}`
-              : ""}
-          </p>
-        </div>
-        <span className="cl-badge">
-          {specimen.specimenStatus} · v{specimen.specimenVersion}
-        </span>
-      </div>
-
-      {(specimen.specimenCondition || specimen.comments) && (
-        <p className="cl-table-sub">
-          {[specimen.specimenCondition, specimen.comments]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
-      )}
-
-      <div className="ne-actions" aria-label={`Actions for ${title}`}>
-        {actions.map((availableAction) => (
-          <button
-            className="cl-btn-secondary"
-            key={availableAction}
-            type="button"
-            disabled={saving}
-            onClick={() =>
-              setAction((current) =>
-                current === availableAction ? null : availableAction,
-              )
-            }
-          >
-            {specimenActionLabel(availableAction)}
-          </button>
-        ))}
-      </div>
-
-      {action && (
-        <form
-          className="cl-specimen-transition"
-          onSubmit={(event) => void submitTransition(event)}
-        >
-          <p className="cl-table-sub">
-            {specimenActionLabel(action)} from {specimen.specimenStatus}. The
-            authenticated staff member and reason will be recorded.
-          </p>
-          {action === "recollect" && (
-            <div className="cl-admin-form-grid">
-              <label className="cl-admin-field">
-                <span>New specimen identifier</span>
-                <input
-                  className="ne-input"
-                  value={specimenIdentifier}
-                  maxLength={255}
-                  onChange={(event) =>
-                    setSpecimenIdentifier(event.target.value)
-                  }
-                />
-              </label>
-              <label className="cl-admin-field">
-                <span>New accession identifier</span>
-                <input
-                  className="ne-input"
-                  value={accessionIdentifier}
-                  maxLength={255}
-                  onChange={(event) =>
-                    setAccessionIdentifier(event.target.value)
-                  }
-                />
-              </label>
-              <label className="cl-admin-field">
-                <span>Recollected date</span>
-                <input
-                  className="ne-input"
-                  type="date"
-                  value={collectedDate}
-                  required
-                  onChange={(event) => setCollectedDate(event.target.value)}
-                />
-              </label>
-              <label className="cl-admin-field">
-                <span>Condition code</span>
-                <input
-                  className="ne-input"
-                  value={conditionCode}
-                  maxLength={100}
-                  onChange={(event) => setConditionCode(event.target.value)}
-                />
-              </label>
-              <label className="cl-admin-field">
-                <span>Specimen condition</span>
-                <input
-                  className="ne-input"
-                  value={specimenCondition}
-                  maxLength={255}
-                  onChange={(event) =>
-                    setSpecimenCondition(event.target.value)
-                  }
-                />
-              </label>
-              <label className="cl-admin-field">
-                <span>Recollection comments</span>
-                <input
-                  className="ne-input"
-                  value={comments}
-                  maxLength={1000}
-                  onChange={(event) => setComments(event.target.value)}
-                />
-              </label>
-            </div>
-          )}
-          <label className="cl-admin-field">
-            <span>Reason</span>
-            <textarea
-              className="ne-input"
-              value={reason}
-              required
-              maxLength={500}
-              rows={2}
-              onChange={(event) => setReason(event.target.value)}
-            />
-          </label>
-          {error && (
-            <div className="error-banner" role="alert">
-              {error}
-            </div>
-          )}
-          <div className="ne-actions">
-            <button
-              className="cl-btn-primary"
-              type="submit"
-              disabled={
-                saving ||
-                !reason.trim() ||
-                (action === "recollect" &&
-                  !specimenIdentifier.trim() &&
-                  !accessionIdentifier.trim())
-              }
-            >
-              {saving
-                ? "Saving…"
-                : `Confirm ${specimenActionLabel(action)}`}
-            </button>
-            <button
-              className="cl-btn-secondary"
-              type="button"
-              disabled={saving}
-              onClick={() => setAction(null)}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-
-      <details className="cl-result-history">
-        <summary>
-          {specimen.historyCount} lifecycle{" "}
-          {specimen.historyCount === 1 ? "event" : "events"}
-        </summary>
-        {specimen.history.length === 0 ? (
-          <p className="cl-table-sub">History is not loaded in this view.</p>
-        ) : (
-          <ol className="cl-specimen-history">
-            {specimen.history.map((historyEvent) => (
-              <li key={historyEvent.eventId}>
-                <strong>{specimenActionLabel(historyEvent.action)}</strong>
-                {" · "}
-                {historyEvent.previousStatus
-                  ? `${historyEvent.previousStatus} → ${historyEvent.currentStatus}`
-                  : historyEvent.currentStatus}
-                {" · "}
-                {formatDate(historyEvent.occurredAt)}
-                {" · "}
-                {historyEvent.actor}
-                {" · "}
-                {historyEvent.reason}
-                {" · "}v{historyEvent.resultingVersion}
-                {(historyEvent.specimenIdentifier ||
-                  historyEvent.accessionIdentifier) &&
-                  ` · ${historyEvent.specimenIdentifier ?? historyEvent.accessionIdentifier}`}
-              </li>
-            ))}
-          </ol>
-        )}
-      </details>
-    </article>
-  );
 }
 
 export default function PatientLabs() {
@@ -359,6 +67,9 @@ export default function PatientLabs() {
   });
   const [savingOrder, setSavingOrder] = useState(false);
   const [savingSpecimen, setSavingSpecimen] = useState(false);
+  const [updatingSpecimenId, setUpdatingSpecimenId] = useState<number | null>(null);
+  const [specimenHistory, setSpecimenHistory] = useState<Record<number, ProcedureSpecimenLifecycleHistoryResponse>>({});
+  const [loadingSpecimenHistoryId, setLoadingSpecimenHistoryId] = useState<number | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -464,15 +175,52 @@ export default function PatientLabs() {
   }
 
   async function transitionSpecimen(
-    specimen: ProcedureSpecimenItem,
-    input: ProcedureSpecimenTransitionInput,
+    specimen: ProcedureResultsResponse["orders"][number]["specimens"][number],
+    status: "labeled" | "received" | "rejected" | "recollected",
   ) {
-    const detail = await transitionProcedureSpecimen(
-      session.sessionId,
-      specimen.id,
-      input,
-    );
-    setState({ status: "ready", data: detail });
+    const reason = window.prompt(
+      `${status[0].toUpperCase()}${status.slice(1)} specimen reason (1–500 characters):`,
+      status === "received"
+        ? "Received locally"
+        : status === "rejected"
+          ? "Rejected locally"
+          : "Replacement specimen collected locally",
+    )?.trim();
+    if (!reason) return;
+    setUpdatingSpecimenId(specimen.id);
+    try {
+      const data = await transitionProcedureSpecimenLifecycle(session.sessionId, specimen.id, {
+        status,
+        expectedVersion: specimen.lifecycleVersion,
+        reason,
+      });
+      setState({ status: "ready", data });
+      showToast(`Specimen marked ${status} locally.`, "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not update the specimen lifecycle.", "error");
+    } finally {
+      setUpdatingSpecimenId(null);
+    }
+  }
+
+  async function toggleSpecimenHistory(specimenId: number) {
+    if (specimenHistory[specimenId]) {
+      setSpecimenHistory((current) => {
+        const next = { ...current };
+        delete next[specimenId];
+        return next;
+      });
+      return;
+    }
+    setLoadingSpecimenHistoryId(specimenId);
+    try {
+      const history = await getProcedureSpecimenLifecycleHistory(session.sessionId, specimenId);
+      setSpecimenHistory((current) => ({ ...current, [specimenId]: history }));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not load specimen lifecycle history.", "error");
+    } finally {
+      setLoadingSpecimenHistoryId(null);
+    }
   }
 
   return (
@@ -532,7 +280,7 @@ export default function PatientLabs() {
               <label className="cl-admin-field"><span>Priority</span><select className="ne-input" value={orderForm.priority} onChange={(event) => setOrderForm((current) => ({ ...current, priority: event.target.value }))}><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></label>
               <label className="cl-admin-field"><span>Diagnosis / reason</span><input className="ne-input" value={orderForm.diagnosis} required maxLength={255} onChange={(event) => setOrderForm((current) => ({ ...current, diagnosis: event.target.value }))} /></label>
               <label className="cl-admin-field"><span>Instructions</span><input className="ne-input" value={orderForm.instructions} maxLength={1000} onChange={(event) => setOrderForm((current) => ({ ...current, instructions: event.target.value }))} /></label>
-              <div className="ne-actions"><button className="cl-btn-primary" type="submit" disabled={savingOrder || !selectedCatalogItem || !orderForm.encounterId}><Plus size={15} aria-hidden="true" />{savingOrder ? "Saving." : "Save local order"}</button></div>
+              <div className="ne-actions"><button className="cl-btn-primary" type="submit" disabled={savingOrder || !selectedCatalogItem || !orderForm.encounterId}><Plus size={15} aria-hidden="true" />{savingOrder ? "Saving…" : "Save local order"}</button></div>
             </form>
             {catalog.length === 0 && <p className="cl-empty-text">No active local catalog orders are available. Add one in Lab Order Catalog before creating an order.</p>}
           </section>
@@ -556,7 +304,7 @@ export default function PatientLabs() {
               <label className="cl-admin-field"><span>Specimen type</span><input className="ne-input" value={specimenForm.specimenType} maxLength={255} onChange={(event) => setSpecimenForm((current) => ({ ...current, specimenType: event.target.value }))} /></label>
               <label className="cl-admin-field"><span>Collected date</span><input className="ne-input" type="date" value={specimenForm.collectedDate} required onChange={(event) => setSpecimenForm((current) => ({ ...current, collectedDate: event.target.value }))} /></label>
               <label className="cl-admin-field"><span>Comments</span><input className="ne-input" value={specimenForm.comments} maxLength={1000} onChange={(event) => setSpecimenForm((current) => ({ ...current, comments: event.target.value }))} /></label>
-              <div className="ne-actions"><button className="cl-btn-primary" type="submit" disabled={savingSpecimen || !specimenForm.orderId || (!specimenForm.specimenIdentifier.trim() && !specimenForm.accessionIdentifier.trim())}><Plus size={15} aria-hidden="true" />{savingSpecimen ? "Saving." : "Record specimen"}</button></div>
+              <div className="ne-actions"><button className="cl-btn-primary" type="submit" disabled={savingSpecimen || !specimenForm.orderId || (!specimenForm.specimenIdentifier.trim() && !specimenForm.accessionIdentifier.trim())}><Plus size={15} aria-hidden="true" />{savingSpecimen ? "Saving…" : "Record specimen"}</button></div>
             </form>
           </section>
         </>
@@ -597,13 +345,44 @@ export default function PatientLabs() {
               </div>
 
               {order.specimens.length > 0 && (
-                <div className="cl-specimen-list">
+                <div className="cl-table-sub">
                   {order.specimens.map((specimen) => (
-                    <SpecimenLifecycleCard
-                      key={specimen.id}
-                      specimen={specimen}
-                      onTransition={transitionSpecimen}
-                    />
+                    <div className="ne-actions" key={specimen.id}>
+                      <span>
+                        {specimen.accessionIdentifier ?? specimen.specimenIdentifier ?? `Specimen ${specimen.id}`}
+                        {specimen.specimenType ? ` · ${specimen.specimenType}` : ""}
+                        {` · ${specimen.lifecycleStatus}`}
+                        {specimen.lifecycleHistoryCount > 0 ? ` · ${specimen.lifecycleHistoryCount} lifecycle events` : ""}
+                      </span>
+                      {specimen.lifecycleStatus === "collected" && (
+                        <>
+                          <button className="cl-btn-secondary" type="button" disabled={updatingSpecimenId === specimen.id} onClick={() => void transitionSpecimen(specimen, "labeled")}>Label</button>
+                          <button className="cl-btn-secondary" type="button" disabled={updatingSpecimenId === specimen.id} onClick={() => void transitionSpecimen(specimen, "received")}>Receive</button>
+                          <button className="cl-btn-secondary" type="button" disabled={updatingSpecimenId === specimen.id} onClick={() => void transitionSpecimen(specimen, "rejected")}>Reject</button>
+                        </>
+                      )}
+                      {specimen.lifecycleStatus === "labeled" && (
+                        <>
+                          <button className="cl-btn-secondary" type="button" disabled={updatingSpecimenId === specimen.id} onClick={() => void transitionSpecimen(specimen, "received")}>Receive</button>
+                          <button className="cl-btn-secondary" type="button" disabled={updatingSpecimenId === specimen.id} onClick={() => void transitionSpecimen(specimen, "rejected")}>Reject</button>
+                        </>
+                      )}
+                      {specimen.lifecycleStatus === "rejected" && (
+                        <button className="cl-btn-secondary" type="button" disabled={updatingSpecimenId === specimen.id} onClick={() => void transitionSpecimen(specimen, "recollected")}>Mark recollected</button>
+                      )}
+                      <button className="cl-btn-secondary" type="button" disabled={loadingSpecimenHistoryId === specimen.id} onClick={() => void toggleSpecimenHistory(specimen.id)}>
+                        {loadingSpecimenHistoryId === specimen.id ? "Loading history…" : specimenHistory[specimen.id] ? "Hide history" : "History"}
+                      </button>
+                      {specimenHistory[specimen.id] && (
+                        <ol aria-label={`Specimen ${specimen.id} lifecycle history`}>
+                          {specimenHistory[specimen.id].events.map((event) => (
+                            <li key={event.eventId}>
+                              {event.action} · {event.previousStatus ?? "none"} → {event.currentStatus} · {event.actor} · {formatDate(event.occurredAt)} · {event.reason}
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
@@ -675,12 +454,12 @@ export default function PatientLabs() {
                                   )}
                                 </td>
                                 <td>
-                                  {result.result ?? "-"}{" "}
+                                  {result.result ?? "—"}{" "}
                                   {result.units ?? ""}
                                   <LabResultFlag value={result.abnormal} />
                                 </td>
-                                <td>{result.range ?? "-"}</td>
-                                <td>{result.resultStatus ?? "-"}</td>
+                                <td>{result.range ?? "—"}</td>
+                                <td>{result.resultStatus ?? "—"}</td>
                                 <td>
                                   {formatDate(result.resultDate)}
                                   {result.hasPriorVersions && (
@@ -692,13 +471,10 @@ export default function PatientLabs() {
                                         {result.versionHistory.map((version) => (
                                           <li key={`${result.id}-${version.version}`}>
                                             <strong>{version.versionLabel}</strong>{" "}
-                                            {version.result ?? "-"} {version.units ?? ""}
+                                            {version.result ?? "—"} {version.units ?? ""}
                                             {version.range ? ` · ${version.range}` : ""}
                                             {version.abnormal ? ` · ${version.abnormal}` : ""}
                                             {" · "}{formatDate(version.capturedAt)}
-                                            {version.correctionActor ? ` · corrected by ${version.correctionActor}` : ""}
-                                            {version.correctionReason ? ` · ${version.correctionReason}` : ""}
-                                            {version.resultingVersion ? ` · became Version ${version.resultingVersion}` : ""}
                                           </li>
                                         ))}
                                       </ul>

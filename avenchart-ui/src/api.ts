@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Compatibility barrel for the existing backend API. Domain modules migrate
 // incrementally while every request shares this governed transport.
 import {
@@ -723,11 +726,7 @@ export type PatientPortalPrescriptionRefillHistoryItem = {
   drug: string
   requestDate: string
   status:
-    | 'pending'
-    | 'clarification-requested'
-    | 'approved'
-    | 'denied'
-    | 'completed'
+    'pending' | 'clarification-requested' | 'approved' | 'denied' | 'completed'
   patientNote?: string | null
   staffResponse?: string | null
   updatedAt: string
@@ -1117,7 +1116,7 @@ export async function downloadPatientPortalGeneratedMedicalReportPackage(
   return response.blob()
 }
 
-// --- Clinician API -----------------------------------------------------------
+// ─── Clinician API ───────────────────────────────────────────────────────────
 
 function clinicianHeaders(sessionId: string): Record<string, string> {
   return { 'X-Legacy EHR-Session': sessionId, 'content-type': 'application/json' }
@@ -1168,7 +1167,7 @@ async function clinicianPut<T>(
   return response.json()
 }
 
-// -- Patients ------------------------------------------------------------------
+// ── Patients ──────────────────────────────────────────────────────────────────
 
 export type PatientListItem = {
   canonicalId: string
@@ -1793,6 +1792,8 @@ export type PatientReferral = {
   encounterId?: number | null
   destination: string
   reason: string
+  status: string
+  externalReference?: string | null
   notes?: string | null
   requestedAt: string
   workflowVersion: number
@@ -1803,8 +1804,6 @@ export type PatientReferral = {
   policyRevision: string
   createdAt: string
   updatedAt: string
-  status: string
-  externalReference?: string | null
   availableTransitions: ClinicalWorkflowTransitionOption[]
 }
 
@@ -1814,11 +1813,8 @@ export type PatientReferralWorkflowHistory = {
   referral: PatientReferral
   total: number
   events: PatientReferralWorkflowEvent[]
-  notes?: string | null
-  requestedAt: string
-  createdAt: string
-  updatedAt: string
 }
+
 export type ReferralWorkQueueFilters = {
   status?: 'draft' | 'sent' | 'received' | 'closed' | 'cancelled' | 'all'
   assignedTo?: string
@@ -1874,13 +1870,13 @@ export async function createPatientReferral(
   body: {
     encounterId?: number | null
     destination: string
-    assignedTo?: string
-    dueAt?: string
-    workflowReason?: string
     reason: string
     externalReference?: string
     notes?: string
     requestedAt?: string
+    assignedTo?: string
+    dueAt?: string
+    workflowReason?: string
   },
 ): Promise<PatientReferral> {
   return clinicianPost(
@@ -2068,6 +2064,7 @@ export async function getAuthorizationWorkQueue(
   if (filters.limit) query.set('limit', String(filters.limit))
   return clinicianGet(sessionId, `/api/clinical-workflows/authorization-work-queue${query.size ? `?${query}` : ''}`, signal)
 }
+
 export async function getClinicalWorkflowAssignees(
   sessionId: string,
   signal?: AbortSignal,
@@ -2368,7 +2365,7 @@ export async function updatePatientPortalAccountReset(
   )
 }
 
-// -- Appointments --------------------------------------------------------------
+// ── Appointments ──────────────────────────────────────────────────────────────
 
 export type AppointmentListItem = {
   id: string
@@ -2796,7 +2793,10 @@ export async function unlinkInventoryMedicationLink(
   const path = `/api/inventory/items/${itemId}/medication-link`
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: 'DELETE',
-    headers: { ...clinicianHeaders(sessionId), 'Content-Type': 'application/json' },
+    headers: {
+      ...clinicianHeaders(sessionId),
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({ reason }),
     signal,
   })
@@ -2900,7 +2900,11 @@ export async function createInventoryControlledCountSession(
     idempotencyKey: string
   },
 ): Promise<InventoryControlledCountSession> {
-  return clinicianPost(sessionId, '/api/inventory/controlled-count-sessions', input)
+  return clinicianPost(
+    sessionId,
+    '/api/inventory/controlled-count-sessions',
+    input,
+  )
 }
 export async function submitInventoryControlledCountSession(
   sessionId: string,
@@ -2952,7 +2956,11 @@ export async function closeInventoryControlledDiscrepancy(
   )
 }
 export type InventoryCostPolicyDefinition = {
-  method: 'fifo' | 'weighted_average' | 'specific_identification' | 'practice_specific'
+  method:
+    | 'fifo'
+    | 'weighted_average'
+    | 'specific_identification'
+    | 'practice_specific'
   currency: string
   taxTreatment: string
   freightTreatment: string
@@ -2980,7 +2988,8 @@ export type InventoryCostPolicyChangeRequest = {
   baselinePolicyId: string | null
   baselineRevision: number | null
   reason: string
-  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
+  status:
+    'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
   version: number
   createdAt: string
   createdBy: string
@@ -3013,13 +3022,20 @@ export async function createInventoryCostPolicyChangeRequest(
   sessionId: string,
   input: { proposedDefinition: InventoryCostPolicyDefinition; reason: string },
 ): Promise<InventoryCostPolicyChangeRequestDetailResponse> {
-  return clinicianPost(sessionId, '/api/inventory/cost-policy-change-requests', input)
+  return clinicianPost(
+    sessionId,
+    '/api/inventory/cost-policy-change-requests',
+    input,
+  )
 }
 export async function getInventoryCostPolicyChangeRequest(
   sessionId: string,
   requestId: string,
 ): Promise<InventoryCostPolicyChangeRequestDetailResponse> {
-  return clinicianGet(sessionId, `/api/inventory/cost-policy-change-requests/${requestId}`)
+  return clinicianGet(
+    sessionId,
+    `/api/inventory/cost-policy-change-requests/${requestId}`,
+  )
 }
 export async function transitionInventoryCostPolicyChangeRequest(
   sessionId: string,
@@ -3077,7 +3093,10 @@ export async function getInventoryReceiptCostLayerApplications(
   sessionId: string,
   layerId: string,
 ): Promise<InventoryReceiptCostLayerApplication[]> {
-  return clinicianGet(sessionId, `/api/inventory/receipt-cost-layers/${layerId}/applications`)
+  return clinicianGet(
+    sessionId,
+    `/api/inventory/receipt-cost-layers/${layerId}/applications`,
+  )
 }
 export type InventoryItem = {
   itemId: number
@@ -3570,7 +3589,7 @@ export async function downloadInventoryActivityCsv(
   return response.blob()
 }
 
-// -- Encounters ----------------------------------------------------------------
+// ── Encounters ────────────────────────────────────────────────────────────────
 
 export type EncounterListItem = {
   id: number
@@ -4048,7 +4067,7 @@ export async function moveEncounterDocument(
   )
 }
 
-// -- Clinical Lists ------------------------------------------------------------
+// ── Clinical Lists ────────────────────────────────────────────────────────────
 
 export type ProblemListItem = {
   id: string
@@ -4351,7 +4370,7 @@ export async function getPrescriptionRefillQueue(
   )
 }
 
-// -- Messages ------------------------------------------------------------------
+// ── Messages ──────────────────────────────────────────────────────────────────
 
 export type PatientMessageItem = {
   id: string
@@ -4402,17 +4421,35 @@ export type PatientMessageForwardRequest = {
 
 export type PatientMessageCorrectionHistoryResponse = {
   messageId: string
-  events: Array<{ eventId: number; correction: string; reason: string; actor: string; occurredAt: string }>
+  events: Array<{
+    eventId: number
+    correction: string
+    reason: string
+    actor: string
+    occurredAt: string
+  }>
 }
 
 export type PatientMessageRetentionHistoryResponse = {
   messageId: string
-  events: Array<{ eventId: number; action: 'archived' | 'restored'; reason: string; actor: string; occurredAt: string }>
+  events: Array<{
+    eventId: number
+    action: 'archived' | 'restored'
+    reason: string
+    actor: string
+    occurredAt: string
+  }>
 }
 
 export type PatientMessageEscalationHistoryResponse = {
   messageId: string
-  events: Array<{ eventId: number; action: 'escalated' | 'resolved'; reason: string; actor: string; occurredAt: string }>
+  events: Array<{
+    eventId: number
+    action: 'escalated' | 'resolved'
+    reason: string
+    actor: string
+    occurredAt: string
+  }>
 }
 
 export type StaffMessageAttachmentItem = {
@@ -4499,7 +4536,11 @@ export async function getPatientMessages(
   signal?: AbortSignal,
   includeArchived = false,
 ): Promise<PatientMessagesResponse> {
-  return clinicianGet(sessionId, `/api/messages/${patientId}${includeArchived ? '?includeArchived=true' : ''}`, signal)
+  return clinicianGet(
+    sessionId,
+    `/api/messages/${patientId}${includeArchived ? '?includeArchived=true' : ''}`,
+    signal,
+  )
 }
 
 export async function replyToPatientMessage(
@@ -4535,7 +4576,11 @@ export async function updatePatientMessageStatus(
 export async function updatePatientMessageAssignment(
   sessionId: string,
   messageId: string,
-  input: { assignedTo?: string | null; expectedVersion: number; reason?: string | null },
+  input: {
+    assignedTo?: string | null
+    expectedVersion: number
+    reason?: string | null
+  },
   signal?: AbortSignal,
 ): Promise<PatientMessagesResponse> {
   const result = await clinicianPut<PatientMessageMutationResponse>(
@@ -4552,7 +4597,11 @@ export async function getPatientMessageAssignmentHistory(
   messageId: string,
   signal?: AbortSignal,
 ): Promise<PatientMessageAssignmentHistoryResponse> {
-  return clinicianGet(sessionId, `/api/messages/${messageId}/assignment-history`, signal)
+  return clinicianGet(
+    sessionId,
+    `/api/messages/${messageId}/assignment-history`,
+    signal,
+  )
 }
 
 export async function forwardPatientMessage(
@@ -4570,7 +4619,10 @@ export async function forwardPatientMessage(
   return result.detail
 }
 
-export async function getStaffMessageAttachments(sessionId: string, messageId: string): Promise<StaffMessageAttachmentItem[]> {
+export async function getStaffMessageAttachments(
+  sessionId: string,
+  messageId: string,
+): Promise<StaffMessageAttachmentItem[]> {
   return clinicianGet(sessionId, `/api/messages/${messageId}/attachments`)
 }
 
@@ -4579,17 +4631,38 @@ export async function uploadStaffMessageAttachment(
   messageId: string,
   input: { fileName: string; contentType: string; contentBase64: string },
 ): Promise<StaffMessageAttachmentItem> {
-  return clinicianPost(sessionId, `/api/messages/${messageId}/attachments`, input)
+  return clinicianPost(
+    sessionId,
+    `/api/messages/${messageId}/attachments`,
+    input,
+  )
 }
 
-export async function downloadStaffMessageAttachment(sessionId: string, messageId: string, attachmentId: string): Promise<Blob> {
-  const response = await fetch(`${apiBaseUrl}/api/messages/${messageId}/attachments/${attachmentId}`, { headers: { 'X-Legacy EHR-Session': sessionId } })
-  await requireSuccessfulResponse(response, `GET /api/messages/${messageId}/attachments/${attachmentId}`, 'clinician')
+export async function downloadStaffMessageAttachment(
+  sessionId: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<Blob> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/messages/${messageId}/attachments/${attachmentId}`,
+    { headers: { 'X-Legacy EHR-Session': sessionId } },
+  )
+  await requireSuccessfulResponse(
+    response,
+    `GET /api/messages/${messageId}/attachments/${attachmentId}`,
+    'clinician',
+  )
   return response.blob()
 }
 
-export async function getStaffMessageCorrectionHistory(sessionId: string, messageId: string): Promise<PatientMessageCorrectionHistoryResponse> {
-  return clinicianGet(sessionId, `/api/messages/${messageId}/correction-history`)
+export async function getStaffMessageCorrectionHistory(
+  sessionId: string,
+  messageId: string,
+): Promise<PatientMessageCorrectionHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/messages/${messageId}/correction-history`,
+  )
 }
 
 export async function correctStaffMessage(
@@ -4597,29 +4670,67 @@ export async function correctStaffMessage(
   messageId: string,
   input: { correction: string; reason: string },
 ): Promise<PatientMessagesResponse> {
-  const result = await clinicianPost<PatientMessageMutationResponse>(sessionId, `/api/messages/${messageId}/correct`, input)
+  const result = await clinicianPost<PatientMessageMutationResponse>(
+    sessionId,
+    `/api/messages/${messageId}/correct`,
+    input,
+  )
   return result.detail
 }
 
-export async function getStaffMessageRetentionHistory(sessionId: string, messageId: string): Promise<PatientMessageRetentionHistoryResponse> {
+export async function getStaffMessageRetentionHistory(
+  sessionId: string,
+  messageId: string,
+): Promise<PatientMessageRetentionHistoryResponse> {
   return clinicianGet(sessionId, `/api/messages/${messageId}/retention-history`)
 }
 
-export async function getStaffMessageEscalationHistory(sessionId: string, messageId: string): Promise<PatientMessageEscalationHistoryResponse> {
-  return clinicianGet(sessionId, `/api/messages/${messageId}/escalation-history`)
+export async function getStaffMessageEscalationHistory(
+  sessionId: string,
+  messageId: string,
+): Promise<PatientMessageEscalationHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/messages/${messageId}/escalation-history`,
+  )
 }
 
-export async function setStaffMessageEscalation(sessionId: string, messageId: string, escalated: boolean, reason: string): Promise<PatientMessageEscalationHistoryResponse> {
-  return clinicianPost(sessionId, `/api/messages/${messageId}/${escalated ? 'escalate' : 'resolve-escalation'}`, { reason })
+export async function setStaffMessageEscalation(
+  sessionId: string,
+  messageId: string,
+  escalated: boolean,
+  reason: string,
+): Promise<PatientMessageEscalationHistoryResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/messages/${messageId}/${escalated ? 'escalate' : 'resolve-escalation'}`,
+    { reason },
+  )
 }
 
-export async function archiveStaffMessage(sessionId: string, messageId: string, reason: string): Promise<PatientMessagesResponse> {
-  const result = await clinicianPost<PatientMessageMutationResponse>(sessionId, `/api/messages/${messageId}/archive`, { reason })
+export async function archiveStaffMessage(
+  sessionId: string,
+  messageId: string,
+  reason: string,
+): Promise<PatientMessagesResponse> {
+  const result = await clinicianPost<PatientMessageMutationResponse>(
+    sessionId,
+    `/api/messages/${messageId}/archive`,
+    { reason },
+  )
   return result.detail
 }
 
-export async function restoreStaffMessage(sessionId: string, messageId: string, reason: string): Promise<PatientMessagesResponse> {
-  const result = await clinicianPost<PatientMessageMutationResponse>(sessionId, `/api/messages/${messageId}/restore`, { reason })
+export async function restoreStaffMessage(
+  sessionId: string,
+  messageId: string,
+  reason: string,
+): Promise<PatientMessagesResponse> {
+  const result = await clinicianPost<PatientMessageMutationResponse>(
+    sessionId,
+    `/api/messages/${messageId}/restore`,
+    { reason },
+  )
   return result.detail
 }
 
@@ -4770,7 +4881,6 @@ export type EncounterTrackCatalog = {
   encounter: number
   availableTracks: EncounterTrackDefinition[]
   records: EncounterTrackRecord[]
-  isLocked: boolean
 }
 export type EncounterTrackRecordDetail = {
   record: EncounterTrackRecord
@@ -5267,7 +5377,7 @@ export async function setDuplicateReviewDisposition(
   )
 }
 
-// -- Documents -----------------------------------------------------------------
+// ── Documents ─────────────────────────────────────────────────────────────────
 
 export type PatientDocumentItem = {
   id: number
@@ -6014,7 +6124,8 @@ export async function getPatientDocumentOcrQueue(
   signal?: AbortSignal,
 ): Promise<PatientDocumentOcrQueueResponse> {
   const params = new URLSearchParams()
-  if (filters.patientId?.trim()) params.set('patientId', filters.patientId.trim())
+  if (filters.patientId?.trim())
+    params.set('patientId', filters.patientId.trim())
   if (filters.status) params.set('status', filters.status)
   if (filters.priority) params.set('priority', filters.priority)
   if (filters.query?.trim()) params.set('query', filters.query.trim())
@@ -6102,7 +6213,8 @@ export async function getPatientDocumentRoutingQueue(
   signal?: AbortSignal,
 ): Promise<PatientDocumentRoutingQueueResponse> {
   const params = new URLSearchParams()
-  if (filters.patientId?.trim()) params.set('patientId', filters.patientId.trim())
+  if (filters.patientId?.trim())
+    params.set('patientId', filters.patientId.trim())
   if (filters.status) params.set('status', filters.status)
   if (filters.priority) params.set('priority', filters.priority)
   if (filters.assignedTo?.trim()) {
@@ -6304,7 +6416,7 @@ export async function downloadPatientDocumentVersion(
   }
 }
 
-// -- Procedures / Lab Queue ----------------------------------------------------
+// ── Procedures / Lab Queue ────────────────────────────────────────────────────
 
 export type ProcedureLabProviderDirectoryResponse = {
   datasetId: string
@@ -6333,24 +6445,56 @@ export type ProcedureLabProviderDirectoryResponse = {
 export type ProcedureLabProviderAddressBookResponse = {
   datasetId: string
   datasetVersion: string
-  organizations: Array<{ id: number; organization: string; type: string; active: boolean }>
+  organizations: Array<{
+    id: number
+    organization: string
+    type: string
+    active: boolean
+  }>
 }
 
-export function getProcedureLabProviders(sessionId: string, includeInactive = true, signal?: AbortSignal): Promise<ProcedureLabProviderDirectoryResponse> {
-  return clinicianGet(sessionId, `/api/procedures/lab-providers?includeInactive=${includeInactive}`, signal)
+export function getProcedureLabProviders(
+  sessionId: string,
+  includeInactive = true,
+  signal?: AbortSignal,
+): Promise<ProcedureLabProviderDirectoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/procedures/lab-providers?includeInactive=${includeInactive}`,
+    signal,
+  )
 }
 
-export function getProcedureLabProviderAddressBook(sessionId: string, signal?: AbortSignal): Promise<ProcedureLabProviderAddressBookResponse> {
-  return clinicianGet(sessionId, '/api/procedures/lab-provider-address-book', signal)
+export function getProcedureLabProviderAddressBook(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<ProcedureLabProviderAddressBookResponse> {
+  return clinicianGet(
+    sessionId,
+    '/api/procedures/lab-provider-address-book',
+    signal,
+  )
 }
 
-export async function createProcedureLabProviderOrganization(sessionId: string, input: { organization: string; type?: string; active: boolean }): Promise<ProcedureLabProviderAddressBookResponse> {
-  const result = await clinicianPost<{ id: number; addressBook: ProcedureLabProviderAddressBookResponse }>(sessionId, '/api/procedures/lab-provider-address-book', input)
+export async function createProcedureLabProviderOrganization(
+  sessionId: string,
+  input: { organization: string; type?: string; active: boolean },
+): Promise<ProcedureLabProviderAddressBookResponse> {
+  const result = await clinicianPost<{
+    id: number
+    addressBook: ProcedureLabProviderAddressBookResponse
+  }>(sessionId, '/api/procedures/lab-provider-address-book', input)
   return result.addressBook
 }
 
-export function deleteProcedureLabProviderOrganization(sessionId: string, organizationId: number): Promise<void> {
-  return clinicianDelete(sessionId, `/api/procedures/lab-provider-address-book/${organizationId}`)
+export function deleteProcedureLabProviderOrganization(
+  sessionId: string,
+  organizationId: number,
+): Promise<void> {
+  return clinicianDelete(
+    sessionId,
+    `/api/procedures/lab-provider-address-book/${organizationId}`,
+  )
 }
 
 export type ProcedureOrderCatalogItem = {
@@ -6394,21 +6538,40 @@ export type ProcedureOrderCatalogInput = {
   active: boolean
 }
 
-export function getProcedureOrderCatalog(sessionId: string, signal?: AbortSignal): Promise<ProcedureOrderCatalogResponse> {
+export function getProcedureOrderCatalog(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<ProcedureOrderCatalogResponse> {
   return clinicianGet(sessionId, '/api/procedures/order-catalog', signal)
 }
 
-export async function createProcedureOrderCatalogItem(sessionId: string, input: ProcedureOrderCatalogInput): Promise<ProcedureOrderCatalogResponse> {
-  const result = await clinicianPost<{ id: number; catalog: ProcedureOrderCatalogResponse }>(sessionId, '/api/procedures/order-catalog', input)
+export async function createProcedureOrderCatalogItem(
+  sessionId: string,
+  input: ProcedureOrderCatalogInput,
+): Promise<ProcedureOrderCatalogResponse> {
+  const result = await clinicianPost<{
+    id: number
+    catalog: ProcedureOrderCatalogResponse
+  }>(sessionId, '/api/procedures/order-catalog', input)
   return result.catalog
 }
 
-export async function updateProcedureOrderCatalogItem(sessionId: string, itemId: number, input: ProcedureOrderCatalogInput): Promise<ProcedureOrderCatalogResponse> {
-  const result = await clinicianPut<{ id: number; catalog: ProcedureOrderCatalogResponse }>(sessionId, `/api/procedures/order-catalog/${itemId}`, input)
+export async function updateProcedureOrderCatalogItem(
+  sessionId: string,
+  itemId: number,
+  input: ProcedureOrderCatalogInput,
+): Promise<ProcedureOrderCatalogResponse> {
+  const result = await clinicianPut<{
+    id: number
+    catalog: ProcedureOrderCatalogResponse
+  }>(sessionId, `/api/procedures/order-catalog/${itemId}`, input)
   return result.catalog
 }
 
-export function deleteProcedureOrderCatalogItem(sessionId: string, itemId: number): Promise<void> {
+export function deleteProcedureOrderCatalogItem(
+  sessionId: string,
+  itemId: number,
+): Promise<void> {
   return clinicianDelete(sessionId, `/api/procedures/order-catalog/${itemId}`)
 }
 
@@ -6439,9 +6602,6 @@ export type ProcedureResultItem = {
     abnormal?: string | null
     resultDate: string
     resultStatus?: string | null
-    correctionActor?: string | null
-    correctionReason?: string | null
-    resultingVersion?: number | null
   }>
 }
 
@@ -6460,46 +6620,6 @@ export type ProcedureReportItem = {
   results: ProcedureResultItem[]
 }
 
-export type ProcedureSpecimenEventItem = {
-  eventId: number
-  action: string
-  previousStatus?: string | null
-  currentStatus: string
-  actor: string
-  reason: string
-  expectedVersion: number
-  resultingVersion: number
-  specimenIdentifier?: string | null
-  accessionIdentifier?: string | null
-  collectedDate?: string | null
-  conditionCode?: string | null
-  specimenCondition?: string | null
-  comments?: string | null
-  occurredAt: string
-}
-
-export type ProcedureSpecimenItem = {
-  id: number
-  specimenIdentifier?: string | null
-  accessionIdentifier?: string | null
-  specimenTypeCode?: string | null
-  specimenType?: string | null
-  collectionMethodCode?: string | null
-  collectionMethod?: string | null
-  specimenLocationCode?: string | null
-  specimenLocation?: string | null
-  collectedDate: string
-  volumeValue?: number | null
-  volumeUnit?: string | null
-  conditionCode?: string | null
-  specimenCondition?: string | null
-  comments?: string | null
-  specimenStatus: string
-  specimenVersion: number
-  historyCount: number
-  history: ProcedureSpecimenEventItem[]
-}
-
 export type ProcedureOrderItem = {
   id: number
   encounter?: number | null
@@ -6512,7 +6632,20 @@ export type ProcedureOrderItem = {
   diagnosis?: string | null
   instructions?: string | null
   orderStatus?: string | null
-  specimens: ProcedureSpecimenItem[]
+  specimens: Array<{
+    id: number
+    specimenIdentifier?: string | null
+    accessionIdentifier?: string | null
+    specimenType?: string | null
+    collectionMethod?: string | null
+    specimenLocation?: string | null
+    collectedDate: string
+    specimenCondition?: string | null
+    comments?: string | null
+    lifecycleStatus: "collected" | "labeled" | "received" | "rejected" | "recollected"
+    lifecycleVersion: number
+    lifecycleHistoryCount: number
+  }>
   reports: ProcedureReportItem[]
 }
 
@@ -6556,8 +6689,14 @@ export type ProcedureOrderCreateInput = {
   instructions: string
 }
 
-export async function createProcedureOrder(sessionId: string, input: ProcedureOrderCreateInput): Promise<ProcedureResultsResponse> {
-  const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/orders', input)
+export async function createProcedureOrder(
+  sessionId: string,
+  input: ProcedureOrderCreateInput,
+): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPost<{
+    id: number
+    detail: ProcedureResultsResponse
+  }>(sessionId, '/api/procedures/orders', input)
   return result.detail
 }
 
@@ -6579,34 +6718,65 @@ export type ProcedureSpecimenCreateInput = {
   comments: string
 }
 
-export async function createProcedureSpecimen(sessionId: string, input: ProcedureSpecimenCreateInput): Promise<ProcedureResultsResponse> {
-  const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/specimens', input)
+export async function createProcedureSpecimen(
+  sessionId: string,
+  input: ProcedureSpecimenCreateInput,
+): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPost<{
+    id: number
+    detail: ProcedureResultsResponse
+  }>(sessionId, '/api/procedures/specimens', input)
   return result.detail
 }
 
-export type ProcedureSpecimenTransitionInput = {
-  action: 'label' | 'receive' | 'reject' | 'recollect'
+export type ProcedureSpecimenLifecycleInput = {
+  status: "labeled" | "received" | "rejected" | "recollected"
   expectedVersion: number
   reason: string
-  specimenIdentifier?: string | null
-  accessionIdentifier?: string | null
-  collectedDate?: string | null
-  conditionCode?: string | null
-  specimenCondition?: string | null
-  comments?: string | null
 }
 
-export async function transitionProcedureSpecimen(
+export async function transitionProcedureSpecimenLifecycle(
   sessionId: string,
   specimenId: number,
-  input: ProcedureSpecimenTransitionInput,
+  input: ProcedureSpecimenLifecycleInput,
 ): Promise<ProcedureResultsResponse> {
-  const result = await clinicianPut<{ id: number; detail: ProcedureResultsResponse }>(
+  const result = await clinicianPut<{
+    id: number
+    detail: ProcedureResultsResponse
+  }>(
     sessionId,
-    `/api/procedures/specimens/${specimenId}/transition`,
+    `/api/procedures/specimens/${specimenId}/lifecycle`,
     input,
   )
   return result.detail
+}
+
+export type ProcedureSpecimenLifecycleHistoryResponse = {
+  specimenId: number
+  lifecycleVersion: number
+  events: Array<{
+    eventId: number
+    action: string
+    previousStatus?: string | null
+    currentStatus: string
+    actor: string
+    reason: string
+    expectedVersion: number
+    resultingVersion: number
+    occurredAt: string
+  }>
+}
+
+export function getProcedureSpecimenLifecycleHistory(
+  sessionId: string,
+  specimenId: number,
+  signal?: AbortSignal,
+): Promise<ProcedureSpecimenLifecycleHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/procedures/specimens/${specimenId}/lifecycle-history`,
+    signal,
+  )
 }
 
 export type ProcedureReportCreateInput = {
@@ -6619,8 +6789,14 @@ export type ProcedureReportCreateInput = {
   notes: string
 }
 
-export async function createProcedureReport(sessionId: string, input: ProcedureReportCreateInput): Promise<ProcedureResultsResponse> {
-  const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/reports', input)
+export async function createProcedureReport(
+  sessionId: string,
+  input: ProcedureReportCreateInput,
+): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPost<{
+    id: number
+    detail: ProcedureResultsResponse
+  }>(sessionId, '/api/procedures/reports', input)
   return result.detail
 }
 
@@ -6638,18 +6814,31 @@ export type ProcedureResultCreateInput = {
   status: string
 }
 
-export type ProcedureResultUpdateInput = Omit<ProcedureResultCreateInput, 'reportId' | 'facility' | 'comments'> & {
-  expectedVersion: number
-  reason: string
-}
+export type ProcedureResultUpdateInput = Omit<
+  ProcedureResultCreateInput,
+  'reportId' | 'facility' | 'comments'
+>
 
-export async function createProcedureResult(sessionId: string, input: ProcedureResultCreateInput): Promise<ProcedureResultsResponse> {
-  const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/results', input)
+export async function createProcedureResult(
+  sessionId: string,
+  input: ProcedureResultCreateInput,
+): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPost<{
+    id: number
+    detail: ProcedureResultsResponse
+  }>(sessionId, '/api/procedures/results', input)
   return result.detail
 }
 
-export async function updateProcedureResult(sessionId: string, resultId: number, input: ProcedureResultUpdateInput): Promise<ProcedureResultsResponse> {
-  const result = await clinicianPut<{ id: number; detail: ProcedureResultsResponse }>(sessionId, `/api/procedures/results/${resultId}`, input)
+export async function updateProcedureResult(
+  sessionId: string,
+  resultId: number,
+  input: ProcedureResultUpdateInput,
+): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPut<{
+    id: number
+    detail: ProcedureResultsResponse
+  }>(sessionId, `/api/procedures/results/${resultId}`, input)
   return result.detail
 }
 
@@ -6783,7 +6972,7 @@ export async function getProcedureOrderQueue(
   )
 }
 
-// -- Operational Reports -------------------------------------------------------
+// ── Operational Reports ───────────────────────────────────────────────────────
 
 export type OperationalReportCounts = {
   patients: number
@@ -7127,6 +7316,87 @@ export async function getPatientBilling(
   )
 }
 
+export type BillingPaymentMutationResponse = {
+  id: string
+  sessionId: number
+  detail: PatientBillingResponse
+}
+
+type BillingPaymentCommonInput = {
+  patientId: string
+  encounter: number
+  reference: string
+  postDate: string
+  checkDate?: string | null
+  depositDate?: string | null
+  paymentMethod: string
+  codeType?: string | null
+  code?: string | null
+  modifier?: string | null
+  memo: string
+}
+
+export type BillingPatientPaymentInput = BillingPaymentCommonInput & { payAmount: number }
+export type BillingPatientRefundInput = BillingPaymentCommonInput & { refundAmount: number }
+export type BillingInsurancePaymentInput = BillingPaymentCommonInput & {
+  payerId: number
+  payerName: string
+  payAmount: number
+  adjustmentAmount: number
+  reasonCode: string
+  payerClaimNumber?: string | null
+}
+export type BillingInsuranceReversalInput = BillingPaymentCommonInput & {
+  payerId: number
+  payerName: string
+  reversalAmount: number
+  payerClaimNumber?: string | null
+}
+export type BillingAdjustmentReversalInput = BillingPaymentCommonInput & {
+  payerId: number
+  payerName: string
+  adjustmentAmount: number
+  payerClaimNumber?: string | null
+}
+
+async function postBillingPayment(
+  sessionId: string,
+  path: string,
+  input: unknown,
+): Promise<PatientBillingResponse> {
+  const response = await clinicianPost<BillingPaymentMutationResponse>(sessionId, path, input)
+  return response.detail
+}
+
+export function createBillingPatientPayment(sessionId: string, input: BillingPatientPaymentInput) {
+  return postBillingPayment(sessionId, '/api/billing/payments/patient-payments', input)
+}
+
+export function createBillingPatientRefund(sessionId: string, input: BillingPatientRefundInput) {
+  return postBillingPayment(sessionId, '/api/billing/payments/patient-refunds', input)
+}
+
+export function createBillingInsurancePayment(sessionId: string, input: BillingInsurancePaymentInput) {
+  return postBillingPayment(sessionId, '/api/billing/payments/insurance-payments', input)
+}
+
+export function createBillingInsuranceReversal(sessionId: string, input: BillingInsuranceReversalInput) {
+  return postBillingPayment(sessionId, '/api/billing/payments/insurance-reversals', input)
+}
+
+export function createBillingAdjustmentReversal(sessionId: string, input: BillingAdjustmentReversalInput) {
+  return postBillingPayment(sessionId, '/api/billing/payments/adjustment-reversals', input)
+}
+
+export async function importBillingEobBatch(sessionId: string, patientId: string): Promise<PatientBillingResponse> {
+  const response = await clinicianPost<{ detail: PatientBillingResponse }>(
+    sessionId,
+    '/api/billing/eob-batches/import',
+    { patientId },
+  )
+  return response.detail
+}
+
 export type StatementBatchCandidate = {
   patientId: string
   pubpid: string
@@ -7236,7 +7506,7 @@ export async function createBillingCollectionsFollowUp(
   )
 }
 
-// -- Administration ------------------------------------------------------------
+// ── Administration ────────────────────────────────────────────────────────────
 
 export type AdministrationUserItem = {
   id: number
@@ -7469,7 +7739,10 @@ export type PracticeSettingRegistryItem = {
 export async function getPracticeSettingRegistry(
   sessionId: string,
 ): Promise<{ registryRevision: string; items: PracticeSettingRegistryItem[] }> {
-  return clinicianGet(sessionId, '/api/administration/practice-settings/registry')
+  return clinicianGet(
+    sessionId,
+    '/api/administration/practice-settings/registry',
+  )
 }
 export type ConfigurationPackagePracticeSetting = {
   key: string
@@ -7503,15 +7776,122 @@ export type ConfigurationPackageDryRun = {
 export async function exportConfigurationPackage(
   sessionId: string,
 ): Promise<ConfigurationPackageExport> {
-  return clinicianPost(sessionId, '/api/administration/configuration-packages/export', {})
+  return clinicianPost(
+    sessionId,
+    '/api/administration/configuration-packages/export',
+    {},
+  )
 }
 export async function dryRunConfigurationPackage(
   sessionId: string,
   packageDocument: ConfigurationPackageDocument,
 ): Promise<ConfigurationPackageDryRun> {
-  return clinicianPost(sessionId, '/api/administration/configuration-packages/dry-run', {
-    package: packageDocument,
-  })
+  return clinicianPost(
+    sessionId,
+    '/api/administration/configuration-packages/dry-run',
+    {
+      package: packageDocument,
+    },
+  )
+}
+export type ConfigurationPackageImportRequest = {
+  requestId: string
+  sha256: string
+  kind: 'import' | 'rollback'
+  sourceRequestId: string | null
+  reason: string
+  status:
+    'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
+  version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+export type ConfigurationPackageImportRequestDetail = {
+  request: ConfigurationPackageImportRequest
+  currentConflicts: ConfigurationPackageDryRun['conflicts']
+  events: Array<{
+    eventId: number
+    action: string
+    note: string | null
+    occurredAt: string
+    username: string
+  }>
+}
+export async function createConfigurationPackageImportRequest(
+  sessionId: string,
+  packageDocument: ConfigurationPackageDocument,
+  reason: string,
+): Promise<ConfigurationPackageImportRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    '/api/administration/configuration-package-import-requests',
+    {
+      package: packageDocument,
+      reason,
+    },
+  )
+}
+export async function transitionConfigurationPackageImportRequest(
+  sessionId: string,
+  requestId: string,
+  action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel',
+  expectedVersion: number,
+  note?: string,
+): Promise<ConfigurationPackageImportRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/configuration-package-import-requests/${requestId}/${action}`,
+    {
+      note: note ?? null,
+      expectedVersion,
+    },
+  )
+}
+export async function getConfigurationPackageImportRequests(
+  sessionId: string,
+  input: {
+    status?: string
+    kind?: string
+    offset?: number
+    limit?: number
+  } = {},
+): Promise<{
+  requests: ConfigurationPackageImportRequest[]
+  total: number
+  offset: number
+  limit: number
+}> {
+  const query = new URLSearchParams()
+  if (input.status) query.set('status', input.status)
+  if (input.kind) query.set('kind', input.kind)
+  if (input.offset !== undefined) query.set('offset', String(input.offset))
+  if (input.limit !== undefined) query.set('limit', String(input.limit))
+  return clinicianGet(
+    sessionId,
+    `/api/administration/configuration-package-import-requests?${query}`,
+  )
+}
+export async function getConfigurationPackageImportRequest(
+  sessionId: string,
+  requestId: string,
+): Promise<ConfigurationPackageImportRequestDetail> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/configuration-package-import-requests/${requestId}`,
+  )
+}
+export async function createConfigurationPackageCompensatingRollback(
+  sessionId: string,
+  requestId: string,
+  reason: string,
+): Promise<ConfigurationPackageImportRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/configuration-package-import-requests/${requestId}/compensating-rollback`,
+    { note: reason },
+  )
 }
 export type PracticeSettingDelegation = {
   delegationId: string
@@ -7529,7 +7909,10 @@ export type PracticeSettingDelegation = {
 export async function getPracticeSettingDelegations(
   sessionId: string,
 ): Promise<PracticeSettingDelegation[]> {
-  return clinicianGet(sessionId, '/api/administration/practice-setting-delegations')
+  return clinicianGet(
+    sessionId,
+    '/api/administration/practice-setting-delegations',
+  )
 }
 export async function grantPracticeSettingDelegation(
   sessionId: string,
@@ -7541,7 +7924,11 @@ export async function grantPracticeSettingDelegation(
     reason: string
   },
 ): Promise<PracticeSettingDelegation> {
-  return clinicianPost(sessionId, '/api/administration/practice-setting-delegations', input)
+  return clinicianPost(
+    sessionId,
+    '/api/administration/practice-setting-delegations',
+    input,
+  )
 }
 export async function revokePracticeSettingDelegation(
   sessionId: string,
@@ -7562,7 +7949,10 @@ export type EffectivePracticeSettingItem = PracticeSettingItem & {
 export async function getEffectivePracticeSettings(
   sessionId: string,
   facilityId?: number,
-): Promise<{ requestedFacilityId: number | null; settings: EffectivePracticeSettingItem[] }> {
+): Promise<{
+  requestedFacilityId: number | null
+  settings: EffectivePracticeSettingItem[]
+}> {
   return clinicianGet(
     sessionId,
     `/api/administration/practice-settings/effective${facilityId ? `?facilityId=${encodeURIComponent(facilityId)}` : ''}`,
@@ -7613,12 +8003,7 @@ export async function rollbackPracticeSetting(
   )
 }
 export type PracticeSettingChangeRequestStatus =
-  | 'draft'
-  | 'submitted'
-  | 'approved'
-  | 'rejected'
-  | 'activated'
-  | 'cancelled'
+  'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
 export type PracticeSettingChangeRequestItem = {
   requestId: string
   settingKey: string
@@ -7675,11 +8060,7 @@ export type PracticeSettingImpactPreview = {
   impacts: PracticeSettingImpactPreviewItem[]
 }
 export type PracticeSettingChangeRequestAction =
-  | 'submit'
-  | 'approve'
-  | 'reject'
-  | 'activate'
-  | 'cancel'
+  'submit' | 'approve' | 'reject' | 'activate' | 'cancel'
 
 export async function getPracticeSettingChangeRequests(
   sessionId: string,
@@ -7842,12 +8223,7 @@ export async function rollbackCodingCatalog(
   )
 }
 export type CodingCatalogChangeRequestStatus =
-  | 'draft'
-  | 'submitted'
-  | 'approved'
-  | 'rejected'
-  | 'activated'
-  | 'cancelled'
+  'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
 export type CodingCatalogChangeRequestItem = {
   requestId: string
   catalogKey: string
@@ -7899,11 +8275,7 @@ export type CodingCatalogChangeRequestDetail = {
   events: CodingCatalogChangeRequestEvent[]
 }
 export type CodingCatalogChangeRequestAction =
-  | 'submit'
-  | 'approve'
-  | 'reject'
-  | 'activate'
-  | 'cancel'
+  'submit' | 'approve' | 'reject' | 'activate' | 'cancel'
 export type CodingCatalogChangeRequestInput = {
   key: string
   displayName: string
@@ -7946,7 +8318,11 @@ export async function createCodingCatalogChangeRequest(
   sessionId: string,
   input: CodingCatalogChangeRequestInput,
 ): Promise<CodingCatalogChangeRequestDetail> {
-  return clinicianPost(sessionId, '/api/administration/coding-catalog-change-requests', input)
+  return clinicianPost(
+    sessionId,
+    '/api/administration/coding-catalog-change-requests',
+    input,
+  )
 }
 export async function transitionCodingCatalogChangeRequest(
   sessionId: string,
@@ -8160,12 +8536,7 @@ export async function saveFormOptionValue(
   )
 }
 export type GovernanceStatus =
-  | 'draft'
-  | 'submitted'
-  | 'approved'
-  | 'rejected'
-  | 'activated'
-  | 'cancelled'
+  'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
 export type GovernanceEvent = {
   eventId: number
   action: GovernanceStatus | 'created'
@@ -8179,8 +8550,24 @@ export type FormLayoutDefinition = {
   mapping: string
   sequence: number
   active: boolean
-  groups: Array<Pick<FormLayoutGroupItem, 'key' | 'title' | 'sequence' | 'active'>>
-  fields: Array<Pick<FormLayoutFieldItem, 'key' | 'groupKey' | 'label' | 'fieldType' | 'sequence' | 'required' | 'active' | 'maxLength' | 'listId' | 'defaultValue'>>
+  groups: Array<
+    Pick<FormLayoutGroupItem, 'key' | 'title' | 'sequence' | 'active'>
+  >
+  fields: Array<
+    Pick<
+      FormLayoutFieldItem,
+      | 'key'
+      | 'groupKey'
+      | 'label'
+      | 'fieldType'
+      | 'sequence'
+      | 'required'
+      | 'active'
+      | 'maxLength'
+      | 'listId'
+      | 'defaultValue'
+    >
+  >
 }
 export type FormLayoutChangeRequest = {
   requestId: string
@@ -8197,22 +8584,154 @@ export type FormLayoutChangeRequest = {
   updatedAt: string
   updatedBy: string
 }
-export type FormLayoutChangeRequestDetail = { request: FormLayoutChangeRequest; activeLayout?: FormLayoutDetail | null; events: GovernanceEvent[] }
+export type FormLayoutChangeRequestDetail = {
+  request: FormLayoutChangeRequest
+  activeLayout?: FormLayoutDetail | null
+  events: GovernanceEvent[]
+}
 export type FormChangeRequestStatus = 'open' | 'all' | GovernanceStatus
-export type FormChangeRequestListOptions = { status?: FormChangeRequestStatus; offset?: number; limit?: number }
-export type FormLayoutChangeRequestList = { requests: FormLayoutChangeRequest[]; total: number; returned: number; offset: number; limit: number; status: FormChangeRequestStatus }
-export async function getFormLayoutChangeRequests(sessionId: string, options: FormChangeRequestListOptions = {}): Promise<FormLayoutChangeRequestList> { const parameters = new URLSearchParams({ status: options.status ?? 'open', offset: String(options.offset ?? 0), limit: String(options.limit ?? 25) }); return clinicianGet(sessionId, `/api/administration/form-layout-change-requests?${parameters.toString()}`) }
-export async function getFormLayoutChangeRequest(sessionId: string, requestId: string): Promise<FormLayoutChangeRequestDetail> { return clinicianGet(sessionId, `/api/administration/form-layout-change-requests/${encodeURIComponent(requestId)}`) }
-export async function createFormLayoutChangeRequest(sessionId: string, input: FormLayoutDefinition & { reason: string }): Promise<FormLayoutChangeRequestDetail> { return clinicianPost(sessionId, '/api/administration/form-layout-change-requests', input) }
-export async function transitionFormLayoutChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<FormLayoutChangeRequestDetail> { return clinicianPost(sessionId, `/api/administration/form-layout-change-requests/${encodeURIComponent(requestId)}/${action}`, input) }
-export type FormOptionListDefinition = { key: string; title: string; active: boolean; options: Array<Pick<FormOptionValueItem, 'key' | 'title' | 'sequence' | 'isDefault' | 'active' | 'value'>> }
-export type FormOptionListChangeRequest = { requestId: string; listKey: string; changeKind: 'create' | 'update'; proposedDefinition: FormOptionListDefinition; baselineDefinition?: FormOptionListDefinition | null; baselineUpdatedAt?: string | null; reason: string; status: GovernanceStatus; version: number; createdAt: string; createdBy: string; updatedAt: string; updatedBy: string }
-export type FormOptionListChangeRequestDetail = { request: FormOptionListChangeRequest; activeList?: FormOptionListDetail | null; events: GovernanceEvent[] }
-export type FormOptionListChangeRequestList = { requests: FormOptionListChangeRequest[]; total: number; returned: number; offset: number; limit: number; status: FormChangeRequestStatus }
-export async function getFormOptionListChangeRequests(sessionId: string, options: FormChangeRequestListOptions = {}): Promise<FormOptionListChangeRequestList> { const parameters = new URLSearchParams({ status: options.status ?? 'open', offset: String(options.offset ?? 0), limit: String(options.limit ?? 25) }); return clinicianGet(sessionId, `/api/administration/form-option-list-change-requests?${parameters.toString()}`) }
-export async function getFormOptionListChangeRequest(sessionId: string, requestId: string): Promise<FormOptionListChangeRequestDetail> { return clinicianGet(sessionId, `/api/administration/form-option-list-change-requests/${encodeURIComponent(requestId)}`) }
-export async function createFormOptionListChangeRequest(sessionId: string, input: FormOptionListDefinition & { reason: string }): Promise<FormOptionListChangeRequestDetail> { return clinicianPost(sessionId, '/api/administration/form-option-list-change-requests', input) }
-export async function transitionFormOptionListChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<FormOptionListChangeRequestDetail> { return clinicianPost(sessionId, `/api/administration/form-option-list-change-requests/${encodeURIComponent(requestId)}/${action}`, input) }
+export type FormChangeRequestListOptions = {
+  status?: FormChangeRequestStatus
+  offset?: number
+  limit?: number
+}
+export type FormLayoutChangeRequestList = {
+  requests: FormLayoutChangeRequest[]
+  total: number
+  returned: number
+  offset: number
+  limit: number
+  status: FormChangeRequestStatus
+}
+export async function getFormLayoutChangeRequests(
+  sessionId: string,
+  options: FormChangeRequestListOptions = {},
+): Promise<FormLayoutChangeRequestList> {
+  const parameters = new URLSearchParams({
+    status: options.status ?? 'open',
+    offset: String(options.offset ?? 0),
+    limit: String(options.limit ?? 25),
+  })
+  return clinicianGet(
+    sessionId,
+    `/api/administration/form-layout-change-requests?${parameters.toString()}`,
+  )
+}
+export async function getFormLayoutChangeRequest(
+  sessionId: string,
+  requestId: string,
+): Promise<FormLayoutChangeRequestDetail> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/form-layout-change-requests/${encodeURIComponent(requestId)}`,
+  )
+}
+export async function createFormLayoutChangeRequest(
+  sessionId: string,
+  input: FormLayoutDefinition & { reason: string },
+): Promise<FormLayoutChangeRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    '/api/administration/form-layout-change-requests',
+    input,
+  )
+}
+export async function transitionFormLayoutChangeRequest(
+  sessionId: string,
+  requestId: string,
+  action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel',
+  input: { note?: string | null; expectedVersion: number },
+): Promise<FormLayoutChangeRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/form-layout-change-requests/${encodeURIComponent(requestId)}/${action}`,
+    input,
+  )
+}
+export type FormOptionListDefinition = {
+  key: string
+  title: string
+  active: boolean
+  options: Array<
+    Pick<
+      FormOptionValueItem,
+      'key' | 'title' | 'sequence' | 'isDefault' | 'active' | 'value'
+    >
+  >
+}
+export type FormOptionListChangeRequest = {
+  requestId: string
+  listKey: string
+  changeKind: 'create' | 'update'
+  proposedDefinition: FormOptionListDefinition
+  baselineDefinition?: FormOptionListDefinition | null
+  baselineUpdatedAt?: string | null
+  reason: string
+  status: GovernanceStatus
+  version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+export type FormOptionListChangeRequestDetail = {
+  request: FormOptionListChangeRequest
+  activeList?: FormOptionListDetail | null
+  events: GovernanceEvent[]
+}
+export type FormOptionListChangeRequestList = {
+  requests: FormOptionListChangeRequest[]
+  total: number
+  returned: number
+  offset: number
+  limit: number
+  status: FormChangeRequestStatus
+}
+export async function getFormOptionListChangeRequests(
+  sessionId: string,
+  options: FormChangeRequestListOptions = {},
+): Promise<FormOptionListChangeRequestList> {
+  const parameters = new URLSearchParams({
+    status: options.status ?? 'open',
+    offset: String(options.offset ?? 0),
+    limit: String(options.limit ?? 25),
+  })
+  return clinicianGet(
+    sessionId,
+    `/api/administration/form-option-list-change-requests?${parameters.toString()}`,
+  )
+}
+export async function getFormOptionListChangeRequest(
+  sessionId: string,
+  requestId: string,
+): Promise<FormOptionListChangeRequestDetail> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/form-option-list-change-requests/${encodeURIComponent(requestId)}`,
+  )
+}
+export async function createFormOptionListChangeRequest(
+  sessionId: string,
+  input: FormOptionListDefinition & { reason: string },
+): Promise<FormOptionListChangeRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    '/api/administration/form-option-list-change-requests',
+    input,
+  )
+}
+export async function transitionFormOptionListChangeRequest(
+  sessionId: string,
+  requestId: string,
+  action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel',
+  input: { note?: string | null; expectedVersion: number },
+): Promise<FormOptionListChangeRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/form-option-list-change-requests/${encodeURIComponent(requestId)}/${action}`,
+    input,
+  )
+}
 export type ClinicalAlertRuleItem = {
   key: string
   title: string
@@ -8229,16 +8748,76 @@ export async function getClinicalAlertRules(
   return clinicianGet(sessionId, '/api/administration/clinical-alert-rules')
 }
 export type ClinicalAlertRuleChangeRequest = {
-  requestId: string; ruleKey: string; status: GovernanceStatus; version: number; reason: string
-  proposedDefinition: ClinicalAlertRuleItem; baselineDefinition?: ClinicalAlertRuleItem | null
-  createdAt: string; createdBy: string; updatedAt: string; updatedBy: string
+  requestId: string
+  ruleKey: string
+  status: GovernanceStatus
+  version: number
+  reason: string
+  proposedDefinition: ClinicalAlertRuleItem
+  baselineDefinition?: ClinicalAlertRuleItem | null
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
 }
-export type ClinicalAlertRuleChangeRequestDetail = { request: ClinicalAlertRuleChangeRequest; activeRule?: ClinicalAlertRuleItem | null; events: GovernanceEvent[] }
-export type ClinicalAlertRuleChangeRequestsResponse = { requests: ClinicalAlertRuleChangeRequest[]; total: number; returned: number; offset: number; limit: number; status: GovernanceStatus | 'all' | 'open' }
-export async function getClinicalAlertRuleChangeRequests(sessionId: string, options: FormChangeRequestListOptions = {}): Promise<ClinicalAlertRuleChangeRequestsResponse> { const parameters = new URLSearchParams({ status: options.status ?? 'open', offset: String(options.offset ?? 0), limit: String(options.limit ?? 25) }); return clinicianGet(sessionId, `/api/administration/clinical-alert-rule-change-requests?${parameters.toString()}`) }
-export async function createClinicalAlertRuleChangeRequest(sessionId: string, input: ClinicalAlertRuleItem & { reason: string }): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianPost(sessionId, '/api/administration/clinical-alert-rule-change-requests', input) }
-export async function getClinicalAlertRuleChangeRequest(sessionId: string, requestId: string): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianGet(sessionId, `/api/administration/clinical-alert-rule-change-requests/${encodeURIComponent(requestId)}`) }
-export async function transitionClinicalAlertRuleChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianPost(sessionId, `/api/administration/clinical-alert-rule-change-requests/${encodeURIComponent(requestId)}/${action}`, input) }
+export type ClinicalAlertRuleChangeRequestDetail = {
+  request: ClinicalAlertRuleChangeRequest
+  activeRule?: ClinicalAlertRuleItem | null
+  events: GovernanceEvent[]
+}
+export type ClinicalAlertRuleChangeRequestsResponse = {
+  requests: ClinicalAlertRuleChangeRequest[]
+  total: number
+  returned: number
+  offset: number
+  limit: number
+  status: GovernanceStatus | 'all' | 'open'
+}
+export async function getClinicalAlertRuleChangeRequests(
+  sessionId: string,
+  options: FormChangeRequestListOptions = {},
+): Promise<ClinicalAlertRuleChangeRequestsResponse> {
+  const parameters = new URLSearchParams({
+    status: options.status ?? 'open',
+    offset: String(options.offset ?? 0),
+    limit: String(options.limit ?? 25),
+  })
+  return clinicianGet(
+    sessionId,
+    `/api/administration/clinical-alert-rule-change-requests?${parameters.toString()}`,
+  )
+}
+export async function createClinicalAlertRuleChangeRequest(
+  sessionId: string,
+  input: ClinicalAlertRuleItem & { reason: string },
+): Promise<ClinicalAlertRuleChangeRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    '/api/administration/clinical-alert-rule-change-requests',
+    input,
+  )
+}
+export async function getClinicalAlertRuleChangeRequest(
+  sessionId: string,
+  requestId: string,
+): Promise<ClinicalAlertRuleChangeRequestDetail> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/clinical-alert-rule-change-requests/${encodeURIComponent(requestId)}`,
+  )
+}
+export async function transitionClinicalAlertRuleChangeRequest(
+  sessionId: string,
+  requestId: string,
+  action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel',
+  input: { note?: string | null; expectedVersion: number },
+): Promise<ClinicalAlertRuleChangeRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/clinical-alert-rule-change-requests/${encodeURIComponent(requestId)}/${action}`,
+    input,
+  )
+}
 export async function saveClinicalAlertRule(
   sessionId: string,
   key: string,
@@ -8314,12 +8893,56 @@ export type ModuleChangeRequest = {
   updatedAt: string
   updatedBy: string
 }
-export type ModuleChangeRequestsResponse = { requests: ModuleChangeRequest[]; total: number; status: GovernanceStatus | 'all' | 'open' }
-export async function getModuleChangeRequests(sessionId: string, status: GovernanceStatus | 'all' | 'open' = 'open'): Promise<ModuleChangeRequestsResponse> { return clinicianGet(sessionId, `/api/administration/module-change-requests?status=${encodeURIComponent(status)}`) }
-export type ModuleChangeRequestDetail = { request: ModuleChangeRequest; module: ModuleCatalogItem; events: GovernanceEvent[] }
-export async function getModuleChangeRequest(sessionId: string, requestId: string): Promise<ModuleChangeRequestDetail> { return clinicianGet(sessionId, `/api/administration/module-change-requests/${encodeURIComponent(requestId)}`) }
-export async function createModuleChangeRequest(sessionId: string, input: { moduleKey: string; status: 'enabled' | 'disabled'; reason: string }): Promise<{ request: ModuleChangeRequest }> { return clinicianPost(sessionId, '/api/administration/module-change-requests', input) }
-export async function transitionModuleChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<{ request: ModuleChangeRequest }> { return clinicianPost(sessionId, `/api/administration/module-change-requests/${encodeURIComponent(requestId)}/${action}`, input) }
+export type ModuleChangeRequestsResponse = {
+  requests: ModuleChangeRequest[]
+  total: number
+  status: GovernanceStatus | 'all' | 'open'
+}
+export async function getModuleChangeRequests(
+  sessionId: string,
+  status: GovernanceStatus | 'all' | 'open' = 'open',
+): Promise<ModuleChangeRequestsResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/module-change-requests?status=${encodeURIComponent(status)}`,
+  )
+}
+export type ModuleChangeRequestDetail = {
+  request: ModuleChangeRequest
+  module: ModuleCatalogItem
+  events: GovernanceEvent[]
+}
+export async function getModuleChangeRequest(
+  sessionId: string,
+  requestId: string,
+): Promise<ModuleChangeRequestDetail> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/module-change-requests/${encodeURIComponent(requestId)}`,
+  )
+}
+export async function createModuleChangeRequest(
+  sessionId: string,
+  input: { moduleKey: string; status: 'enabled' | 'disabled'; reason: string },
+): Promise<{ request: ModuleChangeRequest }> {
+  return clinicianPost(
+    sessionId,
+    '/api/administration/module-change-requests',
+    input,
+  )
+}
+export async function transitionModuleChangeRequest(
+  sessionId: string,
+  requestId: string,
+  action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel',
+  input: { note?: string | null; expectedVersion: number },
+): Promise<{ request: ModuleChangeRequest }> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/module-change-requests/${encodeURIComponent(requestId)}/${action}`,
+    input,
+  )
+}
 export type ModuleCatalogRevision = {
   revisionId: number
   displayName: string
@@ -8397,19 +9020,54 @@ export type ApiClientChangeRequestsResponse = {
   requests: ApiClientChangeRequest[]
   total: number
   status: GovernanceStatus | 'all' | 'open'
-  counts: { draft: number; submitted: number; approved: number; rejected: number; activated: number; cancelled: number }
+  counts: {
+    draft: number
+    submitted: number
+    approved: number
+    rejected: number
+    activated: number
+    cancelled: number
+  }
 }
-export async function getApiClientChangeRequests(sessionId: string, status: GovernanceStatus | 'all' | 'open' = 'open'): Promise<ApiClientChangeRequestsResponse> {
-  return clinicianGet(sessionId, `/api/administration/api-client-change-requests?status=${encodeURIComponent(status)}`)
+export async function getApiClientChangeRequests(
+  sessionId: string,
+  status: GovernanceStatus | 'all' | 'open' = 'open',
+): Promise<ApiClientChangeRequestsResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/api-client-change-requests?status=${encodeURIComponent(status)}`,
+  )
 }
-export async function getApiClientChangeRequest(sessionId: string, requestId: string): Promise<ApiClientChangeRequestDetail> {
-  return clinicianGet(sessionId, `/api/administration/api-client-change-requests/${encodeURIComponent(requestId)}`)
+export async function getApiClientChangeRequest(
+  sessionId: string,
+  requestId: string,
+): Promise<ApiClientChangeRequestDetail> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/api-client-change-requests/${encodeURIComponent(requestId)}`,
+  )
 }
-export async function createApiClientChangeRequest(sessionId: string, input: ApiClientRegistryItem & { reason: string }): Promise<ApiClientChangeRequestDetail> {
-  return clinicianPost(sessionId, '/api/administration/api-client-change-requests', input)
+export async function createApiClientChangeRequest(
+  sessionId: string,
+  input: ApiClientRegistryItem & { reason: string },
+): Promise<ApiClientChangeRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    '/api/administration/api-client-change-requests',
+    input,
+  )
 }
-export async function transitionApiClientChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<ApiClientChangeRequestDetail> {
-  return clinicianPost(sessionId, `/api/administration/api-client-change-requests/${encodeURIComponent(requestId)}/${action}`, input)
+export async function transitionApiClientChangeRequest(
+  sessionId: string,
+  requestId: string,
+  action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel',
+  input: { note?: string | null; expectedVersion: number },
+): Promise<ApiClientChangeRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/api-client-change-requests/${encodeURIComponent(requestId)}/${action}`,
+    input,
+  )
 }
 export async function saveApiClient(
   sessionId: string,
@@ -8790,7 +9448,7 @@ export async function getAuthenticationActivityAudit(
   )
 }
 
-// -- Write helpers -------------------------------------------------------------
+// ── Write helpers ─────────────────────────────────────────────────────────────
 
 async function clinicianDelete(
   sessionId: string,
@@ -8819,7 +9477,7 @@ async function clinicianDeleteJson<T>(
   return response.json()
 }
 
-// -- Encounter mutations -------------------------------------------------------
+// ── Encounter mutations ───────────────────────────────────────────────────────
 
 export type EncounterCreateInput = {
   patientId: string
@@ -8913,7 +9571,7 @@ export async function signEncounter(
   )
 }
 
-// -- Clinical list mutations ---------------------------------------------------
+// ── Clinical list mutations ───────────────────────────────────────────────────
 
 export type ClinicalListMutationResponse = {
   id: string
@@ -9137,7 +9795,7 @@ export async function deactivatePrescription(
   )
 }
 
-// -- Prescription refill and audit ---------------------------------------------
+// ── Prescription refill and audit ─────────────────────────────────────────────
 
 export type PrescriptionUpdateInput = {
   expectedVersion: string
@@ -9315,12 +9973,27 @@ export type CriticalLabResultQueueResponse = {
   }>
 }
 
-export function getCriticalLabResultQueue(sessionId: string, signal?: AbortSignal): Promise<CriticalLabResultQueueResponse> {
-  return clinicianGet(sessionId, '/api/procedures/critical-result-queue', signal)
+export function getCriticalLabResultQueue(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<CriticalLabResultQueueResponse> {
+  return clinicianGet(
+    sessionId,
+    '/api/procedures/critical-result-queue',
+    signal,
+  )
 }
 
-export async function acknowledgeCriticalLabResult(sessionId: string, resultId: number, body: { expectedVersion: number; reason: string }): Promise<void> {
-  await clinicianPut<{ acknowledged: boolean }>(sessionId, `/api/procedures/results/${resultId}/critical-acknowledgement`, body)
+export async function acknowledgeCriticalLabResult(
+  sessionId: string,
+  resultId: number,
+  body: { expectedVersion: number; reason: string },
+): Promise<void> {
+  await clinicianPut<{ acknowledged: boolean }>(
+    sessionId,
+    `/api/procedures/results/${resultId}/critical-acknowledgement`,
+    body,
+  )
 }
 
 export type ProcedureReportReviewHistoryResponse = {
@@ -9418,7 +10091,10 @@ export type ProcedureReportBulkSignResponse = {
 
 export async function bulkSignLabReports(
   sessionId: string,
-  body: { reports: Array<{ reportId: number; expectedReviewVersion: number }>; reason: string },
+  body: {
+    reports: Array<{ reportId: number; expectedReviewVersion: number }>
+    reason: string
+  },
   signal?: AbortSignal,
 ): Promise<ProcedureReportBulkSignResponse> {
   return clinicianPut<ProcedureReportBulkSignResponse>(
@@ -9429,7 +10105,7 @@ export async function bulkSignLabReports(
   )
 }
 
-// -- Message creation ----------------------------------------------------------
+// ── Message creation ──────────────────────────────────────────────────────────
 
 export type CreatePatientMessageInput = {
   patientId: string
@@ -9594,7 +10270,7 @@ export async function createPatient(
   return clinicianPost(sessionId, '/api/patients', body, signal)
 }
 
-// -- Appointment mutations -----------------------------------------------------
+// ── Appointment mutations ─────────────────────────────────────────────────────
 
 export type AppointmentCreateInput = {
   patientId: string
@@ -9673,7 +10349,7 @@ export async function validateAppointmentAvailability(
   )
 }
 
-// -- Immunization mutations ----------------------------------------------------
+// ── Immunization mutations ────────────────────────────────────────────────────
 
 export type ImmunizationCreateInput = {
   patientId: string
@@ -9722,7 +10398,7 @@ export async function deleteImmunization(
   )
 }
 
-// -- Portal profile mutations --------------------------------------------------
+// ── Portal profile mutations ──────────────────────────────────────────────────
 
 export type PatientPortalProfileDemographics = {
   firstName: string
@@ -9808,61 +10484,4 @@ export async function submitPatientPortalProfileChange(
       `Patient portal profile request failed with ${response.status}`,
     )
   return response.json()
-}
-export type ConfigurationPackageImportRequest = {
-  requestId: string
-  sha256: string
-  kind: 'import' | 'rollback'
-  sourceRequestId?: string | null
-  reason: string
-  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
-  version: number
-  createdAt: string
-  createdBy: string
-  updatedAt: string
-  updatedBy: string
-}
-export type ConfigurationPackageImportRequestDetail = {
-  request: ConfigurationPackageImportRequest
-  currentConflicts: ConfigurationPackageDryRun['conflicts']
-  events: Array<{ eventId: number; action: string; note: string | null; occurredAt: string; username: string }>
-}
-export async function createConfigurationPackageImportRequest(
-  sessionId: string,
-  packageDocument: ConfigurationPackageDocument,
-  reason: string,
-): Promise<ConfigurationPackageImportRequestDetail> {
-  return clinicianPost(sessionId, '/api/administration/configuration-package-import-requests', {
-    package: packageDocument,
-    reason,
-  })
-}
-export async function transitionConfigurationPackageImportRequest(
-  sessionId: string,
-  requestId: string,
-  action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel',
-  expectedVersion: number,
-  note?: string,
-): Promise<ConfigurationPackageImportRequestDetail> {
-  return clinicianPost(sessionId, `/api/administration/configuration-package-import-requests/${requestId}/${action}`, {
-    note: note ?? null,
-    expectedVersion,
-  })
-}
-export async function getConfigurationPackageImportRequests(
-  sessionId: string,
-  input: { status?: string; kind?: string; offset?: number; limit?: number } = {},
-): Promise<{ requests: ConfigurationPackageImportRequest[]; total: number; offset: number; limit: number }> {
-  const query = new URLSearchParams()
-  if (input.status) query.set('status', input.status)
-  if (input.kind) query.set('kind', input.kind)
-  if (input.offset !== undefined) query.set('offset', String(input.offset))
-  if (input.limit !== undefined) query.set('limit', String(input.limit))
-  return clinicianGet(sessionId, `/api/administration/configuration-package-import-requests?${query}`)
-}
-export async function getConfigurationPackageImportRequest(sessionId: string, requestId: string): Promise<ConfigurationPackageImportRequestDetail> {
-  return clinicianGet(sessionId, `/api/administration/configuration-package-import-requests/${requestId}`)
-}
-export async function createConfigurationPackageCompensatingRollback(sessionId: string, requestId: string, reason: string): Promise<ConfigurationPackageImportRequestDetail> {
-  return clinicianPost(sessionId, `/api/administration/configuration-package-import-requests/${requestId}/compensating-rollback`, { note: reason })
 }

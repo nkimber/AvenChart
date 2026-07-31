@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using System.Diagnostics;
 using System.Text;
 using System.Threading.RateLimiting;
@@ -126,6 +129,8 @@ builder.Services.AddScoped<PatientDisclosureRepository>();
 builder.Services.AddScoped<PatientSdohRepository>();
 builder.Services.AddScoped<InventoryRepository>();
 builder.Services.AddScoped<InventoryCostPolicyRepository>();
+builder.Services.AddScoped<InventoryAccountingIntegrationRepository>();
+builder.Services.AddScoped<InventoryReplenishmentPolicyRepository>();
 builder.Services.AddScoped<InventoryValuationRepository>();
 builder.Services.AddScoped<FlowBoardRepository>();
 builder.Services.AddScoped<FhirRepository>();
@@ -874,7 +879,6 @@ clinicalWorkflows.MapGet("/assignees", async (
         CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetAssigneesAsync(cancellationToken)))
     .WithName("GetClinicalWorkflowAssignees");
-
 clinicalWorkflows.MapGet("/referral-work-queue", async (
         ReferralRepository repository,
         string? status,
@@ -3384,10 +3388,10 @@ messages.MapGet("/assignees", async (
 messages.MapGet("/{patientId}", async (
         MessageRepository repository,
         string patientId,
-        bool? includeArchived,
+        bool includeArchived,
         CancellationToken cancellationToken) =>
     {
-        var patientMessages = await repository.GetForPatientAsync(patientId, cancellationToken, includeArchived ?? false);
+        var patientMessages = await repository.GetForPatientAsync(patientId, cancellationToken, includeArchived);
         return patientMessages is null ? Results.NotFound() : Results.Ok(patientMessages);
     })
     .WithName("GetPatientMessages");
@@ -3583,19 +3587,11 @@ messages.MapPost("/{messageId}/restore", async (MessageRepository repository, Au
 
 messages.MapPut("/{messageId}/reply", async (
         MessageRepository repository,
-        AuthRepository authRepository,
-        HttpContext httpContext,
         string messageId,
         PatientMessageReplyRequest request,
         CancellationToken cancellationToken) =>
     {
-        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        if (!string.Equals(request.AssignedTo?.Trim(), session.Username, StringComparison.OrdinalIgnoreCase))
-        {
-            return Results.BadRequest(new { error = "A staff reply must remain assigned to the authenticated user." });
-        }
-
-        var mutation = await repository.ReplyAsync(messageId, request, session.Username, cancellationToken);
+        var mutation = await repository.ReplyAsync(messageId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
     .WithName("ReplyToPatientMessage")
@@ -5361,13 +5357,10 @@ procedures.MapPut("/reports/bulk-sign", async (
 
 procedures.MapPost("/specimens", async (
         ProcedureRepository repository,
-        AuthRepository authRepository,
-        HttpContext httpContext,
         ProcedureSpecimenCreateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var mutation = await repository.CreateSpecimenAsync(request, session.Username, cancellationToken);
+        var mutation = await repository.CreateSpecimenAsync(request, cancellationToken);
         return mutation is null
             ? Results.BadRequest("Procedure specimen could not be created from the supplied order and specimen details.")
             : Results.Created($"/api/procedures/specimens/{mutation.Id}", mutation);
@@ -5375,41 +5368,32 @@ procedures.MapPost("/specimens", async (
     .WithName("CreateProcedureSpecimen")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "addonly"));
 
-procedures.MapPut("/specimens/{specimenId:int}/transition", async (
+procedures.MapPut("/specimens/{specimenId:int}/lifecycle", async (
         ProcedureRepository repository,
         AuthRepository authRepository,
         HttpContext httpContext,
         int specimenId,
-        ProcedureSpecimenTransitionRequest request,
+        ProcedureSpecimenLifecycleTransitionRequest request,
         CancellationToken cancellationToken) =>
     {
-        try
-        {
-            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-            var mutation = await repository.TransitionSpecimenAsync(
-                specimenId,
-                request,
-                session.Username,
-                cancellationToken);
-            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
-        }
-        catch (ProcedureSpecimenLifecycleConflictException exception)
-        {
-            return Results.Conflict(new
-            {
-                error = exception.Message,
-                expectedVersion = exception.ExpectedVersion,
-                currentVersion = exception.CurrentVersion,
-                currentStatus = exception.CurrentStatus
-            });
-        }
-        catch (ArgumentException exception)
-        {
-            return Results.BadRequest(new { error = exception.Message });
-        }
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.TransitionSpecimenLifecycleAsync(specimenId, request, session.Username, cancellationToken);
+        return mutation is null
+            ? Results.Conflict(new { error = "The specimen lifecycle transition is no longer valid at the supplied version." })
+            : Results.Ok(mutation);
     })
-    .WithName("TransitionProcedureSpecimen")
+    .WithName("TransitionProcedureSpecimenLifecycle")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
+
+procedures.MapGet("/specimens/{specimenId:int}/lifecycle-history", async (
+        ProcedureRepository repository,
+        int specimenId,
+        CancellationToken cancellationToken) =>
+    (await repository.GetSpecimenLifecycleHistoryAsync(specimenId, cancellationToken)) is { } history
+        ? Results.Ok(history)
+        : Results.NotFound())
+    .WithName("GetProcedureSpecimenLifecycleHistory")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "view"));
 
 procedures.MapPost("/results", async (
         ProcedureRepository repository,
@@ -5426,32 +5410,12 @@ procedures.MapPost("/results", async (
 
 procedures.MapPut("/results/{resultId:int}", async (
         ProcedureRepository repository,
-        AuthRepository authRepository,
-        HttpContext httpContext,
         int resultId,
         ProcedureResultUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        try
-        {
-            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-            var mutation = await repository.UpdateResultAsync(resultId, request, session.Username, cancellationToken);
-            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
-        }
-        catch (ProcedureResultCorrectionConflictException exception)
-        {
-            return Results.Conflict(new
-            {
-                error = exception.Message,
-                expectedVersion = exception.ExpectedVersion,
-                currentVersion = exception.CurrentVersion,
-                reviewStatus = exception.ReviewStatus
-            });
-        }
-        catch (ArgumentException exception)
-        {
-            return Results.BadRequest(new { error = exception.Message });
-        }
+        var mutation = await repository.UpdateResultAsync(resultId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
     .WithName("UpdateProcedureResult")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
@@ -6752,6 +6716,57 @@ administration.MapPost("/configuration-packages/dry-run", async (ConfigurationPa
     var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
     return Results.Ok(await repository.DryRunConfigurationPackageAsync(request, session.Username, cancellationToken));
 }).WithName("DryRunConfigurationPackage");
+administration.MapGet("/configuration-package-import-requests", async (string? status, string? kind, int? offset, int? limit, AdministrationRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetConfigurationPackageImportRequestsAsync(status, kind, offset ?? 0, limit ?? 12, cancellationToken)); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("GetConfigurationPackageImportRequests");
+administration.MapGet("/configuration-package-import-requests/{requestId:guid}", async (Guid requestId, AdministrationRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetConfigurationPackageImportRequestAsync(requestId, cancellationToken)); }
+    catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); }
+}).WithName("GetConfigurationPackageImportRequest");
+administration.MapPost("/configuration-package-import-requests", async (ConfigurationPackageImportRequestCreateRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var response = await repository.CreateConfigurationPackageImportRequestAsync(request, session.Username, cancellationToken);
+        return Results.Created($"/api/administration/configuration-package-import-requests/{response.Request.RequestId}", response);
+    }
+    catch (ConfigurationPackageImportRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("CreateConfigurationPackageImportRequest");
+administration.MapPost("/configuration-package-import-requests/{requestId:guid}/compensating-rollback", async (Guid requestId, ConfigurationPackageImportRequestDecisionRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var response = await repository.CreateConfigurationPackageCompensatingRollbackAsync(requestId, request.Note ?? string.Empty, session.Username, cancellationToken);
+        return Results.Created($"/api/administration/configuration-package-import-requests/{response.Request.RequestId}", response);
+    }
+    catch (ConfigurationPackageImportRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("CreateConfigurationPackageCompensatingRollback");
+administration.MapPost("/configuration-package-import-requests/{requestId:guid}/{action}", async (Guid requestId, string action, ConfigurationPackageImportRequestDecisionRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var response = action switch
+        {
+            "submit" => await repository.SubmitConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
+            "approve" => await repository.ApproveConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
+            "reject" => await repository.RejectConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
+            "activate" => await repository.ActivateConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
+            "cancel" => await repository.CancelConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
+            _ => throw new ArgumentException("The requested import-request action is not supported."),
+        };
+        return Results.Ok(response);
+    }
+    catch (ConfigurationPackageImportRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("TransitionConfigurationPackageImportRequest");
 administration.MapGet("/practice-setting-delegations", async (AdministrationRepository repository, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetPracticeSettingDelegationsAsync(cancellationToken))).WithName("GetPracticeSettingDelegations");
 administration.MapPost("/practice-setting-delegations", async (AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, PracticeSettingDelegationCreateRequest request, CancellationToken cancellationToken) =>
@@ -8739,43 +8754,3 @@ static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
     var adapter = httpContext.RequestServices.GetRequiredService<IStaffIdentityAdapter>();
     return await adapter.ResolveAsync(httpContext, cancellationToken);
 }
-administration.MapGet("/configuration-package-import-requests/{requestId:guid}", async (Guid requestId, AdministrationRepository repository, CancellationToken cancellationToken) =>
-{
-    try { return Results.Ok(await repository.GetConfigurationPackageImportRequestAsync(requestId, cancellationToken)); }
-    catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); }
-}).WithName("GetConfigurationPackageImportRequest");
-administration.MapPost("/configuration-package-import-requests", async (ConfigurationPackageImportRequestCreateRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var response = await repository.CreateConfigurationPackageImportRequestAsync(request, session.Username, cancellationToken);
-        return Results.Created($"/api/administration/configuration-package-import-requests/{response.Request.RequestId}", response);
-    }
-    catch (ConfigurationPackageImportRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
-    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
-}).WithName("CreateConfigurationPackageImportRequest");
-administration.MapPost("/configuration-package-import-requests/{requestId:guid}/{action}", async (Guid requestId, string action, ConfigurationPackageImportRequestDecisionRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var response = action switch
-        {
-            "submit" => await repository.SubmitConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
-            "approve" => await repository.ApproveConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
-            "reject" => await repository.RejectConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
-            "activate" => await repository.ActivateConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
-            "cancel" => await repository.CancelConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
-            _ => throw new ArgumentException("The requested import-request action is not supported."),
-        };
-        return Results.Ok(response);
-    }
-    catch (ConfigurationPackageImportRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
-    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
-}).WithName("TransitionConfigurationPackageImportRequest");
-administration.MapGet("/configuration-package-import-requests", async (string? status, string? kind, int? offset, int? limit, AdministrationRepository repository, CancellationToken cancellationToken) =>
-{
-    try { return Results.Ok(await repository.GetConfigurationPackageImportRequestsAsync(status, kind, offset ?? 0, limit ?? 12, cancellationToken)); }
-    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
-}).WithName("GetConfigurationPackageImportRequests");

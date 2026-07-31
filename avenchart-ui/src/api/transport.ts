@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 export const apiBaseUrl =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5001";
 

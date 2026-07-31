@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Tiny session-storage helpers. Two independent session "slots" so a
 // clinician sign-in and a patient-portal sign-in never collide.
 

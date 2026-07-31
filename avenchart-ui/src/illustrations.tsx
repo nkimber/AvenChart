@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Hand-crafted, original flat-style decorative illustrations in the spirit of
 // the "Calm Clinical" direction (no external assets fetched — kept dependency-free
 // and license-free by drawing simple geometric shapes directly as SVG).

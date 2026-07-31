@@ -1,3 +1,6 @@
+/* SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
 /* Dreams EMR design tokens — indigo-navy professional palette. */
 :root {
   --bg: #f9fbfe;
@@ -756,6 +759,54 @@ a {
 
 .auth-card-wide {
   max-width: 640px;
+}
+
+.legal-attribution {
+  margin-top: 24px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--teal) 28%, var(--border));
+  border-left: 4px solid var(--teal);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--teal-soft) 58%, var(--surface));
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.legal-attribution p {
+  margin: 0;
+}
+
+.legal-attribution .legal-attribution-label {
+  margin-bottom: 5px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.legal-attribution-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 9px;
+}
+
+.legal-attribution-links a {
+  color: var(--teal-deep);
+  font-weight: 650;
+  text-underline-offset: 3px;
+}
+
+.legal-attribution-links a:hover {
+  color: var(--teal);
+}
+
+.legal-attribution-links a:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--teal);
+  outline-offset: 3px;
 }
 
 /* Gradient dashboard hero banner (landing screens) */
@@ -2196,43 +2247,6 @@ a {
 .lab-report-detail h3 {
   margin: 0;
   font-size: 15px;
-}
-
-.cl-specimen-list {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.cl-specimen-card {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-subtle);
-}
-
-.cl-specimen-card h3,
-.cl-specimen-card p {
-  margin: 0;
-}
-
-.cl-specimen-transition {
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-  border-left: 3px solid var(--primary);
-  background: var(--surface);
-}
-
-.cl-specimen-history {
-  display: grid;
-  gap: 6px;
-  margin: 10px 0 0;
-  padding-left: 22px;
-  color: var(--text-muted);
-  font-size: 12px;
 }
 
 .cl-table-wrap {

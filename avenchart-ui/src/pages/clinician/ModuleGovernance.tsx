@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { useEffect, useState } from 'react'
 import { createModuleChangeRequest, getModuleCatalog, getModuleChangeRequest, getModuleChangeRequests, transitionModuleChangeRequest, type GovernanceStatus, type ModuleCatalogItem, type ModuleChangeRequest, type ModuleChangeRequestDetail } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'

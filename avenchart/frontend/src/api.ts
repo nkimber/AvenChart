@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 export type PatientActivityCounts = {
   appointments: number
   encounters: number
@@ -1736,9 +1739,6 @@ export type ProcedureResultVersionItem = {
   abnormal?: string | null
   resultDate: string
   resultStatus?: string | null
-  correctionActor?: string | null
-  correctionReason?: string | null
-  resultingVersion?: number | null
 }
 
 export type ProcedureReportItem = {
@@ -2012,24 +2012,6 @@ export type ProcedureReportReviewQueueFilters = {
   limit?: number
 }
 
-export type ProcedureSpecimenEventItem = {
-  eventId: number
-  action: string
-  previousStatus?: string | null
-  currentStatus: string
-  actor: string
-  reason: string
-  expectedVersion: number
-  resultingVersion: number
-  specimenIdentifier?: string | null
-  accessionIdentifier?: string | null
-  collectedDate?: string | null
-  conditionCode?: string | null
-  specimenCondition?: string | null
-  comments?: string | null
-  occurredAt: string
-}
-
 export type ProcedureSpecimenItem = {
   id: number
   specimenIdentifier?: string | null
@@ -2046,10 +2028,6 @@ export type ProcedureSpecimenItem = {
   conditionCode?: string | null
   specimenCondition?: string | null
   comments?: string | null
-  specimenStatus: string
-  specimenVersion: number
-  historyCount: number
-  history: ProcedureSpecimenEventItem[]
 }
 
 export type ProcedureOrderItem = {
@@ -2209,8 +2187,6 @@ export type ProcedureResultUpdateInput = {
   range: string
   abnormal: string
   status: string
-  expectedVersion: number
-  reason: string
 }
 
 export type ProcedureMutationResponse = {

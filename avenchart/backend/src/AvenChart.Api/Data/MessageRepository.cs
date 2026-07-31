@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using System.Data.Common;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -467,7 +470,7 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
             message.CommandText = """
                 select assignment_version
                 from messages
-                where id = @id;
+                where id = @id and deleted = 0;
                 """;
             message.Parameters.AddWithValue("id", messageId);
             currentVersion = (int?)await message.ExecuteScalarAsync(cancellationToken);
@@ -733,7 +736,6 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
     public async Task<PatientMessageMutationResponse?> ReplyAsync(
         string messageId,
         PatientMessageReplyRequest request,
-        string actor,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(messageId)
@@ -744,19 +746,16 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         }
 
         var assignedTo = request.AssignedTo.Trim();
-        var replyLine = $"{DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)} ({actor} to {assignedTo}) {request.Body.Trim()}";
+        var replyLine = $"{DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)} (admin to {assignedTo}) {request.Body.Trim()}";
         string? patientId = null;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
-        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
         {
-            var actorStaffId = await GetActiveStaffIdAsync(connection, transaction, actor, cancellationToken);
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
             command.CommandText = """
                 update messages
                 set body = concat(coalesce(body, ''), E'\n', @replyLine),
                     assigned_to = @assignedTo,
-                    updated_by = @updatedBy,
+                    updated_by = 1,
                     updated_at = now()
                 where id = @id and deleted = 0
                 returning patient_id;
@@ -764,9 +763,7 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
             command.Parameters.AddWithValue("id", messageId);
             command.Parameters.AddWithValue("replyLine", replyLine);
             command.Parameters.AddWithValue("assignedTo", assignedTo);
-            command.Parameters.AddWithValue("updatedBy", (object?)actorStaffId ?? DBNull.Value);
             patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
         }
 
         if (patientId is null)
@@ -891,32 +888,7 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
 
     public async Task<PatientMessageEscalationHistoryResponse?> GetEscalationHistoryAsync(string messageId, CancellationToken cancellationToken)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select event_id, action, reason, actor, occurred_at
-            from message_escalation_events
-            where message_id = @id
-            order by occurred_at desc, event_id desc;
-            """;
-        command.Parameters.AddWithValue("id", messageId);
-        var events = new List<PatientMessageEscalationEvent>();
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-        {
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                events.Add(new(
-                    reader.GetInt64(0),
-                    reader.GetString(1),
-                    reader.GetString(2),
-                    reader.GetString(3),
-                    reader.GetFieldValue<DateTimeOffset>(4).ToString("O")));
-            }
-        }
-
-        return events.Count == 0 && !await MessageExistsAsync(connection, messageId, cancellationToken)
-            ? null
-            : new(messageId, events);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand(); command.CommandText="""select event_id,action,reason,actor,occurred_at from message_escalation_events where message_id=@id order by occurred_at desc,event_id desc;""";command.Parameters.AddWithValue("id",messageId);var events=new List<PatientMessageEscalationEvent>();await using var reader=await command.ExecuteReaderAsync(cancellationToken);while(await reader.ReadAsync(cancellationToken))events.Add(new(reader.GetInt64(0),reader.GetString(1),reader.GetString(2),reader.GetString(3),reader.GetFieldValue<DateTimeOffset>(4).ToString("O")));return events.Count==0&&!await MessageExistsAsync(connection,messageId,cancellationToken)?null:new(messageId,events);
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)

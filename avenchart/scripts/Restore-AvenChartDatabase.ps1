@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 param([Parameter(Mandatory=$true)][string]$SnapshotPath,[switch]$Force,[int]$PostgresWaitSeconds = 90)
 $ErrorActionPreference = 'Stop'
 if (-not $Force) { throw 'Restore is destructive. Re-run with -Force after verifying the snapshot path.' }

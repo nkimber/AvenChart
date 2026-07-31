@@ -1,8 +1,12 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ShieldCheck, Stethoscope } from 'lucide-react'
 import { login } from '../api.ts'
 import { saveClinicianSession } from '../auth/session.ts'
+import LegalAttribution from '../components/LegalAttribution.tsx'
 import { ClinicianIllustration } from '../illustrations.tsx'
 
 export default function ClinicianLogin() {
@@ -102,6 +106,7 @@ export default function ClinicianLogin() {
               {status === 'checking' ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+          <LegalAttribution />
         </div>
       </div>
     </div>

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import DOMPurify from 'dompurify'
 import {
@@ -6645,6 +6648,36 @@ const modernChooserStack = [
   },
 ]
 
+function LegalAttribution() {
+  return (
+    <aside className="legal-attribution" aria-label="Open source license and original project attribution">
+      <p className="legal-attribution-label">Open source &amp; original project</p>
+      <p>
+        This independent modernization experiment is licensed under the GNU GPL v3 or later and was developed with
+        reference to the original Legacy EHR project. It is not affiliated with or endorsed by the Legacy EHR Foundation.
+      </p>
+      <nav className="legal-attribution-links" aria-label="License and original Legacy EHR links">
+        <a
+          href="/LICENSE.txt"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Software license
+        </a>
+        <a href="https://github.com/nkimber/Legacy EHR-Legacy" target="_blank" rel="noreferrer">
+          Modernized source
+        </a>
+        <a href="https://www.open-emr.org/" target="_blank" rel="noreferrer">
+          Original Legacy EHR project
+        </a>
+        <a href="https://github.com/legacy-ehr/legacy-ehr" target="_blank" rel="noreferrer">
+          Original source code
+        </a>
+      </nav>
+    </aside>
+  )
+}
+
 function EntryChooserPage({
   onSelectStaff,
   onSelectPortal,
@@ -6683,6 +6716,7 @@ function EntryChooserPage({
           </button>
         </div>
         <p className="entry-footnote">Created by Neil Kimber using the project team in June 2026.</p>
+        <LegalAttribution />
       </section>
     </main>
   )
@@ -6780,6 +6814,7 @@ function StaffLoginPage({
             {message}
           </div>
         )}
+        <LegalAttribution />
       </form>
     </main>
   )
@@ -7378,6 +7413,7 @@ function PatientPortalWorkspace({
               {message}
             </div>
           )}
+          {!authenticated && <LegalAttribution />}
         </form>
 
         <InfoPanel title="Portal Session" icon={KeyRound}>
@@ -15194,7 +15230,6 @@ function EncounterProcedureResultCard({
   const [resultRange, setResultRange] = useState(result.range ?? '')
   const [abnormalFlag, setAbnormalFlag] = useState(result.abnormal ?? '')
   const [resultStatus, setResultStatus] = useState(result.resultStatus ?? 'corrected')
-  const [correctionReason, setCorrectionReason] = useState('')
   const [correctionStatus, setCorrectionStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
@@ -15206,7 +15241,6 @@ function EncounterProcedureResultCard({
     setResultRange(result.range ?? '')
     setAbnormalFlag(result.abnormal ?? '')
     setResultStatus(result.resultStatus ?? 'corrected')
-    setCorrectionReason('')
     setCorrectionStatus('idle')
   }, [result])
 
@@ -15224,8 +15258,6 @@ function EncounterProcedureResultCard({
         range: resultRange,
         abnormal: abnormalFlag,
         status: resultStatus,
-        expectedVersion: result.currentVersion,
-        reason: correctionReason.trim(),
       })
       setCorrectionStatus('saved')
       setIsCorrecting(false)
@@ -15335,23 +15367,9 @@ function EncounterProcedureResultCard({
                 aria-label="Encounter procedure corrected result abnormal flag"
               />
             </label>
-            <label className="filter-field procedure-order-name-field">
-              <span>Correction reason</span>
-              <input
-                value={correctionReason}
-                onChange={(event) => setCorrectionReason(event.target.value)}
-                aria-label="Encounter procedure result correction reason"
-                maxLength={500}
-                required
-              />
-            </label>
           </div>
           <div className="detail-actions compact-actions">
-            <button
-              className="icon-text-button primary"
-              type="submit"
-              disabled={correctionStatus === 'saving' || !correctionReason.trim()}
-            >
+            <button className="icon-text-button primary" type="submit" disabled={correctionStatus === 'saving'}>
               <Check size={15} />
               <span>{correctionStatus === 'saving' ? 'Saving' : 'Save Correction'}</span>
             </button>
@@ -25409,9 +25427,7 @@ function ProcedureSpecimenList({ specimens }: { specimens: ProcedureSpecimenItem
           <article className="procedure-specimen-card" key={specimen.id}>
             <div className="message-item-header">
               <strong>{title}</strong>
-              <span className="status-tag">
-                {specimen.specimenStatus || 'collected'} · v{specimen.specimenVersion || 1}
-              </span>
+              <span className="status-tag">{specimen.specimenCondition || specimen.specimenType || 'Specimen'}</span>
             </div>
             <div className="procedure-specimen-meta">
               <span>{specimen.accessionIdentifier ? `Accession ${specimen.accessionIdentifier}` : 'No accession'}</span>
@@ -25422,30 +25438,6 @@ function ProcedureSpecimenList({ specimens }: { specimens: ProcedureSpecimenItem
               <span>{volume || 'No volume'}</span>
             </div>
             {specimen.comments && <p className="procedure-scheduled-note">{specimen.comments}</p>}
-            <details className="procedure-result-version-history">
-              <summary>
-                {specimen.historyCount || specimen.history.length} lifecycle{' '}
-                {(specimen.historyCount || specimen.history.length) === 1 ? 'event' : 'events'}
-              </summary>
-              {specimen.history.length === 0 ? (
-                <p>History is not loaded in this view.</p>
-              ) : (
-                <ul>
-                  {specimen.history.map((event) => (
-                    <li key={event.eventId}>
-                      <strong>{event.action}</strong>
-                      {' · '}
-                      {event.previousStatus ? `${event.previousStatus} → ${event.currentStatus}` : event.currentStatus}
-                      {' · '}
-                      {event.actor}
-                      {' · '}
-                      {event.reason}
-                      {' · '}v{event.resultingVersion}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </details>
           </article>
         )
       })}
@@ -25801,7 +25793,6 @@ function ProcedureResultCard({
   const [resultRange, setResultRange] = useState(result.range ?? '')
   const [abnormalFlag, setAbnormalFlag] = useState(result.abnormal ?? '')
   const [resultStatus, setResultStatus] = useState(result.resultStatus ?? 'corrected')
-  const [correctionReason, setCorrectionReason] = useState('')
   const [correctionStatus, setCorrectionStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
@@ -25813,7 +25804,6 @@ function ProcedureResultCard({
     setResultRange(result.range ?? '')
     setAbnormalFlag(result.abnormal ?? '')
     setResultStatus(result.resultStatus ?? 'corrected')
-    setCorrectionReason('')
     setCorrectionStatus('idle')
   }, [result])
 
@@ -25831,8 +25821,6 @@ function ProcedureResultCard({
         range: resultRange,
         abnormal: abnormalFlag,
         status: resultStatus,
-        expectedVersion: result.currentVersion,
-        reason: correctionReason.trim(),
       })
       setCorrectionStatus('saved')
       setIsCorrecting(false)
@@ -25875,9 +25863,6 @@ function ProcedureResultCard({
                 {version.text || 'Result'}: {version.result || 'No value'} {version.units || ''}
                 {version.range ? ` / Range ${version.range}` : ''}
                 {version.abnormal ? ` / ${version.abnormal}` : ''}
-                {version.correctionActor ? ` / Corrected by ${version.correctionActor}` : ''}
-                {version.correctionReason ? ` / ${version.correctionReason}` : ''}
-                {version.resultingVersion ? ` / Became Version ${version.resultingVersion}` : ''}
               </span>
             </div>
           ))}
@@ -25975,23 +25960,9 @@ function ProcedureResultCard({
                 aria-label="Procedure corrected result abnormal flag"
               />
             </label>
-            <label className="filter-field procedure-order-name-field">
-              <span>Correction reason</span>
-              <input
-                value={correctionReason}
-                onChange={(event) => setCorrectionReason(event.target.value)}
-                aria-label="Procedure result correction reason"
-                maxLength={500}
-                required
-              />
-            </label>
           </div>
           <div className="detail-actions compact-actions">
-            <button
-              className="icon-text-button primary"
-              type="submit"
-              disabled={correctionStatus === 'saving' || !correctionReason.trim()}
-            >
+            <button className="icon-text-button primary" type="submit" disabled={correctionStatus === 'saving'}>
               <Check size={15} />
               <span>{correctionStatus === 'saving' ? 'Saving' : 'Save Correction'}</span>
             </button>
