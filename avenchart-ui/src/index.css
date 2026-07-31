@@ -7,7 +7,7 @@
   --surface: #ffffff;
   --border: #e6eaed;
   --text: #1b2559;
-  --text-muted: #6c757d;
+  --text-muted: #5f6872;
   --teal: #2e37a4;
   --teal-soft: #eef0fb;
   --coral: #dc3545;
@@ -2936,6 +2936,11 @@ a {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+}
+
+.clinician-main:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: -2px;
 }
 
 /* ─── Page container ───────────────────────────────────────────────────────── */

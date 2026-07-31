@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-export const clinicianRoutes = [
+export const clinicianNavigationRoutes = [
   "/clinician/dashboard",
   "/clinician/schedule",
   "/clinician/calendar",
@@ -9,6 +9,8 @@ export const clinicianRoutes = [
   "/clinician/scheduling",
   "/clinician/patients",
   "/clinician/labs",
+  "/clinician/lab-directory",
+  "/clinician/lab-catalog",
   "/clinician/messages",
   "/clinician/office-notes",
   "/clinician/address-book",
@@ -21,6 +23,8 @@ export const clinicianRoutes = [
   "/clinician/chart-tracker",
   "/clinician/documents",
   "/clinician/document-ocr",
+  "/clinician/referrals",
+  "/clinician/authorizations",
   "/clinician/document-templates",
   "/clinician/duplicate-review",
   "/clinician/renewals",
@@ -30,7 +34,12 @@ export const clinicianRoutes = [
   "/clinician/inventory",
   "/clinician/admin",
   "/clinician/experience",
+] as const;
+
+export const clinicianRoutes = [
+  ...clinicianNavigationRoutes,
   "/clinician/encounters/new",
+  "/clinician/patients/new",
 ] as const;
 
 export const patientChartRoutes = [
@@ -38,6 +47,7 @@ export const patientChartRoutes = [
   "chart",
   "timeline",
   "encounters",
+  "encounters/new",
   "documents",
   "labs",
   "appointments",
@@ -45,6 +55,7 @@ export const patientChartRoutes = [
   "referrals",
   "authorizations",
   "sdoh",
+  "forms",
   "print",
 ].map((section) => `/clinician/patients/MOD-PAT-0004/${section}`);
 

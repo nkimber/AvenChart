@@ -497,7 +497,7 @@ test.describe("material workflows", () => {
     ).toBeDisabled();
   });
 
-  test("inventory medication links expose catalog, current mapping, and unmapped boundaries", async ({
+  test("inventory medication links expose catalog, current mapping, audited history, and reasoned unlink boundaries", async ({
     page,
   }) => {
     await signInClinician(page);
@@ -510,7 +510,7 @@ test.describe("material workflows", () => {
       timeout: 15_000,
     });
     await expect(links).toContainText(
-      "does not expose link-history review or unlink contracts yet",
+      "The target records immutable link audit rows",
     );
     await expect(links.getByLabel("Link inventory item")).toBeVisible();
     await links.getByLabel("Link inventory item").selectOption({ index: 1 });
@@ -518,6 +518,17 @@ test.describe("material workflows", () => {
     await expect(links.getByLabel("Local RXCUI medication")).toBeVisible();
     await expect(
       links.getByRole("button", { name: "Save medication link" }),
+    ).toBeDisabled();
+    await expect(
+      links.getByRole("button", { name: "Review link history" }),
+    ).toBeVisible();
+
+    await links
+      .getByLabel("Link inventory item")
+      .selectOption({ label: "MED-MET-500 / Metformin 500 mg tablet / RXCUI 860975" });
+    await expect(links.getByLabel("Reason to unlink this mapping")).toBeVisible();
+    await expect(
+      links.getByRole("button", { name: "Unlink with reason" }),
     ).toBeDisabled();
     await expect(links.getByLabel("Search inventory mappings")).toBeVisible();
     await expect(links.getByRole("table")).toBeVisible();
@@ -608,23 +619,34 @@ test.describe("material workflows", () => {
     await page.goto("/clinician/inventory");
 
     const replenishment = page
-      .getByRole("heading", { name: "Replenishment planning" })
+      .getByRole("heading", { name: "Governed replenishment planning" })
       .locator("xpath=ancestor::section");
+    const candidateCount = replenishment.getByText(/^\d+ candidates?$/);
+    await expect(candidateCount).toBeVisible({ timeout: 15_000 });
     await expect(
-      replenishment.getByText(/^\d+ candidates?$/),
-    ).toBeVisible({ timeout: 15_000 });
-    await expect(
-      replenishment.getByText("Candidate rule", { exact: true }),
+      replenishment.getByText("Recommendation formula", { exact: true }),
     ).toBeVisible();
     await expect(replenishment).toContainText(
-      "Aggregate on hand ≤ reorder point",
+      "Round up policy target or reorder plus safety stock to pack size",
     );
     await expect(
-      replenishment.getByLabel("Search replenishment candidates"),
+      replenishment.getByLabel("Search governed candidates"),
     ).toBeVisible();
-    await expect(replenishment.getByRole("table")).toBeVisible();
+    const candidateTotal = Number.parseInt(
+      (await candidateCount.textContent()) ?? "0",
+      10,
+    );
+    if (candidateTotal > 0) {
+      await expect(replenishment.getByRole("table")).toBeVisible();
+    } else {
+      await expect(
+        replenishment.getByText(
+          "No approved, effective replenishment policy is currently at or below its reorder point.",
+        ),
+      ).toBeVisible();
+    }
     await expect(
-      replenishment.getByText("Requisition creation is policy-gated"),
+      replenishment.getByText(/cannot reserve stock, create or\s+prefill a requisition/),
     ).toBeVisible();
     await expect(
       replenishment.getByRole("button", { name: /create requisition/i }),

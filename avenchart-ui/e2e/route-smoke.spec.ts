@@ -4,6 +4,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./support/fixtures.ts";
 import {
+  clinicianNavigationRoutes,
   clinicianRoutes,
   patientChartRoutes,
   portalRoutes,
@@ -36,11 +37,16 @@ async function expectAuthenticatedRoute(
 async function signOutClinician(page: Page) {
   const openNavigation = page.getByRole("button", { name: "Open navigation" });
   if (await openNavigation.isVisible()) {
-    await openNavigation.click();
-    await page
-      .getByRole("dialog", { name: "Main navigation" })
-      .getByRole("button", { name: "Sign out" })
-      .click();
+    const drawer = page.getByRole("dialog", { name: "Main navigation" });
+    await expect(async () => {
+      if (!(await drawer.isVisible())) {
+        await openNavigation.click();
+      }
+      await expect(drawer).toBeVisible();
+      await drawer.getByRole("button", { name: "Sign out" }).click({
+        timeout: 5_000,
+      });
+    }).toPass({ timeout: 15_000 });
   } else {
     await page
       .locator(".clinician-sidebar")
@@ -52,6 +58,27 @@ async function signOutClinician(page: Page) {
 
 test.describe("route smoke", () => {
   test.describe.configure({ timeout: 420_000 });
+
+  test("entry chooser renders without page errors", async ({ page }) => {
+    const pageErrors: Error[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error));
+
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { name: "Choose how you'd like to sign in" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /Professional sign-in/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /Patient portal/ }),
+    ).toBeVisible();
+
+    expect(
+      pageErrors,
+      pageErrors.map((error) => error.stack ?? error.message).join("\n\n"),
+    ).toEqual([]);
+  });
 
   test("clinician navigation remains usable at every supported width", async ({
     page,
@@ -80,7 +107,7 @@ test.describe("route smoke", () => {
               links.map((link) => new URL((link as HTMLAnchorElement).href).pathname),
             );
           expect(destinations).toEqual(
-            clinicianRoutes.filter((path) => path !== "/clinician/encounters/new"),
+            clinicianNavigationRoutes,
           );
           await expect(
             drawer.getByRole("link", { name: "Patients" }),

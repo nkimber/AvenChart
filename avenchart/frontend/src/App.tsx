@@ -6880,6 +6880,9 @@ function moduleEyebrow(moduleId: ModuleId) {
   if (moduleId === 'documents') {
     return 'Patient Files'
   }
+  if (moduleId === 'inventory') {
+    return 'Inventory Management'
+  }
   if (moduleId === 'reports') {
     return 'Reports And Exports'
   }
@@ -6916,6 +6919,9 @@ function moduleTitle(moduleId: ModuleId) {
   }
   if (moduleId === 'documents') {
     return 'Documents'
+  }
+  if (moduleId === 'inventory') {
+    return 'Inventory'
   }
   if (moduleId === 'reports') {
     return 'Reports'

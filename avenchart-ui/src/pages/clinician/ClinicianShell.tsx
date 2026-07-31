@@ -481,7 +481,7 @@ export default function ClinicianShell() {
         </>
       )}
 
-      <main className="clinician-main" id="main-content">
+      <main className="clinician-main" id="main-content" tabIndex={0}>
         <Outlet context={context} />
       </main>
     </div>
