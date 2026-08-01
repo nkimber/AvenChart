@@ -1,0 +1,10 @@
+*
+!backend/
+!backend/src/
+!backend/src/AvenChart.Api/
+!backend/src/AvenChart.Api/**
+backend/src/AvenChart.Api/bin/
+backend/src/AvenChart.Api/obj/
+!database/
+!database/migrations/
+!database/migrations/**

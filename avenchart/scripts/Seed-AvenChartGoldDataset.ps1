@@ -11,8 +11,11 @@ $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ArtifactsRoot = Join-Path $SolutionRoot "artifacts"
 $SqlPath = Join-Path $ArtifactsRoot "postgres\seed-gold.sql"
 $ResultPath = Join-Path $ArtifactsRoot "latest-modernized-seed-result.json"
-$SeedLock = [System.Threading.Mutex]::new($false, "Global\AvenChartGoldSeed")
+$SeedLock = [System.Threading.Mutex]::new($false, "Global\AvenChartSchemaMaintenance")
 $SeedLockHeld = $false
+$LocationPushed = $false
+$SeedCompleted = $false
+$ServicesToRestart = @()
 
 try {
     $SeedLockHeld = $SeedLock.WaitOne([TimeSpan]::FromMinutes(15))
@@ -21,7 +24,20 @@ try {
     }
 
     Push-Location $SolutionRoot
+    $LocationPushed = $true
     New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
+
+    $runningServices = @(docker compose ps --services --filter status=running)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not inspect the modernized service state before reset."
+    }
+    $ServicesToRestart = @(@('api', 'frontend') | Where-Object { $_ -in $runningServices })
+    if ($ServicesToRestart.Count -gt 0) {
+        docker compose stop frontend api
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not stop the API and frontend before the database reset."
+        }
+    }
 
     node .\scripts\generate-postgres-seed.mjs
     if ($LASTEXITCODE -ne 0) {
@@ -106,11 +122,23 @@ delete from schema_migrations;
     }
 
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
+    $SeedCompleted = $true
+
+    if ($ServicesToRestart.Count -gt 0) {
+        docker compose up -d @ServicesToRestart
+        if ($LASTEXITCODE -ne 0) {
+            throw "The gold dataset was seeded, but the previously running application services could not be restarted."
+        }
+    }
+
     Write-Host "Modernized gold dataset seed complete: $ResultPath"
 }
 finally {
-    if ((Get-Location).Path -eq $SolutionRoot.Path) {
+    if ($LocationPushed) {
         Pop-Location
+    }
+    if (-not $SeedCompleted -and $ServicesToRestart.Count -gt 0) {
+        Write-Warning "The database reset did not complete. API and frontend services remain stopped until migrations and readiness checks pass."
     }
     if ($SeedLockHeld) {
         $SeedLock.ReleaseMutex()

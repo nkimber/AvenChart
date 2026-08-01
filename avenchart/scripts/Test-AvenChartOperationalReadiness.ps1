@@ -50,18 +50,45 @@ try {
             $health = Invoke-RestMethod -Uri "$ApiBaseUrl/health" -TimeoutSec 5
             $liveness = Invoke-RestMethod -Uri "$ApiBaseUrl/health/live" -TimeoutSec 5
             $readiness = Invoke-RestMethod -Uri "$ApiBaseUrl/health/ready" -TimeoutSec 5
-            if ($health.status -eq 'healthy' -and $liveness.status -eq 'healthy' -and $readiness.status -eq 'healthy' -and $readiness.dependencies.postgres -eq 'healthy') { break }
+            if ($health.status -eq 'healthy' -and $liveness.status -eq 'healthy' -and $readiness.status -eq 'healthy' -and $readiness.dependencies.postgres -eq 'healthy' -and $readiness.dependencies.schemaMigrations -eq 'healthy') { break }
         }
         catch {
         }
         Start-Sleep -Seconds 2
     }
-    $apiReady = $null -ne $health -and $health.status -eq 'healthy' -and $null -ne $liveness -and $liveness.status -eq 'healthy' -and $null -ne $readiness -and $readiness.status -eq 'healthy' -and $readiness.dependencies.postgres -eq 'healthy'
-    Add-Check -Name 'API liveness and PostgreSQL readiness' -Result $(if ($apiReady) { 'passed' } else { 'failed' }) -Details @{ health = $health; liveness = $liveness; readiness = $readiness }
+    $apiReady = $null -ne $health -and $health.status -eq 'healthy' -and $null -ne $liveness -and $liveness.status -eq 'healthy' -and $null -ne $readiness -and $readiness.status -eq 'healthy' -and $readiness.dependencies.postgres -eq 'healthy' -and $readiness.dependencies.schemaMigrations -eq 'healthy'
+    Add-Check -Name 'API liveness, PostgreSQL, and schema readiness' -Result $(if ($apiReady) { 'passed' } else { 'failed' }) -Details @{ health = $health; liveness = $liveness; readiness = $readiness }
 
     $dataset = Invoke-PostgresScalar -Sql "select json_build_object('datasetId',(select dataset_id from dataset_metadata limit 1),'version',(select version from dataset_metadata limit 1),'patients',(select count(*) from patients),'migrations',(select count(*) from schema_migrations));" | ConvertFrom-Json
-    $datasetPassed = $dataset.datasetId -eq 'legacy-ehr-shared-synthetic-v1' -and $dataset.version -eq 'v1' -and $dataset.patients -eq 1000 -and $dataset.migrations -ge 1
+    $datasetPassed = $dataset.datasetId -eq 'legacy-ehr-shared-synthetic-v1' -and $dataset.version -eq 'v1' -and $dataset.patients -eq 1000
     Add-Check -Name 'Synthetic dataset and migration ledger' -Result $(if ($datasetPassed) { 'passed' } else { 'failed' }) -Details $dataset
+
+    $migrationFiles = @(Get-ChildItem -LiteralPath (Join-Path $SolutionRoot 'database\migrations') -Filter '*.sql' -File | Sort-Object Name)
+    $expectedMigrations = @($migrationFiles | ForEach-Object {
+        [ordered]@{
+            migrationId = $_.BaseName
+            checksumSha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+    })
+    $appliedMigrationRows = Invoke-PostgresScalar -Sql "select coalesce(json_agg(json_build_object('migrationId',migration_id,'checksumSha256',checksum_sha256) order by migration_id)::text,'[]') from schema_migrations;" | ConvertFrom-Json
+    $appliedById = @{}
+    foreach ($migration in $appliedMigrationRows) {
+        $appliedById[$migration.migrationId] = $migration.checksumSha256
+    }
+    $expectedIds = @($expectedMigrations | ForEach-Object { $_.migrationId })
+    $missingMigrations = @($expectedMigrations | Where-Object { -not $appliedById.ContainsKey($_.migrationId) } | ForEach-Object { $_.migrationId })
+    $unexpectedMigrations = @($appliedById.Keys | Where-Object { $_ -notin $expectedIds } | Sort-Object)
+    $checksumMismatches = @($expectedMigrations | Where-Object {
+        $appliedById.ContainsKey($_.migrationId) -and $appliedById[$_.migrationId] -ne $_.checksumSha256
+    } | ForEach-Object { $_.migrationId })
+    $migrationLedgerPassed = $migrationFiles.Count -gt 0 -and $missingMigrations.Count -eq 0 -and $unexpectedMigrations.Count -eq 0 -and $checksumMismatches.Count -eq 0
+    Add-Check -Name 'Schema migration completeness' -Result $(if ($migrationLedgerPassed) { 'passed' } else { 'failed' }) -Details @{
+        expected = $expectedMigrations.Count
+        applied = $appliedById.Count
+        missing = $missingMigrations
+        unexpected = $unexpectedMigrations
+        checksumMismatches = $checksumMismatches
+    }
 
     $rehearsalPath = Join-Path $SolutionRoot 'artifacts\backups\rehearsals\latest-modernized-backup-restore-rehearsal.json'
     if (Test-Path -LiteralPath $rehearsalPath -PathType Leaf) {

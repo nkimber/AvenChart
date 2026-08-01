@@ -9903,7 +9903,20 @@ function PatientWorkspace({
               <div className="portal-pill">{chart?.portalEnabled ? 'Portal enabled' : 'Portal pending'}</div>
             </div>
 
-            <div className="chart-grid">
+            {chartStatus === 'loading' && (
+              <div className="status-banner">Loading complete patient chart details&hellip;</div>
+            )}
+
+            {chartStatus === 'error' && (
+              <div className="status-banner error" role="alert">
+                <strong>Patient chart unavailable.</strong>{' '}
+                {error ?? 'The complete chart could not be loaded. Try again after the service is ready.'}
+              </div>
+            )}
+
+            {chart && (
+              <>
+                <div className="chart-grid">
               <InfoPanel title="Demographics" icon={UserRound}>
                 {isEditingDemographics && chart ? (
                   <form className="contact-form" onSubmit={handleDemographicsSubmit}>
@@ -11035,9 +11048,9 @@ function PatientWorkspace({
                 <MetricRow label="Medications" value={activePatient.counts.medications} />
                 <MetricRow label="Messages" value={activePatient.counts.messages} />
               </InfoPanel>
-            </div>
+                </div>
 
-            <div className="timeline-row">
+                <div className="timeline-row">
               <TimelinePanel
                 title="Next Appointment"
                 icon={CalendarDays}
@@ -11268,7 +11281,9 @@ function PatientWorkspace({
                   </>
                 )}
               </InfoPanel>
-            </div>
+                </div>
+              </>
+            )}
           </>
         ) : (
           <div className="empty-chart">

@@ -20,16 +20,24 @@ services:
 
   api:
     build:
-      context: ./backend/src/AvenChart.Api
+      context: .
+      dockerfile: backend/src/AvenChart.Api/Dockerfile
     environment:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__AvenChart: Host=postgres;Port=5432;Database=legacy-ehr_modernized;Username=legacy-ehr;Password=legacy-ehr_demo
+      DatabaseSchema__MigrationsPath: /app/database/migrations
       RuntimeSafety__RateLimitPermitLimit: 5000
     ports:
       - "5001:8080"
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   frontend:
     build:
@@ -39,7 +47,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   avenchart-postgres:

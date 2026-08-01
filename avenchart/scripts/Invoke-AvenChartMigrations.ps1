@@ -13,6 +13,9 @@ $MigrationsRoot = Join-Path $SolutionRoot "database\migrations"
 $ArtifactsRoot = Join-Path $SolutionRoot "artifacts\migrations"
 $ResultPath = Join-Path $ArtifactsRoot "latest-modernized-migration-result.json"
 $MigrationNamePattern = '^V\d{4}__[A-Za-z0-9_-]+\.sql$'
+$MigrationLock = [System.Threading.Mutex]::new($false, "Global\AvenChartSchemaMaintenance")
+$MigrationLockHeld = $false
+$LocationPushed = $false
 
 function Invoke-PostgresCommand {
     param([string]$Command)
@@ -35,8 +38,37 @@ function Invoke-PostgresSqlFile {
     }
 }
 
-Push-Location $SolutionRoot
+function Invoke-PostgresMigration {
+    param(
+        [string]$Path,
+        [string]$MigrationId,
+        [string]$Checksum,
+        [string]$Description
+    )
+
+    $sql = Get-Content -LiteralPath $Path -Raw
+    $transactionSql = @"
+begin;
+select pg_advisory_xact_lock(67531924012026001);
+$sql
+insert into schema_migrations (migration_id, checksum_sha256, description, applied_at, applied_by)
+values ('$MigrationId', '$Checksum', '$Description', now(), 'local-cli');
+commit;
+"@
+    $transactionSql | docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Migration '$Path' failed with exit code $LASTEXITCODE. Its schema changes and ledger entry were rolled back together."
+    }
+}
+
 try {
+    $MigrationLockHeld = $MigrationLock.WaitOne([TimeSpan]::FromMinutes(15))
+    if (-not $MigrationLockHeld) {
+        throw "Timed out waiting for the modernized schema-maintenance lock."
+    }
+
+    Push-Location $SolutionRoot
+    $LocationPushed = $true
     $migrationFiles = @(Get-ChildItem -LiteralPath $MigrationsRoot -Filter '*.sql' -File | Sort-Object Name)
     if ($migrationFiles.Count -eq 0) {
         throw "No migration files were found in '$MigrationsRoot'."
@@ -78,18 +110,28 @@ try {
     }
     Invoke-PostgresSqlFile -Path $bootstrapMigration.FullName
 
+    $ledgerJson = Invoke-PostgresCommand -Command "select coalesce(json_agg(json_build_object('migrationId',migration_id,'checksumSha256',checksum_sha256) order by migration_id)::text,'[]') from schema_migrations;"
+    $ledgerRows = $ledgerJson | ConvertFrom-Json
+    $ledgerById = @{}
+    foreach ($ledgerRow in $ledgerRows) {
+        if ($ledgerById.ContainsKey($ledgerRow.migrationId)) {
+            throw "Migration ledger contains duplicate id '$($ledgerRow.migrationId)'."
+        }
+        $ledgerById[$ledgerRow.migrationId] = $ledgerRow.checksumSha256
+    }
+
+    $expectedIds = @($migrationFiles | ForEach-Object { $_.BaseName })
+    $unexpectedIds = @($ledgerById.Keys | Where-Object { $_ -notin $expectedIds } | Sort-Object)
+    if ($unexpectedIds.Count -gt 0) {
+        throw "Migration drift detected. The ledger contains migrations that are not checked in: $($unexpectedIds -join ', ')."
+    }
+
     $applied = @()
     $skipped = @()
     foreach ($migrationFile in $migrationFiles) {
         $migrationId = $migrationFile.BaseName
         $checksum = (Get-FileHash -LiteralPath $migrationFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-        $storedChecksumRows = @(Invoke-PostgresCommand -Command "select checksum_sha256 from schema_migrations where migration_id = '$migrationId';")
-        $storedChecksum = if ($storedChecksumRows.Count -gt 0) {
-            $storedChecksumRows[0].Trim()
-        }
-        else {
-            $null
-        }
+        $storedChecksum = $ledgerById[$migrationId]
 
         if ($storedChecksum) {
             if ($storedChecksum -ne $checksum) {
@@ -100,13 +142,14 @@ try {
             continue
         }
 
-        if ($migrationFile.FullName -ne $bootstrapMigration.FullName) {
-            Invoke-PostgresSqlFile -Path $migrationFile.FullName
-        }
-
         $description = $migrationFile.BaseName.Substring($migrationFile.BaseName.IndexOf('__') + 2).Replace('_', ' ')
-        Invoke-PostgresCommand -Command "insert into schema_migrations (migration_id, checksum_sha256, description, applied_at, applied_by) values ('$migrationId', '$checksum', '$description', now(), 'local-cli');" | Out-Null
+        Invoke-PostgresMigration `
+            -Path $migrationFile.FullName `
+            -MigrationId $migrationId `
+            -Checksum $checksum `
+            -Description $description
         $applied += $migrationId
+        $ledgerById[$migrationId] = $checksum
     }
 
     New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
@@ -122,5 +165,11 @@ try {
     Write-Host "Modernized migrations complete: $ResultPath"
 }
 finally {
-    Pop-Location
+    if ($LocationPushed) {
+        Pop-Location
+    }
+    if ($MigrationLockHeld) {
+        $MigrationLock.ReleaseMutex()
+    }
+    $MigrationLock.Dispose()
 }

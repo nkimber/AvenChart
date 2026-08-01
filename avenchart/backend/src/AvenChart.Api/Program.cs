@@ -31,7 +31,8 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.AddResponseCompression();
 builder.Services.AddHealthChecks()
-    .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"]);
+    .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"])
+    .AddCheck<SchemaMigrationReadinessHealthCheck>("schemaMigrations", tags: ["ready"]);
 builder.Services.AddSingleton<IIntegrationTransport, LocalDeterministicIntegrationTransport>();
 builder.Services.AddSingleton<RuntimeDiagnostics>();
 
@@ -8656,7 +8657,14 @@ static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport repo
         checkedAtUtc = DateTimeOffset.UtcNow,
         dependencies = report.Entries.ToDictionary(
             entry => entry.Key,
-            entry => entry.Value.Status.ToString().ToLowerInvariant())
+            entry => entry.Value.Status.ToString().ToLowerInvariant()),
+        details = report.Entries.ToDictionary(
+            entry => entry.Key,
+            entry => new
+            {
+                description = entry.Value.Description,
+                data = entry.Value.Data
+            })
     });
 }
 
