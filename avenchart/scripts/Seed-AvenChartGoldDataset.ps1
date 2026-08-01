@@ -57,7 +57,7 @@ try {
         }
     }
 
-    node .\scripts\generate-postgres-seed.mjs
+    node (Join-Path $SolutionRoot "scripts/generate-postgres-seed.mjs")
     if ($LASTEXITCODE -ne 0) {
         throw "Gold dataset SQL generation failed with exit code $LASTEXITCODE."
     }
