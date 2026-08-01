@@ -164,9 +164,15 @@ function Assert-SchemaNotReadyResponse {
     if ([int]$Response.StatusCode -ne 503) {
         throw "Expected HTTP 503, but received $($Response.StatusCode)."
     }
-    $problem = $Response.Content | ConvertFrom-Json
+    $responseContent = if ($Response.Content -is [byte[]]) {
+        [System.Text.Encoding]::UTF8.GetString($Response.Content)
+    }
+    else {
+        [string]$Response.Content
+    }
+    $problem = $responseContent | ConvertFrom-Json
     if ($problem.code -ne "schema_not_ready") {
-        throw "Expected schema_not_ready problem code, but received '$($problem.code)'."
+        throw "Expected schema_not_ready problem code, but received '$($problem.code)'. Response body: $responseContent"
     }
 }
 
