@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
@@ -30,6 +31,9 @@ builder.Services.AddProblemDetails(options =>
     };
 });
 builder.Services.AddResponseCompression();
+builder.Services.AddSingleton<SchemaMigrationCatalog>();
+builder.Services.AddSingleton<SchemaMigrationState>();
+builder.Services.AddSingleton<DatabaseSchemaMigrator>();
 builder.Services.AddHealthChecks()
     .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"])
     .AddCheck<SchemaMigrationReadinessHealthCheck>("schemaMigrations", tags: ["ready"]);
@@ -191,6 +195,28 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+if (args.Any(argument => string.Equals(argument, "--migrate-only", StringComparison.OrdinalIgnoreCase)))
+{
+    try
+    {
+        var migrator = app.Services.GetRequiredService<DatabaseSchemaMigrator>();
+        var result = await migrator.MigrateAsync(CancellationToken.None);
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            status = "passed",
+            expected = result.ExpectedCount,
+            applied = result.Applied,
+            alreadyApplied = result.AlreadyApplied
+        }));
+    }
+    finally
+    {
+        await app.DisposeAsync();
+    }
+
+    return;
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -201,6 +227,13 @@ app.UseExceptionHandler(exceptionApp => exceptionApp.Run(async context =>
     var exception = context.Features
         .Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()
         ?.Error;
+    if (FindSchemaShapeException(exception) is not null)
+    {
+        context.RequestServices.GetRequiredService<SchemaMigrationState>().Invalidate();
+        await WriteSchemaNotReadyAsync(context);
+        return;
+    }
+
     if (exception is EncounterLockConflictException lockConflict)
     {
         context.Response.StatusCode = StatusCodes.Status409Conflict;
@@ -235,6 +268,24 @@ app.Use(async (context, next) =>
     context.Items["correlationId"] = correlationId;
     context.Response.Headers["X-Correlation-ID"] = correlationId;
     await next();
+});
+app.Use(async (context, next) =>
+{
+    if (!context.Request.Path.StartsWithSegments("/api"))
+    {
+        await next(context);
+        return;
+    }
+
+    var migrationState = context.RequestServices.GetRequiredService<SchemaMigrationState>();
+    var validation = await migrationState.ValidateAsync(false, context.RequestAborted);
+    if (!validation.IsReady)
+    {
+        await WriteSchemaNotReadyAsync(context);
+        return;
+    }
+
+    await next(context);
 });
 app.UseRateLimiter();
 app.Use(async (context, next) =>
@@ -8666,6 +8717,37 @@ static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport repo
                 data = entry.Value.Data
             })
     });
+}
+
+static PostgresException? FindSchemaShapeException(Exception? exception)
+{
+    while (exception is not null)
+    {
+        if (exception is PostgresException postgresException
+            && postgresException.SqlState is "42P01" or "42703")
+        {
+            return postgresException;
+        }
+
+        exception = exception.InnerException;
+    }
+
+    return null;
+}
+
+static Task WriteSchemaNotReadyAsync(HttpContext context)
+{
+    var correlationId = context.Items["correlationId"]?.ToString() ?? context.TraceIdentifier;
+    return Results.Problem(
+            statusCode: StatusCodes.Status503ServiceUnavailable,
+            title: "Database schema is not ready",
+            detail: "The application database schema is unavailable or does not match this API version.",
+            extensions: new Dictionary<string, object?>
+            {
+                ["code"] = "schema_not_ready",
+                ["correlationId"] = correlationId
+            })
+        .ExecuteAsync(context);
 }
 
 static void RequireAccessPermission(

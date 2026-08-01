@@ -3,82 +3,44 @@
 
 param(
     [int]$PostgresWaitSeconds = 90,
-    [switch]$SkipPostgresStartup
+    [switch]$SkipPostgresStartup,
+    [string]$DatabaseName = "legacy-ehr_modernized",
+    [int]$TestFaultAfterAppliedMigrationCount = 0,
+    [switch]$SkipHostLock,
+    [switch]$SkipImageBuild,
+    [switch]$SkipArtifact
 )
 
 $ErrorActionPreference = "Stop"
 
+if ($DatabaseName -ne "legacy-ehr_modernized" -and $DatabaseName -notmatch '^legacy-ehr_modernized_test_[a-z0-9_]+$') {
+    throw "DatabaseName must be 'legacy-ehr_modernized' or an isolated legacy-ehr_modernized_test_* database."
+}
+if ($TestFaultAfterAppliedMigrationCount -lt 0) {
+    throw "TestFaultAfterAppliedMigrationCount cannot be negative."
+}
+if ($TestFaultAfterAppliedMigrationCount -gt 0 -and $DatabaseName -eq "legacy-ehr_modernized") {
+    throw "Migration fault injection is only allowed against an isolated legacy-ehr_modernized_test_* database."
+}
+
 $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$MigrationsRoot = Join-Path $SolutionRoot "database\migrations"
 $ArtifactsRoot = Join-Path $SolutionRoot "artifacts\migrations"
 $ResultPath = Join-Path $ArtifactsRoot "latest-modernized-migration-result.json"
-$MigrationNamePattern = '^V\d{4}__[A-Za-z0-9_-]+\.sql$'
-$MigrationLock = [System.Threading.Mutex]::new($false, "Global\AvenChartSchemaMaintenance")
+$mutexPrefix = if ($IsWindows) { "Global\" } else { "" }
+$MigrationLock = [System.Threading.Mutex]::new($false, "$($mutexPrefix)AvenChartSchemaMaintenance")
 $MigrationLockHeld = $false
 $LocationPushed = $false
 
-function Invoke-PostgresCommand {
-    param([string]$Command)
-
-    $output = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c $Command
-    if ($LASTEXITCODE -ne 0) {
-        throw "PostgreSQL command failed with exit code $LASTEXITCODE."
-    }
-
-    return $output
-}
-
-function Invoke-PostgresSqlFile {
-    param([string]$Path)
-
-    $sql = Get-Content -LiteralPath $Path -Raw
-    $sql | docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Migration '$Path' failed with exit code $LASTEXITCODE."
-    }
-}
-
-function Invoke-PostgresMigration {
-    param(
-        [string]$Path,
-        [string]$MigrationId,
-        [string]$Checksum,
-        [string]$Description
-    )
-
-    $sql = Get-Content -LiteralPath $Path -Raw
-    $transactionSql = @"
-begin;
-select pg_advisory_xact_lock(67531924012026001);
-$sql
-insert into schema_migrations (migration_id, checksum_sha256, description, applied_at, applied_by)
-values ('$MigrationId', '$Checksum', '$Description', now(), 'local-cli');
-commit;
-"@
-    $transactionSql | docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Migration '$Path' failed with exit code $LASTEXITCODE. Its schema changes and ledger entry were rolled back together."
-    }
-}
-
 try {
-    $MigrationLockHeld = $MigrationLock.WaitOne([TimeSpan]::FromMinutes(15))
-    if (-not $MigrationLockHeld) {
-        throw "Timed out waiting for the modernized schema-maintenance lock."
+    if (-not $SkipHostLock) {
+        $MigrationLockHeld = $MigrationLock.WaitOne([TimeSpan]::FromMinutes(15))
+        if (-not $MigrationLockHeld) {
+            throw "Timed out waiting for the modernized schema-maintenance lock."
+        }
     }
 
     Push-Location $SolutionRoot
     $LocationPushed = $true
-    $migrationFiles = @(Get-ChildItem -LiteralPath $MigrationsRoot -Filter '*.sql' -File | Sort-Object Name)
-    if ($migrationFiles.Count -eq 0) {
-        throw "No migration files were found in '$MigrationsRoot'."
-    }
-
-    foreach ($migrationFile in $migrationFiles) {
-        if ($migrationFile.Name -notmatch $MigrationNamePattern) {
-            throw "Migration '$($migrationFile.Name)' does not use the required V0001__description.sql naming convention."
-        }
-    }
 
     if (-not $SkipPostgresStartup) {
         docker compose up -d postgres
@@ -89,7 +51,7 @@ try {
         $deadline = (Get-Date).AddSeconds($PostgresWaitSeconds)
         $ready = $false
         while ((Get-Date) -lt $deadline) {
-            docker compose exec -T postgres pg_isready -U legacy-ehr -d legacy-ehr_modernized *> $null
+            docker compose exec -T postgres pg_isready -U legacy-ehr -d $DatabaseName *> $null
             if ($LASTEXITCODE -eq 0) {
                 $ready = $true
                 break
@@ -99,70 +61,75 @@ try {
         }
 
         if (-not $ready) {
-            throw "PostgreSQL was not ready within $PostgresWaitSeconds seconds."
+            throw "PostgreSQL database '$DatabaseName' was not ready within $PostgresWaitSeconds seconds."
         }
     }
 
-    # Bootstrap the ledger before querying it. V0001 is idempotent by design.
-    $bootstrapMigration = $migrationFiles[0]
-    if ($bootstrapMigration.BaseName -ne 'V0001__migration_ledger') {
-        throw "The first migration must be V0001__migration_ledger.sql."
+    $connectionString = "Host=postgres;Port=5432;Database=$DatabaseName;Username=legacy-ehr;Password=legacy-ehr_demo"
+    $composeArguments = @(
+        "compose", "run", "--rm", "--no-deps"
+    )
+    if (-not $SkipImageBuild) {
+        $composeArguments += @("--build", "--quiet-build")
     }
-    Invoke-PostgresSqlFile -Path $bootstrapMigration.FullName
-
-    $ledgerJson = Invoke-PostgresCommand -Command "select coalesce(json_agg(json_build_object('migrationId',migration_id,'checksumSha256',checksum_sha256) order by migration_id)::text,'[]') from schema_migrations;"
-    $ledgerRows = $ledgerJson | ConvertFrom-Json
-    $ledgerById = @{}
-    foreach ($ledgerRow in $ledgerRows) {
-        if ($ledgerById.ContainsKey($ledgerRow.migrationId)) {
-            throw "Migration ledger contains duplicate id '$($ledgerRow.migrationId)'."
-        }
-        $ledgerById[$ledgerRow.migrationId] = $ledgerRow.checksumSha256
+    $composeArguments += @(
+        "-e", "ConnectionStrings__AvenChart=$connectionString",
+        "-e", "DatabaseSchema__MigrationsPath=/app/database/migrations"
+    )
+    if ($TestFaultAfterAppliedMigrationCount -gt 0) {
+        $composeArguments += @(
+            "-e", "DatabaseSchema__AllowTestFaultInjection=true",
+            "-e", "DatabaseSchema__FaultAfterAppliedMigrationCount=$TestFaultAfterAppliedMigrationCount"
+        )
     }
+    $composeArguments += "migrator"
 
-    $expectedIds = @($migrationFiles | ForEach-Object { $_.BaseName })
-    $unexpectedIds = @($ledgerById.Keys | Where-Object { $_ -notin $expectedIds } | Sort-Object)
-    if ($unexpectedIds.Count -gt 0) {
-        throw "Migration drift detected. The ledger contains migrations that are not checked in: $($unexpectedIds -join ', ')."
+    $priorErrorActionPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell promotes Docker build progress written to stderr into terminating
+        # NativeCommandError records when Stop is active. Capture it, then judge the native exit code.
+        $ErrorActionPreference = "Continue"
+        $output = @(& docker @composeArguments 2>&1)
+        $migrationExitCode = $LASTEXITCODE
     }
-
-    $applied = @()
-    $skipped = @()
-    foreach ($migrationFile in $migrationFiles) {
-        $migrationId = $migrationFile.BaseName
-        $checksum = (Get-FileHash -LiteralPath $migrationFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-        $storedChecksum = $ledgerById[$migrationId]
-
-        if ($storedChecksum) {
-            if ($storedChecksum -ne $checksum) {
-                throw "Migration drift detected for '$migrationId'. The applied checksum does not match the checked-in SQL file."
-            }
-
-            $skipped += $migrationId
-            continue
-        }
-
-        $description = $migrationFile.BaseName.Substring($migrationFile.BaseName.IndexOf('__') + 2).Replace('_', ' ')
-        Invoke-PostgresMigration `
-            -Path $migrationFile.FullName `
-            -MigrationId $migrationId `
-            -Checksum $checksum `
-            -Description $description
-        $applied += $migrationId
-        $ledgerById[$migrationId] = $checksum
+    finally {
+        $ErrorActionPreference = $priorErrorActionPreference
+    }
+    if ($migrationExitCode -ne 0) {
+        $output | ForEach-Object { Write-Host $_ }
+        throw "The packaged schema migrator failed with exit code $migrationExitCode."
     }
 
-    New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
-    [ordered]@{
-        status = 'passed'
-        generatedAt = (Get-Date).ToUniversalTime().ToString('o')
-        database = 'legacy-ehr_modernized'
-        migrationsRoot = $MigrationsRoot
-        applied = $applied
-        alreadyApplied = $skipped
-    } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
+    $resultLine = $output |
+        ForEach-Object { $_.ToString().Trim() } |
+        Where-Object { $_.StartsWith('{') -and $_.EndsWith('}') } |
+        Select-Object -Last 1
+    if (-not $resultLine) {
+        $output | ForEach-Object { Write-Host $_ }
+        throw "The packaged schema migrator did not emit its JSON completion result."
+    }
+    $migrationResult = $resultLine | ConvertFrom-Json
+    $output |
+        ForEach-Object { $_.ToString().Trim() } |
+        Where-Object { $_ -ne $resultLine } |
+        ForEach-Object { Write-Host $_ }
+    Write-Host "Packaged schema migrator verified $($migrationResult.expected) migrations; applied $(@($migrationResult.applied).Count), already present $(@($migrationResult.alreadyApplied).Count)."
 
-    Write-Host "Modernized migrations complete: $ResultPath"
+    if (-not $SkipArtifact) {
+        New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
+        [ordered]@{
+            status = "passed"
+            generatedAt = (Get-Date).ToUniversalTime().ToString("o")
+            database = $DatabaseName
+            expected = $migrationResult.expected
+            applied = @($migrationResult.applied)
+            alreadyApplied = @($migrationResult.alreadyApplied)
+        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
+        Write-Host "Modernized migrations complete: $ResultPath"
+    }
+    else {
+        Write-Host "Modernized migrations complete for '$DatabaseName'."
+    }
 }
 finally {
     if ($LocationPushed) {

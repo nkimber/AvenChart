@@ -2,16 +2,32 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
-    [int]$PostgresWaitSeconds = 90
+    [int]$PostgresWaitSeconds = 90,
+    [string]$DatabaseName = "legacy-ehr_modernized",
+    [int]$TestFaultAfterAppliedMigrationCount = 0,
+    [switch]$SkipMigrationImageBuild,
+    [switch]$SkipArtifact
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($DatabaseName -ne "legacy-ehr_modernized" -and $DatabaseName -notmatch '^legacy-ehr_modernized_test_[a-z0-9_]+$') {
+    throw "DatabaseName must be 'legacy-ehr_modernized' or an isolated legacy-ehr_modernized_test_* database."
+}
+if ($TestFaultAfterAppliedMigrationCount -lt 0) {
+    throw "TestFaultAfterAppliedMigrationCount cannot be negative."
+}
+if ($TestFaultAfterAppliedMigrationCount -gt 0 -and $DatabaseName -eq "legacy-ehr_modernized") {
+    throw "Reset fault injection is only allowed against an isolated legacy-ehr_modernized_test_* database."
+}
 
 $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ArtifactsRoot = Join-Path $SolutionRoot "artifacts"
 $SqlPath = Join-Path $ArtifactsRoot "postgres\seed-gold.sql"
 $ResultPath = Join-Path $ArtifactsRoot "latest-modernized-seed-result.json"
-$SeedLock = [System.Threading.Mutex]::new($false, "Global\AvenChartSchemaMaintenance")
+$IsPrimaryDatabase = $DatabaseName -eq "legacy-ehr_modernized"
+$mutexPrefix = if ($IsWindows) { "Global\" } else { "" }
+$SeedLock = [System.Threading.Mutex]::new($false, "$($mutexPrefix)AvenChartSchemaMaintenance")
 $SeedLockHeld = $false
 $LocationPushed = $false
 $SeedCompleted = $false
@@ -27,15 +43,17 @@ try {
     $LocationPushed = $true
     New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
 
-    $runningServices = @(docker compose ps --services --filter status=running)
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not inspect the modernized service state before reset."
-    }
-    $ServicesToRestart = @(@('api', 'frontend') | Where-Object { $_ -in $runningServices })
-    if ($ServicesToRestart.Count -gt 0) {
-        docker compose stop frontend api
+    if ($IsPrimaryDatabase) {
+        $runningServices = @(docker compose ps --services --filter status=running)
         if ($LASTEXITCODE -ne 0) {
-            throw "Could not stop the API and frontend before the database reset."
+            throw "Could not inspect the modernized service state before reset."
+        }
+        $ServicesToRestart = @(@('api', 'frontend') | Where-Object { $_ -in $runningServices })
+        if ($ServicesToRestart.Count -gt 0) {
+            docker compose stop frontend api
+            if ($LASTEXITCODE -ne 0) {
+                throw "Could not stop the API and frontend before the database reset."
+            }
         }
     }
 
@@ -52,7 +70,7 @@ try {
     $deadline = (Get-Date).AddSeconds($PostgresWaitSeconds)
     $ready = $false
     while ((Get-Date) -lt $deadline) {
-        docker compose exec -T postgres pg_isready -U legacy-ehr -d legacy-ehr_modernized *> $null
+        docker compose exec -T postgres pg_isready -U legacy-ehr -d $DatabaseName *> $null
         if ($LASTEXITCODE -eq 0) {
             $ready = $true
             break
@@ -74,40 +92,28 @@ create schema public authorization legacy-ehr;
 grant all on schema public to legacy-ehr;
 grant all on schema public to public;
 '@
-    $schemaResetSql | docker compose exec -T postgres psql -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1
+    $schemaResetSql | docker compose exec -T postgres psql -X -U legacy-ehr -d $DatabaseName -v ON_ERROR_STOP=1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Modernized application schema reset failed with exit code $LASTEXITCODE."
     }
 
     $sql = Get-Content -LiteralPath $SqlPath -Raw
-    $sql | docker compose exec -T postgres psql -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1
+    $sql | docker compose exec -T postgres psql -X -U legacy-ehr -d $DatabaseName -v ON_ERROR_STOP=1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Gold dataset import failed with exit code $LASTEXITCODE."
     }
 
-    # The generated dataset rebuilds the base schema. Reapply all versioned migrations afterward so
-    # migration-owned tables and schema extensions are present in every deterministic reset.
-    $migrationLedgerSql = @'
-create table if not exists schema_migrations (
-  migration_id text primary key,
-  checksum_sha256 text not null,
-  description text not null,
-  applied_at timestamptz not null,
-  applied_by text not null
-);
-delete from schema_migrations;
-'@
-    $migrationLedgerSql | docker compose exec -T postgres psql -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Modernized migration ledger reset failed with exit code $LASTEXITCODE."
-    }
+    # The generated dataset rebuilds the base schema. The same packaged migrator used by Docker
+    # startup bootstraps its ledger and transactionally reapplies every versioned migration.
+    & .\scripts\Invoke-ModernizedMigrations.ps1 `
+        -SkipPostgresStartup `
+        -SkipHostLock `
+        -SkipImageBuild:$SkipMigrationImageBuild `
+        -SkipArtifact `
+        -DatabaseName $DatabaseName `
+        -TestFaultAfterAppliedMigrationCount $TestFaultAfterAppliedMigrationCount
 
-    & .\scripts\Invoke-ModernizedMigrations.ps1 -SkipPostgresStartup
-    if ($LASTEXITCODE -ne 0) {
-        throw "Modernized schema migrations failed with exit code $LASTEXITCODE."
-    }
-
-    $countsJson = docker compose exec -T postgres psql -U legacy-ehr -d legacy-ehr_modernized -t -A -c "select json_build_object('patients',(select count(*) from patients),'insuranceRecords',(select count(*) from insurance_records),'patientHistories',(select count(*) from patient_histories),'portalAccounts',(select count(*) from patient_portal_accounts),'portalProfileChangeRequests',(select count(*) from patient_portal_profile_change_requests),'portalReportAuditEvents',(select count(*) from patient_portal_report_audit_events),'portalMessageAuditEvents',(select count(*) from patient_portal_message_audit_events),'appointments',(select count(*) from appointments),'encounters',(select count(*) from encounters),'encounterSignatures',(select count(*) from encounter_signatures),'vitals',(select count(*) from vitals),'clinicalNotes',(select count(*) from clinical_notes),'prescriptions',(select count(*) from prescriptions),'billing',(select count(*) from billing),'labProviders',(select count(*) from lab_providers),'labOrders',(select count(*) from lab_orders),'procedureOrderCatalogItems',(select count(*) from lab_order_catalog),'labReports',(select count(*) from lab_reports),'labResults',(select count(*) from lab_results),'messages',(select count(*) from messages),'portalMailboxMessages',(select count(*) from portal_mailbox_messages),'patientReminders',(select count(*) from patient_reminders),'patientDocuments',(select count(*) from patient_documents),'problems',(select count(*) from problems),'allergies',(select count(*) from allergies),'medications',(select count(*) from medications));"
+    $countsJson = docker compose exec -T postgres psql -X -U legacy-ehr -d $DatabaseName -t -A -c "select json_build_object('patients',(select count(*) from patients),'insuranceRecords',(select count(*) from insurance_records),'patientHistories',(select count(*) from patient_histories),'portalAccounts',(select count(*) from patient_portal_accounts),'portalProfileChangeRequests',(select count(*) from patient_portal_profile_change_requests),'portalReportAuditEvents',(select count(*) from patient_portal_report_audit_events),'portalMessageAuditEvents',(select count(*) from patient_portal_message_audit_events),'appointments',(select count(*) from appointments),'encounters',(select count(*) from encounters),'encounterSignatures',(select count(*) from encounter_signatures),'vitals',(select count(*) from vitals),'clinicalNotes',(select count(*) from clinical_notes),'prescriptions',(select count(*) from prescriptions),'billing',(select count(*) from billing),'labProviders',(select count(*) from lab_providers),'labOrders',(select count(*) from lab_orders),'procedureOrderCatalogItems',(select count(*) from lab_order_catalog),'labReports',(select count(*) from lab_reports),'labResults',(select count(*) from lab_results),'messages',(select count(*) from messages),'portalMailboxMessages',(select count(*) from portal_mailbox_messages),'patientReminders',(select count(*) from patient_reminders),'patientDocuments',(select count(*) from patient_documents),'problems',(select count(*) from problems),'allergies',(select count(*) from allergies),'medications',(select count(*) from medications));"
     if ($LASTEXITCODE -ne 0) {
         throw "Could not read modernized seed counts."
     }
@@ -116,12 +122,14 @@ delete from schema_migrations;
         status = "passed"
         generatedAt = (Get-Date).ToUniversalTime().ToString("o")
         datasetId = "legacy-ehr-shared-synthetic-v1"
-        database = "legacy-ehr_modernized"
+        database = $DatabaseName
         sqlPath = $SqlPath
         counts = $countsJson | ConvertFrom-Json
     }
 
-    $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
+    if (-not $SkipArtifact) {
+        $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
+    }
     $SeedCompleted = $true
 
     if ($ServicesToRestart.Count -gt 0) {
@@ -131,7 +139,12 @@ delete from schema_migrations;
         }
     }
 
-    Write-Host "Modernized gold dataset seed complete: $ResultPath"
+    if ($SkipArtifact) {
+        Write-Host "Modernized gold dataset seed complete for '$DatabaseName'."
+    }
+    else {
+        Write-Host "Modernized gold dataset seed complete: $ResultPath"
+    }
 }
 finally {
     if ($LocationPushed) {

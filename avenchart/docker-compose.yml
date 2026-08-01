@@ -1,6 +1,14 @@
 # SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+x-api-build: &api-build
+  context: .
+  dockerfile: backend/src/AvenChart.Api/Dockerfile
+
+x-api-database-environment: &api-database-environment
+  ConnectionStrings__AvenChart: Host=postgres;Port=5432;Database=legacy-ehr_modernized;Username=legacy-ehr;Password=legacy-ehr_demo
+  DatabaseSchema__MigrationsPath: /app/database/migrations
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -18,20 +26,29 @@ services:
       timeout: 5s
       retries: 20
 
+  migrator:
+    image: avenchart-api:local
+    build: *api-build
+    command: ["--migrate-only"]
+    environment: *api-database-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   api:
-    build:
-      context: .
-      dockerfile: backend/src/AvenChart.Api/Dockerfile
+    image: avenchart-api:local
+    build: *api-build
     environment:
+      <<: *api-database-environment
       ASPNETCORE_URLS: http://+:8080
-      ConnectionStrings__AvenChart: Host=postgres;Port=5432;Database=legacy-ehr_modernized;Username=legacy-ehr;Password=legacy-ehr_demo
-      DatabaseSchema__MigrationsPath: /app/database/migrations
       RuntimeSafety__RateLimitPermitLimit: 5000
     ports:
       - "5001:8080"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+        restart: true
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health/ready"]
       interval: 5s
@@ -49,6 +66,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
+        restart: true
 
 volumes:
   avenchart-postgres:

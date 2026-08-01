@@ -917,6 +917,7 @@ function App() {
 
     const controller = new AbortController()
     async function loadChart() {
+      setChart(null)
       setChartStatus('loading')
       try {
         const patient = await getPatientChart(selectedPatientId!, openEmrSessionId, controller.signal)

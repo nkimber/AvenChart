@@ -63,6 +63,10 @@ try {
     $datasetPassed = $dataset.datasetId -eq 'legacy-ehr-shared-synthetic-v1' -and $dataset.version -eq 'v1' -and $dataset.patients -eq 1000
     Add-Check -Name 'Synthetic dataset and migration ledger' -Result $(if ($datasetPassed) { 'passed' } else { 'failed' }) -Details $dataset
 
+    $chartData = Invoke-PostgresScalar -Sql "select json_build_object('maritalStatus',p.marital_status,'occupation',p.occupation,'race',p.race,'ethnicity',p.ethnicity,'street',p.street,'city',p.city,'state',p.state,'postalCode',p.postal_code,'providerName',concat_ws(' ',s.first_name,s.last_name),'insuranceCount',(select count(*) from insurance_records i where i.patient_id=p.canonical_id),'historyCount',(select count(*) from patient_histories h where h.patient_id=p.canonical_id)) from patients p left join staff s on s.id=p.provider_id where p.canonical_id='MOD-PAT-0001';" | ConvertFrom-Json
+    $chartDataPassed = $chartData.maritalStatus -eq 'married' -and $chartData.occupation -eq 'Retired' -and $chartData.race -eq 'White' -and $chartData.ethnicity -eq 'Not Hispanic or Latino' -and $chartData.street -eq '101 Test Patient Avenue' -and $chartData.city -eq 'La Mesa' -and $chartData.state -eq 'CA' -and $chartData.postalCode -eq '91942' -and -not [string]::IsNullOrWhiteSpace($chartData.providerName) -and [int]$chartData.insuranceCount -ge 1 -and [int]$chartData.historyCount -ge 1
+    Add-Check -Name 'Patient chart data invariants' -Result $(if ($chartDataPassed) { 'passed' } else { 'failed' }) -Details $chartData
+
     $migrationFiles = @(Get-ChildItem -LiteralPath (Join-Path $SolutionRoot 'database\migrations') -Filter '*.sql' -File | Sort-Object Name)
     $expectedMigrations = @($migrationFiles | ForEach-Object {
         [ordered]@{
