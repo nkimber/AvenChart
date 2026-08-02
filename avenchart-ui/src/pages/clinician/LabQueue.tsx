@@ -107,6 +107,14 @@ function reviewStatusClass(status?: string | null) {
   return 'cl-badge-amber'
 }
 
+function hasArrayProperty(value: unknown, property: string) {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as Record<string, unknown>)[property])
+  )
+}
+
 export default function LabQueue() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const navigate = useNavigate()
@@ -140,6 +148,9 @@ export default function LabQueue() {
   const [bulkSigning, setBulkSigning] = useState(false)
   const [criticalResults, setCriticalResults] =
     useState<CriticalLabResultQueueResponse | null>(null)
+  const [criticalResultsError, setCriticalResultsError] = useState<
+    string | null
+  >(null)
   const [reviewHistoryByReport, setReviewHistoryByReport] = useState<
     Record<number, ProcedureReportReviewHistoryResponse>
   >({})
@@ -180,7 +191,14 @@ export default function LabQueue() {
       queueFilters(activeFilters, 'reports'),
       signal,
     )
-      .then((data) => setReportState({ status: 'ready', data }))
+      .then((data) => {
+        if (!hasArrayProperty(data, 'reports')) {
+          throw new Error(
+            'The lab report queue response was incomplete. Retry the page.',
+          )
+        }
+        setReportState({ status: 'ready', data })
+      })
       .catch((error: unknown) => {
         if (isRequestCancellation(error)) return
         setReportState({
@@ -200,7 +218,14 @@ export default function LabQueue() {
       queueFilters(activeFilters, 'orders'),
       signal,
     )
-      .then((data) => setOrderState({ status: 'ready', data }))
+      .then((data) => {
+        if (!hasArrayProperty(data, 'orders')) {
+          throw new Error(
+            'The procedure order queue response was incomplete. Retry the page.',
+          )
+        }
+        setOrderState({ status: 'ready', data })
+      })
       .catch((error: unknown) => {
         if (isRequestCancellation(error)) return
         setOrderState({
@@ -217,12 +242,23 @@ export default function LabQueue() {
   const loadOrdersForCriteria = useEffectEvent(loadOrders)
   useEffect(() => {
     const controller = new AbortController()
+    setCriticalResults(null)
+    setCriticalResultsError(null)
     void loadReportsForCriteria(controller.signal)
     void loadOrdersForCriteria(controller.signal)
     void getCriticalLabResultQueue(session.sessionId, controller.signal)
-      .then(setCriticalResults)
+      .then((data) => {
+        if (!hasArrayProperty(data, 'results')) {
+          throw new Error('The critical-result queue response was incomplete.')
+        }
+        setCriticalResults(data)
+      })
       .catch((error: unknown) => {
-        if (!isRequestCancellation(error)) setCriticalResults(null)
+        if (isRequestCancellation(error)) return
+        setCriticalResults(null)
+        setCriticalResultsError(
+          'The critical-result acknowledgement queue is unavailable. Retry the page before relying on this queue.',
+        )
       })
     return () => controller.abort()
   }, [queryKey, reload, session.sessionId])
@@ -231,7 +267,7 @@ export default function LabQueue() {
     event.preventDefault()
     const params = new URLSearchParams()
     Object.entries(draft).forEach(([key, value]) => {
-      if (!value || value === 'all') return
+      if (!value) return
       params.set(key, value)
     })
     if (tab === 'orders') params.set('tab', 'orders')
@@ -448,6 +484,11 @@ export default function LabQueue() {
           Refresh
         </button>
       </div>
+      {criticalResultsError && (
+        <div className="error-banner" role="alert">
+          {criticalResultsError}
+        </div>
+      )}
       {criticalResults && criticalResults.totalOpen > 0 && (
         <div className="error-banner" role="alert">
           {criticalResults.totalOpen} local critical{' '}
