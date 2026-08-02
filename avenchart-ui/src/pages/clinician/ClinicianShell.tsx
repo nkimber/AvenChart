@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Activity,
@@ -83,11 +83,85 @@ const NAV_ITEMS = [
   { path: '/clinician/experience', label: 'Experience baseline', icon: Gauge },
 ] as const
 
+type NavigationSurface = 'desktop' | 'mobile'
+
+const NAVIGATION_CONTEXT_ITEM_COUNT = 4
+const NAVIGATION_SCROLL_STORAGE_PREFIX = 'modern-ui:clinician-navigation-scroll:v1'
+
+function navigationScrollStorageKey(surface: NavigationSurface) {
+  return `${NAVIGATION_SCROLL_STORAGE_PREFIX}:${surface}`
+}
+
+function loadNavigationScroll(surface: NavigationSurface) {
+  try {
+    const value = window.sessionStorage.getItem(navigationScrollStorageKey(surface))
+    const scrollTop = value === null ? 0 : Number(value)
+    return Number.isFinite(scrollTop) && scrollTop >= 0 ? scrollTop : 0
+  } catch {
+    return 0
+  }
+}
+
+function saveNavigationScroll(surface: NavigationSurface, scrollTop: number) {
+  try {
+    window.sessionStorage.setItem(
+      navigationScrollStorageKey(surface),
+      String(Math.max(0, Math.round(scrollTop))),
+    )
+  } catch {
+    // Navigation remains usable when browser storage is unavailable.
+  }
+}
+
+function restoreNavigationScroll(
+  navigation: HTMLElement,
+  surface: NavigationSurface,
+) {
+  if (navigation.clientHeight <= 0) return
+
+  const maximumScroll = Math.max(0, navigation.scrollHeight - navigation.clientHeight)
+  let nextScroll = Math.min(loadNavigationScroll(surface), maximumScroll)
+  const activeItem = navigation.querySelector<HTMLElement>('.clinician-nav-item-active')
+
+  if (activeItem) {
+    const items = Array.from(
+      navigation.querySelectorAll<HTMLElement>('.clinician-nav-item'),
+    )
+    const activeIndex = items.indexOf(activeItem)
+
+    if (activeIndex >= 0) {
+      const contextItem =
+        items[Math.min(activeIndex + NAVIGATION_CONTEXT_ITEM_COUNT, items.length - 1)]
+      const edgePadding = 8
+      const activeTop = activeItem.offsetTop
+      const activeBottom = activeTop + activeItem.offsetHeight
+      const contextBottom = contextItem.offsetTop + contextItem.offsetHeight
+
+      if (activeTop < nextScroll + edgePadding) {
+        nextScroll = activeTop - edgePadding
+      } else if (activeBottom > nextScroll + navigation.clientHeight - edgePadding) {
+        nextScroll = activeBottom - navigation.clientHeight + edgePadding
+      }
+
+      if (contextBottom > nextScroll + navigation.clientHeight - edgePadding) {
+        const scrollWithContext = contextBottom - navigation.clientHeight + edgePadding
+        const scrollWithActiveAtTop = activeTop - edgePadding
+        nextScroll = Math.min(scrollWithContext, scrollWithActiveAtTop)
+      }
+    }
+  }
+
+  const boundedScroll = Math.max(0, Math.min(nextScroll, maximumScroll))
+  navigation.scrollTop = boundedScroll
+  saveNavigationScroll(surface, boundedScroll)
+}
+
 type NavigationListProps = {
   currentPath: string
   collapsed?: boolean
   onNavigate?: () => void
   label: string
+  surface: NavigationSurface
 }
 
 function NavigationList({
@@ -95,9 +169,60 @@ function NavigationList({
   collapsed = false,
   onNavigate,
   label,
+  surface,
 }: NavigationListProps) {
+  const navigationRef = useRef<HTMLElement>(null)
+
+  useLayoutEffect(() => {
+    const navigation = navigationRef.current
+    if (!navigation) return
+
+    const restore = () => restoreNavigationScroll(navigation, surface)
+    restore()
+
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(restore)
+    observer.observe(navigation)
+    return () => observer.disconnect()
+  }, [currentPath, surface])
+
+  useEffect(() => {
+    const navigation = navigationRef.current
+    if (!navigation) return
+
+    let animationFrame: number | null = null
+    const persist = () => {
+      animationFrame = null
+      saveNavigationScroll(surface, navigation.scrollTop)
+    }
+    const handleScroll = () => {
+      if (animationFrame === null) {
+        animationFrame = window.requestAnimationFrame(persist)
+      }
+    }
+
+    navigation.addEventListener('scroll', handleScroll, { passive: true })
+    return () => {
+      navigation.removeEventListener('scroll', handleScroll)
+      if (animationFrame !== null) window.cancelAnimationFrame(animationFrame)
+      saveNavigationScroll(surface, navigation.scrollTop)
+    }
+  }, [surface])
+
+  const handleNavigate = () => {
+    if (navigationRef.current) {
+      saveNavigationScroll(surface, navigationRef.current.scrollTop)
+    }
+    onNavigate?.()
+  }
+
   return (
-    <nav className="clinician-nav" aria-label={label}>
+    <nav
+      ref={navigationRef}
+      className="clinician-nav"
+      aria-label={label}
+      data-navigation-surface={surface}
+    >
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon
         const isActive =
@@ -109,7 +234,7 @@ function NavigationList({
             className={`clinician-nav-item${isActive ? ' clinician-nav-item-active' : ''}`}
             aria-current={isActive ? 'page' : undefined}
             title={collapsed ? item.label : undefined}
-            onClick={onNavigate}
+            onClick={handleNavigate}
           >
             <Icon size={18} aria-hidden="true" />
             {!collapsed && <span className="clinician-nav-label">{item.label}</span>}
@@ -438,6 +563,7 @@ export default function ClinicianShell() {
           currentPath={location.pathname}
           collapsed={collapsed}
           label="Main navigation"
+          surface="desktop"
         />
         {sidebarFooter(collapsed)}
       </aside>
@@ -475,6 +601,7 @@ export default function ClinicianShell() {
               currentPath={location.pathname}
               onNavigate={() => setMobileOpen(false)}
               label="Mobile navigation"
+              surface="mobile"
             />
             {sidebarFooter(false)}
           </aside>
