@@ -164,16 +164,21 @@ function Assert-SchemaNotReadyResponse {
     if ([int]$Response.StatusCode -ne 503) {
         throw "Expected HTTP 503, but received $($Response.StatusCode)."
     }
-    $responseContent = if ($Response.Content -is [byte[]]) {
-        [System.Text.Encoding]::UTF8.GetString($Response.Content)
-    }
-    else {
-        [string]$Response.Content
-    }
+    $responseContent = Get-HttpResponseContent -Response $Response
     $problem = $responseContent | ConvertFrom-Json
     if ($problem.code -ne "schema_not_ready") {
         throw "Expected schema_not_ready problem code, but received '$($problem.code)'. Response body: $responseContent"
     }
+}
+
+function Get-HttpResponseContent {
+    param($Response)
+
+    if ($Response.Content -is [byte[]]) {
+        return [System.Text.Encoding]::UTF8.GetString($Response.Content)
+    }
+
+    return [string]$Response.Content
 }
 
 function Wait-ForApiReady {
@@ -298,6 +303,19 @@ try {
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
         throw "Could not establish the isolated API session required for schema-shape error testing."
     }
+    $messageResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/messages/MOD-PAT-0001" `
+        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId }
+    if ([int]$messageResponse.StatusCode -ne 200) {
+        throw "Patient messages without includeArchived should default to active-only, but returned HTTP $($messageResponse.StatusCode)."
+    }
+    $messagePayload = (Get-HttpResponseContent -Response $messageResponse) | ConvertFrom-Json
+    if ($messagePayload.patientId -ne "MOD-PAT-0001") {
+        throw "Patient messages default-query response did not preserve the requested patient identity."
+    }
+    $CompletedScenarios.Add("message-active-only-default-query")
+
     Wait-ForApiReady
     Invoke-DatabaseScalar -Sql "alter table patients rename column marital_status to marital_status_fault;" | Out-Null
     $chartResponse = Invoke-Http -Method "GET" -Path "/api/patients/MOD-PAT-0001" -Headers @{ "X-Legacy EHR-Session" = $login.sessionId }

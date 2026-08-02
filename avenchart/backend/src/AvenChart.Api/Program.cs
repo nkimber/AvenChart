@@ -3440,10 +3440,13 @@ messages.MapGet("/assignees", async (
 messages.MapGet("/{patientId}", async (
         MessageRepository repository,
         string patientId,
-        bool includeArchived,
+        bool? includeArchived,
         CancellationToken cancellationToken) =>
     {
-        var patientMessages = await repository.GetForPatientAsync(patientId, cancellationToken, includeArchived);
+        var patientMessages = await repository.GetForPatientAsync(
+            patientId,
+            cancellationToken,
+            includeArchived == true);
         return patientMessages is null ? Results.NotFound() : Results.Ok(patientMessages);
     })
     .WithName("GetPatientMessages");
