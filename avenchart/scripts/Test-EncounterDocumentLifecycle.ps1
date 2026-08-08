@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -10,7 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$modernUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
+$avenChartUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
 $checks = [System.Collections.Generic.List[object]]::new()
 $marker = "TMP-ENC-DOC-$(New-Guid)"
 $headers = $null
@@ -54,7 +54,7 @@ function Invoke-BrowserProof {
     $priorEncounter = $env:MODERN_UI_DOCUMENT_ENCOUNTER
     $env:MODERN_UI_DOCUMENT_PATIENT_ID = $PatientId
     $env:MODERN_UI_DOCUMENT_ENCOUNTER = [string]$Encounter
-    Push-Location $modernUiRoot
+    Push-Location $avenChartUiRoot
     try {
         & npx playwright test e2e/encounter-document-lifecycle.spec.ts --workers=4 | Out-Host
         return $LASTEXITCODE
@@ -88,7 +88,7 @@ try {
     if (-not $admin.authenticated) {
         throw "The synthetic administrator session was not issued."
     }
-    $headers = @{ "X-Legacy EHR-Session" = $admin.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $admin.sessionId }
 
     $baseline = Get-EncounterDetail
     if ($baseline.patientId -ne $PatientId) {

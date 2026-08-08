@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using AvenChart.Api.Models;
@@ -39,7 +39,7 @@ public static class IdentityProviderCatalog
         new(
             "portal",
             "local-direct-session",
-            "patient-portal repository and X-Legacy EHR-Patient-Portal-Session",
+            "patient-portal repository and X-AvenChart-Patient-Portal-Session",
             "issued, active, expired, disabled-account, and logout-ended local sessions",
             "session is constrained to its canonical patient record",
             "portal routes remain coupled to the local repository and are not provider-adapter ready",
@@ -85,7 +85,7 @@ public static class IdentityProviderCatalog
         new(
             "identity.secret-boundary",
             "locally-enforced",
-            "Provider credentials, signing keys, and client secrets cannot be supplied through this registry or Modern UI.",
+            "Provider credentials, signing keys, and client secrets cannot be supplied through this registry or AvenChart UI.",
             "The registry is static/read-only and contains no credential values."),
         new(
             "identity.production-isolation",

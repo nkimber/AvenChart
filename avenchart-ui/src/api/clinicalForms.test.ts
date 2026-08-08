@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -187,7 +187,7 @@ describe("governed clinical-form transport", () => {
       "http://localhost:5001/api/form-engine/option-lists",
     );
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
-      "X-Legacy EHR-Session": "staff-session",
+      "X-AvenChart-Session": "staff-session",
     });
   });
 
@@ -276,7 +276,7 @@ describe("governed clinical-form transport", () => {
       reason: "Clinical field mapping review completed.",
     });
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
-      "X-Legacy EHR-Session": "staff-session",
+      "X-AvenChart-Session": "staff-session",
     });
   });
 
@@ -442,7 +442,7 @@ describe("governed clinical-form transport", () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
-          mediaType: "application/vnd.legacy-ehr.clinical-form+json;version=1",
+          mediaType: "application/vnd.avenchart.clinical-form+json;version=1",
           exportedAt: "2026-07-29T00:00:00Z",
           instance: { instanceId: "instance-1", definitionRevision: 2 },
           definition: schema,
@@ -484,7 +484,7 @@ describe("governed clinical-form transport", () => {
       "http://localhost:5001/api/form-engine/instances/instance%2Fwith%20spaces/export?locale=es-US",
     );
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual(
-      expect.objectContaining({ "X-Legacy EHR-Session": "staff-session" }),
+      expect.objectContaining({ "X-AvenChart-Session": "staff-session" }),
     );
   });
 });

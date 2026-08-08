@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -11,7 +11,7 @@ Add-Type -AssemblyName System.Net.Http
 
 $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ArtifactsRoot = Join-Path $SolutionRoot "artifacts"
-$ResultPath = Join-Path $ArtifactsRoot "latest-modernized-smoke-test.json"
+$ResultPath = Join-Path $ArtifactsRoot "latest-avenchart-smoke-test.json"
 New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
 
 $checks = New-Object System.Collections.Generic.List[object]
@@ -56,7 +56,7 @@ function Get-AdministrationHeaders {
             throw "Administration smoke login did not issue an active session."
         }
 
-        $script:AdministrationHeaders = @{ "X-Legacy EHR-Session" = $login.sessionId }
+        $script:AdministrationHeaders = @{ "X-AvenChart-Session" = $login.sessionId }
     }
 
     return $script:AdministrationHeaders
@@ -79,7 +79,7 @@ function Get-FrontDeskHeaders {
             throw "Front-desk smoke login did not issue an active session."
         }
 
-        $script:FrontDeskHeaders = @{ "X-Legacy EHR-Session" = $login.sessionId }
+        $script:FrontDeskHeaders = @{ "X-AvenChart-Session" = $login.sessionId }
     }
 
     return $script:FrontDeskHeaders
@@ -102,7 +102,7 @@ function Get-ClinicianHeaders {
             throw "Clinician smoke login did not issue an active session."
         }
 
-        $script:ClinicianHeaders = @{ "X-Legacy EHR-Session" = $login.sessionId }
+        $script:ClinicianHeaders = @{ "X-AvenChart-Session" = $login.sessionId }
     }
 
     return $script:ClinicianHeaders
@@ -268,7 +268,7 @@ try {
     $session = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/auth/session" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
+        -Headers @{ "X-AvenChart-Session" = $login.sessionId } `
         -TimeoutSec 20
 
     $unauthenticatedAuditStatus = 0
@@ -292,7 +292,7 @@ try {
     $loginAudit = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/auth/login-audit?limit=5" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
+        -Headers @{ "X-AvenChart-Session" = $login.sessionId } `
         -TimeoutSec 20
 
     $unauthenticatedAdministrationStatus = 0
@@ -316,13 +316,13 @@ try {
     $administrationDirectory = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/administration/directory" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
+        -Headers @{ "X-AvenChart-Session" = $login.sessionId } `
         -TimeoutSec 20
 
     $runtimeDiagnostics = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/administration/runtime-diagnostics" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
+        -Headers @{ "X-AvenChart-Session" = $login.sessionId } `
         -TimeoutSec 20
     $runtimeDiagnosticsProperties = @($runtimeDiagnostics.PSObject.Properties.Name)
     $runtimeDiagnosticsAreSafe = @(
@@ -343,7 +343,7 @@ try {
         $frontDeskAdministration = Invoke-WebRequest `
             -Uri "$ApiBaseUrl/api/administration/directory" `
             -Method Get `
-            -Headers @{ "X-Legacy EHR-Session" = $frontDeskLogin.sessionId } `
+            -Headers @{ "X-AvenChart-Session" = $frontDeskLogin.sessionId } `
             -TimeoutSec 20 `
             -ErrorAction Stop
         $frontDeskAdministrationStatus = [int]$frontDeskAdministration.StatusCode
@@ -370,7 +370,7 @@ try {
     $sessionAfterLogout = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/auth/session" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
+        -Headers @{ "X-AvenChart-Session" = $login.sessionId } `
         -TimeoutSec 20
 
     $loginPassed = $login.authenticated -eq $true `
@@ -579,7 +579,7 @@ try {
 
     $malformedIdentityStatus = 0
     try {
-        Invoke-WebRequest -Uri $identityReadinessUri -Method Get -Headers @{ "X-Legacy EHR-Session" = "not-a-session-id" } -TimeoutSec 20 -ErrorAction Stop | Out-Null
+        Invoke-WebRequest -Uri $identityReadinessUri -Method Get -Headers @{ "X-AvenChart-Session" = "not-a-session-id" } -TimeoutSec 20 -ErrorAction Stop | Out-Null
     }
     catch {
         if ($_.Exception.Response) {
@@ -618,7 +618,7 @@ try {
 
     $revokedIdentityStatus = 0
     try {
-        Invoke-WebRequest -Uri $identityReadinessUri -Method Get -Headers @{ "X-Legacy EHR-Session" = $revokedLogin.sessionId } -TimeoutSec 20 -ErrorAction Stop | Out-Null
+        Invoke-WebRequest -Uri $identityReadinessUri -Method Get -Headers @{ "X-AvenChart-Session" = $revokedLogin.sessionId } -TimeoutSec 20 -ErrorAction Stop | Out-Null
     }
     catch {
         if ($_.Exception.Response) {
@@ -1201,18 +1201,18 @@ try {
     $portalSession = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/session" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -Headers @{ "X-AvenChart-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
 
     $portalHome = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/home" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -Headers @{ "X-AvenChart-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
     $portalProfile = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/profile" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -Headers @{ "X-AvenChart-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
     $portalHomeAppointments = @($portalHome.upcomingAppointments)
     $portalHomeImmunization = @($portalHome.immunizations) | Where-Object {
@@ -1233,7 +1233,7 @@ try {
     $portalMessages = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/messages" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -Headers @{ "X-AvenChart-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
     $portalMessageItems = @($portalMessages.messages)
     $portalAllMessageItems = @($portalMessages.allMessages)
@@ -1244,7 +1244,7 @@ try {
     $portalClinicalSummary = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/clinical-summary" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -Headers @{ "X-AvenChart-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
     $portalClinicalProblem = @($portalClinicalSummary.problems) | Where-Object { $_.title -eq "Low back pain, unspecified" } | Select-Object -First 1
     $portalClinicalAllergy = @($portalClinicalSummary.allergies) | Where-Object { $_.title -eq "Latex" -and $_.reaction -eq "skin irritation" } | Select-Object -First 1
@@ -1253,7 +1253,7 @@ try {
     $portalLabResults = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/lab-results" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -Headers @{ "X-AvenChart-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
     $portalLabOrders = @($portalLabResults.orders)
     $portalLabOrder = $portalLabOrders | Where-Object { $_.procedureName -eq "Hemoglobin A1c" -and $_.orderDate -eq "2026-02-21" } | Select-Object -First 1
@@ -1266,13 +1266,13 @@ try {
     $endedPortalSession = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/session" `
         -Method Delete `
-        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -Headers @{ "X-AvenChart-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
 
     $inactivePortalSession = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/session" `
         -Method Get `
-        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -Headers @{ "X-AvenChart-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
 
     $portalAuthenticationPassed = $validPortalLogin.authenticated `
@@ -5459,7 +5459,7 @@ try {
 
     $externalLinkDocumentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     $externalLinkDocumentName = "Smoke Encounter External Link $externalLinkDocumentSuffix"
-    $externalLinkUrl = "https://example.test/legacy-ehr/encounter-record/$externalLinkDocumentSuffix"
+    $externalLinkUrl = "https://example.test/avenchart/encounter-record/$externalLinkDocumentSuffix"
     $externalLinkDocumentBody = @{
         categoryId = 3
         name = $externalLinkDocumentName
@@ -6265,7 +6265,7 @@ try {
         resultCode = "2345-7"
         resultText = $procedureResultText
         dateTime = "2026-06-18 13:05:00"
-        facility = "Legacy EHR Modernization Clinic"
+        facility = "AvenChart modernization Clinic"
         units = "mg/dL"
         result = "104"
         range = "70-99"
@@ -6380,7 +6380,7 @@ try {
         resultCode = "2345-7"
         resultText = $procedureCorrectionInitialText
         dateTime = "2026-06-18 13:05:00"
-        facility = "Legacy EHR Modernization Clinic"
+        facility = "AvenChart modernization Clinic"
         units = "mg/dL"
         result = "104"
         range = "70-99"
@@ -8075,7 +8075,7 @@ finally {
 $patientExternalLinkDocumentMutationId = $null
 try {
     $externalLinkDocumentName = "Smoke External Link Patient Document"
-    $externalLinkUrl = "https://example.test/legacy-ehr/smoke-external-record"
+    $externalLinkUrl = "https://example.test/avenchart/smoke-external-record"
     $createExternalLinkDocumentBody = @{
         patientId = "MOD-PAT-0001"
         categoryId = 3
@@ -9638,7 +9638,7 @@ catch {
 try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
     Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
-    $statementPackagePath = Join-Path $env:TEMP "legacy-ehr-statement-batch-$([guid]::NewGuid().ToString('N')).zip"
+    $statementPackagePath = Join-Path $env:TEMP "avenchart-statement-batch-$([guid]::NewGuid().ToString('N')).zip"
     $statementPackageClient = New-AuthenticatedHttpClient
     $statementPackageClient.Timeout = [TimeSpan]::FromSeconds(20)
     $statementPackageResponse = $statementPackageClient.GetAsync("$ApiBaseUrl/api/billing/statements/batch/package.zip?limit=5").GetAwaiter().GetResult()
@@ -10918,11 +10918,11 @@ try {
     $inventoryRequisition = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-requisitions" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ facilityId = $inventoryFacility.facilityId; vendorId = $inventoryVendor.vendorId; notes = "Smoke purchase requisition verification"; lines = @(@{ itemId = $inventoryItem.itemId; quantity = 5 }) } | ConvertTo-Json -Depth 4) -TimeoutSec 20
     $inventoryRequisitionSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-requisitions/$($inventoryRequisition.requisitionId)/submit" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
     $inventoryRequisitionApproved = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-requisitions/$($inventoryRequisition.requisitionId)/decisions/approve" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ notes = "Smoke approval verification" } | ConvertTo-Json) -TimeoutSec 20
-    $inventoryRequisitionAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_purchase_requisition_events where requisition_id = '$($inventoryRequisition.requisitionId)' and action in ('created','submitted','approved') and actor = 'admin';"
+    $inventoryRequisitionAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_purchase_requisition_events where requisition_id = '$($inventoryRequisition.requisitionId)' and action in ('created','submitted','approved') and actor = 'admin';"
     $inventoryRejectedRequisition = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-requisitions" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ facilityId = $inventoryFacility.facilityId; vendorId = $inventoryVendor.vendorId; notes = "Smoke rejected requisition verification"; lines = @(@{ itemId = $inventoryItem.itemId; quantity = 1 }) } | ConvertTo-Json -Depth 4) -TimeoutSec 20
     $inventoryRejectedSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-requisitions/$($inventoryRejectedRequisition.requisitionId)/submit" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
     $inventoryRejected = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-requisitions/$($inventoryRejectedRequisition.requisitionId)/decisions/reject" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ notes = "Smoke rejection verification" } | ConvertTo-Json) -TimeoutSec 20
-    $inventoryRejectionAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_purchase_requisition_events where requisition_id = '$($inventoryRejectedRequisition.requisitionId)' and action in ('created','submitted','rejected') and actor = 'admin';"
+    $inventoryRejectionAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_purchase_requisition_events where requisition_id = '$($inventoryRejectedRequisition.requisitionId)' and action in ('created','submitted','rejected') and actor = 'admin';"
     $inventoryRequisitionReceiptOne = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-REQ-ONE-$inventoryReceiptSuffix"; expirationDate = "2027-12-31"; quantity = 2; unitCost = 3.25; referenceNumber = "SMOKE-REQ-ONE-REF-$inventoryReceiptSuffix"; notes = "Smoke partial requisition receipt"; requisitionId = $inventoryRequisition.requisitionId } | ConvertTo-Json) -TimeoutSec 20
     $inventoryRequisitionReceiptTwo = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-REQ-TWO-$inventoryReceiptSuffix"; expirationDate = "2027-12-31"; quantity = 3; unitCost = 3.25; referenceNumber = "SMOKE-REQ-TWO-REF-$inventoryReceiptSuffix"; notes = "Smoke complete requisition receipt"; requisitionId = $inventoryRequisition.requisitionId } | ConvertTo-Json) -TimeoutSec 20
     $inventoryRequisitionOverReceiptRejected = $false
@@ -10934,7 +10934,7 @@ try {
     }
     $inventoryRequisitionsAfterReceipts = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-requisitions" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $inventoryRequisitionAfterReceipts = @($inventoryRequisitionsAfterReceipts | Where-Object { $_.requisitionId -eq $inventoryRequisition.requisitionId }) | Select-Object -First 1
-    $inventoryRequisitionReceiptAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_purchase_requisition_receipts where requisition_id = '$($inventoryRequisition.requisitionId)' and received_quantity in (2,3) and reconciled_by = 'admin';"
+    $inventoryRequisitionReceiptAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_purchase_requisition_receipts where requisition_id = '$($inventoryRequisition.requisitionId)' and received_quantity in (2,3) and reconciled_by = 'admin';"
     $inventoryReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-RCV-$inventoryReceiptSuffix"; expirationDate = "2027-12-31"; quantity = 7; unitCost = 3.25; referenceNumber = "SMOKE-REF-$inventoryReceiptSuffix"; notes = "Smoke vendor receipt verification" } | ConvertTo-Json) -TimeoutSec 20
     $expiredReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-EXP-$inventoryReceiptSuffix"; expirationDate = $inventoryBefore.asOfDate; quantity = 1; unitCost = 3.25; referenceNumber = "SMOKE-EXP-REF-$inventoryReceiptSuffix"; notes = "Smoke expired-lot visibility verification" } | ConvertTo-Json) -TimeoutSec 20
     $inventorySaleReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-SALE-$inventoryReceiptSuffix"; expirationDate = "2028-12-31"; quantity = 2; unitCost = 3.25; referenceNumber = "SMOKE-SALE-REF-$inventoryReceiptSuffix"; notes = "Smoke patient-sale fixture" } | ConvertTo-Json) -TimeoutSec 20
@@ -10950,24 +10950,24 @@ try {
     $expiryReturn = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($expiryReturnReceipt.lot.lotId)/expiry-dispositions" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ disposition = "return"; notes = "Expired lot returned to vendor" } | ConvertTo-Json) -TimeoutSec 20
     $expiryDestroyReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-EXP-D-$inventoryReceiptSuffix"; expirationDate = $inventoryBefore.asOfDate; quantity = 1; unitCost = 3.25; referenceNumber = "SMOKE-EXP-D-REF-$inventoryReceiptSuffix"; notes = "Smoke expiry destroy fixture" } | ConvertTo-Json) -TimeoutSec 20
     $expiryDestroy = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($expiryDestroyReceipt.lot.lotId)/expiry-dispositions" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ disposition = "destroy"; notes = "Expired lot destroyed"; method = "Approved waste service"; witness = "Smoke witness" } | ConvertTo-Json) -TimeoutSec 20
-    $expiryDispositionAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_lot_expiry_dispositions where lot_id in ($($expiryQuarantineReceipt.lot.lotId),$($expiryReturnReceipt.lot.lotId),$($expiryDestroyReceipt.lot.lotId)) and disposed_by = 'admin';"
+    $expiryDispositionAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_lot_expiry_dispositions where lot_id in ($($expiryQuarantineReceipt.lot.lotId),$($expiryReturnReceipt.lot.lotId),$($expiryDestroyReceipt.lot.lotId)) and disposed_by = 'admin';"
     $updatedLotNumber = "SMOKE-EDIT-$inventoryReceiptSuffix"
     $lotMetadataUpdate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($inventoryReceipt.lot.lotId)" -Method Put -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ lotNumber = $updatedLotNumber; expirationDate = "2028-12-31" } | ConvertTo-Json) -TimeoutSec 20
     $inventoryWithMetadata = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $lotMetadataHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($inventoryReceipt.lot.lotId)/metadata-history" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $lotMetadataHistoryEntry = @($lotMetadataHistory | Where-Object { $_.auditId -eq $lotMetadataUpdate.auditId }) | Select-Object -First 1
     $updatedLot = @($inventoryWithMetadata.items | ForEach-Object { $_.lots } | Where-Object { $_.lotId -eq $inventoryReceipt.lot.lotId }) | Select-Object -First 1
-    $lotMetadataAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_lot_metadata_audits where audit_id = '$($lotMetadataUpdate.auditId)' and lot_id = $($inventoryReceipt.lot.lotId) and prior_lot_number = 'SMOKE-RCV-$inventoryReceiptSuffix' and new_lot_number = '$updatedLotNumber' and changed_by = 'admin';"
+    $lotMetadataAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_lot_metadata_audits where audit_id = '$($lotMetadataUpdate.auditId)' and lot_id = $($inventoryReceipt.lot.lotId) and prior_lot_number = 'SMOKE-RCV-$inventoryReceiptSuffix' and new_lot_number = '$updatedLotNumber' and changed_by = 'admin';"
     $inventoryReturn = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/returns" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ lotId = $inventoryReceipt.lot.lotId; quantity = 2; reason = "Smoke vendor return verification" } | ConvertTo-Json) -TimeoutSec 20
     $inventoryReturnActivity = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/activity?facilityId=$($inventoryFacility.facilityId)" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $inventoryReturnEntry = @($inventoryReturnActivity.entries | Where-Object { $_.transactionId -eq $inventoryReturn.transaction.transactionId }) | Select-Object -First 1
     $inventorySaleLot = $inventorySaleReceipt.lot
     $inventoryPatientSale = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/patient-sales" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ lotId = $inventorySaleLot.lotId; patientId = "MOD-PAT-0001"; encounter = 1000011; saleDate = "2026-07-27"; quantity = 1; fee = 12.5; notes = "Smoke patient sale verification" } | ConvertTo-Json) -TimeoutSec 20
-    $patientSaleAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_patient_sales where sale_id = '$($inventoryPatientSale.saleId)' and patient_id = 'MOD-PAT-0001' and encounter = 1000011 and quantity = 1 and fee = 12.5 and sold_by = 'admin';"
+    $patientSaleAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_patient_sales where sale_id = '$($inventoryPatientSale.saleId)' and patient_id = 'MOD-PAT-0001' and encounter = 1000011 and quantity = 1 and fee = 12.5 and sold_by = 'admin';"
     $inventoryPatientSaleAllocation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/patient-sales/allocate" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ itemId = $inventoryItem.itemId; patientId = "MOD-PAT-0001"; encounter = 1000011; saleDate = "2026-07-27"; quantity = 3; fee = 10; notes = "Smoke FEFO allocation verification" } | ConvertTo-Json) -TimeoutSec 20
     $allocationEarly = @($inventoryPatientSaleAllocation.allocations | Where-Object { $_.lotId -eq $allocationEarlyReceipt.lot.lotId }) | Select-Object -First 1
     $allocationLater = @($inventoryPatientSaleAllocation.allocations | Where-Object { $_.lotId -eq $allocationLaterReceipt.lot.lotId }) | Select-Object -First 1
-    $allocationAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_patient_sales where sale_batch_id = '$($inventoryPatientSaleAllocation.saleBatchId)' and patient_id = 'MOD-PAT-0001' and encounter = 1000011;"
+    $allocationAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_patient_sales where sale_batch_id = '$($inventoryPatientSaleAllocation.saleBatchId)' and patient_id = 'MOD-PAT-0001' and encounter = 1000011;"
     $inventoryMedicationLink = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($inventoryMedicationItem.itemId)/medication-link" -Method Put -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ rxNormCode = "860975" } | ConvertTo-Json) -TimeoutSec 20
     $inventoryMedicationLinkHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($inventoryMedicationItem.itemId)/medication-link/history" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $inventoryMedicationLinkHistoryEntry = @($inventoryMedicationLinkHistory.events | Where-Object { $_.newRxNormCode -eq "860975" -and $_.action -in @("linked", "updated") }) | Select-Object -First 1
@@ -10976,10 +10976,10 @@ try {
     $inventoryPrescriptionDispense = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/prescription-dispensations" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ prescriptionId = "RX-MOD-PAT-0001-1"; quantity = 2; fee = 4.5; saleDate = "2026-07-27"; notes = "Smoke prescription dispense verification" } | ConvertTo-Json) -TimeoutSec 20
     $inventoryAfterPrescriptionDispense = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $inventoryMedicationProjection = @($inventoryAfterPrescriptionDispense.items | Where-Object { $_.itemId -eq $inventoryMedicationItem.itemId }) | Select-Object -First 1
-    $prescriptionSaleAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_patient_sales where sale_id = '$($inventoryPrescriptionDispense.sale.saleId)' and prescription_id = 'RX-MOD-PAT-0001-1' and patient_id = 'MOD-PAT-0001' and encounter = 1000011 and quantity = 2 and fee = 4.5 and sold_by = 'admin';"
+    $prescriptionSaleAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_patient_sales where sale_id = '$($inventoryPrescriptionDispense.sale.saleId)' and prescription_id = 'RX-MOD-PAT-0001-1' and patient_id = 'MOD-PAT-0001' and encounter = 1000011 and quantity = 2 and fee = 4.5 and sold_by = 'admin';"
     $inventoryLotDestruction = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($inventoryReceipt.lot.lotId)/destructions" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ destructionDate = "2026-07-27"; method = "Returned to approved waste service"; witness = "Smoke witness"; notes = "Smoke lot destruction verification" } | ConvertTo-Json) -TimeoutSec 20
     $inventoryAfterLotDestruction = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
-    $lotDestructionAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_lot_destructions where destruction_id = '$($inventoryLotDestruction.destructionId)' and lot_id = $($inventoryReceipt.lot.lotId) and destruction_method = 'Returned to approved waste service' and destruction_witness = 'Smoke witness' and destroyed_by = 'admin';"
+    $lotDestructionAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_lot_destructions where destruction_id = '$($inventoryLotDestruction.destructionId)' and lot_id = $($inventoryReceipt.lot.lotId) and destruction_method = 'Returned to approved waste service' and destruction_witness = 'Smoke witness' and destroyed_by = 'admin';"
     $destroyedLotStillVisible = @($inventoryAfterLotDestruction.items | ForEach-Object { $_.lots } | Where-Object { $_.lotId -eq $inventoryReceipt.lot.lotId }) | Select-Object -First 1
     $inactiveLotMutationRejected = $false
     try {
@@ -11123,7 +11123,7 @@ try {
     $custodyItem = @($custodyInventory.items | Where-Object { $_.itemId -gt 0 }) | Select-Object -First 1
     $custodyPatient = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001" -Method Get -Headers $custodyHeaders -TimeoutSec 20
     $custodyEncounter = [int]$custodyPatient.latestEncounter.id
-    $custodyWitnessSessionId = (Get-ClinicianHeaders)["X-Legacy EHR-Session"]
+    $custodyWitnessSessionId = (Get-ClinicianHeaders)["X-AvenChart-Session"]
     $custodySuffix = [Guid]::NewGuid().ToString('N').Substring(0, 8)
     $custodySource = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-locations" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ facilityId = $custodyInventory.facilities[0].facilityId; locationCode = "CS-S-$custodySuffix"; displayName = "Smoke controlled source"; dualAttestationRequired = $true; active = $true } | ConvertTo-Json) -TimeoutSec 20
     $custodyDestination = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-locations" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ facilityId = $custodyInventory.facilities[0].facilityId; locationCode = "CS-D-$custodySuffix"; displayName = "Smoke controlled destination"; dualAttestationRequired = $false; active = $true } | ConvertTo-Json) -TimeoutSec 20
@@ -11155,15 +11155,15 @@ try {
     $controlledCountClosed = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/close" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke discrepancy closure" } | ConvertTo-Json) -TimeoutSec 20
     $controlledAsOfReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/as-of" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ asOfDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
     $controlledAsOfExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/controlled-inventory/as-of/$($controlledAsOfReport.run.runId)/export" -Method Get -Headers $custodyHeaders -UseBasicParsing -TimeoutSec 20
-    $controlledAsOfExportAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_controlled_report_exports where run_id = '$($controlledAsOfReport.run.runId)' and exported_by = 'admin' and format = 'csv' and result_checksum = '$($controlledAsOfReport.run.resultChecksum)';"
+    $controlledAsOfExportAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_controlled_report_exports where run_id = '$($controlledAsOfReport.run.runId)' and exported_by = 'admin' and format = 'csv' and result_checksum = '$($controlledAsOfReport.run.resultChecksum)';"
     $controlledMovementReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ reportType = "movement"; fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
     $controlledWasteReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ reportType = "waste"; fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
     $controlledPatientDispenseReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ reportType = "patient-dispense"; fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId; patientId = "MOD-PAT-0001" } | ConvertTo-Json) -TimeoutSec 20
     $controlledVarianceReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/count-variance" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
     $controlledMovementExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity/$($controlledMovementReport.run.runId)/export" -Method Get -Headers $custodyHeaders -UseBasicParsing -TimeoutSec 20
     $controlledVarianceExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/controlled-inventory/count-variance/$($controlledVarianceReport.run.runId)/export" -Method Get -Headers $custodyHeaders -UseBasicParsing -TimeoutSec 20
-    $controlledActivityExportAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_controlled_report_exports where run_id = '$($controlledMovementReport.run.runId)' and exported_by = 'admin' and format = 'csv' and result_checksum = '$($controlledMovementReport.run.resultChecksum)';"
-    $controlledVarianceExportAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_controlled_report_exports where run_id = '$($controlledVarianceReport.run.runId)' and exported_by = 'admin' and format = 'csv' and result_checksum = '$($controlledVarianceReport.run.resultChecksum)';"
+    $controlledActivityExportAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_controlled_report_exports where run_id = '$($controlledMovementReport.run.runId)' and exported_by = 'admin' and format = 'csv' and result_checksum = '$($controlledMovementReport.run.resultChecksum)';"
+    $controlledVarianceExportAuditCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_controlled_report_exports where run_id = '$($controlledVarianceReport.run.runId)' and exported_by = 'admin' and format = 'csv' and result_checksum = '$($controlledVarianceReport.run.resultChecksum)';"
     $controlledCountAfterCorrection = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)" -Method Get -Headers $custodyHeaders -TimeoutSec 20
     $controlledCountSessionsAfterResolution = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions?limit=30" -Method Get -Headers $custodyHeaders -TimeoutSec 20
     $controlledCountSummaryAfterResolution = @($controlledCountSessionsAfterResolution | Where-Object { $_.sessionId -eq $controlledCount.sessionId }) | Select-Object -First 1
@@ -11475,7 +11475,7 @@ try {
         $managedRecordChecksumRejected = $_.Exception.Response.StatusCode.value__ -eq 400
     }
 
-    $managedRecordDocumentsBeforeRelease = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from patient_documents where name = '$managedRecordMarker';"
+    $managedRecordDocumentsBeforeRelease = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from patient_documents where name = '$managedRecordMarker';"
     $managedRecordListed = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/?patientId=MOD-PAT-0001" -Method Get -Headers $managedRecordHeaders -TimeoutSec 20
     $managedRecordClassification = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/classification" -Method Put -Headers $managedRecordHeaders -ContentType "application/json" -Body (@{
         expectedVersion = 0
@@ -11502,7 +11502,7 @@ try {
     $managedRecordRestarted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/start" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body (@{ expectedVersion = 5; reason = "REC-02 structural validation restart" } | ConvertTo-Json) -TimeoutSec 20
     $managedRecordReleased = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/release" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body (@{ expectedVersion = 6; reason = "REC-02 local structural release" } | ConvertTo-Json) -TimeoutSec 20
     $managedRecordHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/history" -Method Get -Headers $managedRecordHeaders -TimeoutSec 20
-    $managedRecordDocumentsAfterRelease = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from patient_documents where name = '$managedRecordMarker' and id = $($managedRecordReleased.documentId);"
+    $managedRecordDocumentsAfterRelease = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from patient_documents where name = '$managedRecordMarker' and id = $($managedRecordReleased.documentId);"
 
     $managedRecordPassed = $managedRecordUnauthenticatedRejected `
         -and $managedRecordPolicy.revision -eq "local-record-control-v1" `
@@ -11564,7 +11564,7 @@ finally {
     if ($null -ne $managedRecordIntakeId) {
         try {
             Invoke-WebRequest -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/test-fixture" -Method Delete -Headers (Get-AdministrationHeaders) -UseBasicParsing -TimeoutSec 20 | Out-Null
-            $managedRecordRemaining = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select (select count(*) from managed_record_intakes where intake_id = '$managedRecordIntakeId') + (select count(*) from patient_documents where name = '$managedRecordMarker');"
+            $managedRecordRemaining = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select (select count(*) from managed_record_intakes where intake_id = '$managedRecordIntakeId') + (select count(*) from patient_documents where name = '$managedRecordMarker');"
             if ($managedRecordRemaining.Trim() -ne "0") {
                 throw "Managed record fixture cleanup left $($managedRecordRemaining.Trim()) owned rows."
             }
@@ -11583,7 +11583,7 @@ $result = [ordered]@{
 }
 
 $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
-Write-Host "Modernized smoke test result: $ResultPath"
+Write-Host "AvenChart smoke test result: $ResultPath"
 
 if ($status -ne "passed") {
     exit 1

@@ -192,7 +192,7 @@ select
   '["requesting-user"]'::jsonb,
   '["local-download"]'::jsonb,
   jsonb_build_object(
-    'datasetId', 'gold-legacy-ehr-synthetic',
+    'datasetId', 'gold-avenchart-synthetic',
     'scenario', 'legacy-migration:' || definition.report_type,
     'expectedColumns', jsonb_build_array('legacy'),
     'expectedRowCount', null

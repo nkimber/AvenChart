@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useState, type FormEvent } from 'react'
@@ -52,7 +52,7 @@ export default function ClinicianLogin() {
         </div>
         <h1 className="auth-hero-title">Everything you need for today's patients, in one place.</h1>
         <p className="auth-hero-text">
-          Schedules, charts, and messages from the modernized Legacy EHR backend, in a faster, cleaner workspace.
+          Schedules, charts, and messages from the AvenChart backend, in a faster, cleaner workspace.
         </p>
         <div className="auth-hero-illustration">
           <ClinicianIllustration />
@@ -70,7 +70,7 @@ export default function ClinicianLogin() {
         <div className="auth-card">
           <p className="eyebrow">Professional sign-in</p>
           <h2 className="title">Welcome back</h2>
-          <p className="subtitle">Sign in with your modernized Legacy EHR staff credentials.</p>
+          <p className="subtitle">Sign in with your AvenChart staff credentials.</p>
 
           <div className="hint-banner">Demo credentials are pre-filled: admin / pass.</div>
 

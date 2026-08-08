@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useEffect, useState } from "react";
@@ -84,7 +84,7 @@ export default function OperationalReports() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `legacy-ehr-${reportType}-report.csv`;
+      link.download = `avenchart-${reportType}-report.csv`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       showToast("Report CSV downloaded.", "success");

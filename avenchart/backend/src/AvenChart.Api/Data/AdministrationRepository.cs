@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Data.Common;
@@ -100,7 +100,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         }
 
         var package = new ConfigurationPackageDocument(
-            "legacy-ehr-modernized-configuration-package",
+            "avenchart-configuration-package",
             "1",
             settings);
         var digest = GetConfigurationPackageDigest(package);
@@ -1881,7 +1881,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             return issues;
         }
 
-        if (!string.Equals(package.Schema, "legacy-ehr-modernized-configuration-package", StringComparison.Ordinal))
+        if (!string.Equals(package.Schema, "avenchart-configuration-package", StringComparison.Ordinal))
         {
             issues.Add(new("unsupported-schema", "The package schema is not supported."));
         }
@@ -2047,7 +2047,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         var settings = new List<ConfigurationPackagePracticeSetting>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken)) settings.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
-        return new("legacy-ehr-modernized-configuration-package", "1", settings);
+        return new("avenchart-configuration-package", "1", settings);
     }
 
     private static bool ConfigurationPackagesMatch(ConfigurationPackageDocument left, ConfigurationPackageDocument right) =>

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -112,7 +112,7 @@ try {
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
         throw "Administration login did not issue an active session."
     }
-    $headers = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
 
     $unauthenticatedStatus = Get-HttpStatus `
         -Uri "$ApiBaseUrl/api/reports/definition-policy" `
@@ -228,7 +228,7 @@ try {
             -and $draft.parameterSchema.Count -eq 2 `
             -and $draft.sourceDatasets.Count -eq 1 `
             -and $draft.outputSchema.Count -eq 4 `
-            -and $draft.validationFixture.datasetId -eq "gold-legacy-ehr-synthetic" `
+            -and $draft.validationFixture.datasetId -eq "gold-avenchart-synthetic" `
             -and $duplicateStatus -eq 409
     ) @{
         definitionId = $definitionId

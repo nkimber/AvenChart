@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -146,8 +146,8 @@ function Invoke-ReportFixtureSql {
     try {
         $output = docker compose exec -T postgres psql `
             -X `
-            -U legacy-ehr `
-            -d legacy-ehr_modernized `
+            -U avenchart `
+            -d avenchart `
             -t `
             -A `
             -v ON_ERROR_STOP=1 `
@@ -246,20 +246,20 @@ try {
         -Uri "$ApiBaseUrl/api/auth/login" `
         -Method "POST" `
         -Body @{ username = "admin"; password = "pass" }
-    $headers = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
     $providerLogin = Invoke-Json `
         -Uri "$ApiBaseUrl/api/auth/login" `
         -Method "POST" `
         -Body @{ username = "gold-provider-01"; password = "pass" }
     $providerHeaders = @{
-        "X-Legacy EHR-Session" = $providerLogin.sessionId
+        "X-AvenChart-Session" = $providerLogin.sessionId
     }
     $frontdeskLogin = Invoke-Json `
         -Uri "$ApiBaseUrl/api/auth/login" `
         -Method "POST" `
         -Body @{ username = "gold-frontdesk-01"; password = "pass" }
     $frontdeskHeaders = @{
-        "X-Legacy EHR-Session" = $frontdeskLogin.sessionId
+        "X-AvenChart-Session" = $frontdeskLogin.sessionId
     }
 
     $unauthenticated = Invoke-Api `

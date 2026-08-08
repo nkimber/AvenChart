@@ -1,10 +1,10 @@
 {
-  "contractId": "legacy-ehr-real-data-rehearsal-v1",
+  "contractId": "avenchart-real-data-rehearsal-v1",
   "contractVersion": 1,
   "status": "owner-approval-required",
   "dataAccessAuthorized": false,
   "source": {
-    "system": "legacy-legacy-ehr",
+    "system": "legacy-ehr",
     "database": "MariaDB",
     "environment": "controlled-owner-approved-environment-required"
   },

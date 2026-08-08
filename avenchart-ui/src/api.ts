@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Compatibility barrel for the existing backend API. Domain modules migrate
@@ -107,7 +107,7 @@ export async function getCurrentSession(
   signal?: AbortSignal,
 ): Promise<AuthSessionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/auth/session`, {
-    headers: { 'X-Legacy EHR-Session': sessionId },
+    headers: { 'X-AvenChart-Session': sessionId },
     signal,
   })
   await requireSuccessfulResponse(response, 'Session check', 'clinician')
@@ -147,7 +147,7 @@ export async function getPatientPortalSession(
   signal?: AbortSignal,
 ): Promise<PatientPortalSessionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/session`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   await requireSuccessfulResponse(
@@ -164,7 +164,7 @@ export async function endPatientPortalSession(
 ): Promise<PatientPortalSessionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/session`, {
     method: 'DELETE',
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   await requireSuccessfulResponse(
@@ -217,7 +217,7 @@ export async function getPatientPortalHome(
   signal?: AbortSignal,
 ): Promise<PatientPortalHomeSummaryResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/home`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -275,7 +275,7 @@ export async function getPatientPortalMessages(
   signal?: AbortSignal,
 ): Promise<PatientPortalMessagesResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -319,7 +319,7 @@ export async function getPatientPortalMessageComposeOptions(
   const response = await fetch(
     `${apiBaseUrl}/api/patient-portal/messages/compose-options`,
     {
-      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
       signal,
     },
   )
@@ -347,7 +347,7 @@ export async function composePatientPortalMessage(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      'X-AvenChart-Patient-Portal-Session': sessionId,
     },
     body: JSON.stringify(input),
     signal,
@@ -368,7 +368,7 @@ export async function downloadPatientPortalMessageAttachment(
   const response = await fetch(
     `${apiBaseUrl}/api/patient-portal/messages/attachments/${encodeURIComponent(attachmentId)}`,
     {
-      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
       signal,
     },
   )
@@ -397,7 +397,7 @@ export async function getPatientPortalMessageThread(
   const response = await fetch(
     `${apiBaseUrl}/api/patient-portal/messages/${messageId}/thread`,
     {
-      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
       signal,
     },
   )
@@ -439,7 +439,7 @@ export async function replyToPatientPortalMessage(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+        'X-AvenChart-Patient-Portal-Session': sessionId,
       },
       body: JSON.stringify(input),
       signal,
@@ -470,7 +470,7 @@ export async function markPatientPortalMessageRead(
     `${apiBaseUrl}/api/patient-portal/messages/${messageId}/read`,
     {
       method: 'PUT',
-      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
       signal,
     },
   )
@@ -502,7 +502,7 @@ export async function archivePatientPortalMessages(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+        'X-AvenChart-Patient-Portal-Session': sessionId,
       },
       body: JSON.stringify({ messageIds }),
       signal,
@@ -522,7 +522,7 @@ export async function deletePatientPortalMessage(
     `${apiBaseUrl}/api/patient-portal/messages/${encodeURIComponent(messageId)}`,
     {
       method: 'DELETE',
-      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
       signal,
     },
   )
@@ -552,7 +552,7 @@ export async function getPatientPortalDocuments(
   signal?: AbortSignal,
 ): Promise<PatientPortalDocumentsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/documents`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -578,7 +578,7 @@ export async function downloadPatientPortalDocuments(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+        'X-AvenChart-Patient-Portal-Session': sessionId,
       },
       body: JSON.stringify(input),
       signal,
@@ -632,7 +632,7 @@ export async function getPatientPortalLabResults(
   signal?: AbortSignal,
 ): Promise<PatientPortalLabResultsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/lab-results`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -702,7 +702,7 @@ export async function getPatientPortalClinicalSummary(
   const response = await fetch(
     `${apiBaseUrl}/api/patient-portal/clinical-summary`,
     {
-      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
       signal,
     },
   )
@@ -757,7 +757,7 @@ export async function getPatientPortalPrescriptionRefillHistory(
   const response = await fetch(
     `${apiBaseUrl}/api/patient-portal/prescription-refill-requests`,
     {
-      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
       signal,
     },
   )
@@ -781,7 +781,7 @@ export async function requestPatientPortalPrescriptionRefill(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+        'X-AvenChart-Patient-Portal-Session': sessionId,
       },
       body: JSON.stringify(input),
       signal,
@@ -845,7 +845,7 @@ export async function getPatientPortalAppointments(
   const response = await fetch(
     `${apiBaseUrl}/api/patient-portal/appointments`,
     {
-      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
       signal,
     },
   )
@@ -864,7 +864,7 @@ export async function getPatientPortalAppointmentRequestOptions(
   const response = await fetch(
     `${apiBaseUrl}/api/patient-portal/appointments/request-options`,
     {
-      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
       signal,
     },
   )
@@ -910,7 +910,7 @@ export async function requestPatientPortalAppointment(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+        'X-AvenChart-Patient-Portal-Session': sessionId,
       },
       body: JSON.stringify(input),
       signal,
@@ -935,7 +935,7 @@ export async function downloadPatientPortalGeneratedMedicalReportPdf(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+        'X-AvenChart-Patient-Portal-Session': sessionId,
       },
       body: JSON.stringify(input),
       signal,
@@ -1038,7 +1038,7 @@ export async function getPatientPortalMedicalReport(
   const response = await fetch(
     `${apiBaseUrl}/api/patient-portal/medical-report`,
     {
-      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
       signal,
     },
   )
@@ -1060,7 +1060,7 @@ export async function generatePatientPortalMedicalReport(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+        'X-AvenChart-Patient-Portal-Session': sessionId,
       },
       body: JSON.stringify(input),
       signal,
@@ -1080,7 +1080,7 @@ export async function getPatientPortalGeneratedMedicalReportAudit(
   const response = await fetch(
     `${apiBaseUrl}/api/patient-portal/medical-report/audit`,
     {
-      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
       signal,
     },
   )
@@ -1103,7 +1103,7 @@ export async function downloadPatientPortalGeneratedMedicalReportPackage(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+        'X-AvenChart-Patient-Portal-Session': sessionId,
       },
       body: JSON.stringify(input),
       signal,
@@ -1119,7 +1119,7 @@ export async function downloadPatientPortalGeneratedMedicalReportPackage(
 // ─── Clinician API ───────────────────────────────────────────────────────────
 
 function clinicianHeaders(sessionId: string): Record<string, string> {
-  return { 'X-Legacy EHR-Session': sessionId, 'content-type': 'application/json' }
+  return { 'X-AvenChart-Session': sessionId, 'content-type': 'application/json' }
 }
 
 async function clinicianGet<T>(
@@ -1128,7 +1128,7 @@ async function clinicianGet<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: { 'X-Legacy EHR-Session': sessionId },
+    headers: { 'X-AvenChart-Session': sessionId },
     signal,
   })
   await requireSuccessfulResponse(response, `GET ${path}`, 'clinician')
@@ -1954,7 +1954,7 @@ export async function getPatientPrintableOutput(
   const response = await fetch(
     `${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/print/${output}?${query}`,
     {
-      headers: { 'X-Legacy EHR-Session': sessionId },
+      headers: { 'X-AvenChart-Session': sessionId },
     },
   )
   if (!response.ok)
@@ -3811,7 +3811,7 @@ export async function downloadInventoryActivityCsv(
   const response = await fetch(
     `${apiBaseUrl}/api/inventory/activity/export?${query}`,
     {
-      headers: { 'X-Legacy EHR-Session': sessionId },
+      headers: { 'X-AvenChart-Session': sessionId },
     },
   )
   if (!response.ok)
@@ -4875,7 +4875,7 @@ export async function downloadStaffMessageAttachment(
 ): Promise<Blob> {
   const response = await fetch(
     `${apiBaseUrl}/api/messages/${messageId}/attachments/${attachmentId}`,
-    { headers: { 'X-Legacy EHR-Session': sessionId } },
+    { headers: { 'X-AvenChart-Session': sessionId } },
   )
   await requireSuccessfulResponse(
     response,
@@ -5344,7 +5344,7 @@ export async function downloadBatchCommunicationCampaign(
   const response = await fetch(
     `${apiBaseUrl}/api/batch-communication/campaigns/${id}/output`,
     {
-      headers: { 'X-Legacy EHR-Session': sessionId },
+      headers: { 'X-AvenChart-Session': sessionId },
     },
   )
   if (!response.ok)
@@ -5571,7 +5571,7 @@ export async function downloadDocumentTemplateBinaryVersion(
 ): Promise<Blob> {
   const r = await fetch(
     `${apiBaseUrl}/api/administration/document-templates/${id}/binary-versions/${versionId}/download`,
-    { headers: { 'X-Legacy EHR-Session': sessionId } },
+    { headers: { 'X-AvenChart-Session': sessionId } },
   )
   if (!r.ok) throw new Error(`Template download failed with ${r.status}`)
   return r.blob()
@@ -6582,7 +6582,7 @@ export async function downloadPatientDocument(
   const response = await fetch(
     `${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/download`,
     {
-      headers: { 'X-Legacy EHR-Session': sessionId },
+      headers: { 'X-AvenChart-Session': sessionId },
       signal,
     },
   )
@@ -6617,7 +6617,7 @@ export async function downloadPatientDocumentVersion(
   const response = await fetch(
     `${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/versions/${encodeURIComponent(String(version))}/download`,
     {
-      headers: { 'X-Legacy EHR-Session': sessionId },
+      headers: { 'X-AvenChart-Session': sessionId },
       signal,
     },
   )
@@ -7300,7 +7300,7 @@ export async function downloadReportFamilyCsv(
   const r = await fetch(
     `${apiBaseUrl}/api/reports/families/${encodeURIComponent(family)}/export?${q}`,
     {
-      headers: { 'X-Legacy EHR-Session': sessionId },
+      headers: { 'X-AvenChart-Session': sessionId },
     },
   )
   if (!r.ok) throw new Error(`Report export failed with ${r.status}`)
@@ -9396,7 +9396,7 @@ export async function downloadPhiAccessAuditCsv(
   const response = await fetch(
     `${apiBaseUrl}/api/administration/audit/phi/export?${query}`,
     {
-      headers: { 'X-Legacy EHR-Session': sessionId },
+      headers: { 'X-AvenChart-Session': sessionId },
     },
   )
   if (!response.ok)
@@ -10672,7 +10672,7 @@ export async function getPatientPortalProfile(
   signal?: AbortSignal,
 ): Promise<PatientPortalProfileResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/profile`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok)
@@ -10703,7 +10703,7 @@ export async function submitPatientPortalProfileChange(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+        'X-AvenChart-Patient-Portal-Session': sessionId,
       },
       body: JSON.stringify(body),
       signal,

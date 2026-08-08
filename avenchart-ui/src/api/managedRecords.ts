@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { apiBaseUrl, apiFetch } from "./transport.ts";
@@ -130,7 +130,7 @@ export type ManagedRecordCreateInput = {
 
 function headers(sessionId: string, json = false) {
   return {
-    "X-Legacy EHR-Session": sessionId,
+    "X-AvenChart-Session": sessionId,
     ...(json ? { "content-type": "application/json" } : {}),
   };
 }

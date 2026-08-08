@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import AxeBuilder from "@axe-core/playwright";
@@ -193,7 +193,7 @@ test.describe("SEC-03 disclosure authority", () => {
         const cleanup = await page.request.delete(
           `${apiBaseUrl}/api/patients/MOD-PAT-0001/disclosure-authorities/${authorityId}/test-fixture`,
           {
-            headers: { "X-Legacy EHR-Session": staffSessionId },
+            headers: { "X-AvenChart-Session": staffSessionId },
           },
         );
         expect([204, 404]).toContain(cleanup.status());

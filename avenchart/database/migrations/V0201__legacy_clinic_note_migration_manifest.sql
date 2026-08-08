@@ -136,9 +136,9 @@ insert into clinical_form_migration_manifests (
 select
   '90f00000-0000-4000-a000-000000000001'::uuid,
   'legacy.clinicnote',
-  'legacy-legacy-ehr',
+  'legacy-ehr',
   'Legacy EHR 8.1.0',
-  'legacy-ehr-shared-synthetic-v1',
+  'avenchart-shared-synthetic-v1',
   'legacy-ehr',
   'form_clinic_note',
   1,

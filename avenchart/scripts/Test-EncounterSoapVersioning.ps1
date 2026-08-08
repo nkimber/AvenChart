@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -26,7 +26,7 @@ function Add-Check([string]$Name, [bool]$Passed, [object]$Details) {
 function Invoke-PostgresScalar([string]$Sql) {
     Push-Location $solutionRoot
     try {
-        return (& docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -Atc $Sql).Trim()
+        return (& docker compose exec -T postgres psql -X -U avenchart -d avenchart -Atc $Sql).Trim()
     }
     finally {
         Pop-Location
@@ -82,7 +82,7 @@ function Save-SoapVersion(
 }
 
 function Invoke-BrowserProof([bool]$LockedMode) {
-    $modernUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
+    $avenChartUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
     $priorEncounter = $env:MODERN_UI_SOAP_ENCOUNTER
     $priorPatient = $env:MODERN_UI_SOAP_PATIENT_ID
     $priorMarker = $env:MODERN_UI_SOAP_MARKER
@@ -91,7 +91,7 @@ function Invoke-BrowserProof([bool]$LockedMode) {
     $env:MODERN_UI_SOAP_PATIENT_ID = [string]$fixture.patientId
     $env:MODERN_UI_SOAP_MARKER = $marker
     $env:MODERN_UI_SOAP_LOCKED_MODE = if ($LockedMode) { "1" } else { "0" }
-    Push-Location $modernUiRoot
+    Push-Location $avenChartUiRoot
     try {
         if ($LockedMode) {
             & npx playwright test e2e/encounter-soap-version-conflict.spec.ts --workers=1 --grep "locking signature" | Out-Host
@@ -132,7 +132,7 @@ try {
     if (-not $admin.authenticated) {
         throw "The synthetic administrator session was not issued."
     }
-    $headers = @{ "X-Legacy EHR-Session" = $admin.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $admin.sessionId }
 
     $fixtureText = Invoke-PostgresScalar @"
 select json_build_object(

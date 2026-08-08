@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -20,14 +20,14 @@ function Invoke-ScopedApi([string]$Uri, [hashtable]$Headers) {
 
 function Invoke-Postgres([string]$Sql) {
     Push-Location $solutionRoot
-    try { & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U legacy-ehr -d legacy-ehr_modernized -c $Sql | Out-Null }
+    try { & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U avenchart -d avenchart -c $Sql | Out-Null }
     finally { Pop-Location }
 }
 
 try {
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     if (-not $login.authenticated) { throw "The synthetic administrator session was not issued." }
-    $headers = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
 
     $global = Invoke-ScopedApi "$ApiBaseUrl/api/administration/practice-settings/effective" $headers
     Add-Check "Effective practice settings resolve system values without a facility" (($global.requestedFacilityId -eq $null) -and @($global.settings).Count -eq 3 -and @($global.settings | Where-Object { $_.sourceScope -ne "system" }).Count -eq 0) @{ sources=@($global.settings | ForEach-Object sourceScope) }

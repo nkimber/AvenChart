@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -24,10 +24,10 @@ foreach ($checkpoint in $FaultCheckpoints) {
     }
 }
 
-$DatabaseName = "legacy-ehr_modernized_test_$([Guid]::NewGuid().ToString('N'))"
-$ApiContainerName = "legacy-ehr-migration-test-$([Guid]::NewGuid().ToString('N'))"
+$DatabaseName = "avenchart_test_$([Guid]::NewGuid().ToString('N'))"
+$ApiContainerName = "avenchart-migration-test-$([Guid]::NewGuid().ToString('N'))"
 $ArtifactsRoot = Join-Path $SolutionRoot "artifacts\migration-resilience"
-$ResultPath = Join-Path $ArtifactsRoot "latest-modernized-migration-resilience.json"
+$ResultPath = Join-Path $ArtifactsRoot "latest-avenchart-migration-resilience.json"
 $LocationPushed = $false
 $DatabaseCreated = $false
 $ApiStarted = $false
@@ -35,7 +35,7 @@ $CompletedScenarios = [System.Collections.Generic.List[string]]::new()
 
 function Assert-TestDatabaseName {
     param([string]$Name)
-    if ($Name -notmatch '^legacy-ehr_modernized_test_[a-f0-9]{32}$') {
+    if ($Name -notmatch '^avenchart_test_[a-f0-9]{32}$') {
         throw "Refusing database operation for unexpected test database name '$Name'."
     }
 }
@@ -44,7 +44,7 @@ function Invoke-DatabaseScalar {
     param([string]$Sql)
 
     Assert-TestDatabaseName -Name $DatabaseName
-    $value = docker compose exec -T postgres psql -X -U legacy-ehr -d $DatabaseName -t -A -v ON_ERROR_STOP=1 -c $Sql
+    $value = docker compose exec -T postgres psql -X -U avenchart -d $DatabaseName -t -A -v ON_ERROR_STOP=1 -c $Sql
     if ($LASTEXITCODE -ne 0) {
         throw "PostgreSQL scalar query failed for isolated database '$DatabaseName'."
     }
@@ -94,7 +94,7 @@ function Invoke-MigratorExpectingFailure {
 
     $failed = $false
     try {
-        & .\scripts\Invoke-ModernizedMigrations.ps1 `
+        & .\scripts\Invoke-AvenChartMigrations.ps1 `
             -SkipPostgresStartup `
             -SkipArtifact `
             -SkipImageBuild `
@@ -209,7 +209,7 @@ try {
 
     $postgresDeadline = (Get-Date).AddSeconds(90)
     do {
-        docker compose exec -T postgres pg_isready -U legacy-ehr -d legacy-ehr_modernized *> $null
+        docker compose exec -T postgres pg_isready -U avenchart -d avenchart *> $null
         if ($LASTEXITCODE -eq 0) { break }
         Start-Sleep -Seconds 2
     } while ((Get-Date) -lt $postgresDeadline)
@@ -223,7 +223,7 @@ try {
     }
 
     Assert-TestDatabaseName -Name $DatabaseName
-    docker compose exec -T postgres psql -X -U legacy-ehr -d postgres -v ON_ERROR_STOP=1 -c "create database $DatabaseName owner legacy-ehr;"
+    docker compose exec -T postgres psql -X -U avenchart -d postgres -v ON_ERROR_STOP=1 -c "create database $DatabaseName owner avenchart;"
     if ($LASTEXITCODE -ne 0) {
         throw "Could not create isolated migration test database '$DatabaseName'."
     }
@@ -232,7 +232,7 @@ try {
     foreach ($checkpoint in $FaultCheckpoints) {
         $faultObserved = $false
         try {
-            & .\scripts\Seed-ModernizedGoldDataset.ps1 `
+            & .\scripts\Seed-AvenChartGoldDataset.ps1 `
                 -DatabaseName $DatabaseName `
                 -TestFaultAfterAppliedMigrationCount $checkpoint `
                 -SkipMigrationImageBuild `
@@ -247,17 +247,17 @@ try {
         }
 
         Assert-LedgerCount -Expected $checkpoint
-        & .\scripts\Invoke-ModernizedMigrations.ps1 -SkipPostgresStartup -SkipArtifact -SkipImageBuild -DatabaseName $DatabaseName
+        & .\scripts\Invoke-AvenChartMigrations.ps1 -SkipPostgresStartup -SkipArtifact -SkipImageBuild -DatabaseName $DatabaseName
         Assert-LedgerCount -Expected $ExpectedMigrationCount
         Assert-AnchorChartData
         $CompletedScenarios.Add("reset-interruption-$checkpoint")
     }
 
-    & .\scripts\Invoke-ModernizedMigrations.ps1 -SkipPostgresStartup -SkipArtifact -SkipImageBuild -DatabaseName $DatabaseName
+    & .\scripts\Invoke-AvenChartMigrations.ps1 -SkipPostgresStartup -SkipArtifact -SkipImageBuild -DatabaseName $DatabaseName
     Assert-LedgerCount -Expected $ExpectedMigrationCount
     $CompletedScenarios.Add("idempotent-no-op")
 
-    $connectionString = "Host=postgres;Port=5432;Database=$DatabaseName;Username=legacy-ehr;Password=legacy-ehr_demo"
+    $connectionString = "Host=postgres;Port=5432;Database=$DatabaseName;Username=avenchart;Password=avenchart_demo"
     docker compose run --detach --rm --no-deps --name $ApiContainerName -p "127.0.0.1:$($ApiPort):8080" -e "ConnectionStrings__AvenChart=$connectionString" api
     if ($LASTEXITCODE -ne 0) {
         throw "Could not start the isolated API container."
@@ -273,7 +273,7 @@ try {
     if ([int]$readiness.StatusCode -ne 503) {
         throw "Readiness did not reject a missing packaged migration."
     }
-    & .\scripts\Invoke-ModernizedMigrations.ps1 -SkipPostgresStartup -SkipArtifact -SkipImageBuild -DatabaseName $DatabaseName
+    & .\scripts\Invoke-AvenChartMigrations.ps1 -SkipPostgresStartup -SkipArtifact -SkipImageBuild -DatabaseName $DatabaseName
     Wait-ForApiReady
     $CompletedScenarios.Add("missing-migration-request-gate")
 
@@ -306,7 +306,7 @@ try {
     $messageResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/messages/MOD-PAT-0001" `
-        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId }
+        -Headers @{ "X-AvenChart-Session" = $login.sessionId }
     if ([int]$messageResponse.StatusCode -ne 200) {
         throw "Patient messages without includeArchived should default to active-only, but returned HTTP $($messageResponse.StatusCode)."
     }
@@ -318,7 +318,7 @@ try {
 
     Wait-ForApiReady
     Invoke-DatabaseScalar -Sql "alter table patients rename column marital_status to marital_status_fault;" | Out-Null
-    $chartResponse = Invoke-Http -Method "GET" -Path "/api/patients/MOD-PAT-0001" -Headers @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $chartResponse = Invoke-Http -Method "GET" -Path "/api/patients/MOD-PAT-0001" -Headers @{ "X-AvenChart-Session" = $login.sessionId }
     Assert-SchemaNotReadyResponse -Response $chartResponse
     $CompletedScenarios.Add("undefined-column-mapped-to-503")
 
@@ -330,7 +330,7 @@ try {
         faultCheckpoints = $FaultCheckpoints
         scenarios = $CompletedScenarios
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
-    Write-Host "Modernized migration resilience verification passed: $ResultPath"
+    Write-Host "AvenChart migration resilience verification passed: $ResultPath"
 }
 finally {
     if ($ApiStarted) {
@@ -338,7 +338,7 @@ finally {
     }
     if ($DatabaseCreated) {
         Assert-TestDatabaseName -Name $DatabaseName
-        docker compose exec -T postgres psql -X -U legacy-ehr -d postgres -v ON_ERROR_STOP=1 -c "drop database if exists $DatabaseName with (force);" *> $null
+        docker compose exec -T postgres psql -X -U avenchart -d postgres -v ON_ERROR_STOP=1 -c "drop database if exists $DatabaseName with (force);" *> $null
     }
     if ($LocationPushed) {
         Pop-Location

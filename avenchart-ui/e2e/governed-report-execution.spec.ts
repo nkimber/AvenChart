@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import AxeBuilder from "@axe-core/playwright";
@@ -224,7 +224,7 @@ test.describe("REP-02 governed report execution", () => {
     const definitions: string[] = [];
 
     await signIn(page);
-    const headers = { "X-Legacy EHR-Session": await sessionId(page) };
+    const headers = { "X-AvenChart-Session": await sessionId(page) };
     try {
       const practiceTitle = `Browser patient execution ${suffix}`;
       const practicePurpose =
@@ -411,7 +411,7 @@ test.describe("REP-02 governed report execution", () => {
     expect(adminLogin.ok()).toBeTruthy();
     const adminSession = (await adminLogin.json()) as { sessionId: string };
     const adminHeaders = {
-      "X-Legacy EHR-Session": adminSession.sessionId,
+      "X-AvenChart-Session": adminSession.sessionId,
     };
 
     try {

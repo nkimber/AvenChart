@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -73,7 +73,7 @@ describe("getIdentityProviderReadiness", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:5001/api/administration/identity-provider/readiness",
       expect.objectContaining({
-        headers: { "X-Legacy EHR-Session": "staff-session" },
+        headers: { "X-AvenChart-Session": "staff-session" },
       }),
     );
   });

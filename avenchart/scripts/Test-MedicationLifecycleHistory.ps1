@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -14,7 +14,7 @@ try {
         throw "The synthetic administrator session was not issued."
     }
 
-    $headers = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
     $created = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications" -Method Post -Headers $headers -ContentType "application/json" -Body '{"patientId":"MOD-PAT-0006","title":"Temporary medication lifecycle proof","dateTime":"2026-07-29","diagnosis":"Z79.899","comments":"Temporary proof fixture"}'
     $medicationId = $created.id
     $createdItem = @($created.detail.medications | Where-Object { $_.id -eq $medicationId })[0]
@@ -55,6 +55,6 @@ try {
 }
 finally {
     if (-not [string]::IsNullOrWhiteSpace($medicationId)) {
-        docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1 -c "delete from medications where id = '$medicationId';" | Out-Null
+        docker compose exec -T postgres psql -X -U avenchart -d avenchart -v ON_ERROR_STOP=1 -c "delete from medications where id = '$medicationId';" | Out-Null
     }
 }

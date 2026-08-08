@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -87,7 +87,7 @@ describe("patient disclosure transport", () => {
     expect(fetchMock).toHaveBeenCalledTimes(9);
     for (const call of fetchMock.mock.calls) {
       expect(String(call[0])).toContain("/api/patients/MOD%20PAT%2F1/");
-      expect(new Headers(call[1]?.headers).get("X-Legacy EHR-Session")).toBe(
+      expect(new Headers(call[1]?.headers).get("X-AvenChart-Session")).toBe(
         "session",
       );
     }

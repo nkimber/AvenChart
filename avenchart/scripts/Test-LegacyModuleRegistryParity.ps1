@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 if ([string]::IsNullOrWhiteSpace($LegacyRoot)) {
-    $LegacyRoot = Join-Path $solutionRoot "..\legacy-legacy-ehr"
+    $LegacyRoot = Join-Path $solutionRoot "..\legacy-ehr"
 }
 $LegacyRoot = Resolve-Path $LegacyRoot
 $artifactsRoot = Join-Path $solutionRoot "artifacts"
@@ -77,8 +77,8 @@ catch {
 
 try {
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}' -TimeoutSec 20
-    if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) { throw "Modernized administrator login failed." }
-    $catalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/modules" -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } -TimeoutSec 20
+    if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) { throw "AvenChart administrator login failed." }
+    $catalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/modules" -Headers @{ "X-AvenChart-Session" = $login.sessionId } -TimeoutSec 20
     $moduleByKey = @{}
     @($catalog.modules) | ForEach-Object { $moduleByKey[$_.key] = $_ }
     $mismatches = @($legacyModules | ForEach-Object {

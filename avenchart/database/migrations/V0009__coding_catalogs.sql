@@ -1,4 +1,4 @@
--- Legacy Legacy EHR models selectable code systems as active, ordered code types.
+-- Legacy EHR models selectable code systems as active, ordered code types.
 create table if not exists coding_catalogs (
   catalog_key text primary key,
   display_name text not null,

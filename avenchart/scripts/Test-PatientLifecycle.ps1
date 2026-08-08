@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -69,7 +69,7 @@ try {
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
         throw "Administration login did not issue an active session."
     }
-    $headers = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
 
     $unauthenticatedHistory = Get-HttpStatus -Uri "$ApiBaseUrl/api/patients/unknown/lifecycle-history" -Method Get
     Add-Check "Lifecycle history is protected" ($unauthenticatedHistory -eq 401) @{ status = $unauthenticatedHistory }

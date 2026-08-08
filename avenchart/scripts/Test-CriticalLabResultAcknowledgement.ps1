@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -7,9 +7,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $temporaryResultId = 2090000000 + (Get-Random -Minimum 1 -Maximum 999999)
-$composeArguments = @("compose", "exec", "-T", "postgres", "psql", "-X", "-U", "legacy-ehr", "-d", "legacy-ehr_modernized", "-v", "ON_ERROR_STOP=1")
+$composeArguments = @("compose", "exec", "-T", "postgres", "psql", "-X", "-U", "avenchart", "-d", "avenchart", "-v", "ON_ERROR_STOP=1")
 
-function Invoke-ModernizedDatabase {
+function Invoke-AvenChartDatabase {
     param([string]$Sql, [switch]$TabSeparated)
 
     $arguments = @($composeArguments)
@@ -19,25 +19,25 @@ function Invoke-ModernizedDatabase {
     $arguments += @("-c", $Sql)
     $output = & docker @arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "Modernized PostgreSQL command failed."
+        throw "AvenChart PostgreSQL command failed."
     }
     return $output
 }
 
 try {
-    $existing = (Invoke-ModernizedDatabase -Sql "select count(*) from lab_results where id = $temporaryResultId;" -TabSeparated).Trim()
+    $existing = (Invoke-AvenChartDatabase -Sql "select count(*) from lab_results where id = $temporaryResultId;" -TabSeparated).Trim()
     if ($existing -ne "0") {
         throw "The generated temporary result ID already exists; rerun the check."
     }
 
-    Invoke-ModernizedDatabase -Sql "insert into lab_results (id, report_id, code, text, units, result, range, abnormal, result_date, result_status) values ($temporaryResultId, 6000001, 'CRIT-LOCAL', 'Temporary critical-result acknowledgement proof', 'mg/dL', '9.9', '0-1', 'critical', now(), 'final');" | Out-Null
+    Invoke-AvenChartDatabase -Sql "insert into lab_results (id, report_id, code, text, units, result, range, abnormal, result_date, result_status) values ($temporaryResultId, 6000001, 'CRIT-LOCAL', 'Temporary critical-result acknowledgement proof', 'mg/dL', '9.9', '0-1', 'critical', now(), 'final');" | Out-Null
 
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
         throw "The synthetic administrator session was not issued."
     }
 
-    $headers = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
     $before = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/critical-result-queue" -Headers $headers
     $openResult = @($before.results | Where-Object { $_.resultId -eq $temporaryResultId })[0]
     if ($null -eq $openResult -or $openResult.acknowledgementVersion -ne 1) {
@@ -65,7 +65,7 @@ try {
         throw "Expected HTTP 409 for the stale acknowledgement, got $staleStatus."
     }
 
-    $event = (Invoke-ModernizedDatabase -Sql "select action || '|' || previous_status || '|' || current_status || '|' || expected_version || '|' || resulting_version from critical_lab_result_acknowledgement_events where result_id = $temporaryResultId;" -TabSeparated).Trim()
+    $event = (Invoke-AvenChartDatabase -Sql "select action || '|' || previous_status || '|' || current_status || '|' || expected_version || '|' || resulting_version from critical_lab_result_acknowledgement_events where result_id = $temporaryResultId;" -TabSeparated).Trim()
     if ($event -ne "acknowledged|open|acknowledged|1|2") {
         throw "The acknowledgement event did not retain the expected transition evidence: $event"
     }
@@ -73,5 +73,5 @@ try {
     Write-Host "Critical-result acknowledgement workflow passed."
 }
 finally {
-    Invoke-ModernizedDatabase -Sql "delete from lab_results where id = $temporaryResultId;" | Out-Null
+    Invoke-AvenChartDatabase -Sql "delete from lab_results where id = $temporaryResultId;" | Out-Null
 }

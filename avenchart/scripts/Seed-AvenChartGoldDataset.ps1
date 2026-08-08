@@ -1,9 +1,9 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
     [int]$PostgresWaitSeconds = 90,
-    [string]$DatabaseName = "legacy-ehr_modernized",
+    [string]$DatabaseName = "avenchart",
     [int]$TestFaultAfterAppliedMigrationCount = 0,
     [switch]$SkipMigrationImageBuild,
     [switch]$SkipArtifact
@@ -11,21 +11,21 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if ($DatabaseName -ne "legacy-ehr_modernized" -and $DatabaseName -notmatch '^legacy-ehr_modernized_test_[a-z0-9_]+$') {
-    throw "DatabaseName must be 'legacy-ehr_modernized' or an isolated legacy-ehr_modernized_test_* database."
+if ($DatabaseName -ne "avenchart" -and $DatabaseName -notmatch '^avenchart_test_[a-z0-9_]+$') {
+    throw "DatabaseName must be 'avenchart' or an isolated avenchart_test_* database."
 }
 if ($TestFaultAfterAppliedMigrationCount -lt 0) {
     throw "TestFaultAfterAppliedMigrationCount cannot be negative."
 }
-if ($TestFaultAfterAppliedMigrationCount -gt 0 -and $DatabaseName -eq "legacy-ehr_modernized") {
-    throw "Reset fault injection is only allowed against an isolated legacy-ehr_modernized_test_* database."
+if ($TestFaultAfterAppliedMigrationCount -gt 0 -and $DatabaseName -eq "avenchart") {
+    throw "Reset fault injection is only allowed against an isolated avenchart_test_* database."
 }
 
 $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ArtifactsRoot = Join-Path $SolutionRoot "artifacts"
 $SqlPath = Join-Path $ArtifactsRoot "postgres\seed-gold.sql"
-$ResultPath = Join-Path $ArtifactsRoot "latest-modernized-seed-result.json"
-$IsPrimaryDatabase = $DatabaseName -eq "legacy-ehr_modernized"
+$ResultPath = Join-Path $ArtifactsRoot "latest-avenchart-seed-result.json"
+$IsPrimaryDatabase = $DatabaseName -eq "avenchart"
 $mutexPrefix = if ($IsWindows) { "Global\" } else { "" }
 $SeedLock = [System.Threading.Mutex]::new($false, "$($mutexPrefix)AvenChartSchemaMaintenance")
 $SeedLockHeld = $false
@@ -36,7 +36,7 @@ $ServicesToRestart = @()
 try {
     $SeedLockHeld = $SeedLock.WaitOne([TimeSpan]::FromMinutes(15))
     if (-not $SeedLockHeld) {
-        throw "Timed out waiting for the modernized gold-seed/reset lock."
+        throw "Timed out waiting for the AvenChart gold-seed/reset lock."
     }
 
     Push-Location $SolutionRoot
@@ -46,7 +46,7 @@ try {
     if ($IsPrimaryDatabase) {
         $runningServices = @(docker compose ps --services --filter status=running)
         if ($LASTEXITCODE -ne 0) {
-            throw "Could not inspect the modernized service state before reset."
+            throw "Could not inspect the AvenChart service state before reset."
         }
         $ServicesToRestart = @(@('api', 'frontend') | Where-Object { $_ -in $runningServices })
         if ($ServicesToRestart.Count -gt 0) {
@@ -64,13 +64,13 @@ try {
 
     docker compose up -d postgres
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to start the modernized PostgreSQL service."
+        throw "Failed to start the AvenChart PostgreSQL service."
     }
 
     $deadline = (Get-Date).AddSeconds($PostgresWaitSeconds)
     $ready = $false
     while ((Get-Date) -lt $deadline) {
-        docker compose exec -T postgres pg_isready -U legacy-ehr -d $DatabaseName *> $null
+        docker compose exec -T postgres pg_isready -U avenchart -d $DatabaseName *> $null
         if ($LASTEXITCODE -eq 0) {
             $ready = $true
             break
@@ -88,24 +88,24 @@ try {
     # at a time is not a reliable clean reset once those relationships exist.
     $schemaResetSql = @'
 drop schema if exists public cascade;
-create schema public authorization legacy-ehr;
-grant all on schema public to legacy-ehr;
+create schema public authorization avenchart;
+grant all on schema public to avenchart;
 grant all on schema public to public;
 '@
-    $schemaResetSql | docker compose exec -T postgres psql -X -U legacy-ehr -d $DatabaseName -v ON_ERROR_STOP=1 | Out-Null
+    $schemaResetSql | docker compose exec -T postgres psql -X -U avenchart -d $DatabaseName -v ON_ERROR_STOP=1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "Modernized application schema reset failed with exit code $LASTEXITCODE."
+        throw "AvenChart schema reset failed with exit code $LASTEXITCODE."
     }
 
     $sql = Get-Content -LiteralPath $SqlPath -Raw
-    $sql | docker compose exec -T postgres psql -X -U legacy-ehr -d $DatabaseName -v ON_ERROR_STOP=1 | Out-Null
+    $sql | docker compose exec -T postgres psql -X -U avenchart -d $DatabaseName -v ON_ERROR_STOP=1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Gold dataset import failed with exit code $LASTEXITCODE."
     }
 
     # The generated dataset rebuilds the base schema. The same packaged migrator used by Docker
     # startup bootstraps its ledger and transactionally reapplies every versioned migration.
-    & .\scripts\Invoke-ModernizedMigrations.ps1 `
+    & .\scripts\Invoke-AvenChartMigrations.ps1 `
         -SkipPostgresStartup `
         -SkipHostLock `
         -SkipImageBuild:$SkipMigrationImageBuild `
@@ -113,15 +113,15 @@ grant all on schema public to public;
         -DatabaseName $DatabaseName `
         -TestFaultAfterAppliedMigrationCount $TestFaultAfterAppliedMigrationCount
 
-    $countsJson = docker compose exec -T postgres psql -X -U legacy-ehr -d $DatabaseName -t -A -c "select json_build_object('patients',(select count(*) from patients),'insuranceRecords',(select count(*) from insurance_records),'patientHistories',(select count(*) from patient_histories),'portalAccounts',(select count(*) from patient_portal_accounts),'portalProfileChangeRequests',(select count(*) from patient_portal_profile_change_requests),'portalReportAuditEvents',(select count(*) from patient_portal_report_audit_events),'portalMessageAuditEvents',(select count(*) from patient_portal_message_audit_events),'appointments',(select count(*) from appointments),'encounters',(select count(*) from encounters),'encounterSignatures',(select count(*) from encounter_signatures),'vitals',(select count(*) from vitals),'clinicalNotes',(select count(*) from clinical_notes),'prescriptions',(select count(*) from prescriptions),'billing',(select count(*) from billing),'labProviders',(select count(*) from lab_providers),'labOrders',(select count(*) from lab_orders),'procedureOrderCatalogItems',(select count(*) from lab_order_catalog),'labReports',(select count(*) from lab_reports),'labResults',(select count(*) from lab_results),'messages',(select count(*) from messages),'portalMailboxMessages',(select count(*) from portal_mailbox_messages),'patientReminders',(select count(*) from patient_reminders),'patientDocuments',(select count(*) from patient_documents),'problems',(select count(*) from problems),'allergies',(select count(*) from allergies),'medications',(select count(*) from medications));"
+    $countsJson = docker compose exec -T postgres psql -X -U avenchart -d $DatabaseName -t -A -c "select json_build_object('patients',(select count(*) from patients),'insuranceRecords',(select count(*) from insurance_records),'patientHistories',(select count(*) from patient_histories),'portalAccounts',(select count(*) from patient_portal_accounts),'portalProfileChangeRequests',(select count(*) from patient_portal_profile_change_requests),'portalReportAuditEvents',(select count(*) from patient_portal_report_audit_events),'portalMessageAuditEvents',(select count(*) from patient_portal_message_audit_events),'appointments',(select count(*) from appointments),'encounters',(select count(*) from encounters),'encounterSignatures',(select count(*) from encounter_signatures),'vitals',(select count(*) from vitals),'clinicalNotes',(select count(*) from clinical_notes),'prescriptions',(select count(*) from prescriptions),'billing',(select count(*) from billing),'labProviders',(select count(*) from lab_providers),'labOrders',(select count(*) from lab_orders),'procedureOrderCatalogItems',(select count(*) from lab_order_catalog),'labReports',(select count(*) from lab_reports),'labResults',(select count(*) from lab_results),'messages',(select count(*) from messages),'portalMailboxMessages',(select count(*) from portal_mailbox_messages),'patientReminders',(select count(*) from patient_reminders),'patientDocuments',(select count(*) from patient_documents),'problems',(select count(*) from problems),'allergies',(select count(*) from allergies),'medications',(select count(*) from medications));"
     if ($LASTEXITCODE -ne 0) {
-        throw "Could not read modernized seed counts."
+        throw "Could not read AvenChart seed counts."
     }
 
     $result = [ordered]@{
         status = "passed"
         generatedAt = (Get-Date).ToUniversalTime().ToString("o")
-        datasetId = "legacy-ehr-shared-synthetic-v1"
+        datasetId = "avenchart-shared-synthetic-v1"
         database = $DatabaseName
         sqlPath = $SqlPath
         counts = $countsJson | ConvertFrom-Json
@@ -140,10 +140,10 @@ grant all on schema public to public;
     }
 
     if ($SkipArtifact) {
-        Write-Host "Modernized gold dataset seed complete for '$DatabaseName'."
+        Write-Host "AvenChart gold dataset seed complete for '$DatabaseName'."
     }
     else {
-        Write-Host "Modernized gold dataset seed complete: $ResultPath"
+        Write-Host "AvenChart gold dataset seed complete: $ResultPath"
     }
 }
 finally {

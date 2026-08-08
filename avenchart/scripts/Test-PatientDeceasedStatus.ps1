@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -50,7 +50,7 @@ try {
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" `
         -Body (@{ username = "admin"; password = "pass" } | ConvertTo-Json) -TimeoutSec 20
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) { throw "Administration login did not issue an active session." }
-    $headers = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
 
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 10)
     $patient = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/" -Method Post -Headers $headers -ContentType "application/json" `

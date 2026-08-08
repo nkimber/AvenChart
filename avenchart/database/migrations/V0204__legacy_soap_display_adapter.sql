@@ -56,9 +56,9 @@ insert into legacy_clinical_form_snapshots (
 )
 select
   fixture.snapshot_id,
-  'legacy-legacy-ehr',
+  'legacy-ehr',
   'Legacy EHR 8.1.0',
-  'legacy-ehr-shared-synthetic-v1',
+  'avenchart-shared-synthetic-v1',
   'legacy-ehr',
   'form_soap',
   fixture.source_row_id,

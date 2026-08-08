@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -46,7 +46,7 @@ finally {
 }
 
 if ($exitCode -ne 0) {
-    throw "Modern UI material workflows failed. See $ResultPath."
+    throw "AvenChart UI material workflows failed. See $ResultPath."
 }
 
-Write-Host "Modern UI material workflows passed: $ResultPath"
+Write-Host "AvenChart UI material workflows passed: $ResultPath"

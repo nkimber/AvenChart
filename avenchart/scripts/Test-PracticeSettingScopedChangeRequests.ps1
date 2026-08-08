@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -17,14 +17,14 @@ function Add-Check([string]$Name, [bool]$Passed, [object]$Details) {
 
 function Invoke-Postgres([string]$Sql) {
     Push-Location $solutionRoot
-    try { & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U legacy-ehr -d legacy-ehr_modernized -c $Sql | Out-Null }
+    try { & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U avenchart -d avenchart -c $Sql | Out-Null }
     finally { Pop-Location }
 }
 
 try {
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     if (-not $login.authenticated) { throw "The synthetic administrator session was not issued." }
-    $headers = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
 
     $before = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/effective?facilityId=10" -Headers $headers
     $beforeTimeZone = @($before.settings | Where-Object { $_.key -eq "practice.time-zone" }) | Select-Object -First 1
@@ -44,7 +44,7 @@ try {
     Add-Check "Approved scoped activation changes only the facility effective value" (($activated.request.status -eq "activated") -and ($afterTimeZone.value -eq $testValue) -and ($afterTimeZone.sourceScope -eq "facility") -and ($afterTimeZone.sourceFacilityId -eq 10)) @{ status=$activated.request.status; value=$afterTimeZone.value; source=$afterTimeZone.sourceScope }
 
     Push-Location $solutionRoot
-    try { $revisionCount = [int](& docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -Atc "select count(*) from practice_setting_facility_override_revisions where setting_key='practice.time-zone' and facility_id=10 and value='$testValue';") }
+    try { $revisionCount = [int](& docker compose exec -T postgres psql -X -U avenchart -d avenchart -Atc "select count(*) from practice_setting_facility_override_revisions where setting_key='practice.time-zone' and facility_id=10 and value='$testValue';") }
     finally { Pop-Location }
     Add-Check "Scoped activation records immutable facility override evidence" ($revisionCount -eq 1) @{ revisions=$revisionCount }
 }
@@ -57,7 +57,7 @@ finally {
             Invoke-Postgres "delete from practice_setting_facility_override_revisions where setting_key='practice.time-zone' and facility_id=10 and value='$testValue' and username='admin'; delete from practice_setting_facility_overrides where setting_key='practice.time-zone' and facility_id=10 and setting_value='$testValue' and updated_by='admin';"
             Invoke-Postgres "delete from practice_setting_change_request_events where request_id='$requestId'::uuid; delete from practice_setting_change_requests where request_id='$requestId'::uuid and reason like 'TMP-ADM-SETTING-SCOPE-%';"
             Push-Location $solutionRoot
-            try { $residue = [int](& docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -Atc "select count(*) from practice_setting_change_requests where request_id='$requestId'::uuid;") }
+            try { $residue = [int](& docker compose exec -T postgres psql -X -U avenchart -d avenchart -Atc "select count(*) from practice_setting_change_requests where request_id='$requestId'::uuid;") }
             finally { Pop-Location }
             Add-Check "Scoped lifecycle fixture cleanup leaves no request residue" ($residue -eq 0) @{ residue=$residue }
         }

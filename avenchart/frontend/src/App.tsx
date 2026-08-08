@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
@@ -786,8 +786,8 @@ function App() {
   const [administrationStatus, setAdministrationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [administrationError, setAdministrationError] = useState<string | null>(null)
   const [administrationRefreshKey, setAdministrationRefreshKey] = useState(0)
-  const [openEmrSessionId, setLegacyEhrSessionId] = useState<string | null>(null)
-  const [openEmrSession, setLegacyEhrSession] = useState<AuthSessionResponse | null>(null)
+  const [avenChartSessionId, setLegacyEhrSessionId] = useState<string | null>(null)
+  const [avenChartSession, setLegacyEhrSession] = useState<AuthSessionResponse | null>(null)
   const [staffLoginUsername, setStaffLoginUsername] = useState('admin')
   const [staffLoginPassword, setStaffLoginPassword] = useState('pass')
   const [staffLoginStatus, setStaffLoginStatus] =
@@ -833,7 +833,7 @@ function App() {
   const [procedureReportReviewQueueRefreshKey, setProcedureReportReviewQueueRefreshKey] = useState(0)
 
   useEffect(() => {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setSearchResult(null)
       setSelectedPatientId(null)
       setChart(null)
@@ -853,7 +853,7 @@ function App() {
       setPatientError(null)
 
       try {
-        const result = await searchPatients(query, openEmrSessionId, controller.signal)
+        const result = await searchPatients(query, avenChartSessionId, controller.signal)
         setSearchResult(result)
         setSearchStatus('ready')
 
@@ -878,10 +878,10 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [query, openEmrSessionId])
+  }, [query, avenChartSessionId])
 
   useEffect(() => {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setProviderAssignmentOptions(null)
       setProviderAssignmentOptionsStatus('idle')
       return
@@ -891,7 +891,7 @@ function App() {
     async function loadProviderAssignmentOptions() {
       setProviderAssignmentOptionsStatus('loading')
       try {
-        const options = await getPatientProviderAssignmentOptions(openEmrSessionId, controller.signal)
+        const options = await getPatientProviderAssignmentOptions(avenChartSessionId, controller.signal)
         setProviderAssignmentOptions(options)
         setProviderAssignmentOptionsStatus('ready')
       } catch (optionsError) {
@@ -904,10 +904,10 @@ function App() {
 
     loadProviderAssignmentOptions()
     return () => controller.abort()
-  }, [openEmrSessionId])
+  }, [avenChartSessionId])
 
   useEffect(() => {
-    if (!selectedPatientId || !openEmrSessionId) {
+    if (!selectedPatientId || !avenChartSessionId) {
       setChartStatus('idle')
       setChart(null)
       setCareTeamOptions(null)
@@ -920,7 +920,7 @@ function App() {
       setChart(null)
       setChartStatus('loading')
       try {
-        const patient = await getPatientChart(selectedPatientId!, openEmrSessionId, controller.signal)
+        const patient = await getPatientChart(selectedPatientId!, avenChartSessionId, controller.signal)
         setChart(patient)
         setChartStatus('ready')
       } catch (chartError) {
@@ -933,10 +933,10 @@ function App() {
 
     loadChart()
     return () => controller.abort()
-  }, [selectedPatientId, openEmrSessionId])
+  }, [selectedPatientId, avenChartSessionId])
 
   useEffect(() => {
-    if (!selectedPatientId || !openEmrSessionId) {
+    if (!selectedPatientId || !avenChartSessionId) {
       setCareTeamOptions(null)
       setCareTeamOptionsStatus('idle')
       return
@@ -946,7 +946,7 @@ function App() {
     async function loadCareTeamOptions() {
       setCareTeamOptionsStatus('loading')
       try {
-        const options = await getPatientCareTeamOptions(selectedPatientId!, openEmrSessionId, controller.signal)
+        const options = await getPatientCareTeamOptions(selectedPatientId!, avenChartSessionId, controller.signal)
         setCareTeamOptions(options)
         setCareTeamOptionsStatus('ready')
       } catch (optionsError) {
@@ -960,14 +960,14 @@ function App() {
 
     loadCareTeamOptions()
     return () => controller.abort()
-  }, [selectedPatientId, openEmrSessionId])
+  }, [selectedPatientId, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'calendar') {
       return
     }
 
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setAppointmentStatus('idle')
       setAppointmentError(null)
       setAppointmentResult(null)
@@ -996,7 +996,7 @@ function App() {
         const result = await searchAppointments(
           appointmentPatientId,
           appointmentFromDate,
-          openEmrSessionId,
+          avenChartSessionId,
           controller.signal,
         )
         setAppointmentResult(result)
@@ -1023,14 +1023,14 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, appointmentPatientId, appointmentFromDate, appointmentRefreshKey, openEmrSessionId])
+  }, [activeModule, appointmentPatientId, appointmentFromDate, appointmentRefreshKey, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'calendar') {
       return
     }
 
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setAppointmentReminderTemplates(null)
       setAppointmentReminderTemplateStatus('idle')
       setAppointmentReminderTemplateError(null)
@@ -1043,7 +1043,7 @@ function App() {
       setAppointmentReminderTemplateError(null)
 
       try {
-        const templates = await getAppointmentReminderTemplates(openEmrSessionId, controller.signal)
+        const templates = await getAppointmentReminderTemplates(avenChartSessionId, controller.signal)
         setAppointmentReminderTemplates(templates)
         setAppointmentReminderTemplateStatus('ready')
       } catch (templateError) {
@@ -1059,14 +1059,14 @@ function App() {
 
     loadAppointmentReminderTemplates()
     return () => controller.abort()
-  }, [activeModule, openEmrSessionId])
+  }, [activeModule, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'calendar') {
       return
     }
 
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setAppointmentWaitlist(null)
       setAppointmentWaitlistStatus('idle')
       setAppointmentWaitlistError(null)
@@ -1079,7 +1079,7 @@ function App() {
       setAppointmentWaitlistError(null)
 
       try {
-        const waitlist = await getAppointmentWaitlist(openEmrSessionId, controller.signal)
+        const waitlist = await getAppointmentWaitlist(avenChartSessionId, controller.signal)
         setAppointmentWaitlist(waitlist)
         setAppointmentWaitlistStatus('ready')
       } catch (waitlistError) {
@@ -1092,10 +1092,10 @@ function App() {
 
     loadAppointmentWaitlist()
     return () => controller.abort()
-  }, [activeModule, appointmentRefreshKey, openEmrSessionId])
+  }, [activeModule, appointmentRefreshKey, avenChartSessionId])
 
   useEffect(() => {
-    if (activeModule !== 'calendar' || !selectedAppointmentId || !openEmrSessionId) {
+    if (activeModule !== 'calendar' || !selectedAppointmentId || !avenChartSessionId) {
       setAppointmentDetailStatus('idle')
       setAppointmentDetail(null)
       return
@@ -1105,7 +1105,7 @@ function App() {
     async function loadAppointmentDetail() {
       setAppointmentDetailStatus('loading')
       try {
-        const detail = await getAppointmentDetail(selectedAppointmentId!, openEmrSessionId, controller.signal)
+        const detail = await getAppointmentDetail(selectedAppointmentId!, avenChartSessionId, controller.signal)
         setAppointmentDetail(detail)
         setAppointmentDetailStatus('ready')
       } catch (detailError) {
@@ -1118,10 +1118,10 @@ function App() {
 
     loadAppointmentDetail()
     return () => controller.abort()
-  }, [activeModule, selectedAppointmentId, openEmrSessionId])
+  }, [activeModule, selectedAppointmentId, avenChartSessionId])
 
   useEffect(() => {
-    if (activeModule !== 'calendar' || !selectedAppointmentId || !openEmrSessionId) {
+    if (activeModule !== 'calendar' || !selectedAppointmentId || !avenChartSessionId) {
       setAppointmentReminderDispatchHistory(null)
       return
     }
@@ -1129,7 +1129,7 @@ function App() {
     const controller = new AbortController()
     async function loadReminderDispatchHistory() {
       try {
-        const history = await getAppointmentReminderDispatchHistory(selectedAppointmentId!, openEmrSessionId, controller.signal)
+        const history = await getAppointmentReminderDispatchHistory(selectedAppointmentId!, avenChartSessionId, controller.signal)
         setAppointmentReminderDispatchHistory(history)
       } catch (historyError) {
         if (!controller.signal.aborted) {
@@ -1140,14 +1140,14 @@ function App() {
 
     loadReminderDispatchHistory()
     return () => controller.abort()
-  }, [activeModule, selectedAppointmentId, openEmrSessionId, appointmentRefreshKey])
+  }, [activeModule, selectedAppointmentId, avenChartSessionId, appointmentRefreshKey])
 
   useEffect(() => {
     if (activeModule !== 'encounters') {
       return
     }
 
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setEncounterResult(null)
       setEncounterStatus('idle')
       setEncounterError(null)
@@ -1169,7 +1169,7 @@ function App() {
         const result = await searchEncounters(
           encounterPatientId,
           encounterFromDate,
-          openEmrSessionId,
+          avenChartSessionId,
           controller.signal,
           encounterShowArchived,
         )
@@ -1197,14 +1197,14 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, encounterPatientId, encounterFromDate, encounterRefreshKey, encounterShowArchived, openEmrSessionId])
+  }, [activeModule, encounterPatientId, encounterFromDate, encounterRefreshKey, encounterShowArchived, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'encounters') {
       return
     }
 
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setEncounterSoapNoteTemplates(null)
       setEncounterSoapNoteTemplateStatus('idle')
       setEncounterSoapNoteTemplateError(null)
@@ -1217,7 +1217,7 @@ function App() {
       setEncounterSoapNoteTemplateError(null)
 
       try {
-        const templates = await getEncounterSoapNoteTemplates(openEmrSessionId, controller.signal)
+        const templates = await getEncounterSoapNoteTemplates(avenChartSessionId, controller.signal)
         setEncounterSoapNoteTemplates(templates)
         setEncounterSoapNoteTemplateStatus('ready')
       } catch (templateError) {
@@ -1233,10 +1233,10 @@ function App() {
 
     loadEncounterSoapNoteTemplates()
     return () => controller.abort()
-  }, [activeModule, openEmrSessionId])
+  }, [activeModule, avenChartSessionId])
 
   useEffect(() => {
-    if (activeModule !== 'encounters' || selectedEncounter === null || !openEmrSessionId) {
+    if (activeModule !== 'encounters' || selectedEncounter === null || !avenChartSessionId) {
       setEncounterDetailStatus('idle')
       setEncounterDetail(null)
       return
@@ -1248,7 +1248,7 @@ function App() {
       try {
         const detail = await getEncounterDetail(
           selectedEncounter!,
-          openEmrSessionId,
+          avenChartSessionId,
           controller.signal,
           encounterIncludeArchivedDocuments,
         )
@@ -1264,14 +1264,14 @@ function App() {
 
     loadEncounterDetail()
     return () => controller.abort()
-  }, [activeModule, selectedEncounter, encounterIncludeArchivedDocuments, openEmrSessionId])
+  }, [activeModule, selectedEncounter, encounterIncludeArchivedDocuments, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'lists') {
       return
     }
 
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setClinicalLists(null)
       setClinicalStatus('idle')
       setClinicalError(null)
@@ -1284,7 +1284,7 @@ function App() {
       setClinicalError(null)
 
       try {
-        const result = await getClinicalLists(clinicalPatientId, openEmrSessionId, controller.signal)
+        const result = await getClinicalLists(clinicalPatientId, avenChartSessionId, controller.signal)
         setClinicalLists(result)
         setClinicalStatus('ready')
       } catch (loadError) {
@@ -1299,14 +1299,14 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, clinicalPatientId, clinicalRefreshKey, openEmrSessionId])
+  }, [activeModule, clinicalPatientId, clinicalRefreshKey, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'messages') {
       return
     }
 
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setPatientMessages(null)
       setMessageStatus('idle')
       setMessageError(null)
@@ -1319,7 +1319,7 @@ function App() {
       setMessageError(null)
 
       try {
-        const result = await getPatientMessages(messagePatientId, openEmrSessionId, controller.signal)
+        const result = await getPatientMessages(messagePatientId, avenChartSessionId, controller.signal)
         setPatientMessages(result)
         setMessageStatus('ready')
       } catch (loadError) {
@@ -1334,14 +1334,14 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, messagePatientId, messageRefreshKey, openEmrSessionId])
+  }, [activeModule, messagePatientId, messageRefreshKey, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'documents') {
       return
     }
 
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setPatientDocuments(null)
       setDocumentOcrQueue(null)
       setDocumentRoutingQueue(null)
@@ -1360,12 +1360,12 @@ function App() {
         const result = await getPatientDocuments(
           documentPatientId,
           documentIncludeArchived,
-          openEmrSessionId,
+          avenChartSessionId,
           controller.signal,
         )
-        const ocrQueue = await getPatientDocumentOcrQueue(documentPatientId, openEmrSessionId, controller.signal)
-        const routingQueue = await getPatientDocumentRoutingQueue(documentPatientId, openEmrSessionId, controller.signal)
-        const retentionPolicy = await getPatientDocumentRetentionPolicy(documentPatientId, openEmrSessionId, controller.signal)
+        const ocrQueue = await getPatientDocumentOcrQueue(documentPatientId, avenChartSessionId, controller.signal)
+        const routingQueue = await getPatientDocumentRoutingQueue(documentPatientId, avenChartSessionId, controller.signal)
+        const retentionPolicy = await getPatientDocumentRetentionPolicy(documentPatientId, avenChartSessionId, controller.signal)
         setPatientDocuments(result)
         setDocumentOcrQueue(ocrQueue)
         setDocumentRoutingQueue(routingQueue)
@@ -1383,13 +1383,13 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, documentPatientId, documentIncludeArchived, documentRefreshKey, openEmrSessionId])
+  }, [activeModule, documentPatientId, documentIncludeArchived, documentRefreshKey, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'procedures') {
       return
     }
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setProcedureResults(null)
       setProcedureStatus('idle')
       setProcedureError(null)
@@ -1402,7 +1402,7 @@ function App() {
       setProcedureError(null)
 
       try {
-        const result = await getProcedureResults(procedurePatientId, openEmrSessionId, controller.signal)
+        const result = await getProcedureResults(procedurePatientId, avenChartSessionId, controller.signal)
         setProcedureResults(result)
         setProcedureStatus('ready')
       } catch (loadError) {
@@ -1417,13 +1417,13 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, procedurePatientId, procedureRefreshKey, openEmrSessionId])
+  }, [activeModule, procedurePatientId, procedureRefreshKey, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'fees') {
       return
     }
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setPatientBilling(null)
       setBillingStatus('idle')
       setBillingError(null)
@@ -1436,7 +1436,7 @@ function App() {
       setBillingError(null)
 
       try {
-        const result = await getPatientBilling(billingPatientId, openEmrSessionId, controller.signal)
+        const result = await getPatientBilling(billingPatientId, avenChartSessionId, controller.signal)
         setPatientBilling(result)
         setBillingStatus('ready')
       } catch (loadError) {
@@ -1451,13 +1451,13 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, billingPatientId, openEmrSessionId])
+  }, [activeModule, billingPatientId, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'inventory') {
       return
     }
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setInventory(null)
       setInventoryStatus('idle')
       setInventoryError(null)
@@ -1470,7 +1470,7 @@ function App() {
       setInventoryError(null)
 
       try {
-        const result = await getInventory(openEmrSessionId, controller.signal)
+        const result = await getInventory(avenChartSessionId, controller.signal)
         setInventory(result)
         setInventoryStatus('ready')
       } catch (loadError) {
@@ -1485,13 +1485,13 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, inventoryRefreshKey, openEmrSessionId])
+  }, [activeModule, inventoryRefreshKey, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'flow') {
       return
     }
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setFlowBoard(null)
       setFlowStatus('idle')
       setFlowError(null)
@@ -1504,7 +1504,7 @@ function App() {
       setFlowError(null)
 
       try {
-        const result = await getAppointmentFlowBoard(flowDate, openEmrSessionId, controller.signal)
+        const result = await getAppointmentFlowBoard(flowDate, avenChartSessionId, controller.signal)
         setFlowBoard(result)
         setFlowStatus('ready')
       } catch (loadError) {
@@ -1519,13 +1519,13 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, flowDate, flowRefreshKey, openEmrSessionId])
+  }, [activeModule, flowDate, flowRefreshKey, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'admin') {
       return
     }
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setAdministrationDirectory(null)
       setAdministrationStatus('idle')
       setAdministrationError(null)
@@ -1538,7 +1538,7 @@ function App() {
       setAdministrationError(null)
 
       try {
-        const result = await getAdministrationDirectory(openEmrSessionId, controller.signal)
+        const result = await getAdministrationDirectory(avenChartSessionId, controller.signal)
         setAdministrationDirectory(result)
         setAdministrationStatus('ready')
       } catch (loadError) {
@@ -1551,14 +1551,14 @@ function App() {
 
     loadAdministrationDirectory()
     return () => controller.abort()
-  }, [activeModule, administrationRefreshKey, openEmrSessionId])
+  }, [activeModule, administrationRefreshKey, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
       return
     }
 
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setOperationalReports(null)
       setReportsStatus('idle')
       setReportsError(null)
@@ -1572,7 +1572,7 @@ function App() {
       setReportsError(null)
 
       try {
-        const result = await getOperationalReports(openEmrSessionId, controller.signal)
+        const result = await getOperationalReports(avenChartSessionId, controller.signal)
         setOperationalReports(result)
         setReportsStatus('ready')
       } catch (loadError) {
@@ -1585,13 +1585,13 @@ function App() {
 
     loadOperationalReports()
     return () => controller.abort()
-  }, [activeModule, openEmrSessionId])
+  }, [activeModule, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
       return
     }
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setProcedureLabProviders(null)
       setProcedureLabProvidersStatus('idle')
       setProcedureLabProvidersError(null)
@@ -1607,7 +1607,7 @@ function App() {
       try {
         const result = await getProcedureLabProviders(
           procedureLabProvidersIncludeInactive,
-          openEmrSessionId,
+          avenChartSessionId,
           controller.signal,
         )
         setProcedureLabProviders(result)
@@ -1624,13 +1624,13 @@ function App() {
 
     loadProcedureLabProviders()
     return () => controller.abort()
-  }, [activeModule, procedureLabProvidersIncludeInactive, openEmrSessionId])
+  }, [activeModule, procedureLabProvidersIncludeInactive, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'reports' && activeModule !== 'procedures') {
       return
     }
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setProcedureOrderCatalog(null)
       setProcedureOrderCatalogStatus('idle')
       setProcedureOrderCatalogError(null)
@@ -1644,7 +1644,7 @@ function App() {
       setProcedureOrderCatalogError(null)
 
       try {
-        const result = await getProcedureOrderCatalog(openEmrSessionId, controller.signal)
+        const result = await getProcedureOrderCatalog(avenChartSessionId, controller.signal)
         setProcedureOrderCatalog(result)
         setProcedureOrderCatalogStatus('ready')
       } catch (loadError) {
@@ -1659,13 +1659,13 @@ function App() {
 
     loadProcedureOrderCatalog()
     return () => controller.abort()
-  }, [activeModule, openEmrSessionId])
+  }, [activeModule, avenChartSessionId])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
       return
     }
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setProcedureOrderQueue(null)
       setProcedureOrderQueueStatus('idle')
       setProcedureOrderQueueError(null)
@@ -1688,7 +1688,7 @@ function App() {
             fromDate: procedureOrderQueueFromDate,
             toDate: procedureOrderQueueToDate,
           },
-          openEmrSessionId,
+          avenChartSessionId,
           controller.signal,
         )
         setProcedureOrderQueue(result)
@@ -1712,14 +1712,14 @@ function App() {
     procedureOrderQueueFromDate,
     procedureOrderQueueToDate,
     procedureOrderQueueRefreshKey,
-    openEmrSessionId,
+    avenChartSessionId,
   ])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
       return
     }
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setProcedureReportReviewQueue(null)
       setProcedureReportReviewQueueStatus('idle')
       setProcedureReportReviewQueueError(null)
@@ -1742,7 +1742,7 @@ function App() {
             fromDate: procedureReportReviewQueueFromDate,
             toDate: procedureReportReviewQueueToDate,
           },
-          openEmrSessionId,
+          avenChartSessionId,
           controller.signal,
         )
         setProcedureReportReviewQueue(result)
@@ -1768,7 +1768,7 @@ function App() {
     procedureReportReviewQueueFromDate,
     procedureReportReviewQueueToDate,
     procedureReportReviewQueueRefreshKey,
-    openEmrSessionId,
+    avenChartSessionId,
   ])
 
   const selectedFromList = useMemo(
@@ -1791,7 +1791,7 @@ function App() {
       return
     }
 
-    if (entryMode === 'portal' || openEmrSessionId) {
+    if (entryMode === 'portal' || avenChartSessionId) {
       return
     }
 
@@ -1831,7 +1831,7 @@ function App() {
 
     void restoreStaffSession()
     return () => controller.abort()
-  }, [entryMode, forceEntryChooser, openEmrSessionId])
+  }, [entryMode, forceEntryChooser, avenChartSessionId])
 
   function activateLegacyEhrSession(sessionId: string, session?: AuthSessionResponse) {
     setLegacyEhrSessionId(sessionId)
@@ -1889,7 +1889,7 @@ function App() {
   }
 
   async function handleStaffLogout() {
-    const sessionId = openEmrSessionId
+    const sessionId = avenChartSessionId
     clearLegacyEhrSession('chooser')
     setStaffLoginStatus('idle')
     setStaffLoginMessage(null)
@@ -1906,67 +1906,67 @@ function App() {
   }
 
   function getActiveLegacyEhrSessionId() {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       throw new Error('Sign in to access patient data.')
     }
 
-    return openEmrSessionId
+    return avenChartSessionId
   }
 
   function getActiveClinicalListSessionId() {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       throw new Error('Sign in to access clinical lists.')
     }
 
-    return openEmrSessionId
+    return avenChartSessionId
   }
 
   function getActiveMessageSessionId() {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       throw new Error('Sign in to access patient messages.')
     }
 
-    return openEmrSessionId
+    return avenChartSessionId
   }
 
   function getActiveAppointmentSessionId() {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       throw new Error('Sign in to access appointment schedules.')
     }
 
-    return openEmrSessionId
+    return avenChartSessionId
   }
 
   function getActiveEncounterSessionId() {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       throw new Error('Sign in to access encounters.')
     }
 
-    return openEmrSessionId
+    return avenChartSessionId
   }
 
   function getActiveDocumentSessionId() {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       throw new Error('Sign in to access documents.')
     }
 
-    return openEmrSessionId
+    return avenChartSessionId
   }
 
   function getActiveBillingSessionId() {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       throw new Error('Sign in to access billing.')
     }
 
-    return openEmrSessionId
+    return avenChartSessionId
   }
 
   function getActiveProcedureSessionId() {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       throw new Error('Sign in to access procedure data.')
     }
 
-    return openEmrSessionId
+    return avenChartSessionId
   }
 
   async function handlePatientContactSave(patientId: string, contact: PatientContactUpdate) {
@@ -3565,7 +3565,7 @@ function App() {
   }
 
   async function handleInventoryTransaction(input: InventoryTransactionCreateInput) {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setInventoryStatus('error')
       setInventoryError('Sign in before recording inventory activity.')
       return
@@ -3574,7 +3574,7 @@ function App() {
     setInventoryStatus('loading')
     setInventoryError(null)
     try {
-      await createInventoryTransaction(input, openEmrSessionId)
+      await createInventoryTransaction(input, avenChartSessionId)
       setInventoryRefreshKey((current) => current + 1)
     } catch (mutationError) {
       setInventoryStatus('error')
@@ -3583,7 +3583,7 @@ function App() {
   }
 
   async function handleInventoryLotMetadataUpdate(lotId: number, input: InventoryLotMetadataUpdateInput) {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setInventoryStatus('error')
       setInventoryError('Sign in before updating inventory lot metadata.')
       return
@@ -3592,7 +3592,7 @@ function App() {
     setInventoryStatus('loading')
     setInventoryError(null)
     try {
-      await updateInventoryLotMetadata(lotId, input, openEmrSessionId)
+      await updateInventoryLotMetadata(lotId, input, avenChartSessionId)
       setInventoryRefreshKey((current) => current + 1)
     } catch (mutationError) {
       setInventoryStatus('error')
@@ -3601,7 +3601,7 @@ function App() {
   }
 
   async function handleInventoryLotDestruction(lotId: number, input: InventoryLotDestructionInput) {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setInventoryStatus('error')
       setInventoryError('Sign in before destroying an inventory lot.')
       return
@@ -3610,7 +3610,7 @@ function App() {
     setInventoryStatus('loading')
     setInventoryError(null)
     try {
-      await destroyInventoryLot(lotId, input, openEmrSessionId)
+      await destroyInventoryLot(lotId, input, avenChartSessionId)
       setInventoryRefreshKey((current) => current + 1)
     } catch (mutationError) {
       setInventoryStatus('error')
@@ -3619,14 +3619,14 @@ function App() {
   }
 
   async function handleInventoryExpiryDisposition(lotId: number, input: InventoryExpiryDispositionInput) {
-    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before recording an expiry disposition.'); return }
+    if (!avenChartSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before recording an expiry disposition.'); return }
     setInventoryStatus('loading'); setInventoryError(null)
-    try { await createInventoryExpiryDisposition(lotId, input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    try { await createInventoryExpiryDisposition(lotId, input, avenChartSessionId); setInventoryRefreshKey((current) => current + 1) }
     catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory expiry disposition failed') }
   }
 
   async function handleInventoryPatientSale(input: InventoryPatientSaleCreateInput) {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setInventoryStatus('error')
       setInventoryError('Sign in before recording an inventory sale.')
       return
@@ -3634,7 +3634,7 @@ function App() {
     setInventoryStatus('loading')
     setInventoryError(null)
     try {
-      await createInventoryPatientSale(input, openEmrSessionId)
+      await createInventoryPatientSale(input, avenChartSessionId)
       setInventoryRefreshKey((current) => current + 1)
     } catch (mutationError) {
       setInventoryStatus('error')
@@ -3643,28 +3643,28 @@ function App() {
   }
 
   async function handleInventoryPatientSaleAllocation(input: InventoryPatientSaleAllocationCreateInput) {
-    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before recording an inventory sale.'); return }
+    if (!avenChartSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before recording an inventory sale.'); return }
     setInventoryStatus('loading'); setInventoryError(null)
-    try { await allocateInventoryPatientSale(input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    try { await allocateInventoryPatientSale(input, avenChartSessionId); setInventoryRefreshKey((current) => current + 1) }
     catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory sale allocation failed') }
   }
 
   async function handleInventoryMedicationLink(itemId: number, input: InventoryMedicationLinkUpdateInput) {
-    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before linking an inventory medication.'); return }
+    if (!avenChartSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before linking an inventory medication.'); return }
     setInventoryStatus('loading'); setInventoryError(null)
-    try { await updateInventoryMedicationLink(itemId, input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    try { await updateInventoryMedicationLink(itemId, input, avenChartSessionId); setInventoryRefreshKey((current) => current + 1) }
     catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory medication link failed') }
   }
 
   async function handleInventoryPrescriptionDispense(input: InventoryPrescriptionDispenseInput) {
-    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before dispensing a prescription.'); return }
+    if (!avenChartSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before dispensing a prescription.'); return }
     setInventoryStatus('loading'); setInventoryError(null)
-    try { await dispenseInventoryPrescription(input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    try { await dispenseInventoryPrescription(input, avenChartSessionId); setInventoryRefreshKey((current) => current + 1) }
     catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Prescription dispensing failed') }
   }
 
   async function handleInventoryTransfer(input: InventoryTransferCreateInput) {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setInventoryStatus('error')
       setInventoryError('Sign in before recording an inventory transfer.')
       return
@@ -3673,7 +3673,7 @@ function App() {
     setInventoryStatus('loading')
     setInventoryError(null)
     try {
-      await createInventoryTransfer(input, openEmrSessionId)
+      await createInventoryTransfer(input, avenChartSessionId)
       setInventoryRefreshKey((current) => current + 1)
     } catch (mutationError) {
       setInventoryStatus('error')
@@ -3682,7 +3682,7 @@ function App() {
   }
 
   async function handleInventoryPurchaseReceipt(input: InventoryPurchaseReceiptCreateInput) {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setInventoryStatus('error')
       setInventoryError('Sign in before receiving inventory.')
       return
@@ -3691,7 +3691,7 @@ function App() {
     setInventoryStatus('loading')
     setInventoryError(null)
     try {
-      await createInventoryPurchaseReceipt(input, openEmrSessionId)
+      await createInventoryPurchaseReceipt(input, avenChartSessionId)
       setInventoryRefreshKey((current) => current + 1)
     } catch (mutationError) {
       setInventoryStatus('error')
@@ -3700,28 +3700,28 @@ function App() {
   }
 
   async function handleInventoryPurchaseRequisition(input: InventoryPurchaseRequisitionCreateInput) {
-    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before creating a purchase requisition.'); return }
+    if (!avenChartSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before creating a purchase requisition.'); return }
     setInventoryStatus('loading'); setInventoryError(null)
-    try { await createInventoryPurchaseRequisition(input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    try { await createInventoryPurchaseRequisition(input, avenChartSessionId); setInventoryRefreshKey((current) => current + 1) }
     catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory purchase requisition failed') }
   }
 
   async function handleInventoryPurchaseRequisitionSubmit(requisitionId: string) {
-    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before submitting a purchase requisition.'); return }
+    if (!avenChartSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before submitting a purchase requisition.'); return }
     setInventoryStatus('loading'); setInventoryError(null)
-    try { await submitInventoryPurchaseRequisition(requisitionId, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    try { await submitInventoryPurchaseRequisition(requisitionId, avenChartSessionId); setInventoryRefreshKey((current) => current + 1) }
     catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory purchase requisition submit failed') }
   }
 
   async function handleInventoryPurchaseRequisitionDecision(requisitionId: string, decision: 'approve' | 'reject', input: InventoryPurchaseRequisitionDecisionInput) {
-    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before deciding a purchase requisition.'); return }
+    if (!avenChartSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before deciding a purchase requisition.'); return }
     setInventoryStatus('loading'); setInventoryError(null)
-    try { await decideInventoryPurchaseRequisition(requisitionId, decision, input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    try { await decideInventoryPurchaseRequisition(requisitionId, decision, input, avenChartSessionId); setInventoryRefreshKey((current) => current + 1) }
     catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory purchase requisition decision failed') }
   }
 
   async function handleInventoryCountReconciliation(input: InventoryCountReconciliationCreateInput) {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setInventoryStatus('error')
       setInventoryError('Sign in before reconciling inventory.')
       return
@@ -3729,7 +3729,7 @@ function App() {
     setInventoryStatus('loading')
     setInventoryError(null)
     try {
-      await createInventoryCountReconciliation(input, openEmrSessionId)
+      await createInventoryCountReconciliation(input, avenChartSessionId)
       setInventoryRefreshKey((current) => current + 1)
     } catch (mutationError) {
       setInventoryStatus('error')
@@ -3738,7 +3738,7 @@ function App() {
   }
 
   async function handleFlowStatusChange(appointmentId: string, status: string) {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       setFlowStatus('error')
       setFlowError('Sign in before changing appointment flow status.')
       return
@@ -3747,7 +3747,7 @@ function App() {
     setFlowStatus('loading')
     setFlowError(null)
     try {
-      await updateAppointmentStatus(appointmentId, { status }, openEmrSessionId)
+      await updateAppointmentStatus(appointmentId, { status }, avenChartSessionId)
       setFlowRefreshKey((current) => current + 1)
       setAppointmentRefreshKey((current) => current + 1)
     } catch (mutationError) {
@@ -4557,11 +4557,11 @@ function App() {
   }
 
   function getActiveAdministrationSessionId() {
-    if (!openEmrSessionId) {
+    if (!avenChartSessionId) {
       throw new Error('Sign in to manage administration data.')
     }
 
-    return openEmrSessionId
+    return avenChartSessionId
   }
 
   async function handleAdministrationUserCreate(input: AdministrationUserMutationInput) {
@@ -6111,7 +6111,7 @@ function App() {
     )
   }
 
-  if (!openEmrSessionId || entryMode === 'staff-login') {
+  if (!avenChartSessionId || entryMode === 'staff-login') {
     return (
       <StaffLoginPage
         username={staffLoginUsername}
@@ -6134,10 +6134,10 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar" aria-label="Main modules">
         <div className="brand-block">
-          <div className="brand-mark">OE</div>
+          <div className="brand-mark">AC</div>
           <div>
-            <div className="brand-title">Legacy EHR</div>
-            <div className="brand-subtitle">Modernized</div>
+            <div className="brand-title">AvenChart</div>
+            <div className="brand-subtitle">Clinical workspace</div>
           </div>
         </div>
 
@@ -6172,7 +6172,7 @@ function App() {
           <div className="workspace-header-actions">
             <div className="session-chip">
               <UserCheck size={16} />
-              <span>{openEmrSession?.displayName ?? openEmrSession?.username ?? 'Signed in'}</span>
+              <span>{avenChartSession?.displayName ?? avenChartSession?.username ?? 'Signed in'}</span>
             </div>
             <div className="dataset-chip">
               <Activity size={16} />
@@ -6204,7 +6204,7 @@ function App() {
             careTeamContactOptions={careTeamOptions?.contacts ?? []}
             careTeamOptionsStatus={careTeamOptionsStatus}
             error={patientError}
-            sessionId={openEmrSessionId}
+            sessionId={avenChartSessionId}
             onPatientSessionActive={activateLegacyEhrSession}
             onQueryChange={setQuery}
             onSelectPatient={setSelectedPatientId}
@@ -6243,7 +6243,7 @@ function App() {
             searchStatus={appointmentStatus}
             detailStatus={appointmentDetailStatus}
             error={appointmentError}
-            sessionId={openEmrSessionId}
+            sessionId={avenChartSessionId}
             onCalendarSessionActive={(sessionId) => {
               activateLegacyEhrSession(sessionId)
               setAppointmentRefreshKey((current) => current + 1)
@@ -6283,7 +6283,7 @@ function App() {
             soapNoteTemplateError={encounterSoapNoteTemplateError}
             showArchived={encounterShowArchived}
             includeArchivedDocuments={encounterIncludeArchivedDocuments}
-            sessionId={openEmrSessionId}
+            sessionId={avenChartSessionId}
             onEncounterSessionActive={(sessionId) => {
               activateLegacyEhrSession(sessionId)
               setEncounterRefreshKey((current) => current + 1)
@@ -6323,7 +6323,7 @@ function App() {
             clinicalLists={clinicalLists}
             status={clinicalStatus}
             error={clinicalError}
-            sessionId={openEmrSessionId}
+            sessionId={avenChartSessionId}
             onClinicalListsSessionActive={activateLegacyEhrSession}
             onPatientIdChange={setClinicalPatientId}
             onCreateAllergy={handleClinicalAllergyCreate}
@@ -6352,7 +6352,7 @@ function App() {
             patientBilling={patientBilling}
             status={billingStatus}
             error={billingError}
-            sessionId={openEmrSessionId}
+            sessionId={avenChartSessionId}
             onBillingSessionActive={(sessionId) => {
               activateLegacyEhrSession(sessionId)
             }}
@@ -6390,7 +6390,7 @@ function App() {
             orderCatalog={procedureOrderCatalog}
             orderCatalogStatus={procedureOrderCatalogStatus}
             orderCatalogError={procedureOrderCatalogError}
-            sessionId={openEmrSessionId}
+            sessionId={avenChartSessionId}
             onProceduresSessionActive={(sessionId) => {
               activateLegacyEhrSession(sessionId)
               setProcedureRefreshKey((current) => current + 1)
@@ -6416,7 +6416,7 @@ function App() {
             patientMessages={patientMessages}
             status={messageStatus}
             error={messageError}
-            sessionId={openEmrSessionId}
+            sessionId={avenChartSessionId}
             onPatientIdChange={setMessagePatientId}
             onMessagesSessionActive={(sessionId) => {
               activateLegacyEhrSession(sessionId)
@@ -6440,7 +6440,7 @@ function App() {
             status={documentStatus}
             error={documentError}
             includeArchived={documentIncludeArchived}
-            sessionId={openEmrSessionId}
+            sessionId={avenChartSessionId}
             onPatientIdChange={setDocumentPatientId}
             onIncludeArchivedChange={setDocumentIncludeArchived}
             onDocumentsSessionActive={(sessionId) => {
@@ -6468,7 +6468,7 @@ function App() {
             inventory={inventory}
             status={inventoryStatus}
             error={inventoryError}
-            sessionId={openEmrSessionId}
+            sessionId={avenChartSessionId}
             onCreateTransaction={handleInventoryTransaction}
             onUpdateLotMetadata={handleInventoryLotMetadataUpdate}
             onDestroyLot={handleInventoryLotDestruction}
@@ -6500,7 +6500,7 @@ function App() {
             reports={operationalReports}
             status={reportsStatus}
             error={reportsError}
-            sessionId={openEmrSessionId}
+            sessionId={avenChartSessionId}
             onReportsSessionActive={activateLegacyEhrSession}
             labProviders={procedureLabProviders}
             labProvidersStatus={procedureLabProvidersStatus}
@@ -6556,7 +6556,7 @@ function App() {
             directory={administrationDirectory}
             status={administrationStatus}
             error={administrationError}
-            activeSession={openEmrSession}
+            activeSession={avenChartSession}
             onCreateUser={handleAdministrationUserCreate}
             onUpdateUser={handleAdministrationUserUpdate}
             onDeleteUser={handleAdministrationUserDelete}
@@ -6587,7 +6587,7 @@ const legacyChooserStack = [
   {
     name: 'Legacy EHR',
     version: '8.1.0-2026-06-18',
-    logoText: 'OE',
+    logoText: 'LE',
     description: 'Pinned reference EHR baseline',
   },
   {
@@ -6654,8 +6654,10 @@ function LegalAttribution() {
     <aside className="legal-attribution" aria-label="Open source license and original project attribution">
       <p className="legal-attribution-label">Open source &amp; original project</p>
       <p>
-        This independent modernization experiment is licensed under the GNU GPL v3 or later and was developed with
-        reference to the original Legacy EHR project. It is not affiliated with or endorsed by the Legacy EHR Foundation.
+        AvenChart is licensed under the GNU GPL v3 or later and was developed with reference to the original Legacy EHR
+        project. We gratefully thank its maintainers, contributors, clinicians, implementers, and support community.
+        The Legacy EHR name identifies that upstream source only; AvenChart is independent and is not affiliated with,
+        certified by, or endorsed by the Legacy EHR Foundation or community.
       </p>
       <nav className="legal-attribution-links" aria-label="License and original Legacy EHR links">
         <a
@@ -6665,14 +6667,17 @@ function LegalAttribution() {
         >
           Software license
         </a>
-        <a href="https://github.com/nkimber/Legacy EHR-Legacy" target="_blank" rel="noreferrer">
-          Modernized source
+        <a href="https://github.com/nkimber/AvenChart" target="_blank" rel="noreferrer">
+          AvenChart source
         </a>
         <a href="https://www.open-emr.org/" target="_blank" rel="noreferrer">
           Original Legacy EHR project
         </a>
         <a href="https://github.com/legacy-ehr/legacy-ehr" target="_blank" rel="noreferrer">
           Original source code
+        </a>
+        <a href="https://community.open-emr.org/" target="_blank" rel="noreferrer">
+          Legacy EHR community
         </a>
       </nav>
     </aside>
@@ -6687,10 +6692,10 @@ function EntryChooserPage({
   onSelectPortal: () => void
 }) {
   return (
-    <main className="entry-shell" aria-label="Legacy EHR entry chooser">
+    <main className="entry-shell" aria-label="AvenChart entry chooser">
       <section className="entry-panel">
         <div className="entry-brand">
-          <div className="brand-mark">OE</div>
+          <div className="brand-mark">AC</div>
           <div>
             <p className="eyebrow">AvenChart</p>
             <h1>Choose Your Access</h1>
@@ -6698,13 +6703,13 @@ function EntryChooserPage({
         </div>
         <div className="entry-modernization-summary" aria-label="Modernization summary">
           <p>
-            Automated modernization from Legacy EHR to Modern Legacy EHR, preserving the selected Legacy EHR workflows while
+            AvenChart preserves selected legacy workflows while
             moving the application to a React, ASP.NET Core, and PostgreSQL architecture.
           </p>
         </div>
         <div className="entry-stack-grid" aria-label="Technology stack comparison">
-          <TechnologyStackPanel title="Original Legacy EHR Stack" items={legacyChooserStack} />
-          <TechnologyStackPanel title="Modern Legacy EHR Stack" items={modernChooserStack} />
+          <TechnologyStackPanel title="Legacy Reference Stack" items={legacyChooserStack} />
+          <TechnologyStackPanel title="AvenChart Stack" items={modernChooserStack} />
         </div>
         <div className="entry-choice-grid">
           <button type="button" className="entry-choice-button" onClick={onSelectStaff}>
@@ -6776,10 +6781,10 @@ function StaffLoginPage({
     <main className="entry-shell staff-login-shell" aria-label="Staff sign in">
       <form className="entry-panel staff-login-panel" aria-label="Staff login" onSubmit={onSubmit}>
         <div className="entry-brand">
-          <div className="brand-mark">OE</div>
+          <div className="brand-mark">AC</div>
           <div>
             <p className="eyebrow">Staff Access</p>
-            <h1>Legacy EHR Sign In</h1>
+            <h1>AvenChart Sign In</h1>
           </div>
         </div>
         <label className="form-field">
@@ -13109,7 +13114,7 @@ function EncounterWorkspace({
   const [encounterExternalLinkCategoryId, setEncounterExternalLinkCategoryId] = useState('3')
   const [encounterExternalLinkName, setEncounterExternalLinkName] = useState('Encounter external link')
   const [encounterExternalLinkDate, setEncounterExternalLinkDate] = useState('2026-06-18')
-  const [encounterExternalLinkUrl, setEncounterExternalLinkUrl] = useState('https://example.test/legacy-ehr/encounter-record')
+  const [encounterExternalLinkUrl, setEncounterExternalLinkUrl] = useState('https://example.test/avenchart/encounter-record')
   const [encounterExternalLinkNotes, setEncounterExternalLinkNotes] = useState('External link attached from the modernized encounter workspace.')
   const [encounterExternalLinkStatus, setEncounterExternalLinkStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [encounterDocumentReviewStatus, setEncounterDocumentReviewStatus] = useState<
@@ -15026,7 +15031,7 @@ function EncounterProcedureOrderCard({
           resultCode,
           resultText,
           dateTime: `${reportDate} 13:05:00`,
-          facility: 'Legacy EHR Modernization Clinic',
+          facility: 'AvenChart modernization Clinic',
           units: resultUnits,
           result: resultValue,
           range: resultRange,
@@ -19511,7 +19516,7 @@ function DocumentsWorkspace({
   const [linkDocumentCategoryId, setLinkDocumentCategoryId] = useState('3')
   const [linkDocumentDate, setLinkDocumentDate] = useState('2026-06-18')
   const [linkDocumentEncounter, setLinkDocumentEncounter] = useState('1000013')
-  const [linkDocumentUrl, setLinkDocumentUrl] = useState('https://example.test/legacy-ehr/external-record')
+  const [linkDocumentUrl, setLinkDocumentUrl] = useState('https://example.test/avenchart/external-record')
   const [linkDocumentNotes, setLinkDocumentNotes] = useState('Linked from the modernized Documents workspace.')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const [documentsLoginUsername, setDocumentsLoginUsername] = useState('admin')
@@ -20726,7 +20731,7 @@ function InventoryWorkspace({
       const href = window.URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
       const link = document.createElement('a')
       link.href = href
-      link.download = 'legacy-ehr-inventory-activity.csv'
+      link.download = 'avenchart-inventory-activity.csv'
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -21484,7 +21489,7 @@ function ReportsWorkspace({
       const href = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = href
-      link.download = 'legacy-ehr-operational-report.csv'
+      link.download = 'avenchart-operational-report.csv'
       document.body.appendChild(link)
       link.click()
       link.remove()

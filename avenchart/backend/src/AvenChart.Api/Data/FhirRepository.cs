@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Globalization;
@@ -148,7 +148,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
                 var observation = new FhirObservationResource(
                     "Observation", $"sdoh-{assessmentId}-{domain}", "final",
                     [new FhirCodeableConcept([new FhirCoding("http://terminology.hl7.org/CodeSystem/observation-category", "social-history", "Social History")], "Social History")],
-                    new FhirCodeableConcept([new FhirCoding("urn:legacy-ehr:sdoh-domain", domain, ToSdohDomainDisplay(domain))], ToSdohDomainDisplay(domain)),
+                    new FhirCodeableConcept([new FhirCoding("urn:avenchart:sdoh-domain", domain, ToSdohDomainDisplay(domain))], ToSdohDomainDisplay(domain)),
                     new FhirReference($"Patient/{patientId}"), $"{effectiveDate}T00:00:00", null, value.Status,
                     string.IsNullOrWhiteSpace(value.Notes) ? [] : [new FhirObservationReferenceRange(value.Notes)], []);
                 entries.Add(new FhirObservationSearchEntry($"Observation/{observation.Id}", observation));
@@ -208,7 +208,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         return new FhirPatientResource(
             "Patient",
             id,
-            [new FhirIdentifier("urn:legacy-ehr:canonical-id", id), new FhirIdentifier("urn:legacy-ehr:pubpid", reader.GetString(1))],
+            [new FhirIdentifier("urn:avenchart:canonical-id", id), new FhirIdentifier("urn:avenchart:pubpid", reader.GetString(1))],
             [new FhirHumanName("official", reader.GetString(3), given)],
             ToFhirGender(ReadNullableString(reader, 5)),
             reader.GetFieldValue<DateOnly>(6).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -235,10 +235,10 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         var abnormal = ReadNullableString(reader, 8);
         IReadOnlyList<FhirCoding> coding = string.IsNullOrWhiteSpace(code)
             ? []
-            : [new FhirCoding("urn:legacy-ehr:procedure-result", code, text)];
+            : [new FhirCoding("urn:avenchart:procedure-result", code, text)];
         IReadOnlyList<FhirCodeableConcept> interpretation = string.IsNullOrWhiteSpace(abnormal)
             ? []
-            : [new FhirCodeableConcept([new FhirCoding("urn:legacy-ehr:abnormal-flag", abnormal, abnormal)], abnormal)];
+            : [new FhirCodeableConcept([new FhirCoding("urn:avenchart:abnormal-flag", abnormal, abnormal)], abnormal)];
         return new FhirObservationResource(
             "Observation",
             reader.GetInt32(0).ToString(CultureInfo.InvariantCulture),

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -23,20 +23,20 @@ function Get-HttpStatus([scriptblock]$Operation) {
 
 function Invoke-Postgres([string]$Sql) {
     Push-Location $solutionRoot
-    try { & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U legacy-ehr -d legacy-ehr_modernized -c $Sql | Out-Null }
+    try { & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U avenchart -d avenchart -c $Sql | Out-Null }
     finally { Pop-Location }
 }
 
 function Invoke-PostgresScalar([string]$Sql) {
     Push-Location $solutionRoot
-    try { return (& docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -Atc $Sql).Trim() }
+    try { return (& docker compose exec -T postgres psql -X -U avenchart -d avenchart -Atc $Sql).Trim() }
     finally { Pop-Location }
 }
 
 try {
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) { throw "The synthetic administrator session was not issued." }
-    $headers = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
 
     $created = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages" -Method Post -Headers $headers -ContentType "application/json" -Body (@{ patientId="MOD-PAT-0001"; title=$marker; body="Staff attachment lifecycle verification"; assignedTo="admin" } | ConvertTo-Json)
     $messageId = $created.id

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { Link } from 'react-router-dom'
@@ -14,11 +14,11 @@ export default function EntryChooser() {
           <span className="auth-hero-brand-mark">
             <ShieldCheck size={16} />
           </span>
-          Legacy EHR · Modern UI
+          AvenChart
         </div>
         <h1 className="auth-hero-title">One system, built for everyone who touches a patient's care.</h1>
         <p className="auth-hero-text">
-          A design-first client for the modernized Legacy EHR backend — fast, focused screens for staff and patients
+          A design-first client for the AvenChart backend — fast, focused screens for staff and patients
           alike.
         </p>
         <div className="auth-hero-illustration">
@@ -44,7 +44,7 @@ export default function EntryChooser() {
           <p className="eyebrow">Sign in</p>
           <h1 className="title">Choose how you'd like to sign in</h1>
           <p className="subtitle">
-            This is a separate, design-first client that talks to the same modernized Legacy EHR backend.
+            This is a separate, design-first client that talks to the same AvenChart backend.
           </p>
           <div className="chooser-grid">
             <Link to="/login" className="chooser-tile">

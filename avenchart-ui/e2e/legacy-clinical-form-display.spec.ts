@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import AxeBuilder from "@axe-core/playwright";
@@ -60,7 +60,7 @@ async function resetManifestFixture(
     process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
   const response = await request.delete(
     `${apiBaseUrl}/api/form-engine/legacy-migration-manifests/${manifestId}/test-fixture`,
-    { headers: { "X-Legacy EHR-Session": admin.sessionId } },
+    { headers: { "X-AvenChart-Session": admin.sessionId } },
   );
   expect(response.ok(), await response.text()).toBeTruthy();
 }

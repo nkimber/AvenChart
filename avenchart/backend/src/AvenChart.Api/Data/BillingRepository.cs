@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Data.Common;
@@ -4056,8 +4056,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         isaControlNumber = isaControlNumber.Length > 9 ? isaControlNumber[^9..] : isaControlNumber;
         var processFile = $"CLAIM-{claim.Encounter}-{controlNumber}-837P.txt";
         var payload = string.Concat(
-            $"ISA*00*          *00*          *ZZ*LEGACY_EHR        *ZZ*PAYER{payerCode.PadRight(10, ' ')}*260618*1415*^*00501*{isaControlNumber}*0*T*:~",
-            $"GS*HC*LEGACY_EHR*PAYER{payerCode}*20260618*1415*{controlNumber}*X*005010X222A1~",
+            $"ISA*00*          *00*          *ZZ*AVENCHART       *ZZ*PAYER{payerCode.PadRight(10, ' ')}*260618*1415*^*00501*{isaControlNumber}*0*T*:~",
+            $"GS*HC*AVENCHART*PAYER{payerCode}*20260618*1415*{controlNumber}*X*005010X222A1~",
             $"ST*837*{controlNumber}*005010X222A1~",
             $"BHT*0019*00*{claim.Encounter}*20260618*1415*CH~",
             $"NM1*QC*1*PATIENT*{claim.PatientId}****MI*{claim.PatientId}~",

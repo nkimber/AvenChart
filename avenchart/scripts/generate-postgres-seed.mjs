@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import fs from 'node:fs'
@@ -13,7 +13,7 @@ const datasetPath = path.join(
   workspaceRoot,
   'demo-data',
   'seed-data',
-  'legacy-ehr-shared-synthetic-v1',
+  'avenchart-shared-synthetic-v1',
   'generated',
   'canonical',
   'gold-dataset.json',
@@ -25,7 +25,7 @@ const dataset = JSON.parse(fs.readFileSync(datasetPath, 'utf8'))
 fs.mkdirSync(outputDir, { recursive: true })
 
 const copyEmptyString = Symbol('copy-empty-string')
-const demoCredentialSalt = 'legacy-ehr-modernized-demo-v1'
+const demoCredentialSalt = 'avenchart-demo-v1'
 const patientsByPid = new Map(dataset.patients.map((patient) => [patient.pid, patient]))
 const portalMailboxMessages = dataset.messages
   .map((message, index) => {
@@ -52,7 +52,7 @@ function hashDemoPassword(password) {
 }
 
 const accessGroups = [
-  [10, 'users', 'Legacy EHR Users', null],
+  [10, 'users', 'AvenChart Users', null],
   [11, 'admin', 'Administrators', 10],
   [12, 'clin', 'Clinicians', 10],
   [13, 'doc', 'Physicians', 10],
@@ -1908,7 +1908,7 @@ copyRows('auth_accounts', ['username', 'display_name', 'role', 'staff_id', 'acti
 ])
 
 copyRows('practice_settings', ['setting_key', 'setting_value', 'value_type', 'updated_at', 'updated_by'], [
-  ['practice.name', 'Modernized Legacy EHR Practice', 'text', '2026-01-01T00:00:00Z', 'seed'],
+  ['practice.name', 'AvenChart Practice', 'text', '2026-01-01T00:00:00Z', 'seed'],
   ['practice.default-facility-id', '10', 'facility-id', '2026-01-01T00:00:00Z', 'seed'],
   ['practice.time-zone', 'America/New_York', 'iana-time-zone', '2026-01-01T00:00:00Z', 'seed'],
 ])

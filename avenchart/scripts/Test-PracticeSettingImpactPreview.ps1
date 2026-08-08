@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -18,14 +18,14 @@ function Add-Check([string]$Name, [bool]$Passed, [object]$Details) {
 
 function Invoke-Postgres([string]$Sql) {
     Push-Location $solutionRoot
-    try { & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U legacy-ehr -d legacy-ehr_modernized -c $Sql | Out-Null }
+    try { & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U avenchart -d avenchart -c $Sql | Out-Null }
     finally { Pop-Location }
 }
 
 try {
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     if (-not $login.authenticated) { throw "The synthetic administrator session was not issued." }
-    $headers = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
 
     $systemDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/change-requests" -Method Post -Headers $headers -ContentType "application/json" -Body (@{ value=$marker; reason=$marker } | ConvertTo-Json)
     $systemRequestId = $systemDraft.request.requestId
@@ -54,7 +54,7 @@ finally {
         if ($facilityRequestId) { Invoke-Postgres "delete from practice_setting_change_request_events where request_id='$facilityRequestId'::uuid; delete from practice_setting_change_requests where request_id='$facilityRequestId'::uuid and reason='$marker';" }
         if ($systemRequestId -or $facilityRequestId) {
             Push-Location $solutionRoot
-            try { $residue = [int](& docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -Atc "select count(*) from practice_setting_change_requests where reason='$marker';") }
+            try { $residue = [int](& docker compose exec -T postgres psql -X -U avenchart -d avenchart -Atc "select count(*) from practice_setting_change_requests where reason='$marker';") }
             finally { Pop-Location }
             Add-Check "Impact-preview fixtures leave no request residue" ($residue -eq 0) @{ residue=$residue }
         }

@@ -1,4 +1,4 @@
-<!-- SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <Project Sdk="Microsoft.NET.Sdk.Web">
@@ -8,8 +8,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
-    <Copyright>Copyright (C) 2026 Neil Kimber and Legacy EHR Modernization Project contributors</Copyright>
-    <RepositoryUrl>https://github.com/nkimber/Legacy EHR-Legacy</RepositoryUrl>
+    <Copyright>Copyright (C) 2026 Neil Kimber and AvenChart contributors</Copyright>
+    <RepositoryUrl>https://github.com/nkimber/AvenChart</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>

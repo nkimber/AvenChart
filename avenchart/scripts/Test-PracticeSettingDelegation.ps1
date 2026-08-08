@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -23,7 +23,7 @@ function Get-HttpStatus([scriptblock]$Operation) {
 
 function Invoke-Postgres([string]$Sql) {
     Push-Location $solutionRoot
-    try { & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U legacy-ehr -d legacy-ehr_modernized -c $Sql | Out-Null }
+    try { & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U avenchart -d avenchart -c $Sql | Out-Null }
     finally { Pop-Location }
 }
 
@@ -31,8 +31,8 @@ try {
     $admin = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     $frontdesk = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"gold-frontdesk-01","password":"pass"}'
     if (-not $admin.authenticated -or -not $frontdesk.authenticated) { throw "The required synthetic sessions were not issued." }
-    $adminHeaders = @{ "X-Legacy EHR-Session" = $admin.sessionId }
-    $delegateHeaders = @{ "X-Legacy EHR-Session" = $frontdesk.sessionId }
+    $adminHeaders = @{ "X-AvenChart-Session" = $admin.sessionId }
+    $delegateHeaders = @{ "X-AvenChart-Session" = $frontdesk.sessionId }
     $candidate = @{ value="America/Chicago"; reason=$marker; facilityId=10 } | ConvertTo-Json
 
     $beforeGrant = Get-HttpStatus { Invoke-WebRequest -Uri "$ApiBaseUrl/api/configuration-delegation/practice-settings/practice.time-zone/change-requests" -Method Post -Headers $delegateHeaders -ContentType "application/json" -Body $candidate -UseBasicParsing }
@@ -67,7 +67,7 @@ finally {
         if ($delegationId) { Invoke-Postgres "delete from practice_setting_delegation_events where delegation_id='$delegationId'::uuid; delete from practice_setting_delegations where delegation_id='$delegationId'::uuid and reason='$marker';" }
         if ($requestId -or $delegationId) {
             Push-Location $solutionRoot
-            try { $residue = [int](& docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -Atc "select (select count(*) from practice_setting_change_requests where reason='$marker') + (select count(*) from practice_setting_delegations where reason='$marker');") }
+            try { $residue = [int](& docker compose exec -T postgres psql -X -U avenchart -d avenchart -Atc "select (select count(*) from practice_setting_change_requests where reason='$marker') + (select count(*) from practice_setting_delegations where reason='$marker');") }
             finally { Pop-Location }
             Add-Check "Delegation fixture cleanup leaves no request or authority residue" ($residue -eq 0) @{ residue=$residue }
         }

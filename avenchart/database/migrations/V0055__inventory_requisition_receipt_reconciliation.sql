@@ -1,4 +1,4 @@
--- Legacy EHR receives inventory directly into lots and does not model a purchase
+-- The upstream legacy system receives inventory directly into lots and does not model a purchase
 -- requisition. The modernized local operations extension preserves receipt
 -- stock behavior while separately recording immutable request-to-receipt links.
 create table if not exists inventory_purchase_requisition_receipts (

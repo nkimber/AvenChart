@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 namespace AvenChart.Api.Experience;
@@ -330,7 +330,7 @@ public static class ExperienceBaselineCatalog
             "measured-local",
             "Every adopted critical task exposes an authoritative recovery path",
             "Route/accessibility and material mutation fixtures cover representative states; exhaustive task coverage remains open.",
-            "Modern UI functional review and browser suites",
+            "AvenChart UI functional review and browser suites",
             "Product owner"),
         new(
             "analytics-policy",
@@ -458,7 +458,7 @@ public static class ExperienceBaselineCatalog
             "proposed",
             "UX + clinical product owner",
             "WCAG 2.2 AA proposed; current automated evidence is WCAG 2.1 A/AA",
-            "Modern UI staff and portal applications using synthetic data",
+            "AvenChart UI staff and portal applications using synthetic data",
             new ExperienceBaselineCounts(
                 Roles.Count,
                 Environments.Count,

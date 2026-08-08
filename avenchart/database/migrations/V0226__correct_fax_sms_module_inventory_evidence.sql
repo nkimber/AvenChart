@@ -1,7 +1,7 @@
 -- V0014 seeded FAX_SMS as a partner-gated placeholder. Preserve the source-discovery fact
 -- in a forward correction instead of rewriting the applied baseline migration.
 update module_catalog
-set description='Legacy custom-module source `oe-module-faxsms` is present (Composer package legacy-ehr/oe-module-faxsms). Runtime enablement is unknown; approved delivery-provider contract is required.',
+set description='Legacy custom-module source `oe-module-faxsms` is present (upstream Composer package oe-module-faxsms). Runtime enablement is unknown; approved delivery-provider contract is required.',
     updated_at=now(),
     updated_by='legacy-module-inventory-seed'
 where module_key='FAX_SMS'

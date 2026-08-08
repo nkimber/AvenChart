@@ -1,4 +1,4 @@
--- Legacy Legacy EHR exposes expiry and a separate lot-destruction record, but it
+-- Legacy EHR exposes expiry and a separate lot-destruction record, but it
 -- has no explicit expiry-disposition workflow. This local extension captures
 -- the operational decision while retaining the legacy destruction evidence.
 create table if not exists inventory_lot_expiry_dispositions (

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 export type PatientActivityCounts = {
@@ -4379,13 +4379,13 @@ export type AuthAuditResponse = {
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
-function buildLegacyEhrSessionHeaders(sessionId?: string | null, contentType?: string): HeadersInit {
+function buildAvenChartSessionHeaders(sessionId?: string | null, contentType?: string): HeadersInit {
   const headers: Record<string, string> = {}
   if (contentType) {
     headers['content-type'] = contentType
   }
   if (sessionId) {
-    headers['X-Legacy EHR-Session'] = sessionId
+    headers['X-AvenChart-Session'] = sessionId
   }
   return headers
 }
@@ -4422,7 +4422,7 @@ export async function login(input: AuthLoginInput, signal?: AbortSignal): Promis
 
 export async function getCurrentSession(sessionId: string, signal?: AbortSignal): Promise<AuthSessionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/auth/session`, {
-    headers: { 'X-Legacy EHR-Session': sessionId },
+    headers: { 'X-AvenChart-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4454,7 +4454,7 @@ export async function getPatientPortalSession(
   signal?: AbortSignal,
 ): Promise<PatientPortalSessionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/session`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4469,7 +4469,7 @@ export async function getPatientPortalHome(
   signal?: AbortSignal,
 ): Promise<PatientPortalHomeSummaryResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/home`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4484,7 +4484,7 @@ export async function getPatientPortalProfile(
   signal?: AbortSignal,
 ): Promise<PatientPortalProfileResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/profile`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4503,7 +4503,7 @@ export async function submitPatientPortalProfileChange(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      'X-AvenChart-Patient-Portal-Session': sessionId,
     },
     body: JSON.stringify(input),
     signal,
@@ -4520,7 +4520,7 @@ export async function getPatientPortalAppointments(
   signal?: AbortSignal,
 ): Promise<PatientPortalAppointmentsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/appointments`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4535,7 +4535,7 @@ export async function getPatientPortalClinicalSummary(
   signal?: AbortSignal,
 ): Promise<PatientPortalClinicalSummaryResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/clinical-summary`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4550,7 +4550,7 @@ export async function getPatientPortalLabResults(
   signal?: AbortSignal,
 ): Promise<PatientPortalLabResultsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/lab-results`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4565,7 +4565,7 @@ export async function getPatientPortalMedicalReport(
   signal?: AbortSignal,
 ): Promise<PatientPortalMedicalReportResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4584,7 +4584,7 @@ export async function generatePatientPortalMedicalReport(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      'X-AvenChart-Patient-Portal-Session': sessionId,
     },
     body: JSON.stringify(input),
     signal,
@@ -4601,7 +4601,7 @@ export async function getPatientPortalGeneratedMedicalReportAudit(
   signal?: AbortSignal,
 ): Promise<PatientPortalGeneratedMedicalReportAuditResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/audit`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4620,7 +4620,7 @@ export async function downloadPatientPortalGeneratedMedicalReportPdf(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      'X-AvenChart-Patient-Portal-Session': sessionId,
     },
     body: JSON.stringify(input),
     signal,
@@ -4642,7 +4642,7 @@ export async function downloadPatientPortalGeneratedMedicalReportPackage(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      'X-AvenChart-Patient-Portal-Session': sessionId,
     },
     body: JSON.stringify(input),
     signal,
@@ -4660,7 +4660,7 @@ export async function getPatientPortalAppointmentRequestOptions(
   signal?: AbortSignal,
 ): Promise<PatientPortalAppointmentRequestOptionsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/appointments/request-options`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4679,7 +4679,7 @@ export async function requestPatientPortalAppointment(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      'X-AvenChart-Patient-Portal-Session': sessionId,
     },
     body: JSON.stringify(input),
     signal,
@@ -4696,7 +4696,7 @@ export async function getPatientPortalMessages(
   signal?: AbortSignal,
 ): Promise<PatientPortalMessagesResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4711,7 +4711,7 @@ export async function getPatientPortalMessageRecipients(
   signal?: AbortSignal,
 ): Promise<PatientPortalMessageRecipientsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/recipients`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4726,7 +4726,7 @@ export async function getPatientPortalMessageAudit(
   signal?: AbortSignal,
 ): Promise<PatientPortalMessageAuditResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/audit`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4741,7 +4741,7 @@ export async function getPatientPortalMessageComposeOptions(
   signal?: AbortSignal,
 ): Promise<PatientPortalMessageComposeOptionsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/compose-options`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4756,7 +4756,7 @@ export async function getPatientPortalDocuments(
   signal?: AbortSignal,
 ): Promise<PatientPortalDocumentsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/documents`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4775,7 +4775,7 @@ export async function downloadPatientPortalDocuments(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      'X-AvenChart-Patient-Portal-Session': sessionId,
     },
     body: JSON.stringify(input),
     signal,
@@ -4794,7 +4794,7 @@ export async function getPatientPortalMessageThread(
   signal?: AbortSignal,
 ): Promise<PatientPortalMessageThreadResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/${messageId}/thread`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4813,7 +4813,7 @@ export async function composePatientPortalMessage(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      'X-AvenChart-Patient-Portal-Session': sessionId,
     },
     body: JSON.stringify(input),
     signal,
@@ -4837,7 +4837,7 @@ export async function requestPatientPortalPrescriptionRefill(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+        'X-AvenChart-Patient-Portal-Session': sessionId,
       },
       body: JSON.stringify(input),
       signal,
@@ -4860,7 +4860,7 @@ export async function replyPatientPortalMessage(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      'X-AvenChart-Patient-Portal-Session': sessionId,
     },
     body: JSON.stringify(input),
     signal,
@@ -4882,7 +4882,7 @@ export async function forwardPatientPortalMessage(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      'X-AvenChart-Patient-Portal-Session': sessionId,
     },
     body: JSON.stringify(input),
     signal,
@@ -4901,7 +4901,7 @@ export async function readPatientPortalMessage(
 ): Promise<PatientPortalReadMessageResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/${messageId}/read`, {
     method: 'PUT',
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4918,7 +4918,7 @@ export async function deletePatientPortalMessage(
 ): Promise<PatientPortalDeleteMessageResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/${messageId}`, {
     method: 'DELETE',
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4937,7 +4937,7 @@ export async function archivePatientPortalMessages(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      'X-AvenChart-Patient-Portal-Session': sessionId,
     },
     body: JSON.stringify(input),
     signal,
@@ -4955,7 +4955,7 @@ export async function endPatientPortalSession(
 ): Promise<PatientPortalSessionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/session`, {
     method: 'DELETE',
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    headers: { 'X-AvenChart-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
@@ -4986,7 +4986,7 @@ export async function getLoginAudit(
 ): Promise<AuthAuditResponse> {
   const headers: HeadersInit = {}
   if (sessionId) {
-    headers['X-Legacy EHR-Session'] = sessionId
+    headers['X-AvenChart-Session'] = sessionId
   }
 
   const response = await fetch(`${apiBaseUrl}/api/auth/login-audit?limit=${encodeURIComponent(String(limit))}`, {
@@ -5004,7 +5004,7 @@ export async function getLoginAudit(
 
 function sessionApiError(action: string, status: number, forbiddenRequirement?: string) {
   if (status === 401) {
-    return `${action} requires an active Legacy EHR session.`
+    return `${action} requires an active AvenChart session.`
   }
   if (status === 403 && forbiddenRequirement) {
     return `${action} requires ${forbiddenRequirement}.`
@@ -5056,7 +5056,7 @@ export async function searchPatients(
   params.set('limit', '25')
 
   const response = await fetch(`${apiBaseUrl}/api/patients?${params.toString()}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5072,7 +5072,7 @@ export async function getPatientChart(
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(canonicalId)}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5087,7 +5087,7 @@ export async function getPatientProviderAssignmentOptions(
   signal?: AbortSignal,
 ): Promise<PatientProviderAssignmentOptionsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patients/provider-options`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5103,7 +5103,7 @@ export async function getPatientCareTeamOptions(
   signal?: AbortSignal,
 ): Promise<PatientCareTeamOptionsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/care-team-options`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5148,7 +5148,7 @@ export async function findPatientDuplicates(
   params.set('limit', String(input.limit ?? 10))
 
   const response = await fetch(`${apiBaseUrl}/api/patients/duplicates?${params.toString()}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5170,7 +5170,7 @@ export async function getPatientMergePreview(
   })
 
   const response = await fetch(`${apiBaseUrl}/api/patients/merge-preview?${params.toString()}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5187,7 +5187,7 @@ export async function createPatient(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(patient),
     signal,
   })
@@ -5219,7 +5219,7 @@ async function readValidationMessages(response: Response) {
 export async function deletePatient(patientId: string, sessionId?: string | null, signal?: AbortSignal): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok && response.status !== 404) {
@@ -5235,7 +5235,7 @@ export async function updatePatientContact(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/contact`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(contact),
     signal,
   })
@@ -5254,7 +5254,7 @@ export async function updatePatientDemographics(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/demographics`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(demographics),
     signal,
   })
@@ -5273,7 +5273,7 @@ export async function updatePatientDeceasedStatus(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/deceased-status`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(status),
     signal,
   })
@@ -5292,7 +5292,7 @@ export async function updatePatientPortalAccountReset(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/portal-account/reset`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(reset),
     signal,
   })
@@ -5311,7 +5311,7 @@ export async function updatePatientPortalAccountAccess(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/portal-account/access`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(access),
     signal,
   })
@@ -5330,7 +5330,7 @@ export async function updatePatientGuardianContact(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/guardian-contact`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(guardianContact),
     signal,
   })
@@ -5349,7 +5349,7 @@ export async function updatePatientEmployer(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/employer`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(employer),
     signal,
   })
@@ -5368,7 +5368,7 @@ export async function updatePatientProviderAssignment(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/provider-assignment`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(assignment),
     signal,
   })
@@ -5387,7 +5387,7 @@ export async function updatePatientCareTeam(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/care-team`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(careTeam),
     signal,
   })
@@ -5406,7 +5406,7 @@ export async function createPatientInsurance(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/insurance`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(insurance),
     signal,
   })
@@ -5425,7 +5425,7 @@ export async function updatePatientInsurance(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/insurance/${encodeURIComponent(insuranceId)}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(insurance),
     signal,
   })
@@ -5443,7 +5443,7 @@ export async function deletePatientInsurance(
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/insurance/${encodeURIComponent(insuranceId)}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5469,7 +5469,7 @@ export async function searchAppointments(
   params.set('limit', '25')
 
   const response = await fetch(`${apiBaseUrl}/api/appointments?${params.toString()}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5485,7 +5485,7 @@ export async function getAppointmentDetail(
   signal?: AbortSignal,
 ): Promise<AppointmentDetail> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5506,7 +5506,7 @@ export async function getAppointmentFlowBoard(
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : ''
   const response = await fetch(`${apiBaseUrl}/api/appointments/flow-board${suffix}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5521,7 +5521,7 @@ export async function getAppointmentWaitlist(
   signal?: AbortSignal,
 ): Promise<AppointmentWaitlistResponse> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/waitlist`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5538,7 +5538,7 @@ export async function createAppointment(
 ): Promise<AppointmentDetail> {
   const response = await fetch(`${apiBaseUrl}/api/appointments`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(appointment),
     signal,
   })
@@ -5565,7 +5565,7 @@ export async function validateAppointmentAvailability(
 ): Promise<AppointmentAvailabilityValidationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/availability/validate`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(appointment),
     signal,
   })
@@ -5585,7 +5585,7 @@ export async function dispatchAppointmentReminder(
   const hasDispatchInput = Boolean(input?.templateId?.trim())
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/reminders/dispatch`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, hasDispatchInput ? 'application/json' : undefined),
+    headers: buildAvenChartSessionHeaders(sessionId, hasDispatchInput ? 'application/json' : undefined),
     body: hasDispatchInput ? JSON.stringify({ templateId: input?.templateId?.trim() }) : undefined,
     signal,
   })
@@ -5601,7 +5601,7 @@ export async function getAppointmentReminderTemplates(
   signal?: AbortSignal,
 ): Promise<AppointmentReminderTemplateCatalogResponse> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/reminders/templates`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5618,7 +5618,7 @@ export async function retryAppointmentReminderDispatch(
 ): Promise<AppointmentReminderDispatchResponse> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/reminders/dispatch/retry`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5638,7 +5638,7 @@ export async function getAppointmentReminderDispatchHistory(
     params.set('appointmentId', appointmentId.trim())
   }
   const response = await fetch(`${apiBaseUrl}/api/appointments/reminders/dispatch-history?${params.toString()}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5656,7 +5656,7 @@ export async function updateAppointmentStatus(
 ): Promise<AppointmentDetail> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/status`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
@@ -5675,7 +5675,7 @@ export async function updateAppointment(
 ): Promise<AppointmentDetail> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
@@ -5697,7 +5697,7 @@ export async function rescheduleAppointmentOccurrence(
     `${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/occurrences/${encodeURIComponent(occurrenceDate)}/reschedule`,
     {
       method: 'POST',
-      headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+      headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
       body: JSON.stringify(update),
       signal,
     },
@@ -5716,7 +5716,7 @@ export async function deleteAppointment(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5734,7 +5734,7 @@ export async function restoreAppointmentOccurrence(
     `${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/recurrence-exceptions/${encodeURIComponent(occurrenceDate)}/restore`,
     {
       method: 'POST',
-      headers: buildLegacyEhrSessionHeaders(sessionId),
+      headers: buildAvenChartSessionHeaders(sessionId),
       signal,
     },
   )
@@ -5765,7 +5765,7 @@ export async function searchEncounters(
   params.set('limit', '25')
 
   const response = await fetch(`${apiBaseUrl}/api/encounters?${params.toString()}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5783,7 +5783,7 @@ export async function getEncounterDetail(
 ): Promise<EncounterDetail> {
   const query = includeArchivedDocuments ? '?includeArchivedDocuments=true' : ''
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}${query}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5799,7 +5799,7 @@ export async function getEncounterAuditHistory(
   signal?: AbortSignal,
 ): Promise<EncounterAuditHistoryResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/audit`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5813,7 +5813,7 @@ export async function getEncounterSoapNoteTemplates(
   signal?: AbortSignal,
 ): Promise<EncounterSoapNoteTemplateCatalogResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/soap-note-templates`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -5830,7 +5830,7 @@ export async function createEncounter(
 ): Promise<EncounterDetail> {
   const response = await fetch(`${apiBaseUrl}/api/encounters`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(encounter),
     signal,
   })
@@ -5849,7 +5849,7 @@ export async function updateEncounter(
 ): Promise<EncounterDetail> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
@@ -5869,7 +5869,7 @@ export async function archiveEncounter(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/archive`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify({ reason, expectedArchiveVersion }),
     signal,
   })
@@ -5887,7 +5887,7 @@ export async function restoreEncounter(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/restore`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify({ reason, expectedArchiveVersion }),
     signal,
   })
@@ -5904,7 +5904,7 @@ export async function createEncounterVitals(
 ): Promise<EncounterFormMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/vitals`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(vitals),
     signal,
   })
@@ -5923,7 +5923,7 @@ export async function createEncounterSoapNote(
 ): Promise<EncounterFormMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/soap-notes`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(soapNote),
     signal,
   })
@@ -5942,7 +5942,7 @@ export async function signEncounter(
 ): Promise<EncounterSignatureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/sign`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(signature),
     signal,
   })
@@ -5961,7 +5961,7 @@ export async function createEncounterDocument(
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -5980,7 +5980,7 @@ export async function createEncounterBinaryDocument(
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/binary`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -5999,7 +5999,7 @@ export async function createEncounterExternalLinkDocument(
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/external-link`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -6019,7 +6019,7 @@ export async function updateEncounterDocumentMetadata(
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/metadata`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -6039,7 +6039,7 @@ export async function moveEncounterDocument(
 ): Promise<EncounterDocumentMoveResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/move`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -6059,7 +6059,7 @@ export async function replaceEncounterDocumentContent(
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/content`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -6079,7 +6079,7 @@ export async function replaceEncounterDocumentBinaryContent(
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/content/binary`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -6098,7 +6098,7 @@ export async function softDeleteEncounterDocument(
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/soft-delete`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6116,7 +6116,7 @@ export async function restoreEncounterDocument(
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/restore`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6135,7 +6135,7 @@ export async function signEncounterDocument(
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/sign`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(signature),
     signal,
   })
@@ -6155,7 +6155,7 @@ export async function denyEncounterDocument(
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/sign`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(signature),
     signal,
   })
@@ -6172,7 +6172,7 @@ export async function getClinicalLists(
   signal?: AbortSignal,
 ): Promise<ClinicalListsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/${encodeURIComponent(patientId.trim())}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6189,7 +6189,7 @@ export async function createClinicalAllergy(
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/allergies`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(allergy),
     signal,
   })
@@ -6207,7 +6207,7 @@ export async function createClinicalProblem(
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/problems`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(problem),
     signal,
   })
@@ -6226,7 +6226,7 @@ export async function deactivateClinicalProblem(
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/problems/${encodeURIComponent(problemId)}/deactivate`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
@@ -6244,7 +6244,7 @@ export async function deleteClinicalProblem(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/problems/${encodeURIComponent(problemId)}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6259,7 +6259,7 @@ export async function createClinicalMedication(
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/medications`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(medication),
     signal,
   })
@@ -6278,7 +6278,7 @@ export async function deactivateClinicalMedication(
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/medications/${encodeURIComponent(medicationId)}/deactivate`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
@@ -6296,7 +6296,7 @@ export async function deleteClinicalMedication(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/medications/${encodeURIComponent(medicationId)}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6312,7 +6312,7 @@ export async function deactivateClinicalAllergy(
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/allergies/${encodeURIComponent(allergyId)}/deactivate`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
@@ -6330,7 +6330,7 @@ export async function deleteClinicalAllergy(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/allergies/${encodeURIComponent(allergyId)}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6349,7 +6349,7 @@ export async function searchClinicalMedicationVocabulary(
   }
   const url = `${apiBaseUrl}/api/clinical-lists/medication-vocabulary${params.size ? `?${params.toString()}` : ''}`
   const response = await fetch(url, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6366,7 +6366,7 @@ export async function createClinicalPrescription(
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/prescriptions`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(prescription),
     signal,
   })
@@ -6387,7 +6387,7 @@ export async function deactivateClinicalPrescription(
     `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/deactivate`,
     {
       method: 'PUT',
-      headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+      headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
       body: JSON.stringify(update),
       signal,
     },
@@ -6409,7 +6409,7 @@ export async function refillClinicalPrescription(
     `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/refill`,
     {
       method: 'PUT',
-      headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+      headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
       body: JSON.stringify(refill),
       signal,
     },
@@ -6429,7 +6429,7 @@ export async function routeClinicalPrescriptionToPharmacy(
 ): Promise<ClinicalPrescriptionPharmacyRouteResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/route-pharmacy`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(route),
     signal,
   })
@@ -6448,7 +6448,7 @@ export async function getClinicalPrescriptionAuditHistory(
   const response = await fetch(
     `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/audit-history`,
     {
-      headers: buildLegacyEhrSessionHeaders(sessionId),
+      headers: buildAvenChartSessionHeaders(sessionId),
       signal,
     },
   )
@@ -6469,7 +6469,7 @@ export async function approveClinicalPrescriptionRefillRequest(
     `${apiBaseUrl}/api/clinical-lists/prescription-refill-requests/${encodeURIComponent(String(messageId))}/approve`,
     {
       method: 'PUT',
-      headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+      headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
       body: JSON.stringify(approval),
       signal,
     },
@@ -6488,7 +6488,7 @@ export async function deleteClinicalPrescription(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6503,7 +6503,7 @@ export async function createClinicalImmunization(
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/immunizations`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(immunization),
     signal,
   })
@@ -6524,7 +6524,7 @@ export async function markClinicalImmunizationEnteredInError(
     `${apiBaseUrl}/api/clinical-lists/immunizations/${encodeURIComponent(String(immunizationId))}/entered-in-error`,
     {
       method: 'PUT',
-      headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+      headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
       body: JSON.stringify(update),
       signal,
     },
@@ -6545,7 +6545,7 @@ export async function deleteClinicalImmunization(
     `${apiBaseUrl}/api/clinical-lists/immunizations/${encodeURIComponent(String(immunizationId))}`,
     {
       method: 'DELETE',
-      headers: buildLegacyEhrSessionHeaders(sessionId),
+      headers: buildAvenChartSessionHeaders(sessionId),
       signal,
     },
   )
@@ -6560,7 +6560,7 @@ export async function getPatientMessages(
   signal?: AbortSignal,
 ): Promise<PatientMessagesResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(patientId.trim())}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6578,7 +6578,7 @@ export async function getPatientDocuments(
 ): Promise<PatientDocumentsResponse> {
   const query = includeArchived ? '?includeArchived=true' : ''
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(patientId.trim())}${query}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6597,7 +6597,7 @@ export async function getPatientDocumentOcrQueue(
     ? `?patientId=${encodeURIComponent(patientId.trim())}`
     : ''
   const response = await fetch(`${apiBaseUrl}/api/documents/ocr-queue${query}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6616,7 +6616,7 @@ export async function getPatientDocumentRoutingQueue(
     ? `?patientId=${encodeURIComponent(patientId.trim())}`
     : ''
   const response = await fetch(`${apiBaseUrl}/api/documents/routing-queue${query}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6635,7 +6635,7 @@ export async function getPatientDocumentRetentionPolicy(
     ? `?patientId=${encodeURIComponent(patientId.trim())}`
     : ''
   const response = await fetch(`${apiBaseUrl}/api/documents/retention-policy${query}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6653,7 +6653,7 @@ export async function completePatientDocumentOcr(
 ): Promise<PatientDocumentOcrCompleteResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/ocr/complete`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -6672,7 +6672,7 @@ export async function disposePatientDocumentRetention(
 ): Promise<PatientDocumentRetentionDispositionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/retention/dispose`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -6689,7 +6689,7 @@ export async function getPatientDocumentContent(
   signal?: AbortSignal,
 ): Promise<PatientDocumentContentResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/content`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6705,7 +6705,7 @@ export async function downloadPatientDocument(
   signal?: AbortSignal,
 ): Promise<Blob> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/download`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6722,7 +6722,7 @@ export async function createPatientDocument(
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -6740,7 +6740,7 @@ export async function createPatientBinaryDocument(
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/binary`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -6758,7 +6758,7 @@ export async function createPatientScannerCapture(
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/scanner-captures`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -6776,7 +6776,7 @@ export async function createPatientExternalLinkDocument(
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/external-link`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -6795,7 +6795,7 @@ export async function updatePatientDocumentMetadata(
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/metadata`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -6814,7 +6814,7 @@ export async function replacePatientDocumentContent(
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/content`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -6833,7 +6833,7 @@ export async function replacePatientDocumentBinaryContent(
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/content/binary`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
@@ -6851,7 +6851,7 @@ export async function softDeletePatientDocument(
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/soft-delete`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6868,7 +6868,7 @@ export async function restorePatientDocument(
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/restore`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6886,7 +6886,7 @@ export async function signPatientDocument(
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/sign`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(signature),
     signal,
   })
@@ -6904,7 +6904,7 @@ export async function deletePatientDocument(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -6919,7 +6919,7 @@ export async function createPatientMessage(
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(message),
     signal,
   })
@@ -6938,7 +6938,7 @@ export async function updatePatientMessageStatus(
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/status`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
@@ -6957,7 +6957,7 @@ export async function updatePatientMessageContent(
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/content`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
@@ -6976,7 +6976,7 @@ export async function updatePatientMessageAssignment(
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/assignment`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
@@ -6995,7 +6995,7 @@ export async function replyToPatientMessage(
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/reply`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(reply),
     signal,
   })
@@ -7014,7 +7014,7 @@ export async function archivePatientMessage(
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/archive`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7030,7 +7030,7 @@ export async function getProcedureResults(
   signal?: AbortSignal,
 ): Promise<ProcedureResultsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/${encodeURIComponent(patientId.trim())}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7066,7 +7066,7 @@ export async function getProcedureReportReviewQueue(
     params.set('limit', String(filters.limit))
   }
   const response = await fetch(`${apiBaseUrl}/api/procedures/report-review-queue?${params}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7102,7 +7102,7 @@ export async function getProcedureOrderQueue(
     params.set('limit', String(filters.limit))
   }
   const response = await fetch(`${apiBaseUrl}/api/procedures/order-queue?${params}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7125,7 +7125,7 @@ export async function getProcedureLabProviders(
   const query = params.toString()
   const suffix = query ? `?${query}` : ''
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers${suffix}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7140,7 +7140,7 @@ export async function getProcedureLabProviderAddressBook(
   signal?: AbortSignal,
 ): Promise<ProcedureLabProviderAddressBookResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-provider-address-book`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7155,7 +7155,7 @@ export async function getProcedureOrderCatalog(
   signal?: AbortSignal,
 ): Promise<ProcedureOrderCatalogResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7172,7 +7172,7 @@ export async function createProcedureOrderCatalogItem(
 ): Promise<ProcedureOrderCatalogMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7191,7 +7191,7 @@ export async function updateProcedureOrderCatalogItem(
 ): Promise<ProcedureOrderCatalogMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog/${itemId}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7209,7 +7209,7 @@ export async function deleteProcedureOrderCatalogItem(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog/${itemId}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7224,7 +7224,7 @@ export async function importProcedureOrderCatalogCompendium(
 ): Promise<ProcedureOrderCatalogImportResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog/import-compendium`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7242,7 +7242,7 @@ export async function createProcedureLabProviderAddressBookOrganization(
 ): Promise<ProcedureLabProviderAddressBookMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-provider-address-book`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7260,7 +7260,7 @@ export async function deleteProcedureLabProviderAddressBookOrganization(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-provider-address-book/${organizationId}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7275,7 +7275,7 @@ export async function createProcedureLabProvider(
 ): Promise<ProcedureLabProviderMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7294,7 +7294,7 @@ export async function updateProcedureLabProvider(
 ): Promise<ProcedureLabProviderMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers/${providerId}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7312,7 +7312,7 @@ export async function deleteProcedureLabProvider(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers/${providerId}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7327,7 +7327,7 @@ export async function createProcedureOrder(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/orders`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7346,7 +7346,7 @@ export async function updateProcedureOrderStatus(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}/status`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7365,7 +7365,7 @@ export async function transmitProcedureOrder(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}/transmit`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7384,7 +7384,7 @@ export async function updateProcedureOrder(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7402,7 +7402,7 @@ export async function createProcedureReport(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/reports`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7421,7 +7421,7 @@ export async function updateProcedureReport(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/reports/${encodeURIComponent(String(reportId))}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7440,7 +7440,7 @@ export async function signProcedureReport(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/reports/${encodeURIComponent(String(reportId))}/sign`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7459,7 +7459,7 @@ export async function assignProcedureReportReviewer(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/reports/${encodeURIComponent(String(reportId))}/review-assignment`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7477,7 +7477,7 @@ export async function reopenProcedureReportReview(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/reports/${encodeURIComponent(String(reportId))}/reopen-review`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7494,7 +7494,7 @@ export async function bulkSignProcedureReports(
 ): Promise<ProcedureReportBulkSignResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/reports/bulk-sign`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7512,7 +7512,7 @@ export async function createProcedureSpecimen(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/specimens`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7530,7 +7530,7 @@ export async function createProcedureResult(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/results`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7549,7 +7549,7 @@ export async function updateProcedureResult(
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/results/${encodeURIComponent(String(resultId))}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7567,7 +7567,7 @@ export async function deleteProcedureOrder(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7581,7 +7581,7 @@ export async function getPatientBilling(
   signal?: AbortSignal,
 ): Promise<PatientBillingResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/${encodeURIComponent(patientId.trim())}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7597,7 +7597,7 @@ export async function getStatementBatch(
   signal?: AbortSignal,
 ): Promise<StatementBatchResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch?limit=${encodeURIComponent(String(limit))}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7613,7 +7613,7 @@ export async function getCollectionsWorkQueue(
   signal?: AbortSignal,
 ): Promise<CollectionsWorkQueueResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/collections/work-queue?limit=${encodeURIComponent(String(limit))}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7630,7 +7630,7 @@ export async function createCollectionsFollowUp(
 ): Promise<CollectionsFollowUpMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/collections/follow-ups`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7647,7 +7647,7 @@ export async function downloadStatementBatchPackage(
   signal?: AbortSignal,
 ): Promise<Blob> {
   const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/package.zip?limit=${encodeURIComponent(String(limit))}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7664,7 +7664,7 @@ export async function prepareStatementBatchDeliveryManifest(
 ): Promise<StatementBatchDeliveryResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/delivery-manifest?limit=${encodeURIComponent(String(limit))}`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     signal,
   })
   if (!response.ok) {
@@ -7681,7 +7681,7 @@ export async function dispatchStatementBatchDelivery(
 ): Promise<StatementBatchDispatchResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/dispatch?limit=${encodeURIComponent(String(limit))}`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     signal,
   })
   if (!response.ok) {
@@ -7697,7 +7697,7 @@ export async function getStatementDispatchHistory(
   signal?: AbortSignal,
 ): Promise<StatementDeliveryAuditHistoryResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/dispatch-history?limit=${encodeURIComponent(String(limit))}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7714,7 +7714,7 @@ export async function deliverStatementBatchToPortal(
 ): Promise<StatementPortalDeliveryResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/portal-delivery?limit=${encodeURIComponent(String(limit))}`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     signal,
   })
   if (!response.ok) {
@@ -7731,7 +7731,7 @@ export async function queueStatementBatchEmailOutbox(
 ): Promise<StatementEmailOutboxResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/email-outbox?limit=${encodeURIComponent(String(limit))}`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     signal,
   })
   if (!response.ok) {
@@ -7747,7 +7747,7 @@ export async function downloadBillingStatementPdf(
   signal?: AbortSignal,
 ): Promise<Blob> {
   const response = await fetch(`${apiBaseUrl}/api/billing/${encodeURIComponent(patientId.trim())}/statement.pdf`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7763,7 +7763,7 @@ export async function downloadBillingPaymentReceiptPdf(
   signal?: AbortSignal,
 ): Promise<Blob> {
   const response = await fetch(`${apiBaseUrl}/api/billing/payments/${encodeURIComponent(activityId)}/receipt.pdf`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7780,7 +7780,7 @@ export async function createBillingLine(
 ): Promise<BillingLineMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/lines`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7797,7 +7797,7 @@ export async function getBillingChargeTemplate(
   signal?: AbortSignal,
 ): Promise<BillingChargeTemplate> {
   const response = await fetch(`${apiBaseUrl}/api/billing/charge-templates/${encodeURIComponent(templateId)}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7815,7 +7815,7 @@ export async function updateBillingLineStatus(
 ): Promise<BillingLineMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/lines/${encodeURIComponent(billingLineId)}/status`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7834,7 +7834,7 @@ export async function updateBillingLine(
 ): Promise<BillingLineMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/lines/${encodeURIComponent(billingLineId)}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7852,7 +7852,7 @@ export async function deleteBillingLine(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/billing/lines/${encodeURIComponent(billingLineId)}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7867,7 +7867,7 @@ export async function createBillingClaimStatus(
 ): Promise<BillingClaimMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7886,7 +7886,7 @@ export async function updateBillingClaimStatus(
 ): Promise<BillingClaimMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/status`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -7904,7 +7904,7 @@ export async function scrubBillingClaimStatus(
 ): Promise<BillingClaimMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/scrub`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7921,7 +7921,7 @@ export async function generateBillingClaimStatus(
 ): Promise<BillingClaimMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/generate`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7938,7 +7938,7 @@ export async function resubmitBillingClaimStatus(
 ): Promise<BillingClaimMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/resubmit`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7955,7 +7955,7 @@ export async function denyBillingClaimStatus(
 ): Promise<BillingClaimMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/deny`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7972,7 +7972,7 @@ export async function clearBillingClaimStatus(
 ): Promise<BillingClaimMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/clear`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -7989,7 +7989,7 @@ export async function adjudicateBillingClaimStatus(
 ): Promise<BillingPaymentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/adjudicate`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8006,7 +8006,7 @@ export async function deleteBillingClaimStatus(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8021,7 +8021,7 @@ export async function createBillingPatientPayment(
 ): Promise<BillingPaymentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/payments/patient-payments`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8039,7 +8039,7 @@ export async function createBillingPatientRefund(
 ): Promise<BillingPaymentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/payments/patient-refunds`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8057,7 +8057,7 @@ export async function createBillingInsurancePayment(
 ): Promise<BillingPaymentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/payments/insurance-payments`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8075,7 +8075,7 @@ export async function createBillingInsuranceReversal(
 ): Promise<BillingPaymentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/payments/insurance-reversals`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8093,7 +8093,7 @@ export async function createBillingAdjustmentReversal(
 ): Promise<BillingPaymentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/payments/adjustment-reversals`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8111,7 +8111,7 @@ export async function importBillingEobBatch(
 ): Promise<BillingEobBatchImportResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/eob-batches/import`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8129,7 +8129,7 @@ export async function voidBillingPaymentPosting(
 ): Promise<BillingPaymentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/payments/${encodeURIComponent(activityId)}/void`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8146,7 +8146,7 @@ export async function deleteBillingPaymentPosting(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/billing/payments/${encodeURIComponent(activityId)}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8159,7 +8159,7 @@ export async function getAdministrationDirectory(
   signal?: AbortSignal,
 ): Promise<AdministrationDirectoryResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/directory`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8178,7 +8178,7 @@ export async function acceptAdministrationPortalProfileReview(
     `${apiBaseUrl}/api/administration/portal-activity/profile-reviews/${encodeURIComponent(String(requestId))}/accept`,
     {
       method: 'PUT',
-      headers: buildLegacyEhrSessionHeaders(sessionId),
+      headers: buildAvenChartSessionHeaders(sessionId),
       signal,
     },
   )
@@ -8198,7 +8198,7 @@ export async function revertAdministrationPortalProfileReview(
     `${apiBaseUrl}/api/administration/portal-activity/profile-reviews/${encodeURIComponent(String(requestId))}/revert`,
     {
       method: 'PUT',
-      headers: buildLegacyEhrSessionHeaders(sessionId),
+      headers: buildAvenChartSessionHeaders(sessionId),
       signal,
     },
   )
@@ -8216,7 +8216,7 @@ export async function createAdministrationUser(
 ): Promise<AdministrationUserMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/users`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8235,7 +8235,7 @@ export async function updateAdministrationUser(
 ): Promise<AdministrationUserMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/users/${userId}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8253,7 +8253,7 @@ export async function deleteAdministrationUser(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/administration/users/${userId}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8268,7 +8268,7 @@ export async function createAdministrationFacility(
 ): Promise<AdministrationFacilityMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/facilities`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8287,7 +8287,7 @@ export async function updateAdministrationFacility(
 ): Promise<AdministrationFacilityMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/facilities/${facilityId}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8305,7 +8305,7 @@ export async function deleteAdministrationFacility(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/administration/facilities/${facilityId}`, {
     method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8320,7 +8320,7 @@ export async function grantAdministrationAccessPermission(
 ): Promise<AdministrationAccessPermissionMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/access-control/group-permissions`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8340,7 +8340,7 @@ export async function revokeAdministrationAccessPermission(
     `${apiBaseUrl}/api/administration/access-control/group-permissions/${encodeURIComponent(input.groupValue)}/${encodeURIComponent(input.sectionValue)}/${encodeURIComponent(input.permissionValue)}`,
     {
       method: 'DELETE',
-      headers: buildLegacyEhrSessionHeaders(sessionId),
+      headers: buildAvenChartSessionHeaders(sessionId),
       signal,
     },
   )
@@ -8358,7 +8358,7 @@ export async function grantAdministrationAccessUserMembership(
 ): Promise<AdministrationAccessUserMembershipMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/access-control/user-memberships`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8378,7 +8378,7 @@ export async function revokeAdministrationAccessUserMembership(
     `${apiBaseUrl}/api/administration/access-control/user-memberships/${encodeURIComponent(input.userValue)}/${encodeURIComponent(input.groupValue)}`,
     {
       method: 'DELETE',
-      headers: buildLegacyEhrSessionHeaders(sessionId),
+      headers: buildAvenChartSessionHeaders(sessionId),
       signal,
     },
   )
@@ -8394,12 +8394,12 @@ export async function getOperationalReports(
   signal?: AbortSignal,
 ): Promise<OperationalReportsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/reports/operational`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
     throw new Error(
-      adminApiError('Operational reports load', response.status, 'Patient Report access', 'an active Legacy EHR session'),
+      adminApiError('Operational reports load', response.status, 'Patient Report access', 'an active AvenChart session'),
     )
   }
 
@@ -8411,7 +8411,7 @@ export async function getInventory(
   signal?: AbortSignal,
 ): Promise<InventoryResponse> {
   const response = await fetch(`${apiBaseUrl}/api/inventory/`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8429,7 +8429,7 @@ export async function createInventoryTransaction(
   const endpoint = input.transactionType === 'return' ? 'returns' : 'transactions'
   const response = await fetch(`${apiBaseUrl}/api/inventory/${endpoint}`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8448,7 +8448,7 @@ export async function updateInventoryLotMetadata(
 ): Promise<InventoryLotMetadataUpdateResponse> {
   const response = await fetch(`${apiBaseUrl}/api/inventory/lots/${lotId}`, {
     method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8465,7 +8465,7 @@ export async function getInventoryLotMetadataHistory(
   signal?: AbortSignal,
 ): Promise<InventoryLotMetadataAuditItem[]> {
   const response = await fetch(`${apiBaseUrl}/api/inventory/lots/${lotId}/metadata-history`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8483,7 +8483,7 @@ export async function destroyInventoryLot(
 ): Promise<InventoryLotDestructionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/inventory/lots/${lotId}/destructions`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8495,7 +8495,7 @@ export async function destroyInventoryLot(
 }
 
 export async function createInventoryExpiryDisposition(lotId: number, input: InventoryExpiryDispositionInput, sessionId?: string | null): Promise<InventoryExpiryDispositionResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/inventory/lots/${lotId}/expiry-dispositions`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  const response = await fetch(`${apiBaseUrl}/api/inventory/lots/${lotId}/expiry-dispositions`, { method: 'POST', headers: buildAvenChartSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
   if (!response.ok) throw new Error(adminApiError('Inventory expiry disposition', response.status))
   return response.json()
 }
@@ -8507,7 +8507,7 @@ export async function createInventoryPatientSale(
 ): Promise<InventoryPatientSaleResponse> {
   const response = await fetch(`${apiBaseUrl}/api/inventory/patient-sales`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8518,25 +8518,25 @@ export async function createInventoryPatientSale(
 }
 
 export async function allocateInventoryPatientSale(input: InventoryPatientSaleAllocationCreateInput, sessionId?: string | null): Promise<InventoryPatientSaleAllocationResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/inventory/patient-sales/allocate`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  const response = await fetch(`${apiBaseUrl}/api/inventory/patient-sales/allocate`, { method: 'POST', headers: buildAvenChartSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
   if (!response.ok) throw new Error(adminApiError('Inventory sale allocation', response.status))
   return response.json()
 }
 
 export async function getInventoryMedicationCatalog(sessionId?: string | null, signal?: AbortSignal): Promise<InventoryMedicationCatalogItem[]> {
-  const response = await fetch(`${apiBaseUrl}/api/inventory/medication-catalog`, { headers: buildLegacyEhrSessionHeaders(sessionId), signal })
+  const response = await fetch(`${apiBaseUrl}/api/inventory/medication-catalog`, { headers: buildAvenChartSessionHeaders(sessionId), signal })
   if (!response.ok) throw new Error(adminApiError('Inventory medication catalog', response.status))
   return response.json()
 }
 
 export async function updateInventoryMedicationLink(itemId: number, input: InventoryMedicationLinkUpdateInput, sessionId?: string | null): Promise<InventoryMedicationLink> {
-  const response = await fetch(`${apiBaseUrl}/api/inventory/items/${itemId}/medication-link`, { method: 'PUT', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  const response = await fetch(`${apiBaseUrl}/api/inventory/items/${itemId}/medication-link`, { method: 'PUT', headers: buildAvenChartSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
   if (!response.ok) throw new Error(adminApiError('Inventory medication link', response.status))
   return response.json()
 }
 
 export async function dispenseInventoryPrescription(input: InventoryPrescriptionDispenseInput, sessionId?: string | null): Promise<InventoryPrescriptionDispenseResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/inventory/prescription-dispensations`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  const response = await fetch(`${apiBaseUrl}/api/inventory/prescription-dispensations`, { method: 'POST', headers: buildAvenChartSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
   if (!response.ok) throw new Error(adminApiError('Prescription dispensing', response.status))
   return response.json()
 }
@@ -8548,7 +8548,7 @@ export async function createInventoryTransfer(
 ): Promise<InventoryMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/inventory/transfers`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8564,7 +8564,7 @@ export async function getInventoryVendors(
   signal?: AbortSignal,
 ): Promise<InventoryVendorListResponse> {
   const response = await fetch(`${apiBaseUrl}/api/inventory/vendors`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8580,7 +8580,7 @@ export async function createInventoryVendor(
 ): Promise<InventoryVendor> {
   const response = await fetch(`${apiBaseUrl}/api/inventory/vendors`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8597,7 +8597,7 @@ export async function createInventoryPurchaseReceipt(
 ): Promise<InventoryPurchaseReceiptResponse> {
   const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-receipts`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8608,25 +8608,25 @@ export async function createInventoryPurchaseReceipt(
 }
 
 export async function getInventoryPurchaseRequisitions(sessionId?: string | null, signal?: AbortSignal): Promise<InventoryPurchaseRequisition[]> {
-  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions`, { headers: buildLegacyEhrSessionHeaders(sessionId), signal })
+  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions`, { headers: buildAvenChartSessionHeaders(sessionId), signal })
   if (!response.ok) throw new Error(adminApiError('Inventory purchase requisitions', response.status))
   return response.json()
 }
 
 export async function createInventoryPurchaseRequisition(input: InventoryPurchaseRequisitionCreateInput, sessionId?: string | null): Promise<InventoryPurchaseRequisition> {
-  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions`, { method: 'POST', headers: buildAvenChartSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
   if (!response.ok) throw new Error(adminApiError('Inventory purchase requisition', response.status))
   return response.json()
 }
 
 export async function submitInventoryPurchaseRequisition(requisitionId: string, sessionId?: string | null): Promise<InventoryPurchaseRequisition> {
-  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions/${requisitionId}/submit`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: '{}' })
+  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions/${requisitionId}/submit`, { method: 'POST', headers: buildAvenChartSessionHeaders(sessionId, 'application/json'), body: '{}' })
   if (!response.ok) throw new Error(adminApiError('Inventory purchase requisition submit', response.status))
   return response.json()
 }
 
 export async function decideInventoryPurchaseRequisition(requisitionId: string, decision: 'approve' | 'reject', input: InventoryPurchaseRequisitionDecisionInput, sessionId?: string | null): Promise<InventoryPurchaseRequisition> {
-  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions/${requisitionId}/decisions/${decision}`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions/${requisitionId}/decisions/${decision}`, { method: 'POST', headers: buildAvenChartSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
   if (!response.ok) throw new Error(adminApiError(`Inventory purchase requisition ${decision}`, response.status))
   return response.json()
 }
@@ -8638,7 +8638,7 @@ export async function createInventoryCountReconciliation(
 ): Promise<InventoryCountReconciliationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/inventory/count-reconciliations`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -8658,7 +8658,7 @@ export async function getInventoryActivityReport(
   if (filters.toDate?.trim()) params.set('to', filters.toDate.trim())
   if (filters.facilityId?.trim()) params.set('facilityId', filters.facilityId.trim())
   const response = await fetch(`${apiBaseUrl}/api/inventory/activity?${params.toString()}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8677,7 +8677,7 @@ export async function getInventoryActivityCsv(
   if (filters.toDate?.trim()) params.set('to', filters.toDate.trim())
   if (filters.facilityId?.trim()) params.set('facilityId', filters.facilityId.trim())
   const response = await fetch(`${apiBaseUrl}/api/inventory/activity/export?${params.toString()}`, {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8692,7 +8692,7 @@ export function getOperationalReportsCsvUrl() {
 
 export async function getOperationalReportsCsv(sessionId?: string | null, signal?: AbortSignal): Promise<string> {
   const response = await fetch(getOperationalReportsCsvUrl(), {
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildAvenChartSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -8701,7 +8701,7 @@ export async function getOperationalReportsCsv(sessionId?: string | null, signal
         'Operational reports CSV export',
         response.status,
         'Patient Report access',
-        'an active Legacy EHR session',
+        'an active AvenChart session',
       ),
     )
   }

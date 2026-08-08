@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using Npgsql;
@@ -40,7 +40,7 @@ public sealed class DatabaseSchemaMigrator(
         if (faultAfterAppliedCount > 0 && !IsIsolatedTestDatabase(connection.Database))
         {
             throw new InvalidOperationException(
-                "Migration fault injection is restricted to an legacy-ehr_modernized_test_* database.");
+                "Migration fault injection is restricted to an avenchart_test_* database.");
         }
 
         await AcquireLockAsync(connection, cancellationToken);
@@ -199,7 +199,7 @@ public sealed class DatabaseSchemaMigrator(
 
     private static bool IsIsolatedTestDatabase(string databaseName)
     {
-        const string prefix = "legacy-ehr_modernized_test_";
+        const string prefix = "avenchart_test_";
         return databaseName.StartsWith(prefix, StringComparison.Ordinal)
             && databaseName.Length > prefix.Length
             && databaseName[prefix.Length..].All(character =>

@@ -1,4 +1,4 @@
--- Legacy EHR's inventory lot screens do not implement a purchase-requisition
+-- The upstream legacy inventory lot screens do not implement a purchase-requisition
 -- workflow. This local operations extension records the request and approval
 -- decision separately from the later receiving/reconciliation workflow.
 create table if not exists inventory_purchase_requisitions (

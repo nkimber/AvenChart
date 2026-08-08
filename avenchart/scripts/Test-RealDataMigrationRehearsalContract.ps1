@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -40,10 +40,10 @@ try {
 
     $rawContract = Get-Content -LiteralPath $ContractPath -Raw
     $contract = $rawContract | ConvertFrom-Json
-    $identityPassed = $contract.contractId -eq 'legacy-ehr-real-data-rehearsal-v1' `
+    $identityPassed = $contract.contractId -eq 'avenchart-real-data-rehearsal-v1' `
         -and $contract.contractVersion -eq 1 `
         -and $contract.status -eq 'owner-approval-required' `
-        -and $contract.source.system -eq 'legacy-legacy-ehr' `
+        -and $contract.source.system -eq 'legacy-ehr' `
         -and $contract.source.database -eq 'MariaDB' `
         -and $contract.target.system -eq 'avenchart' `
         -and $contract.target.database -eq 'PostgreSQL'

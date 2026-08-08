@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { EncounterDetail, EncounterSoapNote } from "../api.ts";
@@ -95,7 +95,7 @@ export async function saveEncounterSoapNote(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Legacy EHR-Session": sessionId,
+        "X-AvenChart-Session": sessionId,
       },
       body: JSON.stringify(input),
       signal,

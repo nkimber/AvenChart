@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import AxeBuilder from "@axe-core/playwright";
@@ -52,9 +52,9 @@ function cleanupEncounter(encounter: number | null) {
       "psql",
       "-X",
       "-U",
-      "legacy-ehr",
+      "avenchart",
       "-d",
-      "legacy-ehr_modernized",
+      "avenchart",
       "-v",
       "ON_ERROR_STOP=1",
       "-c",
@@ -73,7 +73,7 @@ async function cleanupCodingFixtures(
   billingLineIds: string[],
   procedureOrderIds: number[],
 ) {
-  const headers = { "X-Legacy EHR-Session": sessionId };
+  const headers = { "X-AvenChart-Session": sessionId };
   for (const billingLineId of billingLineIds) {
     const response = await request.delete(
       `${apiBaseUrl}/api/billing/lines/${billingLineId}`,

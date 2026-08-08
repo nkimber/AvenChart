@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import AxeBuilder from "@axe-core/playwright";
@@ -271,7 +271,7 @@ test.describe("accessibility gate", () => {
     const templateFixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/administration/document-templates/`,
       {
-        headers: { "X-Legacy EHR-Session": sessionId! },
+        headers: { "X-AvenChart-Session": sessionId! },
         data: {
           name: templateMarker,
           content:
@@ -288,7 +288,7 @@ test.describe("accessibility gate", () => {
       const versionFixtureResponse = await page.request.post(
         `${apiBaseUrl}/api/administration/document-templates/${templateFixtureId}/binary-versions`,
         {
-          headers: { "X-Legacy EHR-Session": sessionId! },
+          headers: { "X-AvenChart-Session": sessionId! },
           data: {
             fileName: `${templateMarker}.txt`,
             mimetype: "text/plain",
@@ -336,7 +336,7 @@ test.describe("accessibility gate", () => {
     } finally {
       const deleted = await page.request.delete(
         `${apiBaseUrl}/api/administration/document-templates/${templateFixtureId}/test-fixture`,
-        { headers: { "X-Legacy EHR-Session": sessionId! } },
+        { headers: { "X-AvenChart-Session": sessionId! } },
       );
       expect([204, 404]).toContain(deleted.status());
     }
@@ -344,7 +344,7 @@ test.describe("accessibility gate", () => {
     const settingFixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/administration/practice-settings/practice.name/change-requests`,
       {
-        headers: { "X-Legacy EHR-Session": sessionId! },
+        headers: { "X-AvenChart-Session": sessionId! },
         data: {
           value: settingMarker,
           reason: settingMarker,
@@ -384,7 +384,7 @@ test.describe("accessibility gate", () => {
     } finally {
       const deleted = await page.request.delete(
         `${apiBaseUrl}/api/administration/practice-setting-change-requests/${settingFixtureId}/test-fixture`,
-        { headers: { "X-Legacy EHR-Session": sessionId! } },
+        { headers: { "X-AvenChart-Session": sessionId! } },
       );
       expect([204, 404]).toContain(deleted.status());
     }
@@ -439,7 +439,7 @@ test.describe("accessibility gate", () => {
     const ocrFixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/documents/scanner-captures`,
       {
-        headers: { "X-Legacy EHR-Session": sessionId! },
+        headers: { "X-AvenChart-Session": sessionId! },
         data: {
           patientId: "MOD-PAT-0001",
           categoryId: 3,
@@ -489,7 +489,7 @@ test.describe("accessibility gate", () => {
     } finally {
       const deleted = await page.request.delete(
         `${apiBaseUrl}/api/documents/${ocrFixtureId}`,
-        { headers: { "X-Legacy EHR-Session": sessionId! } },
+        { headers: { "X-AvenChart-Session": sessionId! } },
       );
       expect([204, 404]).toContain(deleted.status());
     }
@@ -571,7 +571,7 @@ test.describe("accessibility gate", () => {
     const fixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/patients/MOD-PAT-0001/authorizations`,
       {
-        headers: { "X-Legacy EHR-Session": sessionId! },
+        headers: { "X-AvenChart-Session": sessionId! },
         data: {
           payer: marker,
           service: `${marker} service`,
@@ -615,7 +615,7 @@ test.describe("accessibility gate", () => {
     } finally {
       const deleted = await page.request.delete(
         `${apiBaseUrl}/api/patients/MOD-PAT-0001/authorizations/${fixtureId}/test-fixture`,
-        { headers: { "X-Legacy EHR-Session": sessionId! } },
+        { headers: { "X-AvenChart-Session": sessionId! } },
       );
       expect([204, 404]).toContain(deleted.status());
     }

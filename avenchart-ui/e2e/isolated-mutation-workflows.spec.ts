@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { expect, test, type Page } from "@playwright/test";
@@ -83,9 +83,9 @@ function deletePortalMailboxFixtures(messageIds: string[]) {
       "psql",
       "-X",
       "-U",
-      "legacy-ehr",
+      "avenchart",
       "-d",
-      "legacy-ehr_modernized",
+      "avenchart",
       "-v",
       "ON_ERROR_STOP=1",
       "-c",
@@ -111,9 +111,9 @@ function runProviderAssignmentSql(sql: string) {
       "psql",
       "-X",
       "-U",
-      "legacy-ehr",
+      "avenchart",
       "-d",
-      "legacy-ehr_modernized",
+      "avenchart",
       "-v",
       "ON_ERROR_STOP=1",
       "-t",
@@ -198,7 +198,7 @@ test.describe("isolated mutation workflows", () => {
 
     try {
       const created = await page.request.post(`${apiBaseUrl}/api/messages`, {
-        headers: { "X-Legacy EHR-Session": sessionId },
+        headers: { "X-AvenChart-Session": sessionId },
         data: {
           patientId: "MOD-PAT-0004",
           title: subject,
@@ -248,7 +248,7 @@ test.describe("isolated mutation workflows", () => {
       if (messageId) {
         const deleted = await page.request.delete(
           `${apiBaseUrl}/api/messages/${messageId}`,
-          { headers: { "X-Legacy EHR-Session": sessionId } },
+          { headers: { "X-AvenChart-Session": sessionId } },
         );
         expect(deleted.ok()).toBeTruthy();
       }
@@ -269,7 +269,7 @@ test.describe("isolated mutation workflows", () => {
       const createdOrder = await page.request.post(
         `${apiBaseUrl}/api/procedures/orders`,
         {
-          headers: { "X-Legacy EHR-Session": sessionId },
+          headers: { "X-AvenChart-Session": sessionId },
           data: {
             patientId: "MOD-PAT-0901",
             providerId: 101,
@@ -294,7 +294,7 @@ test.describe("isolated mutation workflows", () => {
       const createdReport = await page.request.post(
         `${apiBaseUrl}/api/procedures/reports`,
         {
-          headers: { "X-Legacy EHR-Session": sessionId },
+          headers: { "X-AvenChart-Session": sessionId },
           data: {
             orderId,
             dateCollected: "2026-07-27T10:00:00Z",
@@ -349,7 +349,7 @@ test.describe("isolated mutation workflows", () => {
       if (orderId) {
         const deleted = await page.request.delete(
           `${apiBaseUrl}/api/procedures/orders/${orderId}`,
-          { headers: { "X-Legacy EHR-Session": sessionId } },
+          { headers: { "X-AvenChart-Session": sessionId } },
         );
         expect(deleted.ok()).toBeTruthy();
       }
@@ -428,7 +428,7 @@ test.describe("isolated mutation workflows", () => {
         const response = await page.request.post(
           `${apiBaseUrl}/api/clinical-lists/${fixture.path}`,
           {
-            headers: { "X-Legacy EHR-Session": sessionId },
+            headers: { "X-AvenChart-Session": sessionId },
             data: fixture.data,
           },
         );
@@ -482,7 +482,7 @@ test.describe("isolated mutation workflows", () => {
       for (const fixture of created) {
         const response = await page.request.delete(
           `${apiBaseUrl}/api/clinical-lists/${fixture.path}/${encodeURIComponent(fixture.id)}`,
-          { headers: { "X-Legacy EHR-Session": sessionId } },
+          { headers: { "X-AvenChart-Session": sessionId } },
         );
         expect([204, 404]).toContain(response.status());
       }
@@ -502,7 +502,7 @@ test.describe("isolated mutation workflows", () => {
 
     const patientResponse = await page.request.get(
       `${apiBaseUrl}/api/patients/MOD-PAT-0004`,
-      { headers: { "X-Legacy EHR-Session": sessionId } },
+      { headers: { "X-AvenChart-Session": sessionId } },
     );
     expect(patientResponse.ok()).toBeTruthy();
     const patient = (await patientResponse.json()) as {
@@ -515,7 +515,7 @@ test.describe("isolated mutation workflows", () => {
 
     const optionsResponse = await page.request.get(
       `${apiBaseUrl}/api/patients/provider-options`,
-      { headers: { "X-Legacy EHR-Session": sessionId } },
+      { headers: { "X-AvenChart-Session": sessionId } },
     );
     expect(optionsResponse.ok()).toBeTruthy();
     const options = (await optionsResponse.json()) as {
@@ -561,7 +561,7 @@ test.describe("isolated mutation workflows", () => {
 
       const historyResponse = await page.request.get(
         `${apiBaseUrl}/api/patients/MOD-PAT-0004/provider-assignment-history`,
-        { headers: { "X-Legacy EHR-Session": sessionId } },
+        { headers: { "X-AvenChart-Session": sessionId } },
       );
       expect(historyResponse.ok()).toBeTruthy();
       const history = (await historyResponse.json()) as {
@@ -589,7 +589,7 @@ test.describe("isolated mutation workflows", () => {
         const restored = await page.request.put(
           `${apiBaseUrl}/api/patients/MOD-PAT-0004/provider-assignment`,
           {
-            headers: { "X-Legacy EHR-Session": sessionId },
+            headers: { "X-AvenChart-Session": sessionId },
             data: {
               providerId: originalProviderId,
               reason: restoreReason,
@@ -614,7 +614,7 @@ test.describe("isolated mutation workflows", () => {
     const apiBaseUrl =
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     const marker = `admin-audit-${Date.now()}`;
-    const headers = { "X-Legacy EHR-Session": sessionId };
+    const headers = { "X-AvenChart-Session": sessionId };
     const eventIds = new Set<string>();
 
     const patientResponse = await page.request.get(
@@ -917,7 +917,7 @@ test.describe("isolated mutation workflows", () => {
     const apiBaseUrl =
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     const publicId = `TMP-PAT-REG-DUP-${Date.now()}`;
-    const headers = { "X-Legacy EHR-Session": sessionId };
+    const headers = { "X-AvenChart-Session": sessionId };
     let created = false;
 
     try {
@@ -1045,10 +1045,10 @@ test.describe("isolated mutation workflows", () => {
       .toISOString()
       .slice(0, 16);
     const originalPdfBytes = Buffer.from(
-      "%PDF-1.4\n% Modern UI document proof\n",
+      "%PDF-1.4\n% AvenChart UI document proof\n",
     );
     const replacementPdfBytes = Buffer.from(
-      "%PDF-1.4\n% Modern UI replacement proof\n",
+      "%PDF-1.4\n% AvenChart UI replacement proof\n",
     );
     const replacementPdfFileName = `${marker}-FILE-V2.pdf`;
     const imageBytes = Buffer.from(
@@ -1056,7 +1056,7 @@ test.describe("isolated mutation workflows", () => {
       "base64",
     );
     const unsupportedBytes = Buffer.from(`Unsupported archive ${marker}`);
-    const headers = { "X-Legacy EHR-Session": sessionId };
+    const headers = { "X-AvenChart-Session": sessionId };
     let ocrDocumentId: number;
 
     async function getMarkerDocuments() {
@@ -2498,7 +2498,7 @@ test.describe("isolated mutation workflows", () => {
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     const marker = `TMP-CLIN-AUTH-${Date.now()}`;
     const patientId = "MOD-PAT-0001";
-    const headers = { "X-Legacy EHR-Session": sessionId };
+    const headers = { "X-AvenChart-Session": sessionId };
     let authorizationId: string | null = null;
 
     try {
@@ -2721,7 +2721,7 @@ test.describe("isolated mutation workflows", () => {
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     const marker = `TMP-ADM-SETTING-${Date.now()}`;
     const staleValue = `${marker}-STALE`;
-    const headers = { "X-Legacy EHR-Session": sessionId };
+    const headers = { "X-AvenChart-Session": sessionId };
     let originalValue = "";
 
     try {
@@ -2917,7 +2917,7 @@ test.describe("isolated mutation workflows", () => {
     const primaryName = `${marker}-00`;
     const binaryFileName = `${marker}-version.txt`;
     const binaryContent = `Binary patient-template proof ${marker}.`;
-    const headers = { "X-Legacy EHR-Session": sessionId };
+    const headers = { "X-AvenChart-Session": sessionId };
     const templateIds = new Set<string>();
 
     async function getMarkerTemplates() {
@@ -3237,7 +3237,7 @@ test.describe("isolated mutation workflows", () => {
       const clinicalLists = await page.request.get(
         `${apiBaseUrl}/api/clinical-lists/MOD-PAT-0004`,
         {
-          headers: { "X-Legacy EHR-Session": sessionId },
+          headers: { "X-AvenChart-Session": sessionId },
         },
       );
       expect(clinicalLists.ok()).toBeTruthy();
@@ -3276,7 +3276,7 @@ test.describe("isolated mutation workflows", () => {
         `${apiBaseUrl}/api/patient-portal/prescriptions/${encodeURIComponent(prescriptionId!)}/refill-request`,
         {
           headers: {
-            "X-Legacy EHR-Patient-Portal-Session": portalSessionId!,
+            "X-AvenChart-Patient-Portal-Session": portalSessionId!,
           },
           data: {
             requestDate: new Date().toISOString().slice(0, 10),
@@ -3350,7 +3350,7 @@ test.describe("isolated mutation workflows", () => {
       const currentClinicalLists = await page.request.get(
         `${apiBaseUrl}/api/clinical-lists/MOD-PAT-0004`,
         {
-          headers: { "X-Legacy EHR-Session": sessionId },
+          headers: { "X-AvenChart-Session": sessionId },
         },
       );
       expect(currentClinicalLists.ok()).toBeTruthy();
@@ -3381,7 +3381,7 @@ test.describe("isolated mutation workflows", () => {
       const competingUpdate = await page.request.put(
         `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId!)}`,
         {
-          headers: { "X-Legacy EHR-Session": sessionId },
+          headers: { "X-AvenChart-Session": sessionId },
           data: {
             expectedVersion: currentPrescription!.version,
             startDate: currentPrescription!.startDate,
@@ -3516,7 +3516,7 @@ test.describe("isolated mutation workflows", () => {
         `${apiBaseUrl}/api/patient-portal/prescriptions/${encodeURIComponent(prescriptionId!)}/refill-request`,
         {
           headers: {
-            "X-Legacy EHR-Patient-Portal-Session": portalSessionId!,
+            "X-AvenChart-Patient-Portal-Session": portalSessionId!,
           },
           data: {
             requestDate: new Date().toISOString().slice(0, 10),
@@ -3594,7 +3594,7 @@ test.describe("isolated mutation workflows", () => {
       if (prescriptionId) {
         const deletedPrescription = await page.request.delete(
           `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}`,
-          { headers: { "X-Legacy EHR-Session": sessionId } },
+          { headers: { "X-AvenChart-Session": sessionId } },
         );
         expect(deletedPrescription.ok()).toBeTruthy();
       }
@@ -3603,7 +3603,7 @@ test.describe("isolated mutation workflows", () => {
           `${apiBaseUrl}/api/patient-portal/session`,
           {
             headers: {
-              "X-Legacy EHR-Patient-Portal-Session": portalSessionId,
+              "X-AvenChart-Patient-Portal-Session": portalSessionId,
             },
           },
         );

@@ -1,10 +1,10 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
     [int]$PostgresWaitSeconds = 90,
     [switch]$SkipPostgresStartup,
-    [string]$DatabaseName = "legacy-ehr_modernized",
+    [string]$DatabaseName = "avenchart",
     [int]$TestFaultAfterAppliedMigrationCount = 0,
     [switch]$SkipHostLock,
     [switch]$SkipImageBuild,
@@ -13,19 +13,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if ($DatabaseName -ne "legacy-ehr_modernized" -and $DatabaseName -notmatch '^legacy-ehr_modernized_test_[a-z0-9_]+$') {
-    throw "DatabaseName must be 'legacy-ehr_modernized' or an isolated legacy-ehr_modernized_test_* database."
+if ($DatabaseName -ne "avenchart" -and $DatabaseName -notmatch '^avenchart_test_[a-z0-9_]+$') {
+    throw "DatabaseName must be 'avenchart' or an isolated avenchart_test_* database."
 }
 if ($TestFaultAfterAppliedMigrationCount -lt 0) {
     throw "TestFaultAfterAppliedMigrationCount cannot be negative."
 }
-if ($TestFaultAfterAppliedMigrationCount -gt 0 -and $DatabaseName -eq "legacy-ehr_modernized") {
-    throw "Migration fault injection is only allowed against an isolated legacy-ehr_modernized_test_* database."
+if ($TestFaultAfterAppliedMigrationCount -gt 0 -and $DatabaseName -eq "avenchart") {
+    throw "Migration fault injection is only allowed against an isolated avenchart_test_* database."
 }
 
 $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ArtifactsRoot = Join-Path $SolutionRoot "artifacts\migrations"
-$ResultPath = Join-Path $ArtifactsRoot "latest-modernized-migration-result.json"
+$ResultPath = Join-Path $ArtifactsRoot "latest-avenchart-migration-result.json"
 $mutexPrefix = if ($IsWindows) { "Global\" } else { "" }
 $MigrationLock = [System.Threading.Mutex]::new($false, "$($mutexPrefix)AvenChartSchemaMaintenance")
 $MigrationLockHeld = $false
@@ -35,7 +35,7 @@ try {
     if (-not $SkipHostLock) {
         $MigrationLockHeld = $MigrationLock.WaitOne([TimeSpan]::FromMinutes(15))
         if (-not $MigrationLockHeld) {
-            throw "Timed out waiting for the modernized schema-maintenance lock."
+            throw "Timed out waiting for the AvenChart schema-maintenance lock."
         }
     }
 
@@ -45,13 +45,13 @@ try {
     if (-not $SkipPostgresStartup) {
         docker compose up -d postgres
         if ($LASTEXITCODE -ne 0) {
-            throw "Failed to start the modernized PostgreSQL service."
+            throw "Failed to start the AvenChart PostgreSQL service."
         }
 
         $deadline = (Get-Date).AddSeconds($PostgresWaitSeconds)
         $ready = $false
         while ((Get-Date) -lt $deadline) {
-            docker compose exec -T postgres pg_isready -U legacy-ehr -d $DatabaseName *> $null
+            docker compose exec -T postgres pg_isready -U avenchart -d $DatabaseName *> $null
             if ($LASTEXITCODE -eq 0) {
                 $ready = $true
                 break
@@ -65,7 +65,7 @@ try {
         }
     }
 
-    $connectionString = "Host=postgres;Port=5432;Database=$DatabaseName;Username=legacy-ehr;Password=legacy-ehr_demo"
+    $connectionString = "Host=postgres;Port=5432;Database=$DatabaseName;Username=avenchart;Password=avenchart_demo"
     $composeArguments = @(
         "compose", "run", "--rm", "--no-deps"
     )
@@ -125,10 +125,10 @@ try {
             applied = @($migrationResult.applied)
             alreadyApplied = @($migrationResult.alreadyApplied)
         } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
-        Write-Host "Modernized migrations complete: $ResultPath"
+        Write-Host "AvenChart migrations complete: $ResultPath"
     }
     else {
-        Write-Host "Modernized migrations complete for '$DatabaseName'."
+        Write-Host "AvenChart migrations complete for '$DatabaseName'."
     }
 }
 finally {

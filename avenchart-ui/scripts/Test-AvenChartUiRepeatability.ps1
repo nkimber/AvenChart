@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 $UiRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ArtifactsRoot = Join-Path $UiRoot "test-results"
 $ResultPath = Join-Path $ArtifactsRoot "repeatability-result.json"
-$ResetScript = Join-Path $PSScriptRoot "Reset-ModernUiDemo.ps1"
+$ResetScript = Join-Path $PSScriptRoot "Reset-AvenChartUiDemo.ps1"
 $runs = @()
 $SeedLock = [System.Threading.Mutex]::new($false, "Global\AvenChartGoldSeed")
 $SeedLockHeld = $false
@@ -22,7 +22,7 @@ New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
 try {
     $SeedLockHeld = $SeedLock.WaitOne([TimeSpan]::FromMinutes(15))
     if (-not $SeedLockHeld) {
-        throw "Timed out waiting for exclusive access to the modernized demo database."
+        throw "Timed out waiting for exclusive access to the AvenChart demo database."
     }
 
     Push-Location $UiRoot
@@ -34,7 +34,7 @@ try {
         $env:MODERN_UI_BASE_URL = $BaseUrl
         npx playwright test e2e/route-smoke.spec.ts --project=$Project
         if ($LASTEXITCODE -ne 0) {
-            throw "Modern UI route smoke run $runNumber failed with exit code $LASTEXITCODE."
+            throw "AvenChart UI route smoke run $runNumber failed with exit code $LASTEXITCODE."
         }
 
         $runs += [ordered]@{
@@ -59,7 +59,7 @@ try {
         runs = $runs
     }
     $result | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
-    Write-Host "Modern UI repeatability verified: $ResultPath"
+    Write-Host "AvenChart UI repeatability verified: $ResultPath"
 }
 finally {
     Remove-Item Env:\MODERN_UI_BASE_URL -ErrorAction SilentlyContinue

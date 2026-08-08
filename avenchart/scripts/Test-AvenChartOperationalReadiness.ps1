@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 
 $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $ArtifactsRoot = Join-Path $SolutionRoot 'artifacts'
-$ResultPath = Join-Path $ArtifactsRoot 'latest-modernized-operational-readiness.json'
+$ResultPath = Join-Path $ArtifactsRoot 'latest-avenchart-operational-readiness.json'
 $checks = New-Object System.Collections.Generic.List[object]
 $status = 'passed'
 
@@ -24,7 +24,7 @@ function Add-Check {
 function Invoke-PostgresScalar {
     param([string]$Sql)
 
-    $value = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c $Sql
+    $value = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c $Sql
     if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL readiness query failed.' }
     return ($value | Select-Object -Last 1).Trim()
 }
@@ -33,7 +33,7 @@ Push-Location $SolutionRoot
 try {
     New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
     docker compose up -d postgres api frontend
-    if ($LASTEXITCODE -ne 0) { throw 'Could not start the modernized runtime services.' }
+    if ($LASTEXITCODE -ne 0) { throw 'Could not start the AvenChart runtime services.' }
 
     $runningServices = @(docker compose ps --status running --services)
     if ($LASTEXITCODE -ne 0) { throw 'Could not read Docker Compose service status.' }
@@ -60,7 +60,7 @@ try {
     Add-Check -Name 'API liveness, PostgreSQL, and schema readiness' -Result $(if ($apiReady) { 'passed' } else { 'failed' }) -Details @{ health = $health; liveness = $liveness; readiness = $readiness }
 
     $dataset = Invoke-PostgresScalar -Sql "select json_build_object('datasetId',(select dataset_id from dataset_metadata limit 1),'version',(select version from dataset_metadata limit 1),'patients',(select count(*) from patients),'migrations',(select count(*) from schema_migrations));" | ConvertFrom-Json
-    $datasetPassed = $dataset.datasetId -eq 'legacy-ehr-shared-synthetic-v1' -and $dataset.version -eq 'v1' -and $dataset.patients -eq 1000
+    $datasetPassed = $dataset.datasetId -eq 'avenchart-shared-synthetic-v1' -and $dataset.version -eq 'v1' -and $dataset.patients -eq 1000
     Add-Check -Name 'Synthetic dataset and migration ledger' -Result $(if ($datasetPassed) { 'passed' } else { 'failed' }) -Details $dataset
 
     $chartData = Invoke-PostgresScalar -Sql "select json_build_object('maritalStatus',p.marital_status,'occupation',p.occupation,'race',p.race,'ethnicity',p.ethnicity,'street',p.street,'city',p.city,'state',p.state,'postalCode',p.postal_code,'providerName',concat_ws(' ',s.first_name,s.last_name),'insuranceCount',(select count(*) from insurance_records i where i.patient_id=p.canonical_id),'historyCount',(select count(*) from patient_histories h where h.patient_id=p.canonical_id)) from patients p left join staff s on s.id=p.provider_id where p.canonical_id='MOD-PAT-0001';" | ConvertFrom-Json
@@ -94,13 +94,13 @@ try {
         checksumMismatches = $checksumMismatches
     }
 
-    $rehearsalPath = Join-Path $SolutionRoot 'artifacts\backups\rehearsals\latest-modernized-backup-restore-rehearsal.json'
+    $rehearsalPath = Join-Path $SolutionRoot 'artifacts\backups\rehearsals\latest-avenchart-backup-restore-rehearsal.json'
     if (Test-Path -LiteralPath $rehearsalPath -PathType Leaf) {
         $rehearsal = Get-Content -LiteralPath $rehearsalPath -Raw | ConvertFrom-Json
         Add-Check -Name 'Latest recovery rehearsal evidence' -Result $(if ($rehearsal.status -eq 'passed') { 'passed' } else { 'failed' }) -Details $rehearsal
     }
     else {
-        Add-Check -Name 'Latest recovery rehearsal evidence' -Result 'not-run' -Details 'Run Test-ModernizedBackupRestore.ps1 to create local recovery evidence.'
+        Add-Check -Name 'Latest recovery rehearsal evidence' -Result 'not-run' -Details 'Run Test-AvenChartBackupRestore.ps1 to create local recovery evidence.'
     }
 }
 catch {

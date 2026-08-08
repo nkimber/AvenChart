@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import AxeBuilder from "@axe-core/playwright";
@@ -82,7 +82,7 @@ test("SOAP draft exposes and resolves an optimistic save conflict", async ({
   );
 
   const apiSession = await createApiSession(request);
-  const headers = { "X-Legacy EHR-Session": apiSession.sessionId };
+  const headers = { "X-AvenChart-Session": apiSession.sessionId };
   const currentResponse = await request.get(
     `${apiBaseUrl}/api/encounters/${encounter}?includeArchivedDocuments=true`,
     { headers },

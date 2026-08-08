@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 
 $UiRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ProjectRoot = Resolve-Path (Join-Path $UiRoot "..")
-$MigrationScript = Join-Path $ProjectRoot "avenchart\scripts\Invoke-ModernizedMigrations.ps1"
+$MigrationScript = Join-Path $ProjectRoot "avenchart\scripts\Invoke-AvenChartMigrations.ps1"
 $ArtifactsRoot = Join-Path $UiRoot "test-results"
 $ResultPath = Join-Path $ArtifactsRoot "isolated-mutation-workflows-result.json"
 $startedAt = Get-Date
@@ -22,7 +22,7 @@ Push-Location $UiRoot
 try {
     & $MigrationScript
     if ($LASTEXITCODE -ne 0) {
-        throw "Modernized schema migrations failed before the isolated mutation proofs."
+        throw "AvenChart schema migrations failed before the isolated mutation proofs."
     }
 
     $env:MODERN_UI_BASE_URL = $BaseUrl
@@ -51,7 +51,7 @@ finally {
 }
 
 if ($exitCode -ne 0) {
-    throw "Modern UI isolated mutation workflows failed. See $ResultPath."
+    throw "AvenChart UI isolated mutation workflows failed. See $ResultPath."
 }
 
-Write-Host "Modern UI isolated mutation workflows passed: $ResultPath"
+Write-Host "AvenChart UI isolated mutation workflows passed: $ResultPath"

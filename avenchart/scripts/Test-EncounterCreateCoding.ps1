@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -9,7 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$modernUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
+$avenChartUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
 $checks = [System.Collections.Generic.List[object]]::new()
 $marker = "TMP-ENC-CODING-$(New-Guid)"
 $headers = $null
@@ -55,8 +55,8 @@ function Invoke-FixtureSql([string]$Sql) {
     try {
         & docker compose exec -T postgres psql `
             -X `
-            -U legacy-ehr `
-            -d legacy-ehr_modernized `
+            -U avenchart `
+            -d avenchart `
             -v ON_ERROR_STOP=1 `
             -c $Sql | Out-Null
         if ($LASTEXITCODE -ne 0) {
@@ -69,7 +69,7 @@ function Invoke-FixtureSql([string]$Sql) {
 }
 
 function Invoke-BrowserProof {
-    Push-Location $modernUiRoot
+    Push-Location $avenChartUiRoot
     try {
         & npx playwright test e2e/encounter-create-coding.spec.ts --workers=4 | Out-Host
         return $LASTEXITCODE
@@ -92,7 +92,7 @@ try {
     if (-not $admin.authenticated) {
         throw "The synthetic administrator session was not issued."
     }
-    $headers = @{ "X-Legacy EHR-Session" = $admin.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $admin.sessionId }
 
     $schedulingOptions = Invoke-JsonRequest "$ApiBaseUrl/api/appointments/scheduling-options"
     $provider = @($schedulingOptions.providers) | Select-Object -First 1
@@ -309,8 +309,8 @@ finally {
         try {
             $residue = [int]((& docker compose exec -T postgres psql `
                 -X `
-                -U legacy-ehr `
-                -d legacy-ehr_modernized `
+                -U avenchart `
+                -d avenchart `
                 -Atc "select count(*) from encounters where encounter = $safeEncounter;").Trim())
         }
         finally {

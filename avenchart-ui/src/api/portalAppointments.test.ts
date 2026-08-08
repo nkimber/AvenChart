@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -67,7 +67,7 @@ describe("patient portal appointment history transport", () => {
       expect.stringContaining("/api/patient-portal/appointments"),
       expect.objectContaining({
         headers: {
-          "X-Legacy EHR-Patient-Portal-Session": "portal-session",
+          "X-AvenChart-Patient-Portal-Session": "portal-session",
         },
       }),
     );

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Data.Common;
@@ -5462,12 +5462,12 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         DateOnly documentDate)
     {
         var text = EscapePdfText(
-            $"Legacy EHR scanner capture | {documentName} | {patientDisplayName} | {captureSource} | {pageCount} page{(pageCount == 1 ? string.Empty : "s")} | {documentDate:yyyy-MM-dd}");
+            $"AvenChart scanner capture | {documentName} | {patientDisplayName} | {captureSource} | {pageCount} page{(pageCount == 1 ? string.Empty : "s")} | {documentDate:yyyy-MM-dd}");
         var stream = $"BT /F1 10 Tf 24 100 Td ({text}) Tj ET";
         var pdf = string.Join(
             "\n",
             "%PDF-1.4",
-            "% Modernized Legacy EHR scanner capture",
+            "% AvenChart scanner capture",
             "1 0 obj",
             "<< /Type /Catalog /Pages 2 0 R >>",
             "endobj",

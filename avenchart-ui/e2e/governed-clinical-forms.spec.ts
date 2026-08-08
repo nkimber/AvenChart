@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import AxeBuilder from "@axe-core/playwright";
@@ -58,7 +58,7 @@ test.describe("FORM-01 through FORM-04a governed clinical forms", () => {
 
     await signIn(page);
     const staffSessionId = await sessionId(page);
-    const headers = { "X-Legacy EHR-Session": staffSessionId };
+    const headers = { "X-AvenChart-Session": staffSessionId };
     const definition = {
       stableKey,
       name: formName,
@@ -467,7 +467,7 @@ test.describe("FORM-01 through FORM-04a governed clinical forms", () => {
         };
       };
       expect(exported.exportFormat).toBe(
-        "application/vnd.legacy-ehr.clinical-form+json;version=1",
+        "application/vnd.avenchart.clinical-form+json;version=1",
       );
       expect(exported.instance.definitionRevision).toBe(1);
       expect(exported.schemaHash).toHaveLength(64);

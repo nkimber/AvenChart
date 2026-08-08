@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,7 @@ const response: ExperienceBaseline = {
   ownerRole: "UX + clinical product owner",
   accessibilityStandard:
     "WCAG 2.2 AA proposed; current automated evidence is WCAG 2.1 A/AA",
-  scope: "Modern UI staff and portal applications using synthetic data",
+  scope: "AvenChart UI staff and portal applications using synthetic data",
   counts: {
     roles: 4,
     environments: 5,
@@ -72,7 +72,7 @@ describe("getExperienceBaseline", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:5001/api/administration/experience-baseline",
       expect.objectContaining({
-        headers: { "X-Legacy EHR-Session": "staff-session" },
+        headers: { "X-AvenChart-Session": "staff-session" },
       }),
     );
     expect(fetchMock.mock.calls[0]?.[1]?.signal).not.toBe(controller.signal);

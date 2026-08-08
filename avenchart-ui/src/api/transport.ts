@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 export const apiBaseUrl =
@@ -90,10 +90,10 @@ export async function apiFetch(
   const callerSignal = init.signal;
   const headers = new Headers(init.headers);
   const scope: SessionScope | undefined = headers.has(
-    "X-Legacy EHR-Patient-Portal-Session",
+    "X-AvenChart-Patient-Portal-Session",
   )
     ? "portal"
-    : headers.has("X-Legacy EHR-Session")
+    : headers.has("X-AvenChart-Session")
       ? "clinician"
       : undefined;
   const action = `${init.method ?? "GET"} ${String(input).replace(apiBaseUrl, "")}`;

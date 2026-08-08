@@ -1,14 +1,14 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { test as base } from "@playwright/test";
 import { LifecycleFixtureRegistry } from "../../src/testSupport/lifecycleFixtures.ts";
 
-type ModernUiFixtures = {
+type AvenChartUiFixtures = {
   lifecycle: LifecycleFixtureRegistry;
 };
 
-export const test = base.extend<ModernUiFixtures>({
+export const test = base.extend<AvenChartUiFixtures>({
   lifecycle: async ({ browserName: _browserName }, provide, testInfo) => {
     void _browserName
     const resetUrl = process.env.MODERN_UI_RESET_URL;

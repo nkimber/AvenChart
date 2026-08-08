@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 x-api-build: &api-build
@@ -6,29 +6,28 @@ x-api-build: &api-build
   dockerfile: backend/src/AvenChart.Api/Dockerfile
 
 x-api-database-environment: &api-database-environment
-  ConnectionStrings__AvenChart: Host=postgres;Port=5432;Database=legacy-ehr_modernized;Username=legacy-ehr;Password=legacy-ehr_demo
+  ConnectionStrings__AvenChart: Host=postgres;Port=5432;Database=avenchart;Username=avenchart;Password=avenchart_demo
   DatabaseSchema__MigrationsPath: /app/database/migrations
 
 services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: legacy-ehr_modernized
-      POSTGRES_USER: legacy-ehr
-      POSTGRES_PASSWORD: legacy-ehr_demo
+      POSTGRES_DB: avenchart
+      POSTGRES_USER: avenchart
+      POSTGRES_PASSWORD: avenchart_demo
     ports:
       - "5433:5432"
     volumes:
       - avenchart-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U legacy-ehr -d legacy-ehr_modernized"]
+      test: ["CMD-SHELL", "pg_isready -U avenchart -d avenchart"]
       interval: 5s
       timeout: 5s
       retries: 20
 
   migrator:
     image: avenchart-api:local
-    build: *api-build
     command: ["--migrate-only"]
     environment: *api-database-environment
     depends_on:

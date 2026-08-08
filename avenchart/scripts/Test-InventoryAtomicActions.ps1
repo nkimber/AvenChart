@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -12,10 +12,10 @@ $ApiProject = Join-Path $SolutionRoot "backend\src\AvenChart.Api"
 $ApiDll = Join-Path $ApiProject "bin\Release\net10.0\AvenChart.Api.dll"
 $ArtifactsRoot = Join-Path $SolutionRoot "artifacts"
 $ResultPath = Join-Path $ArtifactsRoot "inventory-atomic-actions-result.json"
-$DatabaseName = "legacy-ehr_inventory_atomic_$(Get-Date -Format 'yyyyMMddHHmmss')"
+$DatabaseName = "avenchart_inventory_atomic_$(Get-Date -Format 'yyyyMMddHHmmss')"
 $ApiProcess = $null
 
-if ($DatabaseName -notmatch "^legacy-ehr_inventory_atomic_[0-9]{14}$") {
+if ($DatabaseName -notmatch "^avenchart_inventory_atomic_[0-9]{14}$") {
     throw "The generated temporary database name is invalid."
 }
 
@@ -55,22 +55,22 @@ try {
         --configuration Release `
         --no-restore
     if ($LASTEXITCODE -ne 0) {
-        throw "The modernized API Release build failed."
+        throw "The AvenChart API Release build failed."
     }
 
-    docker compose exec -T postgres createdb -U legacy-ehr $DatabaseName
+    docker compose exec -T postgres createdb -U avenchart $DatabaseName
     if ($LASTEXITCODE -ne 0) {
         throw "Could not create the isolated inventory verification database."
     }
 
     docker compose exec -T postgres pg_dump `
-        -U legacy-ehr `
-        -d legacy-ehr_modernized `
+        -U avenchart `
+        -d avenchart `
         --no-owner `
         --no-privileges |
         docker compose exec -T postgres psql `
             -X `
-            -U legacy-ehr `
+            -U avenchart `
             -d $DatabaseName |
         Out-Null
     if ($LASTEXITCODE -ne 0) {
@@ -82,7 +82,7 @@ try {
         -Raw |
         docker compose exec -T postgres psql `
             -X `
-            -U legacy-ehr `
+            -U avenchart `
             -d $DatabaseName `
             -v ON_ERROR_STOP=1 |
         Out-Null
@@ -92,7 +92,7 @@ try {
 
     $GeneralItemId = docker compose exec -T postgres psql `
         -X `
-        -U legacy-ehr `
+        -U avenchart `
         -d $DatabaseName `
         -t `
         -A `
@@ -103,7 +103,7 @@ try {
 
     $env:ASPNETCORE_URLS = "http://127.0.0.1:$Port"
     $env:ASPNETCORE_ENVIRONMENT = "Development"
-    $env:ConnectionStrings__AvenChart = "Host=localhost;Port=5433;Database=$DatabaseName;Username=legacy-ehr;Password=legacy-ehr_demo"
+    $env:ConnectionStrings__AvenChart = "Host=localhost;Port=5433;Database=$DatabaseName;Username=avenchart;Password=avenchart_demo"
     $env:RuntimeSafety__RateLimitPermitLimit = "5000"
     $ApiProcess = Start-Process `
         -FilePath "dotnet" `
@@ -142,7 +142,7 @@ try {
     if (-not $Login.authenticated -or [string]::IsNullOrWhiteSpace($Login.sessionId)) {
         throw "The isolated API did not issue an administration session."
     }
-    $Headers = @{ "X-Legacy EHR-Session" = $Login.sessionId }
+    $Headers = @{ "X-AvenChart-Session" = $Login.sessionId }
 
     $Inventory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Headers $Headers -TimeoutSec 20
     $Vendors = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/vendors" -Headers $Headers -TimeoutSec 20
@@ -314,8 +314,8 @@ finally {
         Stop-Process -Id $ApiProcess.Id -Force
         $ApiProcess.WaitForExit()
     }
-    if ($DatabaseName -match "^legacy-ehr_inventory_atomic_[0-9]{14}$") {
-        docker compose exec -T postgres dropdb -U legacy-ehr --if-exists $DatabaseName | Out-Null
+    if ($DatabaseName -match "^avenchart_inventory_atomic_[0-9]{14}$") {
+        docker compose exec -T postgres dropdb -U avenchart --if-exists $DatabaseName | Out-Null
     }
     Pop-Location
 }

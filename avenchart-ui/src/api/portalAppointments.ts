@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { PatientPortalAppointmentsResponse } from "../api.ts";
@@ -52,7 +52,7 @@ export async function getPatientPortalAppointmentsWithRequestHistory(
   const response = await apiFetch(
     `${apiBaseUrl}/api/patient-portal/appointments`,
     {
-      headers: { "X-Legacy EHR-Patient-Portal-Session": sessionId },
+      headers: { "X-AvenChart-Patient-Portal-Session": sessionId },
       signal,
     },
   );

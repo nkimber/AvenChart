@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -116,7 +116,7 @@ export default function ExperienceBaseline() {
           <h1>Experience baseline</h1>
           <p>
             Inspect the proposed role, task, browser, accessibility,
-            performance, safety, and privacy criteria for the Modern UI.
+            performance, safety, and privacy criteria for the AvenChart UI.
           </p>
         </div>
         {baseline && (

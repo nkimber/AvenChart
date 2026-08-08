@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -528,7 +528,7 @@ export default function ClinicianShell() {
       <header className="clinician-mobile-header">
         <div className="clinician-brand">
           <Activity size={18} aria-hidden="true" />
-          <span>Legacy EHR</span>
+          <span>AvenChart</span>
         </div>
         <button
           ref={menuButtonRef}
@@ -547,7 +547,7 @@ export default function ClinicianShell() {
           {!collapsed && (
             <div className="clinician-brand">
               <Activity size={18} aria-hidden="true" />
-              <span>Legacy EHR</span>
+              <span>AvenChart</span>
             </div>
           )}
           <button
@@ -586,7 +586,7 @@ export default function ClinicianShell() {
             <div className="clinician-sidebar-header">
               <div className="clinician-brand">
                 <Activity size={18} aria-hidden="true" />
-                <span>Legacy EHR</span>
+                <span>AvenChart</span>
               </div>
               <button
                 className="clinician-mobile-menu-button"

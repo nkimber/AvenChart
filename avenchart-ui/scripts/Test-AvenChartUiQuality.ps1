@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 $ErrorActionPreference = "Stop"
@@ -44,7 +44,7 @@ $result = [ordered]@{
 $result | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
 
 if ($overallStatus -ne "passed") {
-    throw "Modern UI quality checks failed. See $ResultPath."
+    throw "AvenChart UI quality checks failed. See $ResultPath."
 }
 
-Write-Host "Modern UI quality checks passed: $ResultPath"
+Write-Host "AvenChart UI quality checks passed: $ResultPath"

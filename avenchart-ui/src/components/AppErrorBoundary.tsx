@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { Component, type ErrorInfo, type ReactNode } from 'react'
@@ -24,7 +24,7 @@ export class AppErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: ErrorInfo) {
     // Keep the diagnostic in the browser console for local support evidence.
     // The user-facing surface exposes only a correlation reference.
-    console.error('Unexpected Modern UI render failure', {
+    console.error('Unexpected AvenChart UI render failure', {
       reference: this.state.reference,
       error,
       componentStack: info.componentStack,

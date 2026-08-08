@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useEffect, useMemo, useState } from 'react'
@@ -172,7 +172,7 @@ export default function InventoryActivityPanel({
     setExportEvidence(null)
     try {
       const blob = await downloadInventoryActivityCsv(sessionId, filters)
-      const filename = 'legacy-ehr-inventory-activity.csv'
+      const filename = 'avenchart-inventory-activity.csv'
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -27,7 +27,7 @@ function Get-HttpStatus([scriptblock]$Operation) {
 
 function Invoke-PostgresScalar([string]$Sql) {
     Push-Location $solutionRoot
-    try { return (& docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -Atc $Sql).Trim() }
+    try { return (& docker compose exec -T postgres psql -X -U avenchart -d avenchart -Atc $Sql).Trim() }
     finally { Pop-Location }
 }
 
@@ -36,8 +36,8 @@ try {
     $admin = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     $frontdesk = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"gold-frontdesk-01","password":"pass"}'
     if (-not $admin.authenticated -or -not $frontdesk.authenticated) { throw "The required synthetic sessions were not issued." }
-    $adminHeaders = @{ "X-Legacy EHR-Session" = $admin.sessionId }
-    $frontdeskHeaders = @{ "X-Legacy EHR-Session" = $frontdesk.sessionId }
+    $adminHeaders = @{ "X-AvenChart-Session" = $admin.sessionId }
+    $frontdeskHeaders = @{ "X-AvenChart-Session" = $frontdesk.sessionId }
 
     $historyForbidden = Get-HttpStatus { Invoke-WebRequest -Uri "$ApiBaseUrl/api/administration/configuration-package-import-requests" -Headers $frontdeskHeaders -UseBasicParsing }
     $historyInvalid = Get-HttpStatus { Invoke-WebRequest -Uri "$ApiBaseUrl/api/administration/configuration-package-import-requests?kind=unsupported" -Headers $adminHeaders -UseBasicParsing }
@@ -49,7 +49,7 @@ try {
 
     $export = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/configuration-packages/export" -Method Post -Headers $adminHeaders -ContentType "application/json" -Body '{}'
     $keys = @($export.package.practiceSettings | ForEach-Object key | Sort-Object)
-    Add-Check "Export contains only the adopted non-secret setting contract" (($export.package.schema -eq "legacy-ehr-modernized-configuration-package") -and ($export.package.version -eq "1") -and ($keys -join ',' -eq 'practice.default-facility-id,practice.name,practice.time-zone') -and ($export.sha256 -match '^[0-9a-f]{64}$')) @{ keys=$keys; sha256=$export.sha256 }
+    Add-Check "Export contains only the adopted non-secret setting contract" (($export.package.schema -eq "avenchart-configuration-package") -and ($export.package.version -eq "1") -and ($keys -join ',' -eq 'practice.default-facility-id,practice.name,practice.time-zone') -and ($export.sha256 -match '^[0-9a-f]{64}$')) @{ keys=$keys; sha256=$export.sha256 }
 
     $valid = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/configuration-packages/dry-run" -Method Post -Headers $adminHeaders -ContentType "application/json" -Body (@{ package=$export.package } | ConvertTo-Json -Depth 8)
     Add-Check "Dry run validates the exported package without enabling apply" (($valid.valid -eq $true) -and (-not $valid.applyAvailable) -and (@($valid.conflicts | Where-Object { $_.state -ne 'unchanged' }).Count -eq 0)) @{ valid=$valid.valid; applyAvailable=$valid.applyAvailable; conflicts=$valid.conflicts.Count }
@@ -99,9 +99,9 @@ finally {
             Push-Location $solutionRoot
             try {
                 if ($null -ne $originalPracticeName) {
-                    & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U legacy-ehr -d legacy-ehr_modernized -c "update practice_settings set setting_value = '$originalPracticeName' where setting_key = 'practice.name' and setting_value in ('$importMarker', '$staleMarker');" | Out-Null
+                    & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U avenchart -d avenchart -c "update practice_settings set setting_value = '$originalPracticeName' where setting_key = 'practice.name' and setting_value in ('$importMarker', '$staleMarker');" | Out-Null
                 }
-                & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U legacy-ehr -d legacy-ehr_modernized -c "delete from configuration_package_import_request_events where request_id in (select request_id from configuration_package_import_requests where reason in ('$importReason', '$rollbackReason', '$staleReason')); delete from configuration_package_import_requests where reason = '$rollbackReason'; delete from configuration_package_import_requests where reason in ('$importReason', '$staleReason'); delete from practice_setting_revisions where value in ('$importMarker', '$staleMarker') or prior_value in ('$importMarker', '$staleMarker'); delete from practice_setting_audit_events where new_value in ('$importMarker', '$staleMarker') or prior_value in ('$importMarker', '$staleMarker'); delete from configuration_package_events where event_id > $eventBaseline;" | Out-Null
+                & docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U avenchart -d avenchart -c "delete from configuration_package_import_request_events where request_id in (select request_id from configuration_package_import_requests where reason in ('$importReason', '$rollbackReason', '$staleReason')); delete from configuration_package_import_requests where reason = '$rollbackReason'; delete from configuration_package_import_requests where reason in ('$importReason', '$staleReason'); delete from practice_setting_revisions where value in ('$importMarker', '$staleMarker') or prior_value in ('$importMarker', '$staleMarker'); delete from practice_setting_audit_events where new_value in ('$importMarker', '$staleMarker') or prior_value in ('$importMarker', '$staleMarker'); delete from configuration_package_events where event_id > $eventBaseline;" | Out-Null
             }
             finally { Pop-Location }
             $residue = [int](Invoke-PostgresScalar "select count(*) from configuration_package_events where event_id > $eventBaseline;")

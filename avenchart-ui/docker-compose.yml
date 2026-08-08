@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Runs avenchart-ui as its own Docker Desktop stack.
@@ -10,6 +10,7 @@
 # published host port (5001), exactly like avenchart/frontend does.
 services:
   avenchart-ui:
+    image: avenchart-ui:local
     build:
       context: .
     environment:

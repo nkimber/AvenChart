@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import {
@@ -76,7 +76,7 @@ export type BillingLineCreateInput = {
 function clinicianHeaders(sessionId: string) {
   return {
     "content-type": "application/json",
-    "X-Legacy EHR-Session": sessionId,
+    "X-AvenChart-Session": sessionId,
   };
 }
 

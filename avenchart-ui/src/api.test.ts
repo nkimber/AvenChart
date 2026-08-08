@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -208,7 +208,7 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/patient-portal/session',
       expect.objectContaining({
         method: 'DELETE',
-        headers: { 'X-Legacy EHR-Patient-Portal-Session': 'portal-session' },
+        headers: { 'X-AvenChart-Patient-Portal-Session': 'portal-session' },
       }),
     )
   })
@@ -250,7 +250,7 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/patient-portal/messages',
       expect.objectContaining({
         headers: {
-          'X-Legacy EHR-Patient-Portal-Session': 'portal-session',
+          'X-AvenChart-Patient-Portal-Session': 'portal-session',
         },
       }),
     )
@@ -289,7 +289,7 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/patient-portal/prescription-refill-requests',
       expect.objectContaining({
         headers: {
-          'X-Legacy EHR-Patient-Portal-Session': 'portal-session',
+          'X-AvenChart-Patient-Portal-Session': 'portal-session',
         },
       }),
     )
@@ -316,7 +316,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:5001/api/documents/42/download',
       expect.objectContaining({
-        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+        headers: { 'X-AvenChart-Session': 'staff-session' },
       }),
     )
     expect(result.fileName).toBe('visit summary.pdf')
@@ -326,7 +326,7 @@ describe('authenticated API transport', () => {
 
   it('uses protected document intake and metadata-history contracts', async () => {
     const detail = {
-      datasetId: 'legacy-ehr-shared-synthetic-v1',
+      datasetId: 'avenchart-shared-synthetic-v1',
       datasetVersion: '2026.07',
       patientId: 'MOD-PAT-0001',
       legacyPid: 1,
@@ -506,7 +506,7 @@ describe('authenticated API transport', () => {
     ])
     expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
       headers: {
-        'X-Legacy EHR-Session': 'staff-session',
+        'X-AvenChart-Session': 'staff-session',
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -523,7 +523,7 @@ describe('authenticated API transport', () => {
     })
     expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({
       headers: {
-        'X-Legacy EHR-Session': 'staff-session',
+        'X-AvenChart-Session': 'staff-session',
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -537,7 +537,7 @@ describe('authenticated API transport', () => {
     })
     expect(fetchMock.mock.calls[7]?.[1]).toMatchObject({
       headers: {
-        'X-Legacy EHR-Session': 'staff-session',
+        'X-AvenChart-Session': 'staff-session',
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -555,7 +555,7 @@ describe('authenticated API transport', () => {
         {
           id: 94,
           detail: {
-            datasetId: 'legacy-ehr-shared-synthetic-v1',
+            datasetId: 'avenchart-shared-synthetic-v1',
             datasetVersion: '2026.07',
             patientId: 'MOD-PAT-0001',
             count: 1,
@@ -583,7 +583,7 @@ describe('authenticated API transport', () => {
       expect.objectContaining({
         method: 'POST',
         headers: {
-          'X-Legacy EHR-Session': 'staff-session',
+          'X-AvenChart-Session': 'staff-session',
           'content-type': 'application/json',
         },
         body: JSON.stringify({
@@ -604,7 +604,7 @@ describe('authenticated API transport', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          datasetId: 'legacy-ehr-shared-synthetic-v1',
+          datasetId: 'avenchart-shared-synthetic-v1',
           datasetVersion: 'v1',
           documentId: 91,
           documentKey: 'DOC-91',
@@ -624,7 +624,7 @@ describe('authenticated API transport', () => {
         jsonResponse({
           id: 91,
           detail: {
-            datasetId: 'legacy-ehr-shared-synthetic-v1',
+            datasetId: 'avenchart-shared-synthetic-v1',
             datasetVersion: 'v1',
             patientId: 'PAT-0001',
             documents: [],
@@ -650,7 +650,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'PUT',
       headers: {
-        'X-Legacy EHR-Session': 'staff-session',
+        'X-AvenChart-Session': 'staff-session',
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -663,7 +663,7 @@ describe('authenticated API transport', () => {
 
   it('discovers archived patient documents and sends reasoned stale-safe lifecycle transitions', async () => {
     const detail = {
-      datasetId: 'legacy-ehr-shared-synthetic-v1',
+      datasetId: 'avenchart-shared-synthetic-v1',
       datasetVersion: 'v1',
       patientId: 'PAT-0001',
       legacyPid: 1,
@@ -728,7 +728,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
       method: 'PUT',
       headers: {
-        'X-Legacy EHR-Session': 'staff-session',
+        'X-AvenChart-Session': 'staff-session',
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -810,7 +810,7 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/administration/document-templates/template-id/history',
     ])
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-      headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      headers: { 'X-AvenChart-Session': 'staff-session' },
     })
   })
 
@@ -1052,7 +1052,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:5001/api/administration/authorization-policy-catalog?query=access+control&gap=facility-scope&offset=8&limit=8',
       expect.objectContaining({
-        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+        headers: { 'X-AvenChart-Session': 'staff-session' },
       }),
     )
   })
@@ -1225,7 +1225,7 @@ describe('authenticated API transport', () => {
 
   it('uses the filtered, assigned, stale-safe patient document routing lifecycle', async () => {
     const queue = {
-      datasetId: 'legacy-ehr-shared-synthetic-v1',
+      datasetId: 'avenchart-shared-synthetic-v1',
       datasetVersion: 'v1',
       count: 1,
       totalCount: 1,
@@ -1349,7 +1349,7 @@ describe('authenticated API transport', () => {
 
   it('uses the filtered, versioned patient document OCR lifecycle', async () => {
     const queue = {
-      datasetId: 'legacy-ehr-shared-synthetic-v1',
+      datasetId: 'avenchart-shared-synthetic-v1',
       datasetVersion: 'v1',
       count: 1,
       totalCount: 1,
@@ -1503,7 +1503,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:5001/api/encounters/?patientId=MOD-PAT-0901&from=1900-01-01&limit=50',
       expect.objectContaining({
-        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+        headers: { 'X-AvenChart-Session': 'staff-session' },
       }),
     )
   })
@@ -1539,7 +1539,7 @@ describe('authenticated API transport', () => {
       'DELETE',
     ])
     expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
-      headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      headers: { 'X-AvenChart-Session': 'staff-session' },
       body: JSON.stringify({ note: 'Duplicate administration record' }),
     })
   })
@@ -1669,7 +1669,7 @@ describe('authenticated API transport', () => {
   it('builds the staff inbox query without sending inactive filters', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
-        datasetId: 'legacy-ehr-shared-synthetic-v1',
+        datasetId: 'avenchart-shared-synthetic-v1',
         datasetVersion: 'v1',
         total: 0,
         offset: 20,
@@ -1691,7 +1691,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:5001/api/messages/inbox?status=new&assignment=mine&minimumAgeDays=7&offset=20&limit=20',
       expect.objectContaining({
-        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+        headers: { 'X-AvenChart-Session': 'staff-session' },
       }),
     )
   })
@@ -1727,7 +1727,7 @@ describe('authenticated API transport', () => {
       expect.objectContaining({
         method: 'PUT',
         headers: {
-          'X-Legacy EHR-Session': 'staff-session',
+          'X-AvenChart-Session': 'staff-session',
           'content-type': 'application/json',
         },
         body: JSON.stringify({
@@ -1823,9 +1823,9 @@ describe('authenticated API transport', () => {
     await expect(uploadStaffMessageAttachment('staff-session', 'MSG-1', { fileName: 'verification.txt', contentType: 'text/plain', contentBase64: 'YXR0YWNobWVudCBldmlkZW5jZQ==' })).resolves.toEqual(attachment)
     await expect(downloadStaffMessageAttachment('staff-session', 'MSG-1', attachment.id)).resolves.toBeInstanceOf(Blob)
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:5001/api/messages/MSG-1/attachments', expect.objectContaining({ headers: expect.objectContaining({ 'X-Legacy EHR-Session': 'staff-session' }) }))
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:5001/api/messages/MSG-1/attachments', expect.objectContaining({ headers: expect.objectContaining({ 'X-AvenChart-Session': 'staff-session' }) }))
     expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/attachments', expect.objectContaining({ method: 'POST', body: JSON.stringify({ fileName: 'verification.txt', contentType: 'text/plain', contentBase64: 'YXR0YWNobWVudCBldmlkZW5jZQ==' }) }))
-    expect(fetchMock).toHaveBeenNthCalledWith(3, `http://localhost:5001/api/messages/MSG-1/attachments/${attachment.id}`, expect.objectContaining({ headers: { 'X-Legacy EHR-Session': 'staff-session' } }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, `http://localhost:5001/api/messages/MSG-1/attachments/${attachment.id}`, expect.objectContaining({ headers: { 'X-AvenChart-Session': 'staff-session' } }))
   })
 
   it('uses append-only staff message correction and history contracts', async () => {
@@ -1839,7 +1839,7 @@ describe('authenticated API transport', () => {
     await expect(getStaffMessageCorrectionHistory('staff-session', 'MSG-1')).resolves.toEqual(history)
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:5001/api/messages/MSG-1/correct', expect.objectContaining({ method: 'POST', body: JSON.stringify({ correction: 'Clarified statement', reason: 'Correct transcription' }) }))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/correction-history', expect.objectContaining({ headers: expect.objectContaining({ 'X-Legacy EHR-Session': 'staff-session' }) }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/correction-history', expect.objectContaining({ headers: expect.objectContaining({ 'X-AvenChart-Session': 'staff-session' }) }))
   })
 
   it('uses reasoned staff-message archive and retention-history contracts', async () => {
@@ -1849,7 +1849,7 @@ describe('authenticated API transport', () => {
     await expect(archiveStaffMessage('staff-session', 'MSG-1', 'Duplicate')).resolves.toEqual(detail)
     await expect(getStaffMessageRetentionHistory('staff-session', 'MSG-1')).resolves.toEqual(history)
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:5001/api/messages/MSG-1/archive', expect.objectContaining({ method: 'POST', body: JSON.stringify({ reason: 'Duplicate' }) }))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/retention-history', expect.objectContaining({ headers: expect.objectContaining({ 'X-Legacy EHR-Session': 'staff-session' }) }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/retention-history', expect.objectContaining({ headers: expect.objectContaining({ 'X-AvenChart-Session': 'staff-session' }) }))
   })
 
   it('uses reasoned staff-message escalation and history contracts', async () => {
@@ -1858,7 +1858,7 @@ describe('authenticated API transport', () => {
     await expect(setStaffMessageEscalation('staff-session', 'MSG-1', true, 'Clinical urgency')).resolves.toEqual(history)
     await expect(getStaffMessageEscalationHistory('staff-session', 'MSG-1')).resolves.toEqual(history)
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:5001/api/messages/MSG-1/escalate', expect.objectContaining({ method: 'POST', body: JSON.stringify({ reason: 'Clinical urgency' }) }))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/escalation-history', expect.objectContaining({ headers: expect.objectContaining({ 'X-Legacy EHR-Session': 'staff-session' }) }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/escalation-history', expect.objectContaining({ headers: expect.objectContaining({ 'X-AvenChart-Session': 'staff-session' }) }))
   })
 
   it('unwraps create and status mutation envelopes consistently', async () => {
@@ -2252,7 +2252,7 @@ describe('authenticated API transport', () => {
         expect.objectContaining({
           method: 'PUT',
           headers: {
-            'X-Legacy EHR-Session': 'staff-session',
+            'X-AvenChart-Session': 'staff-session',
             'content-type': 'application/json',
           },
         }),
@@ -2269,7 +2269,7 @@ describe('authenticated API transport', () => {
   it('encodes the complete protected patient duplicate search contract', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
-        datasetId: 'legacy-ehr-shared-synthetic-v1',
+        datasetId: 'avenchart-shared-synthetic-v1',
         datasetVersion: '2026.07',
         limit: 10,
         totalCandidates: 1,
@@ -2294,7 +2294,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:5001/api/patients/duplicates?firstName=Nora&lastName=Kim&dateOfBirth=2002-05-05&phone=%28619%29+555-1004&email=mod-pat-0004%40example.test&excludePatientId=MOD-PAT-9999&limit=10',
       expect.objectContaining({
-        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+        headers: { 'X-AvenChart-Session': 'staff-session' },
       }),
     )
   })
@@ -2317,7 +2317,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:5001/api/billing/MOD-PAT-0004',
       expect.objectContaining({
-        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+        headers: { 'X-AvenChart-Session': 'staff-session' },
       }),
     )
   })
@@ -2369,7 +2369,7 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/patient-portal/appointments',
       expect.objectContaining({
         headers: {
-          'X-Legacy EHR-Patient-Portal-Session': 'portal-session',
+          'X-AvenChart-Patient-Portal-Session': 'portal-session',
         },
       }),
     )
@@ -2394,7 +2394,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:5001/api/inventory/lots/20001/metadata-history',
       expect.objectContaining({
-        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+        headers: { 'X-AvenChart-Session': 'staff-session' },
       }),
     )
   })
@@ -2437,7 +2437,7 @@ describe('authenticated API transport', () => {
       expect.objectContaining({
         method: 'POST',
         headers: {
-          'X-Legacy EHR-Session': 'staff-session',
+          'X-AvenChart-Session': 'staff-session',
           'content-type': 'application/json',
         },
       }),
@@ -2480,7 +2480,7 @@ describe('authenticated API transport', () => {
       expect.objectContaining({
         method: 'POST',
         headers: {
-          'X-Legacy EHR-Session': 'staff-session',
+          'X-AvenChart-Session': 'staff-session',
           'content-type': 'application/json',
         },
         body: JSON.stringify({
@@ -2747,7 +2747,7 @@ describe('authenticated API transport', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          datasetId: 'legacy-ehr-modernized-gold',
+          datasetId: 'avenchart-gold',
           datasetVersion: '2026.07',
           fromDate: '2026-07-01',
           toDate: '2026-07-27',
@@ -2772,7 +2772,7 @@ describe('authenticated API transport', () => {
     const csv = await downloadInventoryActivityCsv('staff-session', filters)
 
     expect(report).toMatchObject({
-      datasetId: 'legacy-ehr-modernized-gold',
+      datasetId: 'avenchart-gold',
       datasetVersion: '2026.07',
       totalEntries: 1,
     })
@@ -2782,7 +2782,7 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/inventory/activity/export?from=2026-07-01&to=2026-07-27&facilityId=13',
     ])
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
-      headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      headers: { 'X-AvenChart-Session': 'staff-session' },
     })
   })
 
@@ -2997,7 +2997,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       method: 'PUT',
       headers: {
-        'X-Legacy EHR-Session': 'staff-session',
+        'X-AvenChart-Session': 'staff-session',
         'content-type': 'application/json',
       },
       body: JSON.stringify(directRefill),
@@ -3062,7 +3062,7 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/clinical-lists/prescription-refill-requests/445/decision',
     ])
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-      headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      headers: { 'X-AvenChart-Session': 'staff-session' },
     })
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'PUT',
@@ -3077,7 +3077,7 @@ describe('authenticated API transport', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          datasetId: 'legacy-ehr-modernization-gold',
+          datasetId: 'avenchart-modernization-gold',
           datasetVersion: 'v1',
           pharmacyCount: 1,
           pharmacies: [
@@ -3121,12 +3121,12 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/clinical-lists/prescriptions/rx%20id/route-pharmacy',
     ])
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-      headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      headers: { 'X-AvenChart-Session': 'staff-session' },
     })
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'PUT',
       headers: {
-        'X-Legacy EHR-Session': 'staff-session',
+        'X-AvenChart-Session': 'staff-session',
         'content-type': 'application/json',
       },
       body: JSON.stringify(route),
@@ -3160,7 +3160,7 @@ describe('authenticated API transport', () => {
       expect.objectContaining({
         method: 'PUT',
         headers: {
-          'X-Legacy EHR-Session': 'staff-session',
+          'X-AvenChart-Session': 'staff-session',
           'content-type': 'application/json',
         },
         body: JSON.stringify(update),
@@ -3219,7 +3219,7 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'POST',
       headers: {
-        'X-Legacy EHR-Session': 'staff-session',
+        'X-AvenChart-Session': 'staff-session',
         'content-type': 'application/json',
       },
       body: JSON.stringify(prescription),

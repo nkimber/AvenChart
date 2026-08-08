@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -30,7 +30,7 @@ function Assert-GeneratedAppointmentId([string]$AppointmentId) {
 function Invoke-PostgresScalar([string]$Sql) {
     Push-Location $solutionRoot
     try {
-        return (& docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -Atc $Sql).Trim()
+        return (& docker compose exec -T postgres psql -X -U avenchart -d avenchart -Atc $Sql).Trim()
     }
     finally {
         Pop-Location
@@ -55,7 +55,7 @@ function New-PortalRequest(
     $created = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/appointments/requests" `
         -Method Post `
-        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $PortalSessionId } `
+        -Headers @{ "X-AvenChart-Patient-Portal-Session" = $PortalSessionId } `
         -ContentType "application/json" `
         -Body $body
     if (-not $created.created -or $null -eq $created.appointment) {
@@ -69,7 +69,7 @@ function New-PortalRequest(
 function Get-PortalHistory([string]$PortalSessionId) {
     return Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/appointments" `
-        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $PortalSessionId }
+        -Headers @{ "X-AvenChart-Patient-Portal-Session" = $PortalSessionId }
 }
 
 try {
@@ -86,8 +86,8 @@ try {
     if (-not $portal.authenticated -or -not $admin.authenticated) {
         throw "The required synthetic portal and administrator sessions were not issued."
     }
-    $adminHeaders = @{ "X-Legacy EHR-Session" = $admin.sessionId }
-    $portalHeaders = @{ "X-Legacy EHR-Patient-Portal-Session" = $portal.sessionId }
+    $adminHeaders = @{ "X-AvenChart-Session" = $admin.sessionId }
+    $portalHeaders = @{ "X-AvenChart-Patient-Portal-Session" = $portal.sessionId }
     $options = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/appointments/request-options" `
         -Headers $portalHeaders
@@ -205,10 +205,10 @@ try {
         @{ total=$expiredHistory.appointmentRequestCount; returned=@($expiredHistory.appointmentRequests).Count; owned=$ownedRequests.Count }
 
     if ($IncludeBrowser) {
-        $modernUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
+        $avenChartUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
         $priorFixtureId = $env:MODERN_UI_PORTAL_REQUEST_HISTORY_ID
         $env:MODERN_UI_PORTAL_REQUEST_HISTORY_ID = $cancelledRequest.appointment.id
-        Push-Location $modernUiRoot
+        Push-Location $avenChartUiRoot
         try {
             & npx playwright test e2e/portal-appointment-request-history.spec.ts --workers=1
             $browserExitCode = $LASTEXITCODE

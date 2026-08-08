@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -9,7 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$modernUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
+$avenChartUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
 $checks = [System.Collections.Generic.List[object]]::new()
 $marker = "TMP-ENC-LIFECYCLE-$(New-Guid)"
 $headers = $null
@@ -83,8 +83,8 @@ function Invoke-FixtureSql([string]$Sql) {
     try {
         & docker compose exec -T postgres psql `
             -X `
-            -U legacy-ehr `
-            -d legacy-ehr_modernized `
+            -U avenchart `
+            -d avenchart `
             -v ON_ERROR_STOP=1 `
             -c $Sql | Out-Null
         if ($LASTEXITCODE -ne 0) {
@@ -97,7 +97,7 @@ function Invoke-FixtureSql([string]$Sql) {
 }
 
 function Invoke-BrowserProof {
-    Push-Location $modernUiRoot
+    Push-Location $avenChartUiRoot
     try {
         & npx playwright test e2e/encounter-whole-lifecycle.spec.ts --workers=1 | Out-Host
         return $LASTEXITCODE
@@ -141,8 +141,8 @@ where encounter not in (select encounter from encounters)
     if (-not $admin.authenticated -or -not $frontDesk.authenticated) {
         throw "Synthetic administrator and front-desk sessions are required."
     }
-    $headers = @{ "X-Legacy EHR-Session" = $admin.sessionId }
-    $frontDeskHeaders = @{ "X-Legacy EHR-Session" = $frontDesk.sessionId }
+    $headers = @{ "X-AvenChart-Session" = $admin.sessionId }
+    $frontDeskHeaders = @{ "X-AvenChart-Session" = $frontDesk.sessionId }
 
     $unauthenticatedStatus = Invoke-StatusRequest `
         "$ApiBaseUrl/api/encounters" `
@@ -491,7 +491,7 @@ where encounter not in (select encounter from encounters)
     if ($IncludeBrowser) {
         $browserExitCode = Invoke-BrowserProof
         Add-Check `
-            "Whole package lifecycle passes configured Modern UI browser profiles" `
+            "Whole package lifecycle passes configured AvenChart UI browser profiles" `
             ($browserExitCode -eq 0) `
             @{ exitCode=$browserExitCode }
     }
@@ -541,8 +541,8 @@ delete from encounters where encounter = $safeEncounter and reason = '$safeMarke
         try {
             $residue = [int]((& docker compose exec -T postgres psql `
                 -X `
-                -U legacy-ehr `
-                -d legacy-ehr_modernized `
+                -U avenchart `
+                -d avenchart `
                 -Atc "select count(*) from encounters where encounter = $safeEncounter;").Trim())
         }
         finally {

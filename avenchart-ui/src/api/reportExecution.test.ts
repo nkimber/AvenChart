@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -75,7 +75,7 @@ describe("governed report execution transport", () => {
       "/definitions/definition%2Funsafe/runs?page=2&pageSize=5",
     );
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual(
-      expect.objectContaining({ "X-Legacy EHR-Session": "staff-session" }),
+      expect.objectContaining({ "X-AvenChart-Session": "staff-session" }),
     );
   });
 
@@ -140,7 +140,7 @@ describe("governed report execution transport", () => {
       "/api/reports/operations/runs/RPT-operator%2Funsafe",
     );
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual(
-      expect.objectContaining({ "X-Legacy EHR-Session": "operator-session" }),
+      expect.objectContaining({ "X-AvenChart-Session": "operator-session" }),
     );
   });
 
@@ -204,7 +204,7 @@ describe("governed report execution transport", () => {
       "/api/reports/runs/RPT-abc%2Funsafe/download",
     );
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual(
-      expect.objectContaining({ "X-Legacy EHR-Session": "staff-session" }),
+      expect.objectContaining({ "X-AvenChart-Session": "staff-session" }),
     );
     expect(await blob.text()).toContain("Identifier,Subject");
   });

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using AvenChart.Api.Data;
@@ -26,7 +26,7 @@ public sealed class LocalDevelopmentStaffIdentityAdapter(
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Session"].ToString();
         if (!Guid.TryParse(header, out var sessionId))
         {
             return MissingSession();
@@ -48,6 +48,6 @@ public sealed class LocalDevelopmentStaffIdentityAdapter(
         LastSeenAt: null,
         ExpiresAt: null,
         EndedAt: null,
-        FailureReason: "A valid Legacy EHR session is required.",
+        FailureReason: "A valid AvenChart session is required.",
         SessionSource: "avenchart");
 }

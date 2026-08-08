@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -368,8 +368,8 @@ try {
     if (-not $adminLogin.authenticated -or -not $providerLogin.authenticated) {
         throw "Required synthetic staff sessions were not issued."
     }
-    $adminHeaders = @{ "X-Legacy EHR-Session" = $adminLogin.sessionId }
-    $providerHeaders = @{ "X-Legacy EHR-Session" = $providerLogin.sessionId }
+    $adminHeaders = @{ "X-AvenChart-Session" = $adminLogin.sessionId }
+    $providerHeaders = @{ "X-AvenChart-Session" = $providerLogin.sessionId }
 
     $policy = Invoke-Json `
         -Uri "$ApiBaseUrl/api/form-engine/policy" `
@@ -1753,7 +1753,7 @@ try {
             -and $historicLocalizedExport.Content -match '<html lang="es-US">' `
             -and $historicLocalizedExport.Content -match "Formulario focalizado" `
             -and $historicLocalizedExport.Content -match "Motivo principal" `
-            -and $historicStructuredExport.exportFormat -eq "application/vnd.legacy-ehr.clinical-form+json;version=1" `
+            -and $historicStructuredExport.exportFormat -eq "application/vnd.avenchart.clinical-form+json;version=1" `
             -and $historicStructuredExport.instance.definitionRevision -eq 1 `
             -and $historicStructuredExport.schemaHash.Length -eq 64 `
             -and $historicStructuredExport.fieldDictionary.revision -eq 1 `

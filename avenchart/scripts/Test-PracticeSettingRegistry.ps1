@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
@@ -19,7 +19,7 @@ try {
 
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     if (-not $login.authenticated) { throw "The synthetic administrator session was not issued." }
-    $registry = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/registry" -Headers @{ "X-Legacy EHR-Session" = $login.sessionId }
+    $registry = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/registry" -Headers @{ "X-AvenChart-Session" = $login.sessionId }
     $keys = @($registry.items | ForEach-Object key | Sort-Object)
     Add-Check "Registry identifies all adopted non-secret setting contracts" (($registry.registryRevision -eq "local-practice-setting-registry-v1") -and ($keys -join "," -eq "practice.default-facility-id,practice.name,practice.time-zone") -and @($registry.items | Where-Object { $_.sensitivity -ne "non-secret" -or $_.breakGlassPermitted -or $_.allowedScopes.Count -ne 2 }).Count -eq 0) @{ revision=$registry.registryRevision; keys=$keys }
 

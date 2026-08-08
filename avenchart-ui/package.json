@@ -13,13 +13,13 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:workflows": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-ModernUiWorkflows.ps1",
-    "test:mutation-proofs": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-ModernUiMutationProofs.ps1",
-    "test:accessibility": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-ModernUiAccessibility.ps1",
-    "test:quality": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-ModernUiQuality.ps1",
-    "test:route-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-ModernUiRouteSmoke.ps1",
-    "test:reset": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Reset-ModernUiDemo.ps1",
-    "test:repeatability": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-ModernUiRepeatability.ps1"
+    "test:workflows": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-AvenChartUiWorkflows.ps1",
+    "test:mutation-proofs": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-AvenChartUiMutationProofs.ps1",
+    "test:accessibility": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-AvenChartUiAccessibility.ps1",
+    "test:quality": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-AvenChartUiQuality.ps1",
+    "test:route-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-AvenChartUiRouteSmoke.ps1",
+    "test:reset": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Reset-AvenChartUiDemo.ps1",
+    "test:repeatability": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-AvenChartUiRepeatability.ps1"
   },
   "dependencies": {
     "lucide-react": "^1.21.0",

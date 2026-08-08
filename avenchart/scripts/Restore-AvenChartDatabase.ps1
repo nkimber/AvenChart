@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param([Parameter(Mandatory=$true)][string]$SnapshotPath,[switch]$Force,[int]$PostgresWaitSeconds = 90)
@@ -8,7 +8,7 @@ $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $BackupsRoot = [IO.Path]::GetFullPath((Join-Path $SolutionRoot 'artifacts\backups'))
 $BackupsRootPrefix = $BackupsRoot.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 $SnapshotPath = [IO.Path]::GetFullPath($SnapshotPath)
-$containerDump = '/tmp/legacy-ehr_modernized_restore.dump'
+$containerDump = '/tmp/avenchart_restore.dump'
 if (-not $SnapshotPath.StartsWith($BackupsRootPrefix, [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $SnapshotPath -PathType Leaf)) { throw 'Snapshot must be an existing file under artifacts\backups.' }
 $manifestPath = "$SnapshotPath.json"
 if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
@@ -21,7 +21,7 @@ try {
   docker compose up -d postgres; if ($LASTEXITCODE -ne 0) { throw 'Could not start the PostgreSQL service.' }
   $deadline = (Get-Date).AddSeconds($PostgresWaitSeconds); $ready = $false
   while ((Get-Date) -lt $deadline) {
-    docker compose exec -T postgres pg_isready -U legacy-ehr -d legacy-ehr_modernized *> $null
+    docker compose exec -T postgres pg_isready -U avenchart -d avenchart *> $null
     if ($LASTEXITCODE -eq 0) { $ready = $true; break }
     Start-Sleep -Seconds 2
   }
@@ -31,9 +31,9 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Could not copy the snapshot into the PostgreSQL container.' }
   docker compose exec -T postgres pg_restore -l $containerDump *> $null
   if ($LASTEXITCODE -ne 0) { throw 'Snapshot preflight failed; the dump is not restorable.' }
-  docker compose exec -T postgres psql -U legacy-ehr -d postgres -v ON_ERROR_STOP=1 -c 'drop database if exists legacy-ehr_modernized with (force);' -c 'create database legacy-ehr_modernized owner legacy-ehr;'
+  docker compose exec -T postgres psql -U avenchart -d postgres -v ON_ERROR_STOP=1 -c 'drop database if exists avenchart with (force);' -c 'create database avenchart owner avenchart;'
   if ($LASTEXITCODE -ne 0) { throw 'Could not recreate the target database.' }
-  docker compose exec -T postgres pg_restore -U legacy-ehr -d legacy-ehr_modernized --no-owner --exit-on-error $containerDump
+  docker compose exec -T postgres pg_restore -U avenchart -d avenchart --no-owner --exit-on-error $containerDump
   if ($LASTEXITCODE -ne 0) { throw 'pg_restore failed.' }
   Write-Host "Restored: $SnapshotPath"
 } finally {

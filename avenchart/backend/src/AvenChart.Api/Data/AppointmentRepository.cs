@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Data.Common;
@@ -2017,7 +2017,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             var occurrenceNumber = 0;
             while (currentDate <= recurrenceEndDate && occurrenceNumber < MaximumExpandedOccurrencesPerAppointment)
             {
-                if (selectedDays.Contains(GetLegacyEhrWeekday(currentDate)))
+                if (selectedDays.Contains(GetAvenChartWeekday(currentDate)))
                 {
                     occurrenceNumber++;
                     if (currentDate >= fromDate && !recurrenceExdates.Contains(currentDate))
@@ -2912,7 +2912,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             var occurrenceNumber = 0;
             while (selectedDateCursor <= occurrenceDate && occurrenceNumber < MaximumExpandedOccurrencesPerAppointment)
             {
-                if (selectedDays.Contains(GetLegacyEhrWeekday(selectedDateCursor)))
+                if (selectedDays.Contains(GetAvenChartWeekday(selectedDateCursor)))
                 {
                     occurrenceNumber++;
                     if (selectedDateCursor == occurrenceDate)
@@ -3006,7 +3006,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return result;
     }
 
-    private static int GetLegacyEhrWeekday(DateOnly date) => (int)date.DayOfWeek + 1;
+    private static int GetAvenChartWeekday(DateOnly date) => (int)date.DayOfWeek + 1;
 
     private static string? GetAppointmentCategoryName(int? categoryId) => categoryId switch
     {
@@ -3196,7 +3196,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 .Where(value => value is >= 1 and <= 7)
                 .Distinct()
                 .Order()
-                .Select(GetLegacyEhrWeekdayLabel)
+                .Select(GetAvenChartWeekdayLabel)
                 .ToList();
             var weekdayCadence = dayLabels.Count == 0
                 ? "Every week on selected days"
@@ -3239,7 +3239,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         _ => $"Day {value}"
     };
 
-    private static string GetLegacyEhrWeekdayLabel(int value) => value switch
+    private static string GetAvenChartWeekdayLabel(int value) => value switch
     {
         1 => "Sun",
         2 => "Mon",

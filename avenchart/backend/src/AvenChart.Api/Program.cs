@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Diagnostics;
@@ -87,7 +87,7 @@ builder.Services.AddOptions<ReportExecutionOptions>()
     .ValidateOnStart();
 
 var connectionString = builder.Configuration.GetConnectionString("AvenChart")
-    ?? "Host=localhost;Port=5433;Database=legacy-ehr_modernized;Username=legacy-ehr;Password=legacy-ehr_demo";
+    ?? "Host=localhost;Port=5433;Database=avenchart;Username=avenchart;Password=avenchart_demo";
 
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
 builder.Services.AddScoped<PatientRepository>();
@@ -413,7 +413,7 @@ patientPortal.MapGet("/session", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetCurrentSessionAsync(sessionId, cancellationToken))
             : Results.Ok(new PatientPortalSessionResponse(
@@ -439,7 +439,7 @@ patientPortal.MapGet("/home", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetHomeSummaryAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderHomeSummary());
@@ -451,7 +451,7 @@ patientPortal.MapGet("/profile", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetProfileAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderProfile());
@@ -464,7 +464,7 @@ patientPortal.MapPost("/profile/changes", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.SubmitProfileChangeAsync(sessionId, request, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderProfile());
@@ -476,7 +476,7 @@ patientPortal.MapGet("/appointments", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetAppointmentsAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderAppointments());
@@ -488,7 +488,7 @@ patientPortal.MapGet("/clinical-summary", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetClinicalSummaryAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderClinicalSummary());
@@ -500,7 +500,7 @@ patientPortal.MapGet("/lab-results", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetLabResultsAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderLabResults());
@@ -512,7 +512,7 @@ patientPortal.MapGet("/medical-report", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetMedicalReportAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderMedicalReport());
@@ -525,7 +525,7 @@ patientPortal.MapPost("/medical-report/generate", async (
         PatientPortalMedicalReportGenerationRequest request,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GenerateMedicalReportAsync(sessionId, request, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderGeneratedMedicalReport());
@@ -538,7 +538,7 @@ patientPortal.MapPost("/medical-report/pdf", async (
         PatientPortalMedicalReportGenerationRequest request,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         var package = Guid.TryParse(header, out var sessionId)
             ? await repository.DownloadGeneratedMedicalReportPdfAsync(sessionId, request, cancellationToken)
             : PatientPortalRepository.MissingSessionHeaderGeneratedMedicalReportPdf();
@@ -555,7 +555,7 @@ patientPortal.MapPost("/medical-report/package", async (
         PatientPortalMedicalReportGenerationRequest request,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         var package = Guid.TryParse(header, out var sessionId)
             ? await repository.DownloadGeneratedMedicalReportPackageAsync(sessionId, request, cancellationToken)
             : PatientPortalRepository.MissingSessionHeaderGeneratedMedicalReportPackage();
@@ -571,7 +571,7 @@ patientPortal.MapGet("/medical-report/audit", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetMedicalReportAuditAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderGeneratedMedicalReportAudit());
@@ -583,7 +583,7 @@ patientPortal.MapGet("/appointments/request-options", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetAppointmentRequestOptionsAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderAppointmentRequestOptions());
@@ -596,7 +596,7 @@ patientPortal.MapPost("/appointments/requests", async (
         PatientPortalAppointmentRequest request,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.RequestAppointmentAsync(sessionId, request, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderAppointmentRequest());
@@ -608,7 +608,7 @@ patientPortal.MapGet("/messages", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetMessagesAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderMessages());
@@ -620,7 +620,7 @@ patientPortal.MapGet("/messages/recipients", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetMessageRecipientsAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderMessageRecipients());
@@ -632,7 +632,7 @@ patientPortal.MapGet("/messages/compose-options", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetMessageComposeOptionsAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderMessageComposeOptions());
@@ -644,7 +644,7 @@ patientPortal.MapGet("/messages/audit", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetMessageAuditAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderMessageAudit());
@@ -656,7 +656,7 @@ patientPortal.MapGet("/documents", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetDocumentsAsync(sessionId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderDocuments());
@@ -669,7 +669,7 @@ patientPortal.MapPost("/documents/download", async (
         PatientPortalDocumentsDownloadRequest request,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         var package = Guid.TryParse(header, out var sessionId)
             ? await repository.DownloadDocumentsAsync(sessionId, request, cancellationToken)
             : PatientPortalRepository.MissingSessionHeaderDocumentsDownload();
@@ -686,7 +686,7 @@ patientPortal.MapGet("/messages/{messageId:int}/thread", async (
         int messageId,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetMessageThreadAsync(sessionId, messageId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderMessageThread(messageId.ToString()));
@@ -699,7 +699,7 @@ patientPortal.MapGet("/messages/attachments/{attachmentId:guid}", async (
         Guid attachmentId,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         var attachment = Guid.TryParse(header, out var sessionId)
             ? await repository.DownloadMessageAttachmentAsync(sessionId, attachmentId, cancellationToken)
             : new PatientPortalMessageAttachmentDownload(false, string.Empty, "application/octet-stream", Array.Empty<byte>(), "Patient portal session header was not supplied.");
@@ -715,7 +715,7 @@ patientPortal.MapPost("/messages", async (
         PatientPortalComposeMessageRequest request,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.ComposeMessageAsync(sessionId, request, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderComposeMessage());
@@ -727,7 +727,7 @@ patientPortal.MapGet("/prescription-refill-requests", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetPrescriptionRefillHistoryAsync(sessionId, cancellationToken))
             : Results.Ok(new PatientPortalPrescriptionRefillHistoryResponse(
@@ -755,7 +755,7 @@ patientPortal.MapPost("/prescriptions/{prescriptionId}/refill-request", async (
         PatientPortalPrescriptionRefillRequest request,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.RequestPrescriptionRefillAsync(sessionId, prescriptionId, request, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderComposeMessage());
@@ -769,7 +769,7 @@ patientPortal.MapPost("/messages/{messageId:int}/reply", async (
         PatientPortalReplyMessageRequest request,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.ReplyToMessageAsync(sessionId, messageId, request, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderReplyMessage(messageId.ToString()));
@@ -783,7 +783,7 @@ patientPortal.MapPost("/messages/{messageId:int}/forward", async (
         PatientPortalForwardMessageRequest request,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.ForwardMessageAsync(sessionId, messageId, request, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderForwardMessage(messageId.ToString()));
@@ -796,7 +796,7 @@ patientPortal.MapPut("/messages/{messageId:int}/read", async (
         int messageId,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.MarkMessageReadAsync(sessionId, messageId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderReadMessage(messageId.ToString()));
@@ -809,7 +809,7 @@ patientPortal.MapPost("/messages/archive", async (
         PatientPortalArchiveMessagesRequest request,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.ArchiveMessagesAsync(sessionId, request, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderArchiveMessages());
@@ -822,7 +822,7 @@ patientPortal.MapDelete("/messages/{messageId:int}", async (
         int messageId,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.DeleteMessageAsync(sessionId, messageId, cancellationToken))
             : Results.Ok(PatientPortalRepository.MissingSessionHeaderDeleteMessage(messageId.ToString()));
@@ -834,7 +834,7 @@ patientPortal.MapDelete("/session", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
         return Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.EndSessionAsync(sessionId, cancellationToken))
             : Results.Ok(new PatientPortalSessionResponse(
@@ -1689,7 +1689,7 @@ patients.MapGet("/{canonicalId}", async (
         return patient is null ? Results.NotFound() : Results.Ok(patient);
     })
     .WithName("GetPatientChartSummary");
-patients.MapGet("/{patientId}/xml-export",async(string patientId,PatientXmlExchangeRepository repository,CancellationToken ct)=>{var xml=await repository.ExportAsync(patientId,ct);return xml is null?Results.NotFound():Results.File(Encoding.UTF8.GetBytes(xml),"application/xml",$"legacy-ehr-patient-{patientId}.xml");}).WithName("ExportPatientXml");
+patients.MapGet("/{patientId}/xml-export",async(string patientId,PatientXmlExchangeRepository repository,CancellationToken ct)=>{var xml=await repository.ExportAsync(patientId,ct);return xml is null?Results.NotFound():Results.File(Encoding.UTF8.GetBytes(xml),"application/xml",$"avenchart-patient-{patientId}.xml");}).WithName("ExportPatientXml");
 patients.MapPost("/xml-import/preview",async(PatientXmlExchangeRepository repository,PatientXmlImportRequest request,CancellationToken ct)=>{try{var preview=await repository.PreviewAsync(request,ct);return preview is null?Results.NotFound():Results.Ok(preview);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]>{{"xml",[e.Message]}});}}).WithName("PreviewPatientXmlImport").AddEndpointFilter(AccessPermissionFilter("patients","demo","write"));
 patients.MapPost("/xml-import",async(PatientXmlExchangeRepository repository,AuthRepository auth,HttpContext context,PatientXmlImportRequest request,CancellationToken ct)=>{try{var session=await GetSessionFromHeaderAsync(auth,context,ct);var result=await repository.ImportAsync(request,session.Username,ct);return result is null?Results.NotFound():Results.Ok(result);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]>{{"xml",[e.Message]}});}}).WithName("ImportPatientXml").AddEndpointFilter(AccessPermissionFilter("patients","demo","write"));
 patients.MapPost("/xml-import/{auditId:guid}/rollback",async(PatientXmlExchangeRepository repository,AuthRepository auth,HttpContext context,Guid auditId,CancellationToken ct)=>{var session=await GetSessionFromHeaderAsync(auth,context,ct);return await repository.RollbackAsync(auditId,session.Username,ct)?Results.NoContent():Results.NotFound();}).WithName("RollbackPatientXmlImport").AddEndpointFilter(AccessPermissionFilter("patients","demo","write"));
@@ -6250,7 +6250,7 @@ inventory.MapGet("/activity/export", async (
         try
         {
             var csv = await repository.GetActivityReportCsvAsync(from, to, facilityId, cancellationToken);
-            return Results.File(Encoding.UTF8.GetBytes(csv), contentType: "text/csv", fileDownloadName: "legacy-ehr-inventory-activity.csv");
+            return Results.File(Encoding.UTF8.GetBytes(csv), contentType: "text/csv", fileDownloadName: "avenchart-inventory-activity.csv");
         }
         catch (ArgumentException exception)
         {
@@ -7256,7 +7256,7 @@ administration.MapGet("/audit/phi/export", async (
         DateOnly? to,
         CancellationToken cancellationToken) =>
     {
-        try { return Results.File(Encoding.UTF8.GetBytes(await repository.GetCsvAsync(limit ?? 200, username, from, to, cancellationToken)), "text/csv", "legacy-ehr-phi-access-audit.csv"); }
+        try { return Results.File(Encoding.UTF8.GetBytes(await repository.GetCsvAsync(limit ?? 200, username, from, to, cancellationToken)), "text/csv", "avenchart-phi-access-audit.csv"); }
         catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["audit"] = [exception.Message] }); }
     })
     .WithName("ExportPhiAccessAudit");
@@ -8052,7 +8052,7 @@ reports.MapGet("/controlled-inventory/as-of/{runId:guid}/export", async (
         : Results.File(
             Encoding.UTF8.GetBytes(csv),
             "text/csv",
-            $"legacy-ehr-controlled-inventory-{runId}.csv");
+            $"avenchart-controlled-inventory-{runId}.csv");
 }).WithName("ExportControlledInventoryAsOfRun")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
 
@@ -8073,7 +8073,7 @@ reports.MapGet("/controlled-inventory/activity/{runId:guid}/export", async (
         : Results.File(
             Encoding.UTF8.GetBytes(csv),
             "text/csv",
-            $"legacy-ehr-controlled-activity-{runId}.csv");
+            $"avenchart-controlled-activity-{runId}.csv");
 }).WithName("ExportControlledInventoryActivityRun")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
 
@@ -8100,7 +8100,7 @@ reports.MapGet("/controlled-inventory/count-variance/{runId:guid}/export", async
         : Results.File(
             Encoding.UTF8.GetBytes(csv),
             "text/csv",
-            $"legacy-ehr-controlled-count-variance-{runId}.csv");
+            $"avenchart-controlled-count-variance-{runId}.csv");
 }).WithName("ExportControlledCountVarianceRun")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "view"));
 
@@ -8112,14 +8112,14 @@ reports.MapGet("/operational/export", async (
         return Results.File(
             Encoding.UTF8.GetBytes(csv),
             contentType: "text/csv",
-            fileDownloadName: "legacy-ehr-operational-report.csv");
+            fileDownloadName: "avenchart-operational-report.csv");
     })
     .WithName("ExportOperationalReports");
 
 reports.MapGet("/families", (ReportRepository repository) => Results.Ok(repository.GetFamilies())).WithName("GetReportFamilies");
 reports.MapGet("/families/{family}/export", async (ReportRepository repository, string family, DateOnly? from, DateOnly? to, CancellationToken cancellationToken) =>
 {
-    try { var csv = await repository.GetFamilyCsvAsync(family, from, to, cancellationToken); return Results.File(Encoding.UTF8.GetBytes(csv), "text/csv", $"legacy-ehr-{family}-report.csv"); }
+    try { var csv = await repository.GetFamilyCsvAsync(family, from, to, cancellationToken); return Results.File(Encoding.UTF8.GetBytes(csv), "text/csv", $"avenchart-{family}-report.csv"); }
     catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["report"] = [exception.Message] }); }
 }).WithName("ExportReportFamily");
 

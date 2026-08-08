@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import AxeBuilder from "@axe-core/playwright";
@@ -57,7 +57,7 @@ test.describe("FORM-02 same-row repeat rules", () => {
 
     await signIn(page);
     const headers = {
-      "X-Legacy EHR-Session": await sessionId(page),
+      "X-AvenChart-Session": await sessionId(page),
     };
     const child = (
       key: string,

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Neil Kimber and Legacy EHR Modernization Project contributors
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useEffect, useEffectEvent, useState, type FormEvent } from "react";
@@ -475,7 +475,7 @@ export default function AdminDirectory() {
       );
       const link = document.createElement("a");
       link.href = url;
-      link.download = "legacy-ehr-phi-access-audit.csv";
+      link.download = "avenchart-phi-access-audit.csv";
       link.click();
       URL.revokeObjectURL(url);
     } catch {
