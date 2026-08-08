@@ -424,7 +424,7 @@ h2 {
   pointer-events: none;
 }
 
-.month-axis {
+.date-axis {
   display: flex;
   justify-content: space-between;
   padding-top: 0.7rem;
@@ -432,6 +432,36 @@ h2 {
   border-top: 1px solid rgba(215, 229, 225, 0.2);
   font-family: ui-monospace, "Cascadia Mono", monospace;
   font-size: 0.68rem;
+}
+
+.chart-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.6rem;
+  margin: 1.2rem 0 0;
+  padding: 1rem 0 0;
+  border-top: 1px solid rgba(215, 229, 225, 0.12);
+}
+
+.chart-key div {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.chart-key dt {
+  color: var(--teal-bright);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chart-key dd {
+  margin: 0;
+  color: #bed2cf;
+  font-size: 0.72rem;
 }
 
 .measure-strip {

@@ -4,6 +4,7 @@
 const historyData = window.AVENCHART_HISTORY
 const number = new Intl.NumberFormat('en-US')
 const shortDate = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+const axisDate = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 const pageSize = 50
 let visibleCount = pageSize
 let filteredCommits = historyData.commits
@@ -29,18 +30,48 @@ function renderPulse() {
   const height = 260
   const insetX = 8
   const insetY = 22
-  const values = chronological.map((commit) => commit.cumulativeNet)
+  const plotWidth = width - insetX * 2
+  const millisecondsPerDay = 24 * 60 * 60 * 1000
+  const firstDay = new Date(`${historyData.summary.firstDate}T00:00:00Z`).getTime()
+  const lastDay = new Date(`${historyData.summary.lastDate}T00:00:00Z`).getTime()
+  const calendarDays = []
+
+  for (let timestamp = firstDay; timestamp <= lastDay; timestamp += millisecondsPerDay) {
+    calendarDays.push(new Date(timestamp).toISOString().slice(0, 10))
+  }
+
+  const commitsByDay = new Map(calendarDays.map((date) => [date, []]))
+  chronological.forEach((commit, index) => commitsByDay.get(commit.date)?.push({ commit, index }))
+
+  let cumulativeNet = 0
+  const dailySeries = calendarDays.map((date) => {
+    const commits = commitsByDay.get(date)
+    if (commits.length) cumulativeNet = commits.at(-1).commit.cumulativeNet
+    return { date, commits, cumulativeNet }
+  })
+
+  const values = [0, ...dailySeries.map((day) => day.cumulativeNet)]
   const minimum = Math.min(...values)
   const maximum = Math.max(...values)
   const range = Math.max(1, maximum - minimum)
-  const xAt = (index) => insetX + (index / Math.max(1, chronological.length - 1)) * (width - insetX * 2)
+  const dayWidth = plotWidth / Math.max(1, dailySeries.length)
+  const xAtDayStart = (index) => insetX + index * dayWidth
+  const xAtDayEnd = (index) => insetX + (index + 1) * dayWidth
   const yAt = (value) => height - insetY - ((value - minimum) / range) * (height - insetY * 2)
-  const points = chronological.map((commit, index) => `${xAt(index).toFixed(2)},${yAt(commit.cumulativeNet).toFixed(2)}`).join(' ')
+  const points = [
+    `${xAtDayStart(0).toFixed(2)},${yAt(0).toFixed(2)}`,
+    ...dailySeries.map((day, index) => `${xAtDayEnd(index).toFixed(2)},${yAt(day.cumulativeNet).toFixed(2)}`),
+  ].join(' ')
+
+  const tickCount = Math.min(5, dailySeries.length)
+  const tickIndexes = Array.from({ length: tickCount }, (_, index) => (
+    tickCount === 1 ? 0 : Math.round((index / (tickCount - 1)) * (dailySeries.length - 1))
+  ))
 
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
   svg.innerHTML = `
     <title id="pulse-title">Source growth of the autonomous AvenChart rewrite</title>
-    <desc id="pulse-description">${number.format(chronological.length)} retained source check-ins from ${formatDate(historyData.summary.firstDate)} to ${formatDate(historyData.summary.lastDate)}. Each vertical mark is a check-in made while the autonomous engineering agent builds or refines a functional slice. The line shows cumulative lines added minus lines removed, not feature-completion progress.</desc>
+    <desc id="pulse-description">${number.format(chronological.length)} retained source check-ins across ${number.format(dailySeries.length)} consecutive calendar days, from ${formatDate(historyData.summary.firstDate)} to ${formatDate(historyData.summary.lastDate)}. Each vertical mark is a check-in made while the autonomous engineering agent builds or refines a functional slice. Periods without check-ins remain visible as flat, unmarked spans. The line shows cumulative lines added minus lines removed, not feature-completion progress.</desc>
     <defs>
       <linearGradient id="pulse-fill" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#29a6a0" stop-opacity="0.35" />
@@ -53,19 +84,21 @@ function renderPulse() {
   `
 
   const marks = svg.querySelector('#pulse-marks')
-  chronological.forEach((commit, index) => {
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-    const x = xAt(index)
-    const intensity = Math.min(18, 3 + Math.log2(commit.additions + commit.deletions + 1) * 1.8)
-    line.setAttribute('x1', x)
-    line.setAttribute('x2', x)
-    line.setAttribute('y1', height - insetY)
-    line.setAttribute('y2', height - insetY - intensity)
-    line.setAttribute('stroke', commit.deletions > commit.additions ? '#e05f4f' : '#d7e5e1')
-    line.setAttribute('stroke-opacity', '0.48')
-    line.setAttribute('stroke-width', '1.15')
-    line.dataset.index = index
-    marks.append(line)
+  dailySeries.forEach((day, dayIndex) => {
+    day.commits.forEach(({ commit, index }, commitIndex) => {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+      const x = xAtDayStart(dayIndex) + dayWidth * ((commitIndex + 1) / (day.commits.length + 1))
+      const intensity = Math.min(18, 3 + Math.log2(commit.additions + commit.deletions + 1) * 1.8)
+      line.setAttribute('x1', x)
+      line.setAttribute('x2', x)
+      line.setAttribute('y1', height - insetY)
+      line.setAttribute('y2', height - insetY - intensity)
+      line.setAttribute('stroke', commit.deletions > commit.additions ? '#e05f4f' : '#d7e5e1')
+      line.setAttribute('stroke-opacity', '0.48')
+      line.setAttribute('stroke-width', '1.15')
+      line.dataset.index = index
+      marks.append(line)
+    })
   })
 
   const showTooltip = (event) => {
@@ -82,8 +115,8 @@ function renderPulse() {
   marks.addEventListener('pointermove', showTooltip)
   marks.addEventListener('pointerleave', () => { tooltip.hidden = true })
 
-  byId('month-axis').innerHTML = historyData.monthly
-    .map(({ month }) => `<span>${new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })}</span>`)
+  byId('date-axis').innerHTML = tickIndexes
+    .map((index) => `<span>${axisDate.format(new Date(`${dailySeries[index].date}T00:00:00Z`))}</span>`)
     .join('')
 }
 

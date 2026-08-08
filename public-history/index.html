@@ -149,20 +149,25 @@
             <h2 id="pulse-heading">The rewrite growing over time</h2>
           </div>
           <p>
-            Each vertical pulse is one retained source check-in as the agent completes or refines a functional slice.
-            The line is cumulative net source code&mdash;lines added minus lines removed&mdash;not feature-completion progress.
+            Calendar time runs continuously from the first check-in to the latest. Each vertical pulse is one retained
+            source check-in; days with no agent activity remain visible as flat, unmarked spans.
           </p>
         </div>
         <div class="pulse-chart-wrap">
           <svg id="pulse-chart" class="pulse-chart" role="img" aria-labelledby="pulse-title pulse-description"></svg>
           <div id="pulse-tooltip" class="pulse-tooltip" hidden></div>
         </div>
-        <div id="month-axis" class="month-axis" aria-hidden="true"></div>
+        <div id="date-axis" class="date-axis" aria-hidden="true"></div>
+        <dl class="chart-key" aria-label="Development pulse chart key">
+          <div><dt>Pulse</dt><dd>One retained check-in</dd></div>
+          <div><dt>Line</dt><dd>Cumulative net source change</dd></div>
+          <div><dt>Flat + unmarked</dt><dd>No retained check-ins</dd></div>
+        </dl>
       </section>
 
       <section class="measure-strip" aria-label="History totals">
         <article>
-          <span class="measure-label">Active span</span>
+          <span class="measure-label">Calendar span</span>
           <strong id="active-days">—</strong>
           <span>calendar days</span>
         </article>
