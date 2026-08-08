@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="A read-only, public record of AvenChart source development." />
+    <meta
+      name="description"
+      content="A two-phase experiment in autonomous software engineering: rebuilding OpenEMR functionality on a new technology stack with zero human-authored application code."
+    />
     <meta name="theme-color" content="#12333a" />
     <title>AvenChart · Public history</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
@@ -28,13 +31,17 @@
     <main>
       <section class="hero" aria-labelledby="page-title">
         <div class="hero-copy">
-          <p class="eyebrow">Public development record</p>
-          <h1 id="page-title">A longitudinal chart of the build.</h1>
+          <p class="eyebrow">An unattended software-engineering experiment</p>
+          <h1 id="page-title">Can an agent rebuild a mature application?</h1>
           <p class="hero-intro">
-            Every point on this record is a retained source check-in. Browse how AvenChart moved from its first
-            application scaffold to a broad clinical and practice-management implementation.
+            AvenChart tests whether autonomous coding agents can completely recreate and modernize an existing product
+            in a brand-new technology stack. OpenEMR supplies the functional benchmark; every line of AvenChart
+            application code was produced by coding agents.
           </p>
-          <p class="scope-note">Private planning material and operational tooling are intentionally outside this record.</p>
+          <p class="scope-note">
+            This is a functional reimplementation, not a line-by-line translation of OpenEMR. Its source was used as
+            reference material to understand what the product does, not as code to port.
+          </p>
         </div>
         <div class="chart-stamp" aria-label="History snapshot">
           <span class="chart-stamp-label">Record</span>
@@ -44,13 +51,107 @@
         </div>
       </section>
 
+      <section class="experiment-intro" aria-labelledby="experiment-heading">
+        <div class="experiment-overview">
+          <div class="experiment-heading">
+            <p class="eyebrow">The experiment</p>
+            <h2 id="experiment-heading">The question behind the code.</h2>
+          </div>
+          <div class="experiment-copy">
+            <p class="experiment-lead">
+              Are autonomous coding agents now capable of understanding a mature system, one behavior slice at a
+              time, and rebuilding it cleanly on a modern stack&mdash;fully unattended?
+            </p>
+            <p>
+              OpenEMR was selected because it is a robust, mature, extensively used open-source EHR and
+              practice-management application. Its breadth, depth, and proven real-world functionality made it an
+              ideal and demanding candidate for this experiment.
+            </p>
+          </div>
+        </div>
+
+        <aside class="experiment-constraint" aria-label="Core experimental constraint">
+          <span class="constraint-label">Core experimental constraint</span>
+          <strong>Zero human-authored application code.</strong>
+          <p>
+            Across both phases, no human wrote or edited a line of application code. During phase one, the
+            experimenter did not inspect the code either; the human role was limited to defining the objective and
+            directing the agents.
+          </p>
+        </aside>
+
+        <div class="method-grid">
+          <article>
+            <p class="eyebrow">Why OpenEMR</p>
+            <h3>A respected functional benchmark</h3>
+            <p>
+              The choice reflects OpenEMR's strength, not a criticism of it. A mature, widely adopted open-source
+              solution offered enough real functionality to make the autonomy test meaningful.
+            </p>
+          </article>
+          <article>
+            <p class="eyebrow">How the source was used</p>
+            <h3>Reference, not translation</h3>
+            <p>
+              The agents examined OpenEMR to identify behavior and workflows. Those functional slices became the
+              direction for clean, new implementation work; the existing code was never translated line by line.
+            </p>
+          </article>
+        </div>
+
+        <div class="phase-section" aria-labelledby="phases-heading">
+          <div class="phase-heading">
+            <p class="eyebrow">Two phases</p>
+            <h2 id="phases-heading">One foundation, two interfaces.</h2>
+            <p>
+              The first phase pursued functional parity. The second tested whether another agent could improve
+              the experience without replacing the working backend.
+            </p>
+          </div>
+          <div class="phase-cards">
+            <article class="phase-card">
+              <span class="phase-number">Phase 01</span>
+              <p class="phase-kind">Functional baseline</p>
+              <h3>An unattended, like-for-like rebuild.</h3>
+              <p>
+                The first agent worked through OpenEMR functionality slice by slice, creating a new ASP.NET Core API,
+                PostgreSQL data model, and React reference interface. The experimenter neither viewed nor wrote the
+                code. The resulting application appears functional and functionally correct, though its interface is
+                utilitarian rather than elegant.
+              </p>
+            </article>
+            <article class="phase-card phase-card-accent">
+              <span class="phase-number">Phase 02</span>
+              <p class="phase-kind">Interface modernization</p>
+              <h3>A new UI by Claude Code.</h3>
+              <p>
+                Claude Code was pointed at the phase-one codebase and asked to create a more polished, modern React
+                and TypeScript interface. This phase changed only the UI: it connects to exactly the same .NET web API
+                and data foundation created in phase one.
+              </p>
+            </article>
+          </div>
+        </div>
+
+        <div class="history-bridge">
+          <p class="eyebrow">What follows</p>
+          <p>
+            The history below is the retained source record of this autonomous build. Each check-in captures the agent
+            completing or refining a functional slice as the replacement system accumulated over time.
+          </p>
+        </div>
+      </section>
+
       <section class="pulse-panel" aria-labelledby="pulse-heading">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Development pulse</p>
-            <h2 id="pulse-heading">Change over time</h2>
+            <h2 id="pulse-heading">The rewrite growing over time</h2>
           </div>
-          <p>Each vertical pulse is one check-in. The line follows cumulative net source change.</p>
+          <p>
+            Each vertical pulse is one retained source check-in as the agent completes or refines a functional slice.
+            The line is cumulative net source code&mdash;lines added minus lines removed&mdash;not feature-completion progress.
+          </p>
         </div>
         <div class="pulse-chart-wrap">
           <svg id="pulse-chart" class="pulse-chart" role="img" aria-labelledby="pulse-title pulse-description"></svg>
@@ -76,9 +177,9 @@
           <span>lines removed</span>
         </article>
         <article>
-          <span class="measure-label">Public authors</span>
-          <strong id="author-count">—</strong>
-          <span>in retained history</span>
+          <span class="measure-label">Net source growth</span>
+          <strong id="net-source-growth">—</strong>
+          <span>lines added minus removed</span>
         </article>
       </section>
 
@@ -86,7 +187,10 @@
         <div>
           <p class="eyebrow">Monthly record</p>
           <h2 id="activity-heading">Where the work accumulated</h2>
-          <p class="section-copy">The bars show retained check-ins per month; the adjacent ledger groups changes by source area.</p>
+          <p class="section-copy">
+            The bars count the agent's retained source check-ins per month; the adjacent ledger groups those changes
+            by implementation area.
+          </p>
         </div>
         <div id="monthly-bars" class="monthly-bars"></div>
         <div id="area-ledger" class="area-ledger"></div>
@@ -122,8 +226,9 @@
 
     <footer>
       <p>
-        AvenChart is an independent project licensed under GPL-3.0-or-later. It was developed with reference to the
-        <a href="https://www.open-emr.org/">original OpenEMR project</a>; we gratefully thank its maintainers and community.
+        AvenChart is an independent, full-scope functional rewrite project licensed under GPL-3.0-or-later. It uses
+        the source of the <a href="https://www.open-emr.org/">original OpenEMR project</a> as its functional
+        specification; we gratefully thank its maintainers and community.
       </p>
       <p>AvenChart is not affiliated with, certified by, or endorsed by the OpenEMR Foundation or community.</p>
     </footer>

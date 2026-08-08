@@ -18,7 +18,7 @@ function populateSummary() {
   byId('active-days').textContent = number.format(summary.activeDays)
   byId('total-additions').textContent = number.format(summary.additions)
   byId('total-deletions').textContent = number.format(summary.deletions)
-  byId('author-count').textContent = number.format(summary.authors.length)
+  byId('net-source-growth').textContent = number.format(summary.net)
 }
 
 function renderPulse() {
@@ -39,8 +39,8 @@ function renderPulse() {
 
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
   svg.innerHTML = `
-    <title id="pulse-title">AvenChart retained source activity</title>
-    <desc id="pulse-description">${number.format(chronological.length)} check-ins from ${formatDate(historyData.summary.firstDate)} to ${formatDate(historyData.summary.lastDate)}. The line shows cumulative net source change.</desc>
+    <title id="pulse-title">Source growth of the autonomous AvenChart rewrite</title>
+    <desc id="pulse-description">${number.format(chronological.length)} retained source check-ins from ${formatDate(historyData.summary.firstDate)} to ${formatDate(historyData.summary.lastDate)}. Each vertical mark is a check-in made while the autonomous engineering agent builds or refines a functional slice. The line shows cumulative lines added minus lines removed, not feature-completion progress.</desc>
     <defs>
       <linearGradient id="pulse-fill" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#29a6a0" stop-opacity="0.35" />

@@ -206,6 +206,171 @@ h2 {
   font-size: 0.75rem;
 }
 
+.experiment-intro {
+  padding: 0 0 clamp(5rem, 10vw, 8rem);
+}
+
+.experiment-overview {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.8fr) minmax(0, 1.7fr);
+  gap: clamp(3rem, 8vw, 8rem);
+  align-items: start;
+}
+
+.experiment-heading h2 {
+  max-width: 390px;
+}
+
+.experiment-copy {
+  max-width: 720px;
+}
+
+.experiment-copy p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.experiment-copy .experiment-lead {
+  margin-bottom: 1.3rem;
+  color: var(--ink);
+  font-size: clamp(1.2rem, 2.2vw, 1.6rem);
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.experiment-constraint {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.55fr) minmax(260px, 1fr) minmax(300px, 1.35fr);
+  gap: clamp(1.5rem, 4vw, 4rem);
+  align-items: center;
+  margin-top: clamp(3rem, 6vw, 5rem);
+  padding: clamp(1.7rem, 4vw, 3rem);
+  color: var(--white);
+  background: var(--ink);
+  border-radius: 8px 8px 52px 8px;
+  box-shadow: var(--shadow);
+}
+
+.constraint-label,
+.phase-number,
+.phase-kind {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.constraint-label {
+  color: var(--teal-bright);
+}
+
+.experiment-constraint strong {
+  font-family: "Arial Narrow", "Aptos Display", sans-serif;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+}
+
+.experiment-constraint p {
+  margin: 0;
+  color: #c6d9d5;
+  line-height: 1.65;
+}
+
+.method-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(2rem, 6vw, 6rem);
+  margin-top: clamp(3rem, 7vw, 6rem);
+}
+
+.method-grid article {
+  padding-top: 1.5rem;
+  border-top: 2px solid var(--ink);
+}
+
+.method-grid h3,
+.phase-card h3 {
+  margin: 0;
+  font-size: clamp(1.25rem, 2vw, 1.65rem);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.method-grid article > p:last-child,
+.phase-card > p:last-child,
+.phase-heading > p:last-child {
+  margin: 0.8rem 0 0;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.phase-section {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 2fr);
+  gap: clamp(3rem, 7vw, 7rem);
+  align-items: start;
+  margin-top: clamp(5rem, 10vw, 9rem);
+}
+
+.phase-heading > p:last-child {
+  max-width: 350px;
+  margin-top: 1.2rem;
+}
+
+.phase-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.phase-card {
+  min-height: 390px;
+  padding: clamp(1.6rem, 3vw, 2.4rem);
+  background: var(--white);
+}
+
+.phase-card + .phase-card {
+  border-left: 1px solid var(--line);
+}
+
+.phase-card-accent {
+  background: #e6eeeb;
+}
+
+.phase-number {
+  color: var(--teal);
+}
+
+.phase-kind {
+  margin: 3.5rem 0 0.7rem;
+  color: var(--ink-soft);
+  font-size: 0.65rem;
+}
+
+.history-bridge {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.55fr) minmax(0, 2.1fr);
+  gap: clamp(2rem, 6vw, 6rem);
+  align-items: start;
+  margin-top: clamp(4rem, 8vw, 7rem);
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.history-bridge > p:last-child {
+  max-width: 760px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
 .pulse-panel {
   padding: clamp(2rem, 5vw, 4rem);
   overflow: hidden;
@@ -525,8 +690,23 @@ footer p {
 
 @media (max-width: 860px) {
   .hero,
+  .experiment-overview,
+  .phase-section,
   .activity-grid {
     grid-template-columns: 1fr;
+  }
+
+  .experiment-heading h2,
+  .phase-heading > p:last-child {
+    max-width: 680px;
+  }
+
+  .experiment-constraint {
+    grid-template-columns: minmax(150px, 0.55fr) minmax(0, 1.45fr);
+  }
+
+  .experiment-constraint p {
+    grid-column: 1 / -1;
   }
 
   .chart-stamp {
@@ -570,6 +750,34 @@ footer p {
 
   .hero {
     padding-top: 4rem;
+  }
+
+  .method-grid,
+  .phase-cards,
+  .history-bridge {
+    grid-template-columns: 1fr;
+  }
+
+  .experiment-constraint {
+    grid-template-columns: 1fr;
+    border-radius: 8px 8px 40px 8px;
+  }
+
+  .experiment-constraint p {
+    grid-column: auto;
+  }
+
+  .phase-card {
+    min-height: 0;
+  }
+
+  .phase-card + .phase-card {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .phase-kind {
+    margin-top: 2.5rem;
   }
 
   .section-heading,
