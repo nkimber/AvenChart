@@ -1,6 +1,6 @@
 # AvenChart
 
-AvenChart is an experimental, independently branded electronic-health-record and practice-management application. This public repository contains the ASP.NET Core API, PostgreSQL migrations, two React frontends, deterministic synthetic demo data, deployment configuration, and a filtered record of the source-code history.
+AvenChart is an experimental, independently branded electronic-health-record and practice-management application built autonomously by coding agents. The latest OpenEMR source code serves as its functional specification: agents use it to understand behaviors and workflows, then implement them cleanly on a new technology stack rather than translating the existing code line by line. This public repository contains the ASP.NET Core API, PostgreSQL migrations, two React frontends, deterministic synthetic demo data, deployment configuration, and a filtered record of the source-code history.
 
 > [!WARNING]
 > AvenChart is not ready or authorized for production clinical use. It has not been certified for regulatory programs and must be evaluated independently for security, privacy, safety, accessibility, interoperability, and legal compliance. Use synthetic data only.
