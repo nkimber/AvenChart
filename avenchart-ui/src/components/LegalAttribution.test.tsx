@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import LegalAttribution from './LegalAttribution.tsx'
 
 describe('LegalAttribution', () => {
-  it('links the AvenChart license and source plus the original Legacy EHR project and community', () => {
+  it('links the AvenChart license and source plus the original OpenEMR project and community', () => {
     render(<LegalAttribution />)
 
     expect(screen.getByRole('link', { name: 'Software license' })).toHaveAttribute(
@@ -17,15 +17,15 @@ describe('LegalAttribution', () => {
       'href',
       'https://github.com/nkimber/AvenChart',
     )
-    expect(screen.getByRole('link', { name: 'Original Legacy EHR project' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Original OpenEMR project' })).toHaveAttribute(
       'href',
       'https://www.open-emr.org/',
     )
     expect(screen.getByRole('link', { name: 'Original source code' })).toHaveAttribute(
       'href',
-      'https://github.com/legacy-ehr/legacy-ehr',
+      'https://github.com/openemr/openemr',
     )
-    expect(screen.getByRole('link', { name: 'Legacy EHR community' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'OpenEMR community' })).toHaveAttribute(
       'href',
       'https://community.open-emr.org/',
     )

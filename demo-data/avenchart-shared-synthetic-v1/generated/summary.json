@@ -1,0 +1,297 @@
+{
+  "datasetId": "avenchart-shared-synthetic-v1",
+  "version": "v1",
+  "baseDate": "2026-06-18",
+  "targetSystems": [
+    "legacy-ehr",
+    "avenchart"
+  ],
+  "counts": {
+    "patients": 1000,
+    "providersAndStaff": 20,
+    "facilities": 3,
+    "insuranceRecords": 1400,
+    "patientHistories": 1000,
+    "appointments": 2800,
+    "encounters": 2100,
+    "vitals": 2100,
+    "clinicalNotes": 2100,
+    "problems": 1500,
+    "allergies": 900,
+    "medicationsAndPrescriptions": 2200,
+    "medicationListEntries": 2200,
+    "immunizations": 2648,
+    "labOrders": 1000,
+    "labReports": 700,
+    "labResults": 2400,
+    "messages": 1200,
+    "portalMailboxMessages": 400,
+    "patientDocuments": 1200,
+    "billingLineItems": 3000,
+    "claims": 700,
+    "paymentSessions": 420,
+    "paymentActivities": 617,
+    "labProviders": 5,
+    "procedureOrderCatalogItems": 21,
+    "portalPatients": 200,
+    "portalAccounts": 200
+  },
+  "temporalCoverage": {
+    "asOfDate": "2026-06-18",
+    "currentYear": "2026",
+    "appointments": {
+      "total": 2800,
+      "currentYear": 2800,
+      "futureCurrentYear": 1261,
+      "minDate": "2026-02-18",
+      "maxDate": "2026-12-31"
+    },
+    "encounters": {
+      "total": 2100,
+      "currentYear": 1100,
+      "futureCurrentYear": 16,
+      "minDate": "2025-06-18",
+      "maxDate": "2026-06-19"
+    },
+    "medicationListEntries": {
+      "total": 2200,
+      "currentYear": 2200,
+      "futureCurrentYear": 1175,
+      "minDate": "2026-01-01",
+      "maxDate": "2026-12-31"
+    },
+    "prescriptions": {
+      "total": 2200,
+      "currentYear": 2200,
+      "futureCurrentYear": 1175,
+      "minDate": "2026-01-01",
+      "maxDate": "2026-12-31"
+    },
+    "immunizations": {
+      "total": 2648,
+      "currentYear": 1149,
+      "futureCurrentYear": 0,
+      "minDate": "2024-06-28",
+      "maxDate": "2026-05-08"
+    },
+    "procedureOrders": {
+      "total": 1000,
+      "currentYear": 1000,
+      "futureCurrentYear": 300,
+      "minDate": "2026-02-18",
+      "maxDate": "2026-12-31"
+    },
+    "procedureReports": {
+      "total": 700,
+      "currentYear": 700,
+      "futureCurrentYear": 0,
+      "minDate": "2026-02-20",
+      "maxDate": "2026-05-20"
+    },
+    "procedureResults": {
+      "total": 2400,
+      "currentYear": 2400,
+      "futureCurrentYear": 0,
+      "minDate": "2026-02-20",
+      "maxDate": "2026-05-20"
+    },
+    "messages": {
+      "total": 1200,
+      "currentYear": 1200,
+      "futureCurrentYear": 0,
+      "minDate": "2026-05-04",
+      "maxDate": "2026-06-12"
+    },
+    "billingLineItems": {
+      "total": 3000,
+      "currentYear": 1650,
+      "futureCurrentYear": 32,
+      "minDate": "2025-06-18",
+      "maxDate": "2026-06-19"
+    },
+    "paymentPostings": {
+      "total": 617,
+      "currentYear": 422,
+      "futureCurrentYear": 227,
+      "minDate": "2025-07-02",
+      "maxDate": "2026-07-09"
+    },
+    "patientDocuments": {
+      "total": 1200,
+      "currentYear": 1152,
+      "futureCurrentYear": 0,
+      "minDate": "2025-12-25",
+      "maxDate": "2026-06-12"
+    }
+  },
+  "cohorts": {
+    "patient-search": 1,
+    "chronic-care": 251,
+    "scheduling": 1,
+    "portal-messaging": 1,
+    "billing": 1,
+    "allergies": 1,
+    "pediatrics": 1,
+    "medications": 1,
+    "labs": 1,
+    "encounters": 1,
+    "golden-persona": 40,
+    "routine-primary-care": 400,
+    "pediatric": 100,
+    "scheduling-heavy": 100,
+    "billing-insurance": 75,
+    "demographic-edge-case": 25
+  },
+  "testAnchors": [
+    {
+      "canonicalId": "MOD-PAT-0001",
+      "name": "Avery Stone",
+      "cohort": "patient-search",
+      "purpose": "Stable search and demographics navigation"
+    },
+    {
+      "canonicalId": "MOD-PAT-0002",
+      "name": "Marisol Vega",
+      "cohort": "chronic-care",
+      "purpose": "Diabetes and hypertension recurring care"
+    },
+    {
+      "canonicalId": "MOD-PAT-0003",
+      "name": "Theo Bennett",
+      "cohort": "scheduling",
+      "purpose": "Future, cancelled, and no-show appointments"
+    },
+    {
+      "canonicalId": "MOD-PAT-0004",
+      "name": "Nora Kim",
+      "cohort": "portal-messaging",
+      "purpose": "Portal-enabled patient with messages"
+    },
+    {
+      "canonicalId": "MOD-PAT-0005",
+      "name": "Elias Morgan",
+      "cohort": "billing",
+      "purpose": "Insurance and billing workflow"
+    },
+    {
+      "canonicalId": "MOD-PAT-0006",
+      "name": "Priya Patel",
+      "cohort": "allergies",
+      "purpose": "Multiple allergy checks"
+    },
+    {
+      "canonicalId": "MOD-PAT-0007",
+      "name": "Mateo Rivera",
+      "cohort": "pediatrics",
+      "purpose": "Pediatric preventive visit"
+    },
+    {
+      "canonicalId": "MOD-PAT-0008",
+      "name": "Hazel Carter",
+      "cohort": "medications",
+      "purpose": "Active medication reconciliation"
+    },
+    {
+      "canonicalId": "MOD-PAT-0009",
+      "name": "Jonah Nguyen",
+      "cohort": "labs",
+      "purpose": "Completed lab results review"
+    },
+    {
+      "canonicalId": "MOD-PAT-0010",
+      "name": "Camila Brooks",
+      "cohort": "encounters",
+      "purpose": "Multiple encounter history"
+    },
+    {
+      "canonicalId": "MOD-PAT-0011",
+      "name": "Lena Carter",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0012",
+      "name": "Arjun Patel",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0013",
+      "name": "Riley Bell",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0014",
+      "name": "Wyatt Okafor",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0015",
+      "name": "Grace Nguyen",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0016",
+      "name": "Isaac Miller",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0017",
+      "name": "Nora Cole",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0018",
+      "name": "Hugo Hughes",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0019",
+      "name": "Lena Patel",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0020",
+      "name": "Owen Bell",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0021",
+      "name": "Priya Patel",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0022",
+      "name": "Theo Stone",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0023",
+      "name": "Amara Hughes",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0024",
+      "name": "Theo Okafor",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    },
+    {
+      "canonicalId": "MOD-PAT-0025",
+      "name": "Camila Sullivan",
+      "cohort": "golden-persona",
+      "purpose": "Synthetic population record"
+    }
+  ]
+}

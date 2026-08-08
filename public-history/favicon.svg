@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AvenChart">
+  <rect width="64" height="64" rx="18" fill="#12333a"/>
+  <path d="M15 42 28 15h9l12 27h-8l-2.6-6.4H26.1L23.4 42Zm14-13h6.5l-3.2-8.2Z" fill="#f5f8f5"/>
+  <path d="M11 48h42" stroke="#29a6a0" stroke-width="4" stroke-linecap="round"/>
+</svg>

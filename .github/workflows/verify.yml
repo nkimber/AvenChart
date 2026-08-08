@@ -1,0 +1,64 @@
+name: Verify public source
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore avenchart/AvenChart.slnx
+      - name: Build
+        run: dotnet build avenchart/AvenChart.slnx --configuration Release --no-restore
+
+  frontends:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            avenchart/frontend/package-lock.json
+            avenchart-ui/package-lock.json
+      - name: Install and build reference frontend
+        working-directory: avenchart/frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Install AvenChart UI
+        working-directory: avenchart-ui
+        run: npm ci
+      - name: Test AvenChart UI
+        working-directory: avenchart-ui
+        run: npm test
+      - name: Build AvenChart UI
+        working-directory: avenchart-ui
+        run: npm run build
+
+  public-history:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Regenerate public history
+        run: node tools/generate-history-data.mjs
+      - name: Verify generated history is current
+        run: git diff --exit-code -- public-history/history-data.js

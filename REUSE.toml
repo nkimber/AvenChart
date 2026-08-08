@@ -1,0 +1,37 @@
+version = 1
+
+[[annotations]]
+path = [
+  "avenchart/database/migrations/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Neil Kimber and AvenChart contributors"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = [
+  "avenchart/frontend/package.json",
+  "avenchart/frontend/package-lock.json",
+  "avenchart-ui/package.json",
+  "avenchart-ui/package-lock.json",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Neil Kimber and AvenChart contributors"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = [
+  ".dockerignore",
+  ".gitignore",
+  ".public-history-base",
+  ".github/**",
+  "*.md",
+  "avenchart/*.md",
+  "avenchart-ui/*.md",
+  "demo-data/**",
+  "infra/**",
+  "public-history/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Neil Kimber and AvenChart contributors"
+SPDX-License-Identifier = "GPL-3.0-or-later"

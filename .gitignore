@@ -1,0 +1,28 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Dependencies and builds
+node_modules/
+dist/
+bin/
+obj/
+coverage/
+
+# Runtime and verification output
+artifacts/
+test-results/
+playwright-report/
+.playwright-cli/
+output/
+*.log
+*.dump
+*.bak
+*.tmp
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

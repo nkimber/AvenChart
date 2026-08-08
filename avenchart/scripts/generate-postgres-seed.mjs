@@ -12,7 +12,6 @@ const workspaceRoot = path.resolve(solutionRoot, '..')
 const datasetPath = path.join(
   workspaceRoot,
   'demo-data',
-  'seed-data',
   'avenchart-shared-synthetic-v1',
   'generated',
   'canonical',

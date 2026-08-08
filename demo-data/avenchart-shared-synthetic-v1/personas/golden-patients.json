@@ -1,0 +1,36 @@
+{
+  "datasetId": "avenchart-shared-synthetic-v1",
+  "version": "v1",
+  "patients": [
+    {
+      "canonicalId": "MOD-PAT-0001",
+      "name": "Avery Stone",
+      "cohort": "patient-search",
+      "purpose": "Stable patient-search and demographics navigation persona."
+    },
+    {
+      "canonicalId": "MOD-PAT-0002",
+      "name": "Marisol Vega",
+      "cohort": "chronic-care",
+      "purpose": "Diabetes and hypertension workflow persona with recurring visits."
+    },
+    {
+      "canonicalId": "MOD-PAT-0003",
+      "name": "Theo Bennett",
+      "cohort": "scheduling",
+      "purpose": "Appointment lifecycle persona with future, cancelled, and no-show appointments."
+    },
+    {
+      "canonicalId": "MOD-PAT-0004",
+      "name": "Nora Kim",
+      "cohort": "portal-messaging",
+      "purpose": "Portal-enabled patient with messages and document-sharing workflows."
+    },
+    {
+      "canonicalId": "MOD-PAT-0005",
+      "name": "Elias Morgan",
+      "cohort": "billing",
+      "purpose": "Insurance and billing workflow persona."
+    }
+  ]
+}

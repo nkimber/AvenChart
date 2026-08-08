@@ -6654,12 +6654,12 @@ function LegalAttribution() {
     <aside className="legal-attribution" aria-label="Open source license and original project attribution">
       <p className="legal-attribution-label">Open source &amp; original project</p>
       <p>
-        AvenChart is licensed under the GNU GPL v3 or later and was developed with reference to the original Legacy EHR
+        AvenChart is licensed under the GNU GPL v3 or later and was developed with reference to the original OpenEMR
         project. We gratefully thank its maintainers, contributors, clinicians, implementers, and support community.
-        The Legacy EHR name identifies that upstream source only; AvenChart is independent and is not affiliated with,
-        certified by, or endorsed by the Legacy EHR Foundation or community.
+        The OpenEMR name identifies that upstream source only; AvenChart is independent and is not affiliated with,
+        certified by, or endorsed by the OpenEMR Foundation or community.
       </p>
-      <nav className="legal-attribution-links" aria-label="License and original Legacy EHR links">
+      <nav className="legal-attribution-links" aria-label="License and original OpenEMR links">
         <a
           href="/LICENSE.txt"
           target="_blank"
@@ -6671,13 +6671,13 @@ function LegalAttribution() {
           AvenChart source
         </a>
         <a href="https://www.open-emr.org/" target="_blank" rel="noreferrer">
-          Original Legacy EHR project
+          Original OpenEMR project
         </a>
-        <a href="https://github.com/legacy-ehr/legacy-ehr" target="_blank" rel="noreferrer">
+        <a href="https://github.com/openemr/openemr" target="_blank" rel="noreferrer">
           Original source code
         </a>
         <a href="https://community.open-emr.org/" target="_blank" rel="noreferrer">
-          Legacy EHR community
+          OpenEMR community
         </a>
       </nav>
     </aside>
@@ -6721,7 +6721,7 @@ function EntryChooserPage({
             <span>Patient Portal</span>
           </button>
         </div>
-        <p className="entry-footnote">Created by Neil Kimber using the project team in June 2026.</p>
+        <p className="entry-footnote">Created by Neil Kimber in June 2026.</p>
         <LegalAttribution />
       </section>
     </main>
