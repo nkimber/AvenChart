@@ -16,37 +16,82 @@ AvenChart is an experimental, independently branded electronic-health-record and
 | [`demo-data/`](demo-data/) | Deterministic synthetic dataset and generated database adapters |
 | [`infra/`](infra/) | AvenChart deployment container definitions and web-server configuration |
 | [`public-history/`](public-history/) | Static, read-only source history and statistics site |
+| [`scripts/`](scripts/) | Docker Desktop build, component startup, full deployment, status, and shutdown commands |
 
-## Run locally
+## Docker Desktop quickstart
+
+The [`scripts/`](scripts/) folder provides commands for building, starting, checking, resetting, and stopping the complete local AvenChart environment. The scripts can be run from any directory because they resolve the repository root from their own location; you do not need to run `docker compose` manually in each application folder.
 
 Prerequisites:
 
-- Docker Desktop or a compatible Docker Engine with Compose
+- Docker Desktop, or a compatible Docker Engine with Compose, installed and running
 - PowerShell 7 and Node.js 24 for dataset generation and repository scripts
+- Local ports 3000, 3100, 5001, and 5433 available
 
-From the repository root, seed the synthetic database and start the reference application:
+### First-time setup
+
+After cloning the repository, run these commands once from the repository root:
 
 ```powershell
-Set-Location .\avenchart
-.\scripts\Seed-AvenChartGoldDataset.ps1
-docker compose up -d --build
+# Starts PostgreSQL, replaces its contents with deterministic synthetic demo
+# data, and applies all database migrations.
+.\scripts\Reset-AvenChartDemoData.ps1 -Force
+
+# Builds all application images, creates and starts every container, waits for
+# readiness, and prints the local URLs and ports.
+.\scripts\Start-AvenChartAll.ps1
 ```
 
-Open:
+On Windows, `scripts\start-all.cmd` is a convenient launcher for `Start-AvenChartAll.ps1` and can replace the second command. It builds by default on this first run.
 
+The reset command is intentionally destructive to the local AvenChart database. Use only synthetic data; do not use it against a database containing information you need to preserve.
+
+The first build downloads the required container base images and application dependencies, so it can take several minutes. When startup completes, open:
+
+- Modern AvenChart UI: <http://localhost:3100/>
+- Professional sign-in: <http://localhost:3100/login>
+- Patient portal: <http://localhost:3100/portal/login>
 - Reference frontend: <http://localhost:3000/?entry=chooser>
 - API readiness: <http://localhost:5001/health/ready>
+- PostgreSQL: `postgresql://localhost:5433/avenchart`
 
-Start the redesigned frontend after the API is healthy:
+### Start the websites after initial setup
+
+For normal later starts, reuse the existing container images and preserved database volume:
 
 ```powershell
-Set-Location ..\avenchart-ui
-docker compose up -d --build
+.\scripts\Start-AvenChartAll.ps1 -SkipBuild
 ```
 
-Open AvenChart UI at <http://localhost:3100/>.
+On Windows, the equivalent command-file launcher is:
 
-Stop the applications with `docker compose down` from each application directory. Add `--volumes` only when you intentionally want to remove its local Docker volumes.
+```text
+scripts\start-all.cmd -SkipBuild
+```
+
+To start only the reference frontend, including its PostgreSQL and API dependencies, run:
+
+```powershell
+.\scripts\Start-AvenChartReferenceUi.ps1 -SkipBuild
+```
+
+To start only the modern UI and its required backend, start the API first:
+
+```powershell
+.\scripts\Start-AvenChartApi.ps1 -SkipBuild
+.\scripts\Start-AvenChartModernUi.ps1 -SkipBuild
+```
+
+### Check or stop the environment
+
+```powershell
+.\scripts\Get-AvenChartStatus.ps1
+.\scripts\Stop-AvenChartAll.ps1
+```
+
+On Windows, `scripts\status.cmd` and `scripts\stop-all.cmd` provide the same operations. Stopping AvenChart preserves the containers and PostgreSQL volume, so the database does not need to be seeded again before the next start.
+
+See [`scripts/README.md`](scripts/README.md) for every component-level script, optional parameter, Windows command-file launcher, and local endpoint.
 
 ## Build without Docker
 
