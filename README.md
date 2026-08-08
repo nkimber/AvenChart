@@ -16,6 +16,7 @@ AvenChart is an experimental, independently branded electronic-health-record and
 | [`demo-data/`](demo-data/) | Deterministic synthetic dataset and generated database adapters |
 | [`infra/`](infra/) | AvenChart deployment container definitions and web-server configuration |
 | [`public-history/`](public-history/) | Static, read-only source history and statistics site |
+| [`scripts/`](scripts/) | Docker Desktop build, component startup, full deployment, status, and shutdown commands |
 
 ## Run locally
 
@@ -24,29 +25,33 @@ Prerequisites:
 - Docker Desktop or a compatible Docker Engine with Compose
 - PowerShell 7 and Node.js 24 for dataset generation and repository scripts
 
-From the repository root, seed the synthetic database and start the reference application:
+From the repository root, initialize the synthetic database once, then build and start every application:
 
 ```powershell
-Set-Location .\avenchart
-.\scripts\Seed-AvenChartGoldDataset.ps1
-docker compose up -d --build
+.\scripts\Reset-AvenChartDemoData.ps1 -Force
+.\scripts\Start-AvenChartAll.ps1
 ```
 
-Open:
+The start command waits for readiness and prints every local URL and port. Open:
 
+- Modern AvenChart UI: <http://localhost:3100/>
 - Reference frontend: <http://localhost:3000/?entry=chooser>
 - API readiness: <http://localhost:5001/health/ready>
 
-Start the redesigned frontend after the API is healthy:
+Reuse the existing images on later starts:
 
 ```powershell
-Set-Location ..\avenchart-ui
-docker compose up -d --build
+.\scripts\Start-AvenChartAll.ps1 -SkipBuild
 ```
 
-Open AvenChart UI at <http://localhost:3100/>.
+Inspect or stop the complete environment with:
 
-Stop the applications with `docker compose down` from each application directory. Add `--volumes` only when you intentionally want to remove its local Docker volumes.
+```powershell
+.\scripts\Get-AvenChartStatus.ps1
+.\scripts\Stop-AvenChartAll.ps1
+```
+
+See [`scripts/README.md`](scripts/README.md) for component-level scripts, Windows command-file launchers, parameters, and the full endpoint table. The stop script preserves the local PostgreSQL volume.
 
 ## Build without Docker
 
