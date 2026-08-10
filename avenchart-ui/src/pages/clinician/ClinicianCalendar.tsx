@@ -3,9 +3,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Clock, X } from 'lucide-react'
+import { CalendarPlus, ChevronLeft, ChevronRight, Clock, X } from 'lucide-react'
 import { searchAppointments, type AppointmentListItem } from '../../api.ts'
 import { AppointmentStatusBadge } from '../../components/AppointmentStatusBadge.tsx'
+import { NewAppointmentDialog } from '../../components/NewAppointmentDialog.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
 // Distinct provider colors — stable palette, assigned alphabetically per month
@@ -69,6 +70,8 @@ export default function ClinicianCalendar() {
   const [error, setError] = useState<string | null>(null)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [activeProviders, setActiveProviders] = useState<Set<string>>(new Set())
+  const [newAppointmentDate, setNewAppointmentDate] = useState<string | null>(null)
+  const [refreshVersion, setRefreshVersion] = useState(0)
 
   useEffect(() => {
     setLoading(true)
@@ -88,7 +91,7 @@ export default function ClinicianCalendar() {
         setLoading(false)
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month])
+  }, [month, refreshVersion])
 
   // Stable alphabetical color assignment
   const providers = useMemo<ProviderEntry[]>(() => {
@@ -170,6 +173,18 @@ export default function ClinicianCalendar() {
 
   return (
     <div className="cal-page">
+      {newAppointmentDate && (
+        <NewAppointmentDialog
+          sessionId={session.sessionId}
+          initialDate={newAppointmentDate}
+          onClose={() => setNewAppointmentDate(null)}
+          onCreated={() => {
+            setNewAppointmentDate(null)
+            setRefreshVersion((version) => version + 1)
+          }}
+        />
+      )}
+
       {/* ── Header ── */}
       <div className="cal-header">
         <div className="cal-month-nav">
@@ -379,20 +394,24 @@ export default function ClinicianCalendar() {
               )}
             </div>
 
-            {selectedAppts.length > 0 && (
-              <div className="cal-panel-foot">
-                <button
-                  className="cl-btn-secondary"
-                  type="button"
-                  onClick={() => {
-                    if (selectedDate) navigate(`/clinician/schedule?date=${selectedDate}`)
-                  }}
-                  style={{ width: '100%', justifyContent: 'center' }}
-                >
-                  Open in schedule view
-                </button>
-              </div>
-            )}
+            <div className="cal-panel-foot">
+              <button
+                className="cl-btn-primary"
+                type="button"
+                onClick={() => selectedDate && setNewAppointmentDate(selectedDate)}
+              >
+                <CalendarPlus size={14} /> New appointment
+              </button>
+              <button
+                className="cl-btn-secondary"
+                type="button"
+                onClick={() => {
+                  if (selectedDate) navigate(`/clinician/schedule?date=${selectedDate}`)
+                }}
+              >
+                Open in schedule view
+              </button>
+            </div>
           </aside>
         )}
       </div>

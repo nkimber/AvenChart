@@ -11,7 +11,7 @@ namespace AvenChart.Api.Data;
 
 public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 {
-    private const int MaximumSearchLimit = 100;
+    private const int MaximumSearchLimit = 500;
     private const int MaximumExpandedOccurrencesPerAppointment = 366;
     private const string VirtualOccurrenceSeparator = "::occurs::";
     private const int RepeatOnRecurrenceType = 2;
@@ -22,6 +22,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     public async Task<AppointmentSearchResponse> SearchAsync(
         string? patientId,
         string? from,
+        string? to,
         int limit,
         CancellationToken cancellationToken)
     {
@@ -29,6 +30,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var metadata = await GetMetadataAsync(cancellationToken);
         var normalizedPatientId = Normalize(patientId);
         var fromDate = ParseDateOrDefault(from, metadata.BaseDate);
+        var toDate = ParseOptionalDate(to);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
 
@@ -98,13 +100,17 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             where {{AppointmentSearchPredicate}}
             order by a.appointment_date, a.start_time, a.id
             """;
-        AddSearchParameters(command, normalizedPatientId, fromDate);
+        AddSearchParameters(command, normalizedPatientId, fromDate, toDate);
 
         var expandedAppointments = new List<AppointmentListItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            expandedAppointments.AddRange(ExpandAppointmentListItem(ReadListItem(reader, metadata.BaseDate), fromDate, metadata.BaseDate));
+            expandedAppointments.AddRange(ExpandAppointmentListItem(
+                ReadListItem(reader, metadata.BaseDate),
+                fromDate,
+                toDate,
+                metadata.BaseDate));
         }
 
         var appointments = AnnotateAppointmentOverlaps(expandedAppointments)
@@ -120,6 +126,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             DatasetVersion: metadata.DatasetVersion,
             PatientId: patientId,
             FromDate: fromDate.ToString("yyyy-MM-dd"),
+            ToDate: toDate?.ToString("yyyy-MM-dd"),
             Limit: safeLimit,
             TotalMatches: expandedAppointments.Count,
             Appointments: appointments);
@@ -1842,12 +1849,18 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 and a.recurrence_end_date >= @fromDate
             )
         )
+        and (@toDate is null or a.appointment_date <= @toDate)
         """;
 
-    private static void AddSearchParameters(NpgsqlCommand command, string? patientId, DateOnly fromDate)
+    private static void AddSearchParameters(
+        NpgsqlCommand command,
+        string? patientId,
+        DateOnly fromDate,
+        DateOnly? toDate)
     {
         command.Parameters.Add("patientId", NpgsqlDbType.Text).Value = patientId is null ? DBNull.Value : patientId;
         command.Parameters.Add("fromDate", NpgsqlDbType.Date).Value = fromDate;
+        command.Parameters.Add("toDate", NpgsqlDbType.Date).Value = toDate is null ? DBNull.Value : toDate.Value;
     }
 
     private static AppointmentListItem ReadListItem(DbDataReader reader, DateOnly baseDate)
@@ -1927,7 +1940,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             ConvertedBillingLineCount: reader.GetInt32(reader.GetOrdinal("converted_billing_line_count")));
     }
 
-    private static IEnumerable<AppointmentListItem> ExpandAppointmentListItem(AppointmentListItem appointment, DateOnly fromDate, DateOnly baseDate)
+    private static IEnumerable<AppointmentListItem> ExpandAppointmentListItem(
+        AppointmentListItem appointment,
+        DateOnly fromDate,
+        DateOnly? toDate,
+        DateOnly baseDate)
     {
         if (!DateOnly.TryParse(appointment.Date, out var anchorDate))
         {
@@ -1937,7 +1954,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
         if (appointment.RecurrenceType <= 0)
         {
-            if (anchorDate >= fromDate)
+            if (IsWithinSearchRange(anchorDate, fromDate, toDate))
             {
                 yield return appointment;
             }
@@ -1982,13 +1999,19 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                     continue;
                 }
 
+                if (toDate is not null && repeatOnDate.Value > toDate.Value)
+                {
+                    yield break;
+                }
+
                 occurrenceNumber++;
                 if (repeatOnDate.Value > recurrenceEndDate)
                 {
                     yield break;
                 }
 
-                    if (repeatOnDate.Value >= fromDate && !recurrenceExdates.Contains(repeatOnDate.Value))
+                    if (IsWithinSearchRange(repeatOnDate.Value, fromDate, toDate)
+                        && !recurrenceExdates.Contains(repeatOnDate.Value))
                     {
                         var isVirtualOccurrence = repeatOnDate.Value != anchorDate;
                         yield return WithReminder(appointment with
@@ -2015,12 +2038,15 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
             var currentDate = anchorDate;
             var occurrenceNumber = 0;
-            while (currentDate <= recurrenceEndDate && occurrenceNumber < MaximumExpandedOccurrencesPerAppointment)
+            while (currentDate <= recurrenceEndDate
+                   && (toDate is null || currentDate <= toDate.Value)
+                   && occurrenceNumber < MaximumExpandedOccurrencesPerAppointment)
             {
                 if (selectedDays.Contains(GetAvenChartWeekday(currentDate)))
                 {
                     occurrenceNumber++;
-                    if (currentDate >= fromDate && !recurrenceExdates.Contains(currentDate))
+                    if (IsWithinSearchRange(currentDate, fromDate, toDate)
+                        && !recurrenceExdates.Contains(currentDate))
                     {
                         var isVirtualOccurrence = currentDate != anchorDate;
                         yield return WithReminder(appointment with
@@ -2042,10 +2068,13 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
         var occurrenceDate = anchorDate;
         for (var occurrenceNumber = 1;
-             occurrenceDate <= recurrenceEndDate && occurrenceNumber <= MaximumExpandedOccurrencesPerAppointment;
+             occurrenceDate <= recurrenceEndDate
+             && (toDate is null || occurrenceDate <= toDate.Value)
+             && occurrenceNumber <= MaximumExpandedOccurrencesPerAppointment;
              occurrenceNumber++)
         {
-            if (occurrenceDate >= fromDate && !recurrenceExdates.Contains(occurrenceDate))
+            if (IsWithinSearchRange(occurrenceDate, fromDate, toDate)
+                && !recurrenceExdates.Contains(occurrenceDate))
             {
                 var isVirtualOccurrence = occurrenceDate != anchorDate;
                 yield return WithReminder(appointment with
@@ -3265,6 +3294,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
     private static DateOnly ParseDateOrDefault(string? value, DateOnly defaultDate) =>
         DateOnly.TryParse(value, out var parsed) ? parsed : defaultDate;
+
+    private static DateOnly? ParseOptionalDate(string? value) =>
+        DateOnly.TryParse(value, out var parsed) ? parsed : null;
+
+    private static bool IsWithinSearchRange(DateOnly value, DateOnly fromDate, DateOnly? toDate) =>
+        value >= fromDate && (toDate is null || value <= toDate.Value);
 
     private static string BuildDisplayName(DbDataReader reader)
     {
