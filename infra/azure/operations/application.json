@@ -1,0 +1,292 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "17530536083289589904"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string"
+    },
+    "containerAppName": {
+      "type": "string"
+    },
+    "containerAppsEnvironmentName": {
+      "type": "string"
+    },
+    "managedIdentityResourceId": {
+      "type": "string"
+    },
+    "containerRegistryLoginServer": {
+      "type": "string"
+    },
+    "apiImage": {
+      "type": "string"
+    },
+    "uiImage": {
+      "type": "string"
+    },
+    "keyVaultName": {
+      "type": "string"
+    },
+    "databaseConnectionStringSecretName": {
+      "type": "string",
+      "defaultValue": "avenchart-database-connection-string"
+    },
+    "minimumReplicas": {
+      "type": "int",
+      "defaultValue": 1,
+      "allowedValues": [
+        0,
+        1
+      ]
+    },
+    "maximumReplicas": {
+      "type": "int",
+      "defaultValue": 2,
+      "minValue": 1,
+      "maxValue": 10
+    },
+    "httpConcurrency": {
+      "type": "int",
+      "defaultValue": 20,
+      "minValue": 1,
+      "maxValue": 1000
+    },
+    "apiCpu": {
+      "type": "string",
+      "defaultValue": "0.5",
+      "allowedValues": [
+        "0.25",
+        "0.5",
+        "0.75",
+        "1",
+        "1.25",
+        "1.5",
+        "1.75",
+        "2"
+      ]
+    },
+    "apiMemory": {
+      "type": "string",
+      "defaultValue": "1Gi"
+    },
+    "uiCpu": {
+      "type": "string",
+      "defaultValue": "0.25",
+      "allowedValues": [
+        "0.25",
+        "0.5",
+        "0.75",
+        "1"
+      ]
+    },
+    "uiMemory": {
+      "type": "string",
+      "defaultValue": "0.5Gi"
+    },
+    "rateLimitPermitLimit": {
+      "type": "int",
+      "defaultValue": 300
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {}
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[parameters('containerAppName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', parameters('managedIdentityResourceId'))]": {}
+        }
+      },
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppsEnvironmentName'))]",
+        "workloadProfileName": "Consumption",
+        "configuration": {
+          "activeRevisionsMode": "Multiple",
+          "ingress": {
+            "external": true,
+            "allowInsecure": false,
+            "targetPort": 8080,
+            "transport": "http",
+            "traffic": [
+              {
+                "latestRevision": true,
+                "weight": 100
+              }
+            ]
+          },
+          "registries": [
+            {
+              "server": "[parameters('containerRegistryLoginServer')]",
+              "identity": "[parameters('managedIdentityResourceId')]"
+            }
+          ],
+          "secrets": [
+            {
+              "name": "database-connection-string",
+              "keyVaultUrl": "[format('https://{0}{1}/secrets/{2}', parameters('keyVaultName'), environment().suffixes.keyvaultDns, parameters('databaseConnectionStringSecretName'))]",
+              "identity": "[parameters('managedIdentityResourceId')]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "ui",
+              "image": "[format('{0}/{1}', parameters('containerRegistryLoginServer'), parameters('uiImage'))]",
+              "resources": {
+                "cpu": "[json(parameters('uiCpu'))]",
+                "memory": "[parameters('uiMemory')]"
+              },
+              "probes": [
+                {
+                  "type": "Startup",
+                  "httpGet": {
+                    "path": "/health",
+                    "port": 8080,
+                    "scheme": "HTTP"
+                  },
+                  "periodSeconds": 2,
+                  "timeoutSeconds": 2,
+                  "failureThreshold": 30
+                },
+                {
+                  "type": "Liveness",
+                  "httpGet": {
+                    "path": "/health",
+                    "port": 8080,
+                    "scheme": "HTTP"
+                  },
+                  "periodSeconds": 20,
+                  "timeoutSeconds": 3,
+                  "failureThreshold": 3
+                },
+                {
+                  "type": "Readiness",
+                  "httpGet": {
+                    "path": "/health/api/ready",
+                    "port": 8080,
+                    "scheme": "HTTP"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 12
+                }
+              ]
+            },
+            {
+              "name": "api",
+              "image": "[format('{0}/{1}', parameters('containerRegistryLoginServer'), parameters('apiImage'))]",
+              "resources": {
+                "cpu": "[json(parameters('apiCpu'))]",
+                "memory": "[parameters('apiMemory')]"
+              },
+              "env": [
+                {
+                  "name": "ASPNETCORE_URLS",
+                  "value": "http://+:8081"
+                },
+                {
+                  "name": "ConnectionStrings__AvenChart",
+                  "secretRef": "database-connection-string"
+                },
+                {
+                  "name": "DatabaseSchema__MigrationsPath",
+                  "value": "/app/database/migrations"
+                },
+                {
+                  "name": "RuntimeSafety__RequireHttps",
+                  "value": "false"
+                },
+                {
+                  "name": "RuntimeSafety__RateLimitPermitLimit",
+                  "value": "[string(parameters('rateLimitPermitLimit'))]"
+                },
+                {
+                  "name": "DEMO_SEED_ON_STARTUP",
+                  "value": "false"
+                },
+                {
+                  "name": "DEMO_RESET_ON_STARTUP",
+                  "value": "false"
+                }
+              ],
+              "probes": [
+                {
+                  "type": "Startup",
+                  "httpGet": {
+                    "path": "/health/live",
+                    "port": 8081,
+                    "scheme": "HTTP"
+                  },
+                  "periodSeconds": 2,
+                  "timeoutSeconds": 2,
+                  "failureThreshold": 60
+                },
+                {
+                  "type": "Liveness",
+                  "httpGet": {
+                    "path": "/health/live",
+                    "port": 8081,
+                    "scheme": "HTTP"
+                  },
+                  "periodSeconds": 20,
+                  "timeoutSeconds": 3,
+                  "failureThreshold": 3
+                },
+                {
+                  "type": "Readiness",
+                  "httpGet": {
+                    "path": "/health/ready",
+                    "port": 8081,
+                    "scheme": "HTTP"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 12
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": "[parameters('minimumReplicas')]",
+            "maxReplicas": "[parameters('maximumReplicas')]",
+            "rules": [
+              {
+                "name": "http-concurrency",
+                "http": {
+                  "metadata": {
+                    "concurrentRequests": "[string(parameters('httpConcurrency'))]"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "applicationName": {
+      "type": "string",
+      "value": "[parameters('containerAppName')]"
+    },
+    "applicationFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('containerAppName')), '2024-03-01').configuration.ingress.fqdn]"
+    }
+  }
+}

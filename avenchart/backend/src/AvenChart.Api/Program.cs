@@ -39,6 +39,29 @@ builder.Services.AddHealthChecks()
     .AddCheck<SchemaMigrationReadinessHealthCheck>("schemaMigrations", tags: ["ready"]);
 builder.Services.AddSingleton<IIntegrationTransport, LocalDeterministicIntegrationTransport>();
 builder.Services.AddSingleton<RuntimeDiagnostics>();
+builder.Services.AddHttpClient("azure-deployment-health", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("AvenChart-Azure-Operations/1.0");
+});
+
+builder.Services.AddOptions<AzureOperationsOptions>()
+    .BindConfiguration(AzureOperationsOptions.SectionName)
+    .Validate(options => options.CommandTimeoutMinutes is >= 1 and <= 120,
+        "AzureOperations:CommandTimeoutMinutes must be between 1 and 120.")
+    .Validate(options => options.MigrationTimeoutMinutes is >= 1 and <= 120,
+        "AzureOperations:MigrationTimeoutMinutes must be between 1 and 120.")
+    .Validate(options => options.AccessGrantMinutes is >= 1 and <= 60,
+        "AzureOperations:AccessGrantMinutes must be between 1 and 60.")
+    .Validate(options => options.UnlockMaximumFailures is >= 3 and <= 20,
+        "AzureOperations:UnlockMaximumFailures must be between 3 and 20.")
+    .Validate(options => options.UnlockFailureWindowMinutes is >= 1 and <= 1440,
+        "AzureOperations:UnlockFailureWindowMinutes must be between 1 and 1440.")
+    .Validate(options => options.UnlockLockoutMinutes is >= 1 and <= 1440,
+        "AzureOperations:UnlockLockoutMinutes must be between 1 and 1440.")
+    .Validate(options => options.AccessCodeHashIterations is >= 100_000 and <= 2_000_000,
+        "AzureOperations:AccessCodeHashIterations must be between 100,000 and 2,000,000.")
+    .ValidateOnStart();
 
 builder.Services.AddOptions<RuntimeSafetyOptions>()
     .BindConfiguration(RuntimeSafetyOptions.SectionName)
@@ -139,6 +162,13 @@ builder.Services.AddScoped<InventoryReplenishmentPolicyRepository>();
 builder.Services.AddScoped<InventoryValuationRepository>();
 builder.Services.AddScoped<FlowBoardRepository>();
 builder.Services.AddScoped<FhirRepository>();
+builder.Services.AddScoped<AzureOperationsRepository>();
+builder.Services.AddScoped<AzureOperationsAccessRepository>();
+builder.Services.AddScoped<AzureOperationsAccessService>();
+builder.Services.AddScoped<AzureOperationsService>();
+builder.Services.AddSingleton<AzureCliRunner>();
+builder.Services.AddSingleton<AzureDeploymentCoordinator>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<AzureDeploymentCoordinator>());
 
 builder.Services.AddCors(options =>
 {
@@ -6690,6 +6720,7 @@ billing.MapDelete("/payments/{activityId}", async (
 
 var administration = app.MapGroup("/api/administration").WithTags("Administration");
 RequireAccessPermission(administration, "admin", "acl", "write");
+administration.MapAzureOperationsEndpoints();
 
 var delegatedConfiguration = app.MapGroup("/api/configuration-delegation").WithTags("Configuration delegation");
 delegatedConfiguration.MapPost("/practice-settings/{key}/change-requests", async (string key, PracticeSettingChangeRequestCreateRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>

@@ -7126,14 +7126,17 @@ function PatientPortalWorkspace({
   const pastPortalAppointments = portalAppointments?.pastAppointments ?? []
   const upcomingPortalAppointmentCount = portalAppointments?.upcomingAppointmentCount ?? home?.upcomingAppointmentCount ?? 0
   const pastPortalAppointmentCount = portalAppointments?.pastAppointmentCount ?? 0
-  const portalAppointmentCategoryOptions = portalAppointmentOptions?.categories.length
-    ? portalAppointmentOptions.categories
-    : appointmentCategoryOptions.map((category) => ({
-        id: category.id,
-        name: category.label,
-        constantId: category.constantId,
-        durationMinutes: category.durationMinutes,
-      }))
+  const portalAppointmentCategoryOptions = useMemo(
+    () => portalAppointmentOptions?.categories.length
+      ? portalAppointmentOptions.categories
+      : appointmentCategoryOptions.map((category) => ({
+          id: category.id,
+          name: category.label,
+          constantId: category.constantId,
+          durationMinutes: category.durationMinutes,
+        })),
+    [portalAppointmentOptions?.categories],
+  )
   const portalAppointmentProviderOptions = portalAppointmentOptions?.providers ?? []
   const portalAppointmentFacilityOptions = portalAppointmentOptions?.facilities ?? []
   const [portalAppointmentDate, setPortalAppointmentDate] = useState('2026-09-22')
@@ -7156,9 +7159,10 @@ function PatientPortalWorkspace({
   const [portalProfileChangePostalCode, setPortalProfileChangePostalCode] = useState('')
   const [portalProfileChangeStatus, setPortalProfileChangeStatus] =
     useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const portalProfileDemographics = profile?.pendingChange?.demographics ?? profile?.demographics
 
   useEffect(() => {
-    const demographics = profile?.pendingChange?.demographics ?? profile?.demographics
+    const demographics = portalProfileDemographics
     if (!demographics) {
       setPortalProfileChangeEmail('')
       setPortalProfileChangePhoneHome('')
@@ -7183,20 +7187,7 @@ function PatientPortalWorkspace({
     setPortalProfileChangeState(demographics.state ?? '')
     setPortalProfileChangePostalCode(demographics.postalCode ?? '')
     setPortalProfileChangeStatus('idle')
-  }, [
-    profile?.canonicalId,
-    profile?.pendingChange?.id,
-    profile?.pendingChange?.updatedAt,
-    profile?.demographics.email,
-    profile?.demographics.phoneHome,
-    profile?.demographics.phoneCell,
-    profile?.demographics.hipaaAllowSms,
-    profile?.demographics.hipaaAllowEmail,
-    profile?.demographics.street,
-    profile?.demographics.city,
-    profile?.demographics.state,
-    profile?.demographics.postalCode,
-  ])
+  }, [portalProfileDemographics])
 
   useEffect(() => {
     const availableMessageIds = new Set(selectableFilteredPortalMessages.map((portalMessage) => portalMessage.id))
@@ -7245,7 +7236,7 @@ function PatientPortalWorkspace({
     setPortalAppointmentDuration(String(defaults.durationMinutes || portalAppointmentCategoryOptions[0]?.durationMinutes || 30))
     setPortalAppointmentProviderId(defaults.providerId ? String(defaults.providerId) : '')
     setPortalAppointmentFacilityId(defaults.facilityId ? String(defaults.facilityId) : '')
-  }, [portalAppointmentOptions])
+  }, [portalAppointmentCategoryOptions, portalAppointmentOptions])
 
   function togglePortalMessageSelection(messageId: string, checked: boolean) {
     setSelectedPortalMessageIds((current) => {
@@ -11661,7 +11652,7 @@ function CalendarWorkspace({
   }, [appointmentDetail])
 
   useEffect(() => {
-    if (!appointmentDetail || reminderTemplateOptions.length === 0) {
+    if (!appointmentDetail?.id || reminderTemplateOptions.length === 0) {
       setSelectedReminderTemplateId('')
       return
     }
@@ -19527,7 +19518,7 @@ function DocumentsWorkspace({
   const [viewedDocument, setViewedDocument] = useState<PatientDocumentContentResponse | null>(null)
   const [documentContentStatus, setDocumentContentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [documentContentError, setDocumentContentError] = useState<string | null>(null)
-  const documents = patientDocuments?.documents ?? []
+  const documents = useMemo(() => patientDocuments?.documents ?? [], [patientDocuments])
   const activeDocumentCount = documents.filter((document) => document.deleted === 0).length
   const archivedDocumentCount = documents.filter((document) => document.deleted !== 0).length
   const categories = useMemo(
@@ -20592,9 +20583,15 @@ function InventoryWorkspace({
   const [requisitionVendorId, setRequisitionVendorId] = useState('')
   const [requisitionNotes, setRequisitionNotes] = useState('')
   const [requisitionLines, setRequisitionLines] = useState<Array<{ itemId: string; quantity: string }>>([{ itemId: '', quantity: '1' }])
-  const lots = inventory?.items.flatMap((item) => item.lots.map((lot) => ({ ...lot, item }))) ?? []
+  const lots = useMemo(
+    () => inventory?.items.flatMap((item) => item.lots.map((lot) => ({ ...lot, item }))) ?? [],
+    [inventory],
+  )
   const sourceLot = lots.find((lot) => String(lot.lotId) === lotId) ?? null
-  const destinationFacilities = (inventory?.facilities ?? []).filter((facility) => facility.code !== sourceLot?.facilityCode)
+  const destinationFacilities = useMemo(
+    () => (inventory?.facilities ?? []).filter((facility) => facility.code !== sourceLot?.facilityCode),
+    [inventory?.facilities, sourceLot?.facilityCode],
+  )
   const receivableRequisitions = purchaseRequisitions.filter((requisition) => requisition.status === 'approved' && requisition.receiptStatus !== 'complete')
   const replenishmentRecommendations = (inventory?.items ?? []).filter((item) => item.belowReorderPoint).map((item) => ({
     ...item,

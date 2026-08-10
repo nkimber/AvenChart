@@ -34,6 +34,7 @@ export const clinicianNavigationRoutes = [
   "/clinician/inventory",
   "/clinician/admin",
   "/clinician/experience",
+  "/clinician/operations",
 ] as const;
 
 export const clinicianRoutes = [

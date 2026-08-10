@@ -21,5 +21,12 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // These React Compiler-oriented diagnostics are not applicable until the
+      // project enables the compiler. Core Rules of Hooks checks remain active.
+      'react-hooks/immutability': 'off',
+      'react-hooks/preserve-manual-memoization': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

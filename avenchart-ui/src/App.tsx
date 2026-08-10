@@ -55,6 +55,9 @@ const AdminDirectory = lazy(() => import('./pages/clinician/AdminDirectory.tsx')
 const ExperienceBaseline = lazy(
   () => import('./pages/clinician/ExperienceBaseline.tsx'),
 )
+const AzureOperations = lazy(
+  () => import('./pages/clinician/AzureOperations.tsx'),
+)
 const NewEncounter = lazy(() => import('./pages/clinician/NewEncounter.tsx'))
 const NewPatient = lazy(() => import('./pages/clinician/NewPatient.tsx'))
 const PrescriptionRenewals = lazy(
@@ -139,6 +142,7 @@ export default function App() {
           <Route path="inventory" element={<InventoryWorkspace />} />
           <Route path="admin" element={<AdminDirectory />} />
           <Route path="experience" element={<ExperienceBaseline />} />
+          <Route path="operations" element={<AzureOperations />} />
 
           {/* Standalone new encounter (no patient context) */}
           <Route path="encounters/new" element={<NewEncounter />} />

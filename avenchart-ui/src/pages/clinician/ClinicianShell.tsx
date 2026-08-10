@@ -30,6 +30,7 @@ import {
   Settings,
   Users,
   Workflow,
+  CloudCog,
   X,
 } from 'lucide-react'
 import {
@@ -81,6 +82,7 @@ const NAV_ITEMS = [
   { path: '/clinician/inventory', label: 'Inventory', icon: Package },
   { path: '/clinician/admin', label: 'Admin', icon: Settings },
   { path: '/clinician/experience', label: 'Experience baseline', icon: Gauge },
+  { path: '/clinician/operations', label: 'Azure operations', icon: CloudCog },
 ] as const
 
 type NavigationSurface = 'desktop' | 'mobile'

@@ -6,14 +6,14 @@ x-api-build: &api-build
   dockerfile: backend/src/AvenChart.Api/Dockerfile
 
 x-api-database-environment: &api-database-environment
-  ConnectionStrings__AvenChart: Host=postgres;Port=5432;Database=avenchart;Username=avenchart;Password=avenchart_demo
+  ConnectionStrings__AvenChart: Host=postgres;Port=5432;Database=${AVENCHART_DATABASE_NAME:-avenchart};Username=avenchart;Password=avenchart_demo
   DatabaseSchema__MigrationsPath: /app/database/migrations
 
 services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: avenchart
+      POSTGRES_DB: ${AVENCHART_DATABASE_NAME:-avenchart}
       POSTGRES_USER: avenchart
       POSTGRES_PASSWORD: avenchart_demo
     ports:
@@ -21,7 +21,7 @@ services:
     volumes:
       - avenchart-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U avenchart -d avenchart"]
+      test: ["CMD-SHELL", "pg_isready -U avenchart -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 20

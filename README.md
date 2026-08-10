@@ -93,6 +93,22 @@ On Windows, `scripts\status.cmd` and `scripts\stop-all.cmd` provide the same ope
 
 See [`scripts/README.md`](scripts/README.md) for every component-level script, optional parameter, Windows command-file launcher, and local endpoint.
 
+## Azure deployment operations
+
+Administrators can prepare, validate, plan, deploy, monitor, verify, and roll back
+synthetic demo, development, and test environments from **Administration > Azure
+operations** in the modern UI. Production deployment is deliberately blocked.
+
+The page has a server-enforced second security gate in addition to the normal
+administrator sign-in. New installations use the bootstrap Operations code
+`AvenChartAdmin` and require it to be replaced before any Azure configuration can
+be viewed. The replacement is stored as a salted password hash, and Operations
+access grants remain only in browser memory and expire after 15 minutes.
+
+Deployment execution is disabled by default. Review the prerequisites, least-
+privilege requirements, safe enablement switch, conservative 20-user sizing, and
+recovery workflow in [`infra/azure/operations/README.md`](infra/azure/operations/README.md).
+
 ## Build without Docker
 
 ```powershell

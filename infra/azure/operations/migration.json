@@ -1,0 +1,230 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "5038246370313525818"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string"
+    },
+    "migrationJobName": {
+      "type": "string"
+    },
+    "containerAppsEnvironmentName": {
+      "type": "string"
+    },
+    "managedIdentityResourceId": {
+      "type": "string"
+    },
+    "containerRegistryLoginServer": {
+      "type": "string"
+    },
+    "apiImage": {
+      "type": "string"
+    },
+    "keyVaultName": {
+      "type": "string"
+    },
+    "databasePasswordSecretName": {
+      "type": "string",
+      "defaultValue": "avenchart-database-administrator-password"
+    },
+    "databaseConnectionStringSecretName": {
+      "type": "string",
+      "defaultValue": "avenchart-database-connection-string"
+    },
+    "postgresHost": {
+      "type": "string"
+    },
+    "databaseName": {
+      "type": "string",
+      "defaultValue": "avenchart"
+    },
+    "databaseAdministratorLogin": {
+      "type": "string",
+      "defaultValue": "avenchartadmin"
+    },
+    "enableDemoSeed": {
+      "type": "bool",
+      "defaultValue": true
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {}
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/jobs",
+      "apiVersion": "2024-03-01",
+      "name": "[parameters('migrationJobName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', parameters('managedIdentityResourceId'))]": {}
+        }
+      },
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppsEnvironmentName'))]",
+        "configuration": {
+          "triggerType": "Manual",
+          "replicaTimeout": 1800,
+          "replicaRetryLimit": 1,
+          "manualTriggerConfig": {
+            "parallelism": 1,
+            "replicaCompletionCount": 1
+          },
+          "registries": [
+            {
+              "server": "[parameters('containerRegistryLoginServer')]",
+              "identity": "[parameters('managedIdentityResourceId')]"
+            }
+          ],
+          "secrets": [
+            {
+              "name": "database-connection-string",
+              "keyVaultUrl": "[format('https://{0}{1}/secrets/{2}', parameters('keyVaultName'), environment().suffixes.keyvaultDns, parameters('databaseConnectionStringSecretName'))]",
+              "identity": "[parameters('managedIdentityResourceId')]"
+            },
+            {
+              "name": "database-administrator-password",
+              "keyVaultUrl": "[format('https://{0}{1}/secrets/{2}', parameters('keyVaultName'), environment().suffixes.keyvaultDns, parameters('databasePasswordSecretName'))]",
+              "identity": "[parameters('managedIdentityResourceId')]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "schema-migrator",
+              "image": "[format('{0}/{1}', parameters('containerRegistryLoginServer'), parameters('apiImage'))]",
+              "args": [
+                "--migrate-only"
+              ],
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1Gi"
+              },
+              "env": [
+                {
+                  "name": "ConnectionStrings__AvenChart",
+                  "secretRef": "database-connection-string"
+                },
+                {
+                  "name": "DatabaseSchema__MigrationsPath",
+                  "value": "/app/database/migrations"
+                },
+                {
+                  "name": "DEMO_SEED_ON_STARTUP",
+                  "value": "false"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "condition": "[parameters('enableDemoSeed')]",
+      "type": "Microsoft.App/jobs",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}-seed', parameters('migrationJobName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', parameters('managedIdentityResourceId'))]": {}
+        }
+      },
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppsEnvironmentName'))]",
+        "configuration": {
+          "triggerType": "Manual",
+          "replicaTimeout": 1800,
+          "replicaRetryLimit": 0,
+          "manualTriggerConfig": {
+            "parallelism": 1,
+            "replicaCompletionCount": 1
+          },
+          "registries": [
+            {
+              "server": "[parameters('containerRegistryLoginServer')]",
+              "identity": "[parameters('managedIdentityResourceId')]"
+            }
+          ],
+          "secrets": [
+            {
+              "name": "database-administrator-password",
+              "keyVaultUrl": "[format('https://{0}{1}/secrets/{2}', parameters('keyVaultName'), environment().suffixes.keyvaultDns, parameters('databasePasswordSecretName'))]",
+              "identity": "[parameters('managedIdentityResourceId')]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "synthetic-seed",
+              "image": "[format('{0}/{1}', parameters('containerRegistryLoginServer'), parameters('apiImage'))]",
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1Gi"
+              },
+              "env": [
+                {
+                  "name": "POSTGRES_HOST",
+                  "value": "[parameters('postgresHost')]"
+                },
+                {
+                  "name": "POSTGRES_PORT",
+                  "value": "5432"
+                },
+                {
+                  "name": "POSTGRES_DB",
+                  "value": "[parameters('databaseName')]"
+                },
+                {
+                  "name": "POSTGRES_USER",
+                  "value": "[parameters('databaseAdministratorLogin')]"
+                },
+                {
+                  "name": "POSTGRES_PASSWORD",
+                  "secretRef": "database-administrator-password"
+                },
+                {
+                  "name": "DEMO_SEED_ON_STARTUP",
+                  "value": "true"
+                },
+                {
+                  "name": "DEMO_RESET_ON_STARTUP",
+                  "value": "false"
+                },
+                {
+                  "name": "DEMO_SEED_ONLY",
+                  "value": "true"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "migrationJobName": {
+      "type": "string",
+      "value": "[parameters('migrationJobName')]"
+    },
+    "seedJobName": {
+      "type": "string",
+      "value": "[if(parameters('enableDemoSeed'), format('{0}-seed', parameters('migrationJobName')), '')]"
+    }
+  }
+}

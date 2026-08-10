@@ -7,13 +7,17 @@ POSTGRES_DB="${POSTGRES_DB:-avenchart}"
 POSTGRES_USER="${POSTGRES_USER:-avenchart}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-avenchart_demo}"
 DEMO_SEED_WAIT_SECONDS="${DEMO_SEED_WAIT_SECONDS:-120}"
-DEMO_SEED_ON_STARTUP="${DEMO_SEED_ON_STARTUP:-true}"
-DEMO_RESET_ON_STARTUP="${DEMO_RESET_ON_STARTUP:-true}"
+DEMO_SEED_ON_STARTUP="${DEMO_SEED_ON_STARTUP:-false}"
+DEMO_RESET_ON_STARTUP="${DEMO_RESET_ON_STARTUP:-false}"
+DEMO_SEED_ONLY="${DEMO_SEED_ONLY:-false}"
 DEMO_SEED_ON_STARTUP="$(printf '%s' "$DEMO_SEED_ON_STARTUP" | tr '[:upper:]' '[:lower:]')"
 DEMO_RESET_ON_STARTUP="$(printf '%s' "$DEMO_RESET_ON_STARTUP" | tr '[:upper:]' '[:lower:]')"
+DEMO_SEED_ONLY="$(printf '%s' "$DEMO_SEED_ONLY" | tr '[:upper:]' '[:lower:]')"
 
 export PGPASSWORD="$POSTGRES_PASSWORD"
-export ConnectionStrings__AvenChart="Host=${POSTGRES_HOST};Port=${POSTGRES_PORT};Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+if [ -z "${ConnectionStrings__AvenChart:-}" ]; then
+  export ConnectionStrings__AvenChart="Host=${POSTGRES_HOST};Port=${POSTGRES_PORT};Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+fi
 
 if [ "$DEMO_SEED_ON_STARTUP" = "true" ] && [ -f /app/demo-seed.sql ]; then
   deadline=$(( $(date +%s) + DEMO_SEED_WAIT_SECONDS ))
@@ -41,4 +45,9 @@ if [ "$DEMO_SEED_ON_STARTUP" = "true" ] && [ -f /app/demo-seed.sql ]; then
   fi
 fi
 
-exec dotnet AvenChart.Api.dll
+if [ "$DEMO_SEED_ONLY" = "true" ]; then
+  echo "Demo seed job completed."
+  exit 0
+fi
+
+exec dotnet AvenChart.Api.dll "$@"

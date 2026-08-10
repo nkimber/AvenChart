@@ -1,0 +1,740 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "7808862512738997009"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region used by all regional AvenChart resources."
+      }
+    },
+    "resourceGroupName": {
+      "type": "string"
+    },
+    "resourceNamePrefix": {
+      "type": "string"
+    },
+    "containerRegistryName": {
+      "type": "string"
+    },
+    "keyVaultName": {
+      "type": "string"
+    },
+    "postgresServerName": {
+      "type": "string"
+    },
+    "containerAppsEnvironmentName": {
+      "type": "string"
+    },
+    "managedIdentityName": {
+      "type": "string"
+    },
+    "logAnalyticsWorkspaceName": {
+      "type": "string"
+    },
+    "databaseName": {
+      "type": "string",
+      "defaultValue": "avenchart"
+    },
+    "databaseAdministratorLogin": {
+      "type": "string",
+      "defaultValue": "avenchartadmin"
+    },
+    "databasePasswordSecretName": {
+      "type": "string",
+      "defaultValue": "avenchart-database-administrator-password"
+    },
+    "databaseConnectionStringSecretName": {
+      "type": "string",
+      "defaultValue": "avenchart-database-connection-string"
+    },
+    "deploymentPrincipalObjectId": {
+      "type": "string"
+    },
+    "deploymentPrincipalType": {
+      "type": "string",
+      "allowedValues": [
+        "User",
+        "ServicePrincipal"
+      ]
+    },
+    "databaseAdministratorPassword": {
+      "type": "securestring"
+    },
+    "postgresSkuName": {
+      "type": "string",
+      "defaultValue": "Standard_B1ms"
+    },
+    "postgresTier": {
+      "type": "string",
+      "defaultValue": "Burstable"
+    },
+    "postgresStorageGiB": {
+      "type": "int",
+      "defaultValue": 32,
+      "minValue": 32
+    },
+    "backupRetentionDays": {
+      "type": "int",
+      "defaultValue": 7,
+      "minValue": 7,
+      "maxValue": 35
+    },
+    "enableGeoRedundantBackup": {
+      "type": "bool",
+      "defaultValue": false
+    },
+    "enableHighAvailability": {
+      "type": "bool",
+      "defaultValue": false
+    },
+    "connectionPoolMaximum": {
+      "type": "int",
+      "defaultValue": 15,
+      "minValue": 1,
+      "maxValue": 100
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.42.0.0/16"
+    },
+    "infrastructureSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.42.0.0/23"
+    },
+    "databaseSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.42.2.0/28"
+    },
+    "logRetentionDays": {
+      "type": "int",
+      "defaultValue": 30,
+      "minValue": 30,
+      "maxValue": 730
+    },
+    "monthlyBudgetUsd": {
+      "type": "int",
+      "defaultValue": 150,
+      "minValue": 1
+    },
+    "alertEmails": {
+      "type": "array",
+      "defaultValue": []
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {}
+    },
+    "budgetStartDate": {
+      "type": "string",
+      "defaultValue": "[utcNow('yyyy-MM-01')]"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2024-11-01",
+      "name": "[parameters('resourceGroupName')]",
+      "location": "[parameters('location')]",
+      "tags": "[union(parameters('tags'), createObject('application', 'AvenChart', 'managedBy', 'AvenChart Azure Deployment Operations', 'dataClassification', 'synthetic-only'))]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-platform', parameters('resourceNamePrefix'))]",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "resourceNamePrefix": {
+            "value": "[parameters('resourceNamePrefix')]"
+          },
+          "containerRegistryName": {
+            "value": "[parameters('containerRegistryName')]"
+          },
+          "keyVaultName": {
+            "value": "[parameters('keyVaultName')]"
+          },
+          "postgresServerName": {
+            "value": "[parameters('postgresServerName')]"
+          },
+          "containerAppsEnvironmentName": {
+            "value": "[parameters('containerAppsEnvironmentName')]"
+          },
+          "managedIdentityName": {
+            "value": "[parameters('managedIdentityName')]"
+          },
+          "logAnalyticsWorkspaceName": {
+            "value": "[parameters('logAnalyticsWorkspaceName')]"
+          },
+          "databaseName": {
+            "value": "[parameters('databaseName')]"
+          },
+          "databaseAdministratorLogin": {
+            "value": "[parameters('databaseAdministratorLogin')]"
+          },
+          "databasePasswordSecretName": {
+            "value": "[parameters('databasePasswordSecretName')]"
+          },
+          "databaseConnectionStringSecretName": {
+            "value": "[parameters('databaseConnectionStringSecretName')]"
+          },
+          "deploymentPrincipalObjectId": {
+            "value": "[parameters('deploymentPrincipalObjectId')]"
+          },
+          "deploymentPrincipalType": {
+            "value": "[parameters('deploymentPrincipalType')]"
+          },
+          "databaseAdministratorPassword": {
+            "value": "[parameters('databaseAdministratorPassword')]"
+          },
+          "postgresSkuName": {
+            "value": "[parameters('postgresSkuName')]"
+          },
+          "postgresTier": {
+            "value": "[parameters('postgresTier')]"
+          },
+          "postgresStorageGiB": {
+            "value": "[parameters('postgresStorageGiB')]"
+          },
+          "backupRetentionDays": {
+            "value": "[parameters('backupRetentionDays')]"
+          },
+          "enableGeoRedundantBackup": {
+            "value": "[parameters('enableGeoRedundantBackup')]"
+          },
+          "enableHighAvailability": {
+            "value": "[parameters('enableHighAvailability')]"
+          },
+          "connectionPoolMaximum": {
+            "value": "[parameters('connectionPoolMaximum')]"
+          },
+          "vnetAddressPrefix": {
+            "value": "[parameters('vnetAddressPrefix')]"
+          },
+          "infrastructureSubnetPrefix": {
+            "value": "[parameters('infrastructureSubnetPrefix')]"
+          },
+          "databaseSubnetPrefix": {
+            "value": "[parameters('databaseSubnetPrefix')]"
+          },
+          "logRetentionDays": {
+            "value": "[parameters('logRetentionDays')]"
+          },
+          "monthlyBudgetUsd": {
+            "value": "[parameters('monthlyBudgetUsd')]"
+          },
+          "alertEmails": {
+            "value": "[parameters('alertEmails')]"
+          },
+          "budgetStartDate": {
+            "value": "[parameters('budgetStartDate')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "202841139154514809"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "resourceNamePrefix": {
+              "type": "string"
+            },
+            "containerRegistryName": {
+              "type": "string"
+            },
+            "keyVaultName": {
+              "type": "string"
+            },
+            "postgresServerName": {
+              "type": "string"
+            },
+            "containerAppsEnvironmentName": {
+              "type": "string"
+            },
+            "managedIdentityName": {
+              "type": "string"
+            },
+            "logAnalyticsWorkspaceName": {
+              "type": "string"
+            },
+            "databaseName": {
+              "type": "string"
+            },
+            "databaseAdministratorLogin": {
+              "type": "string"
+            },
+            "databasePasswordSecretName": {
+              "type": "string"
+            },
+            "databaseConnectionStringSecretName": {
+              "type": "string"
+            },
+            "deploymentPrincipalObjectId": {
+              "type": "string"
+            },
+            "deploymentPrincipalType": {
+              "type": "string"
+            },
+            "databaseAdministratorPassword": {
+              "type": "securestring"
+            },
+            "postgresSkuName": {
+              "type": "string"
+            },
+            "postgresTier": {
+              "type": "string"
+            },
+            "postgresStorageGiB": {
+              "type": "int"
+            },
+            "backupRetentionDays": {
+              "type": "int"
+            },
+            "enableGeoRedundantBackup": {
+              "type": "bool"
+            },
+            "enableHighAvailability": {
+              "type": "bool"
+            },
+            "connectionPoolMaximum": {
+              "type": "int"
+            },
+            "vnetAddressPrefix": {
+              "type": "string"
+            },
+            "infrastructureSubnetPrefix": {
+              "type": "string"
+            },
+            "databaseSubnetPrefix": {
+              "type": "string"
+            },
+            "logRetentionDays": {
+              "type": "int"
+            },
+            "monthlyBudgetUsd": {
+              "type": "int"
+            },
+            "alertEmails": {
+              "type": "array"
+            },
+            "budgetStartDate": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object"
+            }
+          },
+          "variables": {
+            "networkName": "[format('{0}-vnet', parameters('resourceNamePrefix'))]",
+            "privateDnsZoneName": "private.postgres.database.azure.com",
+            "postgresHost": "[format('{0}.postgres.database.azure.com', parameters('postgresServerName'))]",
+            "connectionString": "[format('Host={0};Port=5432;Database={1};Username={2};Password={3};SSL Mode=VerifyFull;Pooling=true;Minimum Pool Size=0;Maximum Pool Size={4};Connection Idle Lifetime=300;Timeout=15;Command Timeout=30', variables('postgresHost'), parameters('databaseName'), parameters('databaseAdministratorLogin'), parameters('databaseAdministratorPassword'), parameters('connectionPoolMaximum'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[parameters('logAnalyticsWorkspaceName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "retentionInDays": "[parameters('logRetentionDays')]",
+                "sku": {
+                  "name": "PerGB2018"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-11-01-preview",
+              "name": "[parameters('containerRegistryName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Basic"
+              },
+              "properties": {
+                "adminUserEnabled": false,
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[parameters('managedIdentityName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]"
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2023-07-01",
+              "name": "[parameters('keyVaultName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "tenantId": "[subscription().tenantId]",
+                "sku": {
+                  "family": "A",
+                  "name": "standard"
+                },
+                "enableRbacAuthorization": true,
+                "enablePurgeProtection": true,
+                "softDeleteRetentionInDays": 90,
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('keyVaultName'), parameters('databasePasswordSecretName'))]",
+              "properties": {
+                "value": "[parameters('databaseAdministratorPassword')]",
+                "contentType": "AvenChart PostgreSQL administrator credential"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('keyVaultName'), parameters('databaseConnectionStringSecretName'))]",
+              "properties": {
+                "value": "[variables('connectionString')]",
+                "contentType": "AvenChart Npgsql connection string"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2024-05-01",
+              "name": "[variables('networkName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "[parameters('vnetAddressPrefix')]"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "container-apps-infrastructure",
+                    "properties": {
+                      "addressPrefix": "[parameters('infrastructureSubnetPrefix')]",
+                      "delegations": [
+                        {
+                          "name": "container-apps-delegation",
+                          "properties": {
+                            "serviceName": "Microsoft.App/environments"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "postgresql",
+                    "properties": {
+                      "addressPrefix": "[parameters('databaseSubnetPrefix')]",
+                      "delegations": [
+                        {
+                          "name": "postgresql-delegation",
+                          "properties": {
+                            "serviceName": "Microsoft.DBforPostgreSQL/flexibleServers"
+                          }
+                        }
+                      ],
+                      "privateEndpointNetworkPolicies": "Disabled"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/privateDnsZones",
+              "apiVersion": "2024-06-01",
+              "name": "[variables('privateDnsZoneName')]",
+              "location": "global",
+              "tags": "[parameters('tags')]"
+            },
+            {
+              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+              "apiVersion": "2024-06-01",
+              "name": "[format('{0}/{1}', variables('privateDnsZoneName'), format('{0}-postgres-link', parameters('resourceNamePrefix')))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "registrationEnabled": false,
+                "virtualNetwork": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks', variables('networkName'))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('networkName'))]",
+                "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZoneName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+              "apiVersion": "2024-08-01",
+              "name": "[parameters('postgresServerName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "[parameters('postgresSkuName')]",
+                "tier": "[parameters('postgresTier')]"
+              },
+              "properties": {
+                "version": "17",
+                "administratorLogin": "[parameters('databaseAdministratorLogin')]",
+                "administratorLoginPassword": "[parameters('databaseAdministratorPassword')]",
+                "availabilityZone": "1",
+                "backup": {
+                  "backupRetentionDays": "[parameters('backupRetentionDays')]",
+                  "geoRedundantBackup": "[if(parameters('enableGeoRedundantBackup'), 'Enabled', 'Disabled')]"
+                },
+                "highAvailability": {
+                  "mode": "[if(parameters('enableHighAvailability'), 'ZoneRedundant', 'Disabled')]"
+                },
+                "network": {
+                  "delegatedSubnetResourceId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('networkName'), 'postgresql')]",
+                  "privateDnsZoneArmResourceId": "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZoneName'))]",
+                  "publicNetworkAccess": "Disabled"
+                },
+                "storage": {
+                  "autoGrow": "Enabled",
+                  "storageSizeGB": "[parameters('postgresStorageGiB')]",
+                  "tier": "P4"
+                },
+                "authConfig": {
+                  "activeDirectoryAuth": "Disabled",
+                  "passwordAuth": "Enabled"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('networkName'))]",
+                "[resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', variables('privateDnsZoneName'), format('{0}-postgres-link', parameters('resourceNamePrefix')))]",
+                "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZoneName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers/databases",
+              "apiVersion": "2024-08-01",
+              "name": "[format('{0}/{1}', parameters('postgresServerName'), parameters('databaseName'))]",
+              "properties": {
+                "charset": "UTF8",
+                "collation": "en_US.utf8"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('postgresServerName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.App/managedEnvironments",
+              "apiVersion": "2024-03-01",
+              "name": "[parameters('containerAppsEnvironmentName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "appLogsConfiguration": {
+                  "destination": "log-analytics",
+                  "logAnalyticsConfiguration": {
+                    "customerId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName')), '2023-09-01').customerId]",
+                    "sharedKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName')), '2023-09-01').primarySharedKey]"
+                  }
+                },
+                "vnetConfiguration": {
+                  "infrastructureSubnetId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('networkName'), 'container-apps-infrastructure')]",
+                  "internal": false
+                },
+                "zoneRedundant": false,
+                "workloadProfiles": [
+                  {
+                    "name": "Consumption",
+                    "workloadProfileType": "Consumption"
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('networkName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), 'acr-pull')]",
+              "properties": {
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]",
+                "[resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), 'key-vault-secrets-user')]",
+              "properties": {
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]",
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), parameters('deploymentPrincipalObjectId'), 'key-vault-secrets-officer')]",
+              "properties": {
+                "principalId": "[parameters('deploymentPrincipalObjectId')]",
+                "principalType": "[parameters('deploymentPrincipalType')]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            },
+            {
+              "condition": "[and(greater(parameters('monthlyBudgetUsd'), 0), greater(length(parameters('alertEmails')), 0))]",
+              "type": "Microsoft.Consumption/budgets",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-monthly-budget', parameters('resourceNamePrefix'))]",
+              "properties": {
+                "amount": "[parameters('monthlyBudgetUsd')]",
+                "category": "Cost",
+                "timeGrain": "Monthly",
+                "timePeriod": {
+                  "startDate": "[parameters('budgetStartDate')]",
+                  "endDate": "2036-12-31"
+                },
+                "notifications": {
+                  "actual50": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 50,
+                    "thresholdType": "Actual",
+                    "contactEmails": "[parameters('alertEmails')]"
+                  },
+                  "actual80": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 80,
+                    "thresholdType": "Actual",
+                    "contactEmails": "[parameters('alertEmails')]"
+                  },
+                  "forecast100": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 100,
+                    "thresholdType": "Forecasted",
+                    "contactEmails": "[parameters('alertEmails')]"
+                  }
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "containerRegistryName": {
+              "type": "string",
+              "value": "[parameters('containerRegistryName')]"
+            },
+            "containerRegistryLoginServer": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-11-01-preview').loginServer]"
+            },
+            "containerAppsEnvironmentName": {
+              "type": "string",
+              "value": "[parameters('containerAppsEnvironmentName')]"
+            },
+            "managedIdentityResourceId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
+            },
+            "keyVaultName": {
+              "type": "string",
+              "value": "[parameters('keyVaultName')]"
+            },
+            "postgresHost": {
+              "type": "string",
+              "value": "[variables('postgresHost')]"
+            },
+            "databaseConnectionSecretUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), parameters('databaseConnectionStringSecretName')), '2023-07-01').secretUri]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[parameters('resourceGroupName')]"
+    },
+    "containerRegistryName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('{0}-platform', parameters('resourceNamePrefix'))), '2025-04-01').outputs.containerRegistryName.value]"
+    },
+    "containerRegistryLoginServer": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('{0}-platform', parameters('resourceNamePrefix'))), '2025-04-01').outputs.containerRegistryLoginServer.value]"
+    },
+    "containerAppsEnvironmentName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('{0}-platform', parameters('resourceNamePrefix'))), '2025-04-01').outputs.containerAppsEnvironmentName.value]"
+    },
+    "managedIdentityResourceId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('{0}-platform', parameters('resourceNamePrefix'))), '2025-04-01').outputs.managedIdentityResourceId.value]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('{0}-platform', parameters('resourceNamePrefix'))), '2025-04-01').outputs.keyVaultName.value]"
+    },
+    "postgresHost": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('{0}-platform', parameters('resourceNamePrefix'))), '2025-04-01').outputs.postgresHost.value]"
+    }
+  }
+}
