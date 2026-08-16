@@ -1,0 +1,2 @@
+# This recovered historical migration must retain its ledgered byte-for-byte checksum.
+avenchart/database/migrations/V0235__operations_security_and_demo_telemetry.sql text eol=lf
