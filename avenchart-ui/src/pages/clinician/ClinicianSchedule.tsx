@@ -3,11 +3,13 @@
 
 import { useEffect, useState } from 'react'
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarPlus, ChevronLeft, ChevronRight, Pencil } from 'lucide-react'
 import { searchAppointments, updateAppointmentStatus, type AppointmentListItem } from '../../api.ts'
 import { getAppointmentStatus, getAppointmentStatusOptions } from '../../domain/appointmentStatus.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 import { showToast } from '../../components/Toast.tsx'
+import { NewAppointmentDialog } from '../../components/NewAppointmentDialog.tsx'
+import { EditAppointmentDialog } from '../../components/EditAppointmentDialog.tsx'
 
 type AsyncState<T> =
   | { status: 'loading' }
@@ -42,6 +44,8 @@ export default function ClinicianSchedule() {
   })
   const [apptState, setApptState] = useState<AsyncState<AppointmentListItem[]>>({ status: 'loading' })
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [newAppointmentOpen, setNewAppointmentOpen] = useState(false)
+  const [editingAppointment, setEditingAppointment] = useState<AppointmentListItem | null>(null)
 
   useEffect(() => {
     load()
@@ -85,6 +89,30 @@ export default function ClinicianSchedule() {
 
   return (
     <div className="clinician-page">
+      {newAppointmentOpen && (
+        <NewAppointmentDialog
+          sessionId={session.sessionId}
+          initialDate={selectedDate}
+          onClose={() => setNewAppointmentOpen(false)}
+          onCreated={() => {
+            setNewAppointmentOpen(false)
+            load()
+          }}
+        />
+      )}
+
+      {editingAppointment && (
+        <EditAppointmentDialog
+          sessionId={session.sessionId}
+          appointment={editingAppointment}
+          onClose={() => setEditingAppointment(null)}
+          onSaved={() => {
+            setEditingAppointment(null)
+            load()
+          }}
+        />
+      )}
+
       <div className="clinician-page-header">
         <div>
           <h1 className="clinician-page-title">Schedule</h1>
@@ -97,6 +125,9 @@ export default function ClinicianSchedule() {
           </p>
         </div>
         <div className="clinician-header-actions">
+          <button className="cl-btn-primary" type="button" onClick={() => setNewAppointmentOpen(true)}>
+            <CalendarPlus size={14} /> New appointment
+          </button>
           <input
             type="date"
             className="cl-date-input"
@@ -152,6 +183,7 @@ export default function ClinicianSchedule() {
                 <th>Provider</th>
                 <th>Room</th>
                 <th>Status</th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -183,6 +215,17 @@ export default function ClinicianSchedule() {
                         <option key={status.apiValue} value={status.apiValue}>{status.label}</option>
                       ))}
                     </select>
+                  </td>
+                  <td>
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      disabled={updatingId === appt.id}
+                      onClick={() => setEditingAppointment(appt)}
+                      aria-label={`Edit appointment for ${appt.patientDisplayName} at ${formatTime(appt.startTime)}`}
+                    >
+                      <Pencil size={13} aria-hidden="true" /> Edit
+                    </button>
                   </td>
                 </tr>
               ))}

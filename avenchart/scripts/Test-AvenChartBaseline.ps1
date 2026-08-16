@@ -2818,6 +2818,49 @@ catch {
 }
 
 try {
+    $boundedAppointmentDate = "2026-08-10"
+    $boundedAppointmentMonthStart = "2026-08-01"
+    $boundedAppointmentMonthEnd = "2026-08-31"
+    $boundedAppointments = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/appointments?fromDate=$boundedAppointmentDate&toDate=$boundedAppointmentDate&limit=500" `
+        -Method Get `
+        -Headers (Get-AdministrationHeaders) `
+        -TimeoutSec 20
+    $boundedMonthAppointments = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/appointments?fromDate=$boundedAppointmentMonthStart&toDate=$boundedAppointmentMonthEnd&limit=500" `
+        -Method Get `
+        -Headers (Get-AdministrationHeaders) `
+        -TimeoutSec 20
+    $outOfRangeAppointments = @($boundedAppointments.appointments | Where-Object { $_.date -ne $boundedAppointmentDate })
+    $outOfMonthAppointments = @($boundedMonthAppointments.appointments | Where-Object {
+        $_.date -lt $boundedAppointmentMonthStart -or $_.date -gt $boundedAppointmentMonthEnd
+    })
+    $boundedAppointmentSearchPassed = $boundedAppointments.fromDate -eq $boundedAppointmentDate `
+        -and $boundedAppointments.toDate -eq $boundedAppointmentDate `
+        -and $boundedAppointments.totalMatches -gt 0 `
+        -and $outOfRangeAppointments.Count -eq 0 `
+        -and $boundedMonthAppointments.fromDate -eq $boundedAppointmentMonthStart `
+        -and $boundedMonthAppointments.toDate -eq $boundedAppointmentMonthEnd `
+        -and $boundedMonthAppointments.totalMatches -ge $boundedAppointments.totalMatches `
+        -and $outOfMonthAppointments.Count -eq 0
+    Add-Check -Name "bounded appointment date search" -Result $(if ($boundedAppointmentSearchPassed) { "passed" } else { "failed" }) -Details @{
+        dayFromDate = $boundedAppointments.fromDate
+        dayToDate = $boundedAppointments.toDate
+        dayTotalMatches = $boundedAppointments.totalMatches
+        dayReturned = @($boundedAppointments.appointments).Count
+        dayOutOfRange = $outOfRangeAppointments.Count
+        monthFromDate = $boundedMonthAppointments.fromDate
+        monthToDate = $boundedMonthAppointments.toDate
+        monthTotalMatches = $boundedMonthAppointments.totalMatches
+        monthReturned = @($boundedMonthAppointments.appointments).Count
+        monthOutOfRange = $outOfMonthAppointments.Count
+    }
+}
+catch {
+    Add-Check -Name "bounded appointment date search" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     if ($null -eq $anchorAppointment) {
         throw "Anchor appointment search did not return an appointment."
     }

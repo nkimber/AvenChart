@@ -8,6 +8,7 @@ public sealed record AppointmentSearchResponse(
     string DatasetVersion,
     string? PatientId,
     string? FromDate,
+    string? ToDate,
     int Limit,
     int TotalMatches,
     IReadOnlyList<AppointmentListItem> Appointments);

@@ -2409,6 +2409,8 @@ export type AppointmentListItem = {
 
 export type AppointmentSearchResponse = {
   totalMatches: number
+  fromDate?: string | null
+  toDate?: string | null
   appointments: AppointmentListItem[]
 }
 

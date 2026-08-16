@@ -2030,10 +2030,17 @@ appointments.MapGet("/", async (
         AppointmentRepository repository,
         string? patientId,
         string? from,
+        string? fromDate,
+        string? toDate,
         int? limit,
         CancellationToken cancellationToken) =>
     {
-        var response = await repository.SearchAsync(patientId, from, limit ?? 25, cancellationToken);
+        var response = await repository.SearchAsync(
+            patientId,
+            fromDate ?? from,
+            toDate,
+            limit ?? 25,
+            cancellationToken);
         return Results.Ok(response);
     })
     .WithName("SearchAppointments");

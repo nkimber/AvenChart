@@ -3116,6 +3116,88 @@ a {
   animation: modal-in 0.18s ease-out;
 }
 
+.appointment-create-dialog {
+  max-width: 600px;
+}
+
+.appointment-patient-selection {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.appointment-patient-selection strong,
+.appointment-patient-selection p {
+  margin: 0;
+}
+
+.appointment-patient-selection p {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.appointment-patient-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.appointment-patient-results {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.appointment-patient-results > p {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.appointment-patient-results ul {
+  max-height: 190px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.appointment-patient-results li + li {
+  border-top: 1px solid var(--border);
+}
+
+.appointment-patient-results button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.appointment-patient-results button:hover,
+.appointment-patient-results button:focus-visible {
+  background: var(--bg);
+}
+
+.appointment-patient-results button span {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 @keyframes modal-in {
   from {
     opacity: 0;
@@ -6043,9 +6125,17 @@ a {
 }
 
 .cal-panel-foot {
+  display: grid;
+  gap: 8px;
   padding: 12px 14px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.cal-panel-foot .cl-btn-primary,
+.cal-panel-foot .cl-btn-secondary {
+  width: 100%;
+  justify-content: center;
 }
 
 /* ─── Responsive ─────────────────────────────────────────────────────────────── */
