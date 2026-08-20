@@ -20,6 +20,10 @@ if ($ExpectedMigrationCount -lt 2) {
 }
 $repositoryFiles = Get-ChildItem (Join-Path $SolutionRoot "backend\src\AvenChart.Api\Data") -Filter '*Repository.cs' -File
 $repositorySource = ($repositoryFiles | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
+$persistenceRoot = Join-Path $SolutionRoot "backend\src\AvenChart.Api\Persistence"
+$entityFiles = Get-ChildItem (Join-Path $persistenceRoot "Entities") -Filter '*.cs' -File
+$configurationFiles = Get-ChildItem (Join-Path $persistenceRoot "Configurations") -Filter '*Configuration.cs' -File
+$dbContextSource = Get-Content (Join-Path $persistenceRoot "AvenChartDbContext.cs") -Raw
 if ([regex]::IsMatch($repositorySource, '(?i)\b(create\s+table|alter\s+table|create\s+(unique\s+)?index)\b')) {
     throw "Repository-time schema DDL was detected. Add schema changes to a versioned migration instead."
 }
@@ -28,6 +32,34 @@ if ([regex]::IsMatch($repositorySource, '(?is)max\s*\([^)]*\)[^;\r\n]{0,120}\+\s
 }
 if ([regex]::IsMatch($repositorySource, "(?i)avenchart_next_integer\s*\(\s*'")) {
     throw "A global literal-key integer allocator was detected. Use a database-owned sequence; reserve avenchart_next_integer for aggregate-scoped counters."
+}
+$configurationWithoutExclusion = @($configurationFiles | Where-Object {
+    (Get-Content -LiteralPath $_.FullName -Raw) -notmatch 'ExcludeFromMigrations\s*\('
+})
+if ($configurationWithoutExclusion.Count -gt 0) {
+    throw "EF mapping(s) missing ExcludeFromMigrations: $($configurationWithoutExclusion.Name -join ', ')."
+}
+$entityNames = @($entityFiles | ForEach-Object {
+    $match = [regex]::Match((Get-Content -LiteralPath $_.FullName -Raw), 'public\s+sealed\s+class\s+(?<name>\w+)')
+    if ($match.Success) { $match.Groups['name'].Value }
+} | Sort-Object -Unique)
+$configuredEntityNames = @($configurationFiles | ForEach-Object {
+    $match = [regex]::Match((Get-Content -LiteralPath $_.FullName -Raw), 'IEntityTypeConfiguration<(?<name>\w+)>')
+    if ($match.Success) { $match.Groups['name'].Value }
+} | Sort-Object -Unique)
+$dbSetEntityNames = @([regex]::Matches($dbContextSource, 'DbSet<(?<name>\w+)>') | ForEach-Object {
+    $_.Groups['name'].Value
+} | Sort-Object -Unique)
+$unconfiguredEntities = @($entityNames | Where-Object { $_ -notin $configuredEntityNames })
+$entitiesWithoutDbSets = @($entityNames | Where-Object { $_ -notin $dbSetEntityNames })
+if ($unconfiguredEntities.Count -gt 0 -or $entitiesWithoutDbSets.Count -gt 0) {
+    throw "EF persistence coverage is incomplete. Missing configuration: $($unconfiguredEntities -join ', '); missing DbSet: $($entitiesWithoutDbSets -join ', ')."
+}
+$apiSource = (Get-ChildItem (Join-Path $SolutionRoot "backend\src\AvenChart.Api") -Filter '*.cs' -File -Recurse | ForEach-Object {
+    Get-Content -LiteralPath $_.FullName -Raw
+}) -join "`n"
+if ([regex]::IsMatch($apiSource, '(?i)Database\.(Migrate|EnsureCreated)\s*\(')) {
+    throw "Runtime EF schema creation was detected. Use the versioned SQL migration catalog."
 }
 foreach ($checkpoint in $FaultCheckpoints) {
     if ($checkpoint -lt 1 -or $checkpoint -ge $ExpectedMigrationCount) {
