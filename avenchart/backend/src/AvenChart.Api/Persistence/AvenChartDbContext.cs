@@ -21,6 +21,8 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
 
     public DbSet<AccessUserMembershipEntity> AccessUserMemberships => Set<AccessUserMembershipEntity>();
 
+    public DbSet<AllergyEntity> Allergies => Set<AllergyEntity>();
+
     public DbSet<AddressBookContactEntity> AddressBookContacts => Set<AddressBookContactEntity>();
 
     public DbSet<AuthAccountEntity> AuthAccounts => Set<AuthAccountEntity>();
@@ -45,6 +47,12 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
 
     public DbSet<FacilityEntity> Facilities => Set<FacilityEntity>();
 
+    public DbSet<ImmunizationEntity> Immunizations => Set<ImmunizationEntity>();
+
+    public DbSet<MedicationEntity> Medications => Set<MedicationEntity>();
+
+    public DbSet<MedicationLifecycleEventEntity> MedicationLifecycleEvents => Set<MedicationLifecycleEventEntity>();
+
     public DbSet<OfficeNoteEntity> OfficeNotes => Set<OfficeNoteEntity>();
 
     public DbSet<PatientEntity> Patients => Set<PatientEntity>();
@@ -54,6 +62,8 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
     public DbSet<PatientRecordRequestEntity> PatientRecordRequests => Set<PatientRecordRequestEntity>();
 
     public DbSet<PatientSdohAssessmentEntity> PatientSdohAssessments => Set<PatientSdohAssessmentEntity>();
+
+    public DbSet<ProblemEntity> Problems => Set<ProblemEntity>();
 
     public DbSet<RecallActivityEntity> RecallActivities => Set<RecallActivityEntity>();
 

@@ -684,6 +684,115 @@ try {
     }
     $CompletedScenarios.Add("ef-core-encounter-state-and-vitals")
 
+    $allergyCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/clinical-lists/allergies" `
+        -Headers $authenticatedHeaders `
+        -Body '{"patientId":"MOD-PAT-0001","title":"EF test allergen","dateTime":"2026-08-20","comments":"EF allergy state","reaction":"rash","severity":"mild","listOptionId":null}'
+    $problemCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/clinical-lists/problems" `
+        -Headers $authenticatedHeaders `
+        -Body '{"patientId":"MOD-PAT-0001","title":"EF test problem","dateTime":"2026-08-20","diagnosis":"Z00.00","comments":"EF problem state"}'
+    $medicationCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/clinical-lists/medications" `
+        -Headers $authenticatedHeaders `
+        -Body '{"patientId":"MOD-PAT-0001","title":"EF test medication","dateTime":"2026-08-20","diagnosis":"Z79.899","comments":"EF medication state"}'
+    $immunizationCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/clinical-lists/immunizations" `
+        -Headers $authenticatedHeaders `
+        -Body '{"patientId":"MOD-PAT-0001","encounter":null,"immunizationId":null,"cvxCode":"207","vaccine":"EF test vaccine","administeredAt":"2026-08-20T12:00:00","manufacturer":"Example","lotNumber":"EF-LOT","administeredById":null,"administeredBy":"Entity Framework","educationDate":"2026-08-20","visDate":"2026-08-20","amountAdministered":0.5,"amountAdministeredUnit":"mL","expirationDate":"2027-08-20","route":"IM","administrationSite":"left deltoid","completionStatus":"complete","informationSource":"administered","note":"EF immunization state"}'
+    if ([int]$allergyCreateResponse.StatusCode -ne 201 -or
+        [int]$problemCreateResponse.StatusCode -ne 201 -or
+        [int]$medicationCreateResponse.StatusCode -ne 201 -or
+        [int]$immunizationCreateResponse.StatusCode -ne 201) {
+        throw "EF-backed clinical-list creation failed. Allergy HTTP $($allergyCreateResponse.StatusCode): $(Get-HttpResponseContent -Response $allergyCreateResponse) Problem HTTP $($problemCreateResponse.StatusCode): $(Get-HttpResponseContent -Response $problemCreateResponse) Medication HTTP $($medicationCreateResponse.StatusCode): $(Get-HttpResponseContent -Response $medicationCreateResponse) Immunization HTTP $($immunizationCreateResponse.StatusCode): $(Get-HttpResponseContent -Response $immunizationCreateResponse)"
+    }
+    $allergy = (Get-HttpResponseContent -Response $allergyCreateResponse) | ConvertFrom-Json
+    $problem = (Get-HttpResponseContent -Response $problemCreateResponse) | ConvertFrom-Json
+    $medication = (Get-HttpResponseContent -Response $medicationCreateResponse) | ConvertFrom-Json
+    $immunization = (Get-HttpResponseContent -Response $immunizationCreateResponse) | ConvertFrom-Json
+    $medicationUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/clinical-lists/medications/$($medication.id)" `
+        -Headers $authenticatedHeaders `
+        -Body '{"title":"EF test medication updated","diagnosis":"Z79.899","date":"2026-08-21","comments":"Updated EF medication state","reason":"Verify EF content mutation","expectedVersion":1}'
+    $staleMedicationResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/clinical-lists/medications/$($medication.id)/deactivate" `
+        -Headers $authenticatedHeaders `
+        -Body '{"comments":"Stale EF transition","expectedVersion":1}'
+    $medicationDeactivateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/clinical-lists/medications/$($medication.id)/deactivate" `
+        -Headers $authenticatedHeaders `
+        -Body '{"comments":"Valid EF transition","expectedVersion":2}'
+    $medicationRestoreResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/clinical-lists/medications/$($medication.id)/restore" `
+        -Headers $authenticatedHeaders `
+        -Body '{"reason":"Verify EF restore","expectedVersion":3}'
+    $medicationHistoryResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/clinical-lists/medications/$($medication.id)/lifecycle-history" `
+        -Headers $authenticatedHeaders
+    $allergyDeactivateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/clinical-lists/allergies/$($allergy.id)/deactivate" `
+        -Headers $authenticatedHeaders `
+        -Body '{"comments":"EF allergy transition"}'
+    $problemDeactivateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/clinical-lists/problems/$($problem.id)/deactivate" `
+        -Headers $authenticatedHeaders `
+        -Body '{"comments":"EF problem transition"}'
+    $immunizationErrorResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/clinical-lists/immunizations/$($immunization.id)/entered-in-error" `
+        -Headers $authenticatedHeaders `
+        -Body '{"note":"EF entered-in-error transition"}'
+    if ([int]$medicationUpdateResponse.StatusCode -ne 200 -or
+        [int]$staleMedicationResponse.StatusCode -ne 409 -or
+        [int]$medicationDeactivateResponse.StatusCode -ne 200 -or
+        [int]$medicationRestoreResponse.StatusCode -ne 200 -or
+        [int]$medicationHistoryResponse.StatusCode -ne 200 -or
+        [int]$allergyDeactivateResponse.StatusCode -ne 200 -or
+        [int]$problemDeactivateResponse.StatusCode -ne 200 -or
+        [int]$immunizationErrorResponse.StatusCode -ne 200) {
+        throw "EF-backed clinical-list lifecycle mutation or optimistic concurrency behavior failed."
+    }
+    $medicationHistory = (Get-HttpResponseContent -Response $medicationHistoryResponse) | ConvertFrom-Json
+    $immunizationDefault = Invoke-DatabaseScalar -Sql "select column_default from information_schema.columns where table_name = 'immunizations' and column_name = 'id';"
+    if ($medicationHistory.currentVersion -ne 4 -or
+        $medicationHistory.eventCount -ne 4 -or
+        $medicationHistory.events.action -notcontains "edited" -or
+        $medicationHistory.events.action -notcontains "deactivated" -or
+        $medicationHistory.events.action -notcontains "restored" -or
+        $immunization.id -le 8500000 -or
+        $immunizationDefault -notlike "nextval*immunizations_id_seq*") {
+        throw "EF-backed clinical-list state, lifecycle history, or sequence default returned unexpected data."
+    }
+    $allergyDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/clinical-lists/allergies/$($allergy.id)" `
+        -Headers $authenticatedHeaders
+    $problemDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/clinical-lists/problems/$($problem.id)" `
+        -Headers $authenticatedHeaders
+    $immunizationDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/clinical-lists/immunizations/$($immunization.id)" `
+        -Headers $authenticatedHeaders
+    if ([int]$allergyDeleteResponse.StatusCode -ne 204 -or
+        [int]$problemDeleteResponse.StatusCode -ne 204 -or
+        [int]$immunizationDeleteResponse.StatusCode -ne 204) {
+        throw "EF-backed clinical-list cleanup failed."
+    }
+    $CompletedScenarios.Add("ef-core-clinical-list-state")
+
     $recordRequestCreateResponse = Invoke-Http `
         -Method "POST" `
         -Path "/api/patients/MOD-PAT-0010/record-requests" `

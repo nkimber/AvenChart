@@ -12,5 +12,6 @@ public sealed class PatientEntity
     public required string LastName { get; set; }
     public string? PreferredName { get; set; }
     public DateOnly DateOfBirth { get; set; }
+    public int? ProviderId { get; set; }
     public string? MergedIntoPatientId { get; set; }
 }

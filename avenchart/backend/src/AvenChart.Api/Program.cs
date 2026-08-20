@@ -126,6 +126,7 @@ builder.Services.AddScoped<EncounterStateRepository>();
 builder.Services.AddScoped<EncounterLayoutFormRepository>();
 builder.Services.AddScoped<ClinicalAlertEvaluationRepository>();
 builder.Services.AddScoped<ClinicalListRepository>();
+builder.Services.AddScoped<ClinicalListStateRepository>();
 builder.Services.AddScoped<MessageRepository>();
 builder.Services.AddScoped<OfficeNoteRepository>();
 builder.Services.AddScoped<AddressBookRepository>();
@@ -3108,7 +3109,7 @@ clinicalLists.MapGet("/{patientId}", async (
     .WithName("GetClinicalListsForPatient");
 
 clinicalLists.MapPost("/allergies", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         ClinicalAllergyCreateRequest request,
         CancellationToken cancellationToken) =>
     {
@@ -3120,7 +3121,7 @@ clinicalLists.MapPost("/allergies", async (
     .WithName("CreateClinicalAllergy");
 
 clinicalLists.MapPost("/problems", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         ClinicalProblemCreateRequest request,
         CancellationToken cancellationToken) =>
     {
@@ -3132,7 +3133,7 @@ clinicalLists.MapPost("/problems", async (
     .WithName("CreateClinicalProblem");
 
 clinicalLists.MapPut("/problems/{problemId}/deactivate", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         string problemId,
         ClinicalListDeactivateRequest request,
         CancellationToken cancellationToken) =>
@@ -3143,7 +3144,7 @@ clinicalLists.MapPut("/problems/{problemId}/deactivate", async (
     .WithName("DeactivateClinicalProblem");
 
 clinicalLists.MapDelete("/problems/{problemId}", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         string problemId,
         CancellationToken cancellationToken) =>
     {
@@ -3153,7 +3154,7 @@ clinicalLists.MapDelete("/problems/{problemId}", async (
     .WithName("DeleteClinicalProblem");
 
 clinicalLists.MapPost("/medications", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         AuthRepository authRepository,
         HttpContext httpContext,
         ClinicalMedicationCreateRequest request,
@@ -3168,7 +3169,7 @@ clinicalLists.MapPost("/medications", async (
     .WithName("CreateClinicalMedication");
 
 clinicalLists.MapPut("/medications/{medicationId}/deactivate", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         AuthRepository authRepository,
         HttpContext httpContext,
         string medicationId,
@@ -3188,7 +3189,7 @@ clinicalLists.MapPut("/medications/{medicationId}/deactivate", async (
     .WithName("DeactivateClinicalMedication");
 
 clinicalLists.MapPut("/medications/{medicationId}/restore", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         AuthRepository authRepository,
         HttpContext httpContext,
         string medicationId,
@@ -3208,7 +3209,7 @@ clinicalLists.MapPut("/medications/{medicationId}/restore", async (
     .WithName("RestoreClinicalMedication");
 
 clinicalLists.MapPut("/medications/{medicationId}", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         AuthRepository authRepository,
         HttpContext httpContext,
         string medicationId,
@@ -3228,7 +3229,7 @@ clinicalLists.MapPut("/medications/{medicationId}", async (
     .WithName("UpdateClinicalMedication");
 
 clinicalLists.MapGet("/medications/{medicationId}/lifecycle-history", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         string medicationId,
         CancellationToken cancellationToken) =>
     {
@@ -3238,7 +3239,7 @@ clinicalLists.MapGet("/medications/{medicationId}/lifecycle-history", async (
     .WithName("GetClinicalMedicationLifecycleHistory");
 
 clinicalLists.MapPut("/allergies/{allergyId}/deactivate", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         string allergyId,
         ClinicalListDeactivateRequest request,
         CancellationToken cancellationToken) =>
@@ -3249,7 +3250,7 @@ clinicalLists.MapPut("/allergies/{allergyId}/deactivate", async (
     .WithName("DeactivateClinicalAllergy");
 
 clinicalLists.MapDelete("/allergies/{allergyId}", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         string allergyId,
         CancellationToken cancellationToken) =>
     {
@@ -3411,7 +3412,7 @@ clinicalLists.MapDelete("/prescriptions/{prescriptionId}", async (
     .WithName("DeleteClinicalPrescription");
 
 clinicalLists.MapPost("/immunizations", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         ClinicalImmunizationCreateRequest request,
         CancellationToken cancellationToken) =>
     {
@@ -3423,7 +3424,7 @@ clinicalLists.MapPost("/immunizations", async (
     .WithName("CreateClinicalImmunization");
 
 clinicalLists.MapPut("/immunizations/{immunizationId:int}/entered-in-error", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         int immunizationId,
         ClinicalImmunizationErrorRequest request,
         CancellationToken cancellationToken) =>
@@ -3434,7 +3435,7 @@ clinicalLists.MapPut("/immunizations/{immunizationId:int}/entered-in-error", asy
     .WithName("MarkClinicalImmunizationEnteredInError");
 
 clinicalLists.MapDelete("/immunizations/{immunizationId:int}", async (
-        ClinicalListRepository repository,
+        ClinicalListStateRepository repository,
         int immunizationId,
         CancellationToken cancellationToken) =>
     {
