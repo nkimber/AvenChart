@@ -13,6 +13,14 @@ namespace AvenChart.Api.Persistence;
 public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> options)
     : DbContext(options)
 {
+    public DbSet<AccessGroupEntity> AccessGroups => Set<AccessGroupEntity>();
+
+    public DbSet<AccessGroupPermissionEntity> AccessGroupPermissions => Set<AccessGroupPermissionEntity>();
+
+    public DbSet<AccessPermissionEntity> AccessPermissions => Set<AccessPermissionEntity>();
+
+    public DbSet<AccessUserMembershipEntity> AccessUserMemberships => Set<AccessUserMembershipEntity>();
+
     public DbSet<AddressBookContactEntity> AddressBookContacts => Set<AddressBookContactEntity>();
 
     public DbSet<AuthAccountEntity> AuthAccounts => Set<AuthAccountEntity>();
@@ -32,6 +40,8 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
     public DbSet<EncounterEntity> Encounters => Set<EncounterEntity>();
 
     public DbSet<EncounterSignatureEntity> EncounterSignatures => Set<EncounterSignatureEntity>();
+
+    public DbSet<FacilityEntity> Facilities => Set<FacilityEntity>();
 
     public DbSet<OfficeNoteEntity> OfficeNotes => Set<OfficeNoteEntity>();
 

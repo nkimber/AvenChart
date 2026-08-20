@@ -139,6 +139,7 @@ builder.Services.AddScoped<ManagedRecordRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
 builder.Services.AddScoped<AdministrationRepository>();
+builder.Services.AddScoped<AdministrationDirectoryRepository>();
 builder.Services.AddScoped<ReportRepository>();
 builder.Services.AddScoped<ReportDefinitionRepository>();
 builder.Services.AddScoped<ReportExecutionRepository>();
@@ -7348,7 +7349,7 @@ administration.MapPut("/portal-activity/profile-reviews/{requestId:long}/revert"
     .WithName("RevertAdministrationPortalProfileReview");
 
 administration.MapPost("/users", async (
-        AdministrationRepository repository,
+        AdministrationDirectoryRepository repository,
         AdministrationUserMutationRequest request,
         CancellationToken cancellationToken) =>
     {
@@ -7365,7 +7366,7 @@ administration.MapPost("/users", async (
     .WithName("CreateAdministrationUser");
 
 administration.MapPut("/users/{userId:int}", async (
-        AdministrationRepository repository,
+        AdministrationDirectoryRepository repository,
         int userId,
         AdministrationUserMutationRequest request,
         CancellationToken cancellationToken) =>
@@ -7383,7 +7384,7 @@ administration.MapPut("/users/{userId:int}", async (
     .WithName("UpdateAdministrationUser");
 
 administration.MapDelete("/users/{userId:int}", async (
-        AdministrationRepository repository,
+        AdministrationDirectoryRepository repository,
         int userId,
         CancellationToken cancellationToken) =>
     {
@@ -7393,7 +7394,7 @@ administration.MapDelete("/users/{userId:int}", async (
     .WithName("DeleteAdministrationUser");
 
 administration.MapPost("/facilities", async (
-        AdministrationRepository repository,
+        AdministrationDirectoryRepository repository,
         AdministrationFacilityMutationRequest request,
         CancellationToken cancellationToken) =>
     {
@@ -7410,7 +7411,7 @@ administration.MapPost("/facilities", async (
     .WithName("CreateAdministrationFacility");
 
 administration.MapPut("/facilities/{facilityId:int}", async (
-        AdministrationRepository repository,
+        AdministrationDirectoryRepository repository,
         int facilityId,
         AdministrationFacilityMutationRequest request,
         CancellationToken cancellationToken) =>
@@ -7428,7 +7429,7 @@ administration.MapPut("/facilities/{facilityId:int}", async (
     .WithName("UpdateAdministrationFacility");
 
 administration.MapDelete("/facilities/{facilityId:int}", async (
-        AdministrationRepository repository,
+        AdministrationDirectoryRepository repository,
         int facilityId,
         CancellationToken cancellationToken) =>
     {
@@ -7438,7 +7439,7 @@ administration.MapDelete("/facilities/{facilityId:int}", async (
     .WithName("DeleteAdministrationFacility");
 
 administration.MapPut("/access-control/group-permissions", async (
-        AdministrationRepository repository,
+        AdministrationDirectoryRepository repository,
         AdministrationAccessPermissionMutationRequest request,
         CancellationToken cancellationToken) =>
     {
@@ -7455,7 +7456,7 @@ administration.MapPut("/access-control/group-permissions", async (
     .WithName("GrantAdministrationAccessGroupPermission");
 
 administration.MapDelete("/access-control/group-permissions/{groupValue}/{sectionValue}/{permissionValue}", async (
-        AdministrationRepository repository,
+        AdministrationDirectoryRepository repository,
         string groupValue,
         string sectionValue,
         string permissionValue,
@@ -7478,7 +7479,7 @@ administration.MapDelete("/access-control/group-permissions/{groupValue}/{sectio
     .WithName("RevokeAdministrationAccessGroupPermission");
 
 administration.MapPut("/access-control/user-memberships", async (
-        AdministrationRepository repository,
+        AdministrationDirectoryRepository repository,
         AdministrationAccessUserMembershipMutationRequest request,
         CancellationToken cancellationToken) =>
     {
@@ -7495,7 +7496,7 @@ administration.MapPut("/access-control/user-memberships", async (
     .WithName("GrantAdministrationAccessUserMembership");
 
 administration.MapDelete("/access-control/user-memberships/{userValue}/{groupValue}", async (
-        AdministrationRepository repository,
+        AdministrationDirectoryRepository repository,
         string userValue,
         string groupValue,
         CancellationToken cancellationToken) =>

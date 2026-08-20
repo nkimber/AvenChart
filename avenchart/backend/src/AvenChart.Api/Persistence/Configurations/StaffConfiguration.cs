@@ -13,9 +13,15 @@ public sealed class StaffConfiguration : IEntityTypeConfiguration<StaffEntity>
     {
         entity.ToTable("staff", table => table.ExcludeFromMigrations());
         entity.HasKey(staff => staff.Id);
-        entity.Property(staff => staff.Id).HasColumnName("id").ValueGeneratedNever();
+        entity.Property(staff => staff.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        entity.Property(staff => staff.Username).HasColumnName("username").IsRequired();
         entity.Property(staff => staff.FirstName).HasColumnName("first_name").IsRequired();
         entity.Property(staff => staff.LastName).HasColumnName("last_name").IsRequired();
+        entity.Property(staff => staff.Role).HasColumnName("role").IsRequired();
+        entity.Property(staff => staff.Calendar).HasColumnName("calendar");
+        entity.Property(staff => staff.FacilityId).HasColumnName("facility_id");
+        entity.Property(staff => staff.Email).HasColumnName("email");
+        entity.Property(staff => staff.Npi).HasColumnName("npi");
         entity.Property(staff => staff.Active).HasColumnName("active");
     }
 }

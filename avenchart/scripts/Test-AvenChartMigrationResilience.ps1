@@ -433,6 +433,107 @@ try {
     }
     $CompletedScenarios.Add("ef-core-address-book-crud")
 
+    $adminFacilityCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/administration/facilities" `
+        -Headers $authenticatedHeaders `
+        -Body '{"code":"EFADM","name":"EF Administration Facility","phone":"555-0199","street":"10 EF Lane","city":"Boston","state":"MA","postalCode":"02108","color":"#246b73","active":true}'
+    if ([int]$adminFacilityCreateResponse.StatusCode -ne 201) {
+        throw "EF-backed administration facility creation returned HTTP $($adminFacilityCreateResponse.StatusCode). Body: $(Get-HttpResponseContent -Response $adminFacilityCreateResponse)"
+    }
+    $adminFacility = (Get-HttpResponseContent -Response $adminFacilityCreateResponse) | ConvertFrom-Json
+    $adminUserBody = @{
+        username = "ef-admin-resilience"
+        firstName = "Entity"
+        lastName = "Framework"
+        role = "frontdesk"
+        calendar = $false
+        facilityId = $adminFacility.id
+        email = "ef-admin-resilience@example.test"
+        npi = ""
+        active = $true
+    } | ConvertTo-Json
+    $adminUserCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/administration/users" `
+        -Headers $authenticatedHeaders `
+        -Body $adminUserBody
+    if ([int]$adminUserCreateResponse.StatusCode -ne 201) {
+        throw "EF-backed administration user creation returned HTTP $($adminUserCreateResponse.StatusCode). Body: $(Get-HttpResponseContent -Response $adminUserCreateResponse)"
+    }
+    $adminUser = (Get-HttpResponseContent -Response $adminUserCreateResponse) | ConvertFrom-Json
+    $adminMembershipResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/administration/access-control/user-memberships" `
+        -Headers $authenticatedHeaders `
+        -Body '{"userValue":"ef-admin-resilience","groupValue":"front"}'
+    $adminPermissionResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/administration/access-control/group-permissions" `
+        -Headers $authenticatedHeaders `
+        -Body '{"groupValue":"front","sectionValue":"patients","permissionValue":"demo","returnValue":"write"}'
+    if ([int]$adminMembershipResponse.StatusCode -ne 200 -or
+        [int]$adminPermissionResponse.StatusCode -ne 200) {
+        throw "EF-backed administration access-control mutation failed."
+    }
+    $adminMembership = (Get-HttpResponseContent -Response $adminMembershipResponse) | ConvertFrom-Json
+    $adminPermission = (Get-HttpResponseContent -Response $adminPermissionResponse) | ConvertFrom-Json
+    $adminUserUpdateBody = @{
+        username = "ef-admin-resilience"
+        firstName = "Entity"
+        lastName = "Framework Updated"
+        role = "frontdesk"
+        calendar = $false
+        facilityId = $adminFacility.id
+        email = "ef-admin-resilience@example.test"
+        npi = ""
+        active = $false
+    } | ConvertTo-Json
+    $adminUserUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/administration/users/$($adminUser.id)" `
+        -Headers $authenticatedHeaders `
+        -Body $adminUserUpdateBody
+    $adminFacilityUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/administration/facilities/$($adminFacility.id)" `
+        -Headers $authenticatedHeaders `
+        -Body '{"code":"EFADM","name":"EF Administration Facility Updated","phone":"555-0199","street":"10 EF Lane","city":"Boston","state":"MA","postalCode":"02108","color":"#246b73","active":false}'
+    if ([int]$adminUserUpdateResponse.StatusCode -ne 200 -or
+        [int]$adminFacilityUpdateResponse.StatusCode -ne 200) {
+        throw "EF-backed administration user or facility update failed."
+    }
+    $adminUserUpdate = (Get-HttpResponseContent -Response $adminUserUpdateResponse) | ConvertFrom-Json
+    $adminFacilityUpdate = (Get-HttpResponseContent -Response $adminFacilityUpdateResponse) | ConvertFrom-Json
+    $staffDefault = Invoke-DatabaseScalar -Sql "select column_default from information_schema.columns where table_name = 'staff' and column_name = 'id';"
+    $facilityDefault = Invoke-DatabaseScalar -Sql "select column_default from information_schema.columns where table_name = 'facilities' and column_name = 'id';"
+    if ($adminMembership.detail.accessControl.userMemberships.userValue -notcontains "ef-admin-resilience" -or
+        $adminPermission.detail.accessControl.groupPermissions.returnValue -notcontains "write" -or
+        $adminUserUpdate.detail.users.lastName -notcontains "Framework Updated" -or
+        $adminFacilityUpdate.detail.facilities.name -notcontains "EF Administration Facility Updated" -or
+        $staffDefault -notlike "nextval*staff_id_seq*" -or
+        $facilityDefault -notlike "nextval*facilities_id_seq*") {
+        throw "EF-backed administration aggregate or sequence defaults returned unexpected state."
+    }
+    $adminMembershipDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/administration/access-control/user-memberships/ef-admin-resilience/front" `
+        -Headers $authenticatedHeaders
+    $adminUserDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/administration/users/$($adminUser.id)" `
+        -Headers $authenticatedHeaders
+    $adminFacilityDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/administration/facilities/$($adminFacility.id)" `
+        -Headers $authenticatedHeaders
+    if ([int]$adminMembershipDeleteResponse.StatusCode -ne 200 -or
+        [int]$adminUserDeleteResponse.StatusCode -ne 204 -or
+        [int]$adminFacilityDeleteResponse.StatusCode -ne 204) {
+        throw "EF-backed administration cleanup failed."
+    }
+    $CompletedScenarios.Add("ef-core-administration-directory-mutations")
+
     $educationResourcesResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/patient-education/resources" `
