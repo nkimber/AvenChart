@@ -49,6 +49,14 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
 
     public DbSet<ImmunizationEntity> Immunizations => Set<ImmunizationEntity>();
 
+    public DbSet<LabOrderCatalogEntity> LabOrderCatalog => Set<LabOrderCatalogEntity>();
+
+    public DbSet<LabOrderReferenceEntity> LabOrderReferences => Set<LabOrderReferenceEntity>();
+
+    public DbSet<LabProviderAddressBookEntity> LabProviderAddressBook => Set<LabProviderAddressBookEntity>();
+
+    public DbSet<LabProviderEntity> LabProviders => Set<LabProviderEntity>();
+
     public DbSet<MedicationEntity> Medications => Set<MedicationEntity>();
 
     public DbSet<MedicationLifecycleEventEntity> MedicationLifecycleEvents => Set<MedicationLifecycleEventEntity>();

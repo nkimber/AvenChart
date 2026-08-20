@@ -793,6 +793,140 @@ try {
     }
     $CompletedScenarios.Add("ef-core-clinical-list-state")
 
+    $procedureOrganizationResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/procedures/lab-provider-address-book" `
+        -Headers $authenticatedHeaders `
+        -Body '{"organization":"EF Procedure Laboratory","type":"ord_lab","active":true}'
+    if ([int]$procedureOrganizationResponse.StatusCode -ne 201) {
+        throw "EF-backed procedure address-book creation failed. HTTP $($procedureOrganizationResponse.StatusCode): $(Get-HttpResponseContent -Response $procedureOrganizationResponse)"
+    }
+    $procedureOrganization = (Get-HttpResponseContent -Response $procedureOrganizationResponse) | ConvertFrom-Json
+    $procedureProviderBody = @{
+        name = "EF Procedure Provider"
+        labDirectorId = $procedureOrganization.id
+        npi = "1234567890"
+        protocol = "dl"
+        usage = "t"
+        direction = "r"
+        sendApplicationId = "EF-SEND"
+        sendFacilityId = "EF-FAC"
+        receiveApplicationId = "EF-RECV"
+        receiveFacilityId = "EF-RECV-FAC"
+        remoteHost = "ef.example.test"
+        login = "ef-user"
+        password = "ef-password"
+        ordersPath = "/orders"
+        resultsPath = "/results"
+        notes = "EF provider state"
+        active = $true
+    } | ConvertTo-Json
+    $procedureProviderResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/procedures/lab-providers" `
+        -Headers $authenticatedHeaders `
+        -Body $procedureProviderBody
+    if ([int]$procedureProviderResponse.StatusCode -ne 201) {
+        throw "EF-backed procedure provider creation failed. HTTP $($procedureProviderResponse.StatusCode): $(Get-HttpResponseContent -Response $procedureProviderResponse)"
+    }
+    $procedureProvider = (Get-HttpResponseContent -Response $procedureProviderResponse) | ConvertFrom-Json
+    $procedureGroupResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/procedures/order-catalog" `
+        -Headers $authenticatedHeaders `
+        -Body '{"parentId":null,"labId":null,"name":"EF Procedure Group","code":null,"itemType":"grp","procedureTypeName":null,"description":"EF group state","specimen":null,"standardCode":null,"sequence":900,"active":true}'
+    if ([int]$procedureGroupResponse.StatusCode -ne 201) {
+        throw "EF-backed procedure catalog group creation failed. HTTP $($procedureGroupResponse.StatusCode): $(Get-HttpResponseContent -Response $procedureGroupResponse)"
+    }
+    $procedureGroup = (Get-HttpResponseContent -Response $procedureGroupResponse) | ConvertFrom-Json
+    $procedureOrderBody = @{
+        parentId = $procedureGroup.id
+        labId = $procedureProvider.id
+        name = "EF Procedure Order"
+        code = "EF-ORDER"
+        itemType = "ord"
+        procedureTypeName = "laboratory"
+        description = "EF order state"
+        specimen = "blood"
+        standardCode = "EF-LOINC"
+        sequence = 901
+        active = $true
+    } | ConvertTo-Json
+    $procedureOrderResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/procedures/order-catalog" `
+        -Headers $authenticatedHeaders `
+        -Body $procedureOrderBody
+    if ([int]$procedureOrderResponse.StatusCode -ne 201) {
+        throw "EF-backed procedure catalog order creation failed. HTTP $($procedureOrderResponse.StatusCode): $(Get-HttpResponseContent -Response $procedureOrderResponse)"
+    }
+    $procedureOrder = (Get-HttpResponseContent -Response $procedureOrderResponse) | ConvertFrom-Json
+    $procedureOrderUpdateBody = @{
+        parentId = $procedureGroup.id
+        labId = $procedureProvider.id
+        name = "EF Procedure Order Updated"
+        code = "EF-ORDER"
+        itemType = "ord"
+        procedureTypeName = "laboratory"
+        description = "Updated EF order state"
+        specimen = "serum"
+        standardCode = "EF-LOINC"
+        sequence = 902
+        active = $false
+    } | ConvertTo-Json
+    $procedureOrderUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/procedures/order-catalog/$($procedureOrder.id)" `
+        -Headers $authenticatedHeaders `
+        -Body $procedureOrderUpdateBody
+    $procedureProviderUpdateBody = $procedureProviderBody | ConvertFrom-Json
+    $procedureProviderUpdateBody.notes = "Updated EF provider state"
+    $procedureProviderUpdateBody.active = $false
+    $procedureProviderUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/procedures/lab-providers/$($procedureProvider.id)" `
+        -Headers $authenticatedHeaders `
+        -Body ($procedureProviderUpdateBody | ConvertTo-Json)
+    if ([int]$procedureOrderUpdateResponse.StatusCode -ne 200 -or
+        [int]$procedureProviderUpdateResponse.StatusCode -ne 200) {
+        throw "EF-backed procedure catalog or provider update failed."
+    }
+    $procedureOrderUpdate = (Get-HttpResponseContent -Response $procedureOrderUpdateResponse) | ConvertFrom-Json
+    $procedureProviderUpdate = (Get-HttpResponseContent -Response $procedureProviderUpdateResponse) | ConvertFrom-Json
+    $catalogDefault = Invoke-DatabaseScalar -Sql "select column_default from information_schema.columns where table_name = 'lab_order_catalog' and column_name = 'id';"
+    $providerDefault = Invoke-DatabaseScalar -Sql "select column_default from information_schema.columns where table_name = 'lab_providers' and column_name = 'id';"
+    $organizationDefault = Invoke-DatabaseScalar -Sql "select column_default from information_schema.columns where table_name = 'lab_provider_address_book' and column_name = 'id';"
+    if ($procedureOrderUpdate.catalog.items.name -notcontains "EF Procedure Order Updated" -or
+        $procedureProviderUpdate.directory.providers.notes -notcontains "Updated EF provider state" -or
+        $catalogDefault -notlike "nextval*lab_order_catalog_id_seq*" -or
+        $providerDefault -notlike "nextval*lab_providers_id_seq*" -or
+        $organizationDefault -notlike "nextval*lab_provider_address_book_id_seq*") {
+        throw "EF-backed procedure directory state or sequence defaults returned unexpected data."
+    }
+    $procedureOrderDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/procedures/order-catalog/$($procedureOrder.id)" `
+        -Headers $authenticatedHeaders
+    $procedureGroupDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/procedures/order-catalog/$($procedureGroup.id)" `
+        -Headers $authenticatedHeaders
+    $procedureProviderDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/procedures/lab-providers/$($procedureProvider.id)" `
+        -Headers $authenticatedHeaders
+    $procedureOrganizationDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/procedures/lab-provider-address-book/$($procedureOrganization.id)" `
+        -Headers $authenticatedHeaders
+    if ([int]$procedureOrderDeleteResponse.StatusCode -ne 204 -or
+        [int]$procedureGroupDeleteResponse.StatusCode -ne 204 -or
+        [int]$procedureProviderDeleteResponse.StatusCode -ne 204 -or
+        [int]$procedureOrganizationDeleteResponse.StatusCode -ne 204) {
+        throw "EF-backed procedure directory cleanup failed."
+    }
+    $CompletedScenarios.Add("ef-core-procedure-directory-mutations")
+
     $recordRequestCreateResponse = Invoke-Http `
         -Method "POST" `
         -Path "/api/patients/MOD-PAT-0010/record-requests" `

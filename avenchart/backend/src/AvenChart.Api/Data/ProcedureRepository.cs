@@ -705,114 +705,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             Items: items);
     }
 
-    public async Task<ProcedureOrderCatalogMutationResponse?> CreateOrderCatalogItemAsync(
-        ProcedureOrderCatalogMutationRequest request,
-        CancellationToken cancellationToken)
-    {
-        var normalized = NormalizeOrderCatalogMutation(request);
-        if (normalized is null)
-        {
-            return null;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        if (!await IsValidOrderCatalogContextAsync(connection, normalized.Value, cancellationToken))
-        {
-            return null;
-        }
-
-        var id = await GetNextIntIdAsync(connection, "lab_order_catalog", "id", cancellationToken);
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            insert into lab_order_catalog
-                (id, parent_id, lab_id, code, name, item_type, procedure_type_name, description, specimen, standard_code, seq, active)
-            values
-                (@id, @parentId, @labId, @code, @name, @itemType, @procedureTypeName, @description, @specimen, @standardCode, @sequence, @active);
-            """;
-        command.Parameters.AddWithValue("id", id);
-        AddOrderCatalogMutationParameters(command, normalized.Value);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-
-        return new ProcedureOrderCatalogMutationResponse(
-            Id: id,
-            Catalog: await GetOrderCatalogAsync(cancellationToken));
-    }
-
-    public async Task<ProcedureOrderCatalogMutationResponse?> UpdateOrderCatalogItemAsync(
-        int id,
-        ProcedureOrderCatalogMutationRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (id <= 0)
-        {
-            return null;
-        }
-
-        var normalized = NormalizeOrderCatalogMutation(request);
-        if (normalized is null)
-        {
-            return null;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        if (!await IsValidOrderCatalogContextAsync(connection, normalized.Value, cancellationToken))
-        {
-            return null;
-        }
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update lab_order_catalog
-            set parent_id = @parentId,
-                lab_id = @labId,
-                code = @code,
-                name = @name,
-                item_type = @itemType,
-                procedure_type_name = @procedureTypeName,
-                description = @description,
-                specimen = @specimen,
-                standard_code = @standardCode,
-                seq = @sequence,
-                active = @active
-            where id = @id;
-            """;
-        command.Parameters.AddWithValue("id", id);
-        AddOrderCatalogMutationParameters(command, normalized.Value);
-
-        var affected = await command.ExecuteNonQueryAsync(cancellationToken);
-        if (affected == 0)
-        {
-            return null;
-        }
-
-        return new ProcedureOrderCatalogMutationResponse(
-            Id: id,
-            Catalog: await GetOrderCatalogAsync(cancellationToken));
-    }
-
-    public async Task<bool> DeleteOrderCatalogItemAsync(int id, CancellationToken cancellationToken)
-    {
-        if (id <= 0)
-        {
-            return false;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            delete from lab_order_catalog loc
-            where loc.id = @id
-              and not exists (
-                  select 1
-                  from lab_order_catalog child
-                  where child.parent_id = loc.id
-              );
-            """;
-        command.Parameters.AddWithValue("id", id);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-    }
-
     public async Task<ProcedureOrderCatalogImportResponse?> ImportOrderCatalogCompendiumAsync(
         ProcedureOrderCatalogImportRequest request,
         CancellationToken cancellationToken)
@@ -957,124 +849,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             Catalog: await GetOrderCatalogAsync(cancellationToken));
     }
 
-    public async Task<ProcedureLabProviderMutationResponse?> CreateLabProviderAsync(
-        ProcedureLabProviderMutationRequest request,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var resolvedProvider = await ResolveLabProviderNameAsync(connection, request, cancellationToken);
-        if (resolvedProvider is null)
-        {
-            return null;
-        }
-
-        var id = await GetNextIntIdAsync(connection, "lab_providers", "id", cancellationToken);
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            insert into lab_providers
-                (id, name, lab_director_id, npi, protocol, usage, direction, send_app_id, send_fac_id, recv_app_id, recv_fac_id,
-                 remote_host, login, password, orders_path, results_path, notes, active)
-            values
-                (@id, @name, @labDirectorId, @npi, @protocol, @usage, @direction, @sendAppId, @sendFacId, @recvAppId, @recvFacId,
-                 @remoteHost, @login, @password, @ordersPath, @resultsPath, @notes, @active);
-            """;
-        command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("name", resolvedProvider.Value.Name);
-        command.Parameters.Add("labDirectorId", NpgsqlDbType.Integer).Value =
-            resolvedProvider.Value.LabDirectorId is { } labDirectorId ? labDirectorId : DBNull.Value;
-        command.Parameters.Add("npi", NpgsqlDbType.Text).Value = NormalizeText(request.Npi) is { } npi ? npi : DBNull.Value;
-        command.Parameters.AddWithValue("protocol", NormalizeLabProviderProtocol(request.Protocol));
-        AddLabProviderConfigurationParameters(command, request);
-        command.Parameters.AddWithValue("active", request.Active);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-
-        return new ProcedureLabProviderMutationResponse(
-            Id: id,
-            Directory: await GetLabProvidersAsync(includeInactive: true, cancellationToken));
-    }
-
-    public async Task<ProcedureLabProviderMutationResponse?> UpdateLabProviderAsync(
-        int id,
-        ProcedureLabProviderMutationRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (id <= 0)
-        {
-            return null;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var resolvedProvider = await ResolveLabProviderNameAsync(connection, request, cancellationToken);
-        if (resolvedProvider is null)
-        {
-            return null;
-        }
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update lab_providers
-            set name = @name,
-                lab_director_id = @labDirectorId,
-                npi = @npi,
-                protocol = @protocol,
-                usage = @usage,
-                direction = @direction,
-                send_app_id = @sendAppId,
-                send_fac_id = @sendFacId,
-                recv_app_id = @recvAppId,
-                recv_fac_id = @recvFacId,
-                remote_host = @remoteHost,
-                login = @login,
-                password = @password,
-                orders_path = @ordersPath,
-                results_path = @resultsPath,
-                notes = @notes,
-                active = @active
-            where id = @id;
-            """;
-        command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("name", resolvedProvider.Value.Name);
-        command.Parameters.Add("labDirectorId", NpgsqlDbType.Integer).Value =
-            resolvedProvider.Value.LabDirectorId is { } labDirectorId ? labDirectorId : DBNull.Value;
-        command.Parameters.Add("npi", NpgsqlDbType.Text).Value = NormalizeText(request.Npi) is { } npi ? npi : DBNull.Value;
-        command.Parameters.AddWithValue("protocol", NormalizeLabProviderProtocol(request.Protocol));
-        AddLabProviderConfigurationParameters(command, request);
-        command.Parameters.AddWithValue("active", request.Active);
-
-        var affected = await command.ExecuteNonQueryAsync(cancellationToken);
-        if (affected == 0)
-        {
-            return null;
-        }
-
-        return new ProcedureLabProviderMutationResponse(
-            Id: id,
-            Directory: await GetLabProvidersAsync(includeInactive: true, cancellationToken));
-    }
-
-    public async Task<bool> DeleteLabProviderAsync(int id, CancellationToken cancellationToken)
-    {
-        if (id <= 0)
-        {
-            return false;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            delete from lab_providers lp
-            where lp.id = @id
-              and not exists (
-                  select 1
-                  from lab_orders lo
-                  where lo.lab_id = lp.id
-              );
-            """;
-        command.Parameters.AddWithValue("id", id);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-    }
-
     public async Task<ProcedureLabProviderAddressBookResponse> GetLabProviderAddressBookAsync(
         CancellationToken cancellationToken)
     {
@@ -1103,52 +877,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             DatasetId: metadata.DatasetId,
             DatasetVersion: metadata.DatasetVersion,
             Organizations: organizations);
-    }
-
-    public async Task<ProcedureLabProviderAddressBookMutationResponse?> CreateLabProviderAddressBookOrganizationAsync(
-        ProcedureLabProviderAddressBookMutationRequest request,
-        CancellationToken cancellationToken)
-    {
-        var organization = NormalizeText(request.Organization);
-        if (organization is null)
-        {
-            return null;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var id = await GetNextIntIdAsync(connection, "lab_provider_address_book", "id", cancellationToken);
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            insert into lab_provider_address_book (id, organization, type, active)
-            values (@id, @organization, @type, @active);
-            """;
-        command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("organization", organization);
-        command.Parameters.AddWithValue("type", NormalizeLabProviderAddressBookType(request.Type));
-        command.Parameters.AddWithValue("active", request.Active);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-
-        return new ProcedureLabProviderAddressBookMutationResponse(
-            Id: id,
-            AddressBook: await GetLabProviderAddressBookAsync(cancellationToken));
-    }
-
-    public async Task<bool> DeleteLabProviderAddressBookOrganizationAsync(int id, CancellationToken cancellationToken)
-    {
-        if (id <= 0)
-        {
-            return false;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            delete from lab_provider_address_book
-            where id = @id;
-            """;
-        command.Parameters.AddWithValue("id", id);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     public async Task<ProcedureMutationResponse?> CreateOrderAsync(
@@ -2667,7 +2395,9 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = $"select avenchart_next_integer('{tableName}.{columnName}', coalesce(max({columnName}), 0)) from {tableName};";
+        command.CommandText = tableName == "lab_order_catalog"
+            ? "select nextval('lab_order_catalog_id_seq');"
+            : $"select avenchart_next_integer('{tableName}.{columnName}', coalesce(max({columnName}), 0)) from {tableName};";
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
@@ -2695,130 +2425,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private static string? NormalizeText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
-
-    private static string NormalizeLabProviderProtocol(string? protocol)
-    {
-        return NormalizeText(protocol)?.ToUpperInvariant() ?? "DL";
-    }
-
-    private static string NormalizeLabProviderUsage(string? usage)
-    {
-        return NormalizeText(usage)?.ToUpperInvariant() switch
-        {
-            "P" => "P",
-            "T" => "T",
-            "Q" => "Q",
-            _ => "D"
-        };
-    }
-
-    private static string NormalizeLabProviderDirection(string? direction)
-    {
-        return NormalizeText(direction)?.ToUpperInvariant() == "R" ? "R" : "B";
-    }
-
-    private static string NormalizeLabProviderAddressBookType(string? type)
-    {
-        var normalized = NormalizeText(type)?.ToLowerInvariant();
-        return string.IsNullOrWhiteSpace(normalized) || !normalized.StartsWith("ord_", StringComparison.Ordinal)
-            ? "ord_lab"
-            : normalized;
-    }
-
-    private static OrderCatalogMutationValues? NormalizeOrderCatalogMutation(
-        ProcedureOrderCatalogMutationRequest request)
-    {
-        var name = NormalizeText(request.Name);
-        if (name is null)
-        {
-            return null;
-        }
-
-        var itemType = NormalizeText(request.ItemType)?.ToLowerInvariant() switch
-        {
-            "grp" => "grp",
-            "ord" => "ord",
-            _ => "ord"
-        };
-        var parentId = request.ParentId is > 0 ? request.ParentId : null;
-        var labId = request.LabId is > 0 ? request.LabId : null;
-        var code = NormalizeText(request.Code);
-
-        if (itemType == "ord" && (parentId is null || labId is null || code is null))
-        {
-            return null;
-        }
-
-        return new OrderCatalogMutationValues(
-            ParentId: parentId,
-            LabId: labId,
-            Name: name,
-            Code: code,
-            ItemType: itemType,
-            ProcedureTypeName: NormalizeText(request.ProcedureTypeName) ?? (itemType == "ord" ? "laboratory" : null),
-            Description: NormalizeText(request.Description),
-            Specimen: NormalizeText(request.Specimen),
-            StandardCode: NormalizeText(request.StandardCode),
-            Sequence: request.Sequence ?? 0,
-            Active: request.Active);
-    }
-
-    private static async Task<bool> IsValidOrderCatalogContextAsync(
-        NpgsqlConnection connection,
-        OrderCatalogMutationValues values,
-        CancellationToken cancellationToken)
-    {
-        if (values.ParentId is { } parentId)
-        {
-            await using var parentCommand = connection.CreateCommand();
-            parentCommand.CommandText = """
-                select exists (
-                    select 1
-                    from lab_order_catalog
-                    where id = @parentId
-                      and item_type = 'grp'
-                );
-                """;
-            parentCommand.Parameters.AddWithValue("parentId", parentId);
-            if (!Convert.ToBoolean(await parentCommand.ExecuteScalarAsync(cancellationToken)))
-            {
-                return false;
-            }
-        }
-
-        if (values.LabId is { } labId)
-        {
-            await using var labCommand = connection.CreateCommand();
-            labCommand.CommandText = "select exists (select 1 from lab_providers where id = @labId);";
-            labCommand.Parameters.AddWithValue("labId", labId);
-            if (!Convert.ToBoolean(await labCommand.ExecuteScalarAsync(cancellationToken)))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static void AddOrderCatalogMutationParameters(
-        NpgsqlCommand command,
-        OrderCatalogMutationValues values)
-    {
-        command.Parameters.Add("parentId", NpgsqlDbType.Integer).Value = values.ParentId is { } parentId ? parentId : DBNull.Value;
-        command.Parameters.Add("labId", NpgsqlDbType.Integer).Value = values.LabId is { } labId ? labId : DBNull.Value;
-        command.Parameters.Add("code", NpgsqlDbType.Text).Value = values.Code is { } code ? code : DBNull.Value;
-        command.Parameters.AddWithValue("name", values.Name);
-        command.Parameters.AddWithValue("itemType", values.ItemType);
-        command.Parameters.Add("procedureTypeName", NpgsqlDbType.Text).Value =
-            values.ProcedureTypeName is { } procedureTypeName ? procedureTypeName : DBNull.Value;
-        command.Parameters.Add("description", NpgsqlDbType.Text).Value =
-            values.Description is { } description ? description : DBNull.Value;
-        command.Parameters.Add("specimen", NpgsqlDbType.Text).Value = values.Specimen is { } specimen ? specimen : DBNull.Value;
-        command.Parameters.Add("standardCode", NpgsqlDbType.Text).Value =
-            values.StandardCode is { } standardCode ? standardCode : DBNull.Value;
-        command.Parameters.AddWithValue("sequence", values.Sequence);
-        command.Parameters.AddWithValue("active", values.Active);
     }
 
     private static OrderCatalogImportValues? NormalizeOrderCatalogImport(ProcedureOrderCatalogImportRequest request)
@@ -3117,47 +2723,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             Active: reader.GetBoolean(reader.GetOrdinal("active")));
     }
 
-    private static async Task<(string Name, int? LabDirectorId)?> ResolveLabProviderNameAsync(
-        NpgsqlConnection connection,
-        ProcedureLabProviderMutationRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (request.LabDirectorId is > 0)
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                select organization
-                from lab_provider_address_book
-                where id = @id and type like 'ord_%'
-                limit 1;
-                """;
-            command.Parameters.AddWithValue("id", request.LabDirectorId.Value);
-            var organization = NormalizeText(await command.ExecuteScalarAsync(cancellationToken) as string);
-            return organization is null ? null : (organization, request.LabDirectorId.Value);
-        }
-
-        var name = NormalizeText(request.Name);
-        return name is null ? null : (name, null);
-    }
-
-    private static void AddLabProviderConfigurationParameters(
-        NpgsqlCommand command,
-        ProcedureLabProviderMutationRequest request)
-    {
-        command.Parameters.AddWithValue("usage", NormalizeLabProviderUsage(request.Usage));
-        command.Parameters.AddWithValue("direction", NormalizeLabProviderDirection(request.Direction));
-        command.Parameters.AddWithValue("sendAppId", NormalizeText(request.SendApplicationId) ?? string.Empty);
-        command.Parameters.AddWithValue("sendFacId", NormalizeText(request.SendFacilityId) ?? string.Empty);
-        command.Parameters.AddWithValue("recvAppId", NormalizeText(request.ReceiveApplicationId) ?? string.Empty);
-        command.Parameters.AddWithValue("recvFacId", NormalizeText(request.ReceiveFacilityId) ?? string.Empty);
-        command.Parameters.AddWithValue("remoteHost", NormalizeText(request.RemoteHost) ?? string.Empty);
-        command.Parameters.AddWithValue("login", NormalizeText(request.Login) ?? string.Empty);
-        command.Parameters.AddWithValue("password", NormalizeText(request.Password) ?? string.Empty);
-        command.Parameters.AddWithValue("ordersPath", NormalizeText(request.OrdersPath) ?? string.Empty);
-        command.Parameters.AddWithValue("resultsPath", NormalizeText(request.ResultsPath) ?? string.Empty);
-        command.Parameters.Add("notes", NpgsqlDbType.Text).Value = NormalizeText(request.Notes) is { } notes ? notes : DBNull.Value;
-    }
-
     private static string NormalizeReviewQueueStatus(string? status)
     {
         var normalized = NormalizeText(status)?.ToLowerInvariant();
@@ -3291,19 +2856,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         int ReviewVersion);
 
     private sealed record ProcedureResultMutationContext(int Id, string PatientId, int LegacyPid);
-
-    private readonly record struct OrderCatalogMutationValues(
-        int? ParentId,
-        int? LabId,
-        string Name,
-        string? Code,
-        string ItemType,
-        string? ProcedureTypeName,
-        string? Description,
-        string? Specimen,
-        string? StandardCode,
-        int Sequence,
-        bool Active);
 
     private sealed record OrderCatalogImportValues(
         string VendorFormat,

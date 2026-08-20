@@ -139,6 +139,7 @@ builder.Services.AddScoped<DocumentTemplateRepository>();
 builder.Services.AddScoped<DocumentRepository>();
 builder.Services.AddScoped<ManagedRecordRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
+builder.Services.AddScoped<ProcedureDirectoryRepository>();
 builder.Services.AddScoped<BillingRepository>();
 builder.Services.AddScoped<AdministrationRepository>();
 builder.Services.AddScoped<AdministrationDirectoryRepository>();
@@ -5024,7 +5025,7 @@ procedures.MapGet("/lab-provider-address-book", async (
     .WithName("GetProcedureLabProviderAddressBook");
 
 procedures.MapPost("/lab-provider-address-book", async (
-        ProcedureRepository repository,
+        ProcedureDirectoryRepository repository,
         ProcedureLabProviderAddressBookMutationRequest request,
         CancellationToken cancellationToken) =>
     {
@@ -5037,7 +5038,7 @@ procedures.MapPost("/lab-provider-address-book", async (
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapDelete("/lab-provider-address-book/{organizationId:int}", async (
-        ProcedureRepository repository,
+        ProcedureDirectoryRepository repository,
         int organizationId,
         CancellationToken cancellationToken) =>
     {
@@ -5058,7 +5059,7 @@ procedures.MapGet("/lab-providers", async (
     .WithName("GetProcedureLabProviders");
 
 procedures.MapPost("/lab-providers", async (
-        ProcedureRepository repository,
+        ProcedureDirectoryRepository repository,
         ProcedureLabProviderMutationRequest request,
         CancellationToken cancellationToken) =>
     {
@@ -5071,7 +5072,7 @@ procedures.MapPost("/lab-providers", async (
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPut("/lab-providers/{providerId:int}", async (
-        ProcedureRepository repository,
+        ProcedureDirectoryRepository repository,
         int providerId,
         ProcedureLabProviderMutationRequest request,
         CancellationToken cancellationToken) =>
@@ -5083,7 +5084,7 @@ procedures.MapPut("/lab-providers/{providerId:int}", async (
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapDelete("/lab-providers/{providerId:int}", async (
-        ProcedureRepository repository,
+        ProcedureDirectoryRepository repository,
         int providerId,
         CancellationToken cancellationToken) =>
     {
@@ -5103,7 +5104,7 @@ procedures.MapGet("/order-catalog", async (
     .WithName("GetProcedureOrderCatalog");
 
 procedures.MapPost("/order-catalog", async (
-        ProcedureRepository repository,
+        ProcedureDirectoryRepository repository,
         ProcedureOrderCatalogMutationRequest request,
         CancellationToken cancellationToken) =>
     {
@@ -5129,7 +5130,7 @@ procedures.MapPost("/order-catalog/import-compendium", async (
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPut("/order-catalog/{itemId:int}", async (
-        ProcedureRepository repository,
+        ProcedureDirectoryRepository repository,
         int itemId,
         ProcedureOrderCatalogMutationRequest request,
         CancellationToken cancellationToken) =>
@@ -5141,7 +5142,7 @@ procedures.MapPut("/order-catalog/{itemId:int}", async (
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapDelete("/order-catalog/{itemId:int}", async (
-        ProcedureRepository repository,
+        ProcedureDirectoryRepository repository,
         int itemId,
         CancellationToken cancellationToken) =>
     {
