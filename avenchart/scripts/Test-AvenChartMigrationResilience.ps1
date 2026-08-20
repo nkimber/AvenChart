@@ -39,6 +39,7 @@ $ResultPath = Join-Path $ArtifactsRoot "latest-avenchart-migration-resilience.js
 $LocationPushed = $false
 $DatabaseCreated = $false
 $ApiStarted = $false
+$VerificationPassed = $false
 $CompletedScenarios = [System.Collections.Generic.List[string]]::new()
 
 function Assert-TestDatabaseName {
@@ -623,6 +624,66 @@ try {
     }
     $CompletedScenarios.Add("ef-core-chart-tracker-aggregate")
 
+    $encounterCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/encounters/" `
+        -Headers $authenticatedHeaders `
+        -Body '{"patientId":"MOD-PAT-0001","providerId":101,"dateTime":"2026-08-20T10:00:00","reason":"EF encounter-state regression","facilityId":10,"billingFacilityId":10,"sensitivity":"normal","referralSource":"migration-resilience","externalId":"EF-ENC-STATE","posCode":11,"billingNote":"Initial EF state","sourceAppointmentId":null}'
+    if ([int]$encounterCreateResponse.StatusCode -ne 201) {
+        throw "Encounter creation for the EF state slice returned HTTP $($encounterCreateResponse.StatusCode). Body: $(Get-HttpResponseContent -Response $encounterCreateResponse)"
+    }
+    $encounterState = (Get-HttpResponseContent -Response $encounterCreateResponse) | ConvertFrom-Json
+    $encounterUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/encounters/$($encounterState.encounter)" `
+        -Headers $authenticatedHeaders `
+        -Body '{"reason":"EF encounter state updated","sensitivity":"restricted","referralSource":"EF regression","externalId":"EF-ENC-STATE-UPDATED","posCode":12,"billingNote":"Updated atomically with audit"}'
+    $encounterVitalsResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/encounters/$($encounterState.encounter)/vitals" `
+        -Headers $authenticatedHeaders `
+        -Body '{"dateTime":"2026-08-20T10:15:00","systolic":122,"diastolic":78,"weight":170,"height":70,"temperature":98.6,"pulse":72,"respiration":16,"oxygenSaturation":99,"note":"EF vital"}'
+    if ([int]$encounterUpdateResponse.StatusCode -ne 200 -or
+        [int]$encounterVitalsResponse.StatusCode -ne 201) {
+        throw "EF-backed encounter summary or vitals mutation failed. Summary HTTP $($encounterUpdateResponse.StatusCode): $(Get-HttpResponseContent -Response $encounterUpdateResponse) Vitals HTTP $($encounterVitalsResponse.StatusCode): $(Get-HttpResponseContent -Response $encounterVitalsResponse)"
+    }
+    $encounterUpdate = (Get-HttpResponseContent -Response $encounterUpdateResponse) | ConvertFrom-Json
+    $encounterVitals = (Get-HttpResponseContent -Response $encounterVitalsResponse) | ConvertFrom-Json
+    $encounterArchiveResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/encounters/$($encounterState.encounter)/archive" `
+        -Headers $authenticatedHeaders `
+        -Body '{"reason":"Verify EF archive transition","expectedArchiveVersion":1}'
+    $encounterRestoreResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/encounters/$($encounterState.encounter)/restore" `
+        -Headers $authenticatedHeaders `
+        -Body '{"reason":"Verify EF restore transition","expectedArchiveVersion":2}'
+    $encounterAuditResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/encounters/$($encounterState.encounter)/audit" `
+        -Headers $authenticatedHeaders
+    if ([int]$encounterArchiveResponse.StatusCode -ne 204 -or
+        [int]$encounterRestoreResponse.StatusCode -ne 204 -or
+        [int]$encounterAuditResponse.StatusCode -ne 200) {
+        throw "EF-backed encounter archive, restore, or audit history failed."
+    }
+    $encounterAudit = (Get-HttpResponseContent -Response $encounterAuditResponse) | ConvertFrom-Json
+    $encounterVersions = (Invoke-DatabaseScalar -Sql "select row_version || ':' || archive_version from encounters where encounter = $($encounterState.encounter);").Split(':')
+    $vitalsDefault = Invoke-DatabaseScalar -Sql "select column_default from information_schema.columns where table_name = 'vitals' and column_name = 'id';"
+    if ($encounterUpdate.reason -ne "EF encounter state updated" -or
+        $encounterVitals.id -le 0 -or
+        $encounterVitals.detail.vitals.systolic -ne 122 -or
+        $encounterAudit.events.action -notcontains "summary-updated" -or
+        $encounterAudit.events.action -notcontains "archived" -or
+        $encounterAudit.events.action -notcontains "restored" -or
+        [int]$encounterVersions[0] -ne 4 -or
+        [int]$encounterVersions[1] -ne 3 -or
+        $vitalsDefault -notlike "nextval*vitals_id_seq*") {
+        throw "EF-backed encounter state returned unexpected data, versions, or sequence defaults."
+    }
+    $CompletedScenarios.Add("ef-core-encounter-state-and-vitals")
+
     $recordRequestCreateResponse = Invoke-Http `
         -Method "POST" `
         -Path "/api/patients/MOD-PAT-0010/record-requests" `
@@ -947,10 +1008,14 @@ try {
         faultCheckpoints = $FaultCheckpoints
         scenarios = $CompletedScenarios
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
+    $VerificationPassed = $true
     Write-Host "AvenChart migration resilience verification passed: $ResultPath"
 }
 finally {
     if ($ApiStarted) {
+        if (-not $VerificationPassed) {
+            docker logs $ApiContainerName 2>&1 | Select-Object -Last 120 | Write-Host
+        }
         docker rm -f $ApiContainerName *> $null
     }
     if ($DatabaseCreated) {

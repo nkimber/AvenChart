@@ -375,70 +375,6 @@ public sealed class EncounterRepository(
             : await GetByEncounterAsync(Convert.ToInt32(encounter), cancellationToken);
     }
 
-    public async Task<EncounterDetail?> UpdateSummaryAsync(
-        int encounter,
-        EncounterUpdateRequest request,
-        string username,
-        CancellationToken cancellationToken)
-    {
-        var reason = NormalizeText(request.Reason);
-        if (reason is null)
-        {
-            return null;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        if (await IsEncounterLockedAsync(connection, encounter, cancellationToken))
-        {
-            throw new EncounterLockConflictException(
-                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
-        }
-        var prior = await ReadSummaryAuditValuesAsync(connection, encounter, cancellationToken);
-        if (prior is null)
-        {
-            return null;
-        }
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update encounters
-            set reason = @reason,
-                sensitivity = @sensitivity,
-                referral_source = @referralSource,
-                external_id = @externalId,
-                pos_code = @posCode,
-                billing_note = @billingNote
-            where encounter = @encounter
-            returning encounter;
-            """;
-        command.Parameters.AddWithValue("encounter", encounter);
-        command.Parameters.Add("reason", NpgsqlDbType.Text).Value = reason;
-        AddNullableText(command, "sensitivity", NormalizeText(request.Sensitivity));
-        AddNullableText(command, "referralSource", NormalizeText(request.ReferralSource));
-        AddNullableText(command, "externalId", NormalizeText(request.ExternalId));
-        AddNullableInt(command, "posCode", request.PosCode);
-        AddNullableText(command, "billingNote", NormalizeText(request.BillingNote));
-
-        var updated = await command.ExecuteScalarAsync(cancellationToken);
-        if (updated is null || updated is DBNull)
-        {
-            return null;
-        }
-
-        var changedFields = new List<string>();
-        AddChangedField(changedFields, "reason", prior.Reason, reason);
-        AddChangedField(changedFields, "sensitivity", prior.Sensitivity, NormalizeText(request.Sensitivity));
-        AddChangedField(changedFields, "referralSource", prior.ReferralSource, NormalizeText(request.ReferralSource));
-        AddChangedField(changedFields, "externalId", prior.ExternalId, NormalizeText(request.ExternalId));
-        AddChangedField(changedFields, "posCode", prior.PosCode?.ToString(), request.PosCode?.ToString());
-        AddChangedField(changedFields, "billingNote", prior.BillingNote, NormalizeText(request.BillingNote));
-        if (changedFields.Count > 0)
-        {
-            await RecordSummaryAuditAsync(connection, encounter, username, changedFields, cancellationToken);
-        }
-
-        return await GetByEncounterAsync(Convert.ToInt32(updated), cancellationToken);
-    }
-
     public async Task<EncounterAuditHistoryResponse?> GetAuditHistoryAsync(int encounter, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -477,96 +413,6 @@ public sealed class EncounterRepository(
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         return await IsEncounterLockedAsync(connection, encounter, cancellationToken);
-    }
-
-    public async Task<EncounterFormMutationResponse?> CreateVitalsAsync(
-        int encounter,
-        EncounterVitalsCreateRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (!TryParseDateTime(request.DateTime, out var vitalDateTime))
-        {
-            return null;
-        }
-
-        var bmi = ComputeBmi(request.Weight, request.Height);
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        if (await IsEncounterLockedAsync(connection, encounter, cancellationToken))
-        {
-            throw new EncounterLockConflictException(
-                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
-        }
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            with selected_encounter as (
-                select patient_id, pid, encounter
-                from encounters
-                where encounter = @encounter
-                limit 1
-            ),
-            next_id as (
-                select avenchart_next_integer('vitals.id', coalesce(max(id), 0)) as id
-                from vitals
-            )
-            insert into vitals (
-                id,
-                patient_id,
-                pid,
-                encounter,
-                vital_datetime,
-                bps,
-                bpd,
-                weight,
-                height,
-                temperature,
-                pulse,
-                respiration,
-                bmi,
-                oxygen_saturation,
-                note
-            )
-            select
-                next_id.id,
-                selected_encounter.patient_id,
-                selected_encounter.pid,
-                selected_encounter.encounter,
-                @vitalDateTime,
-                @systolic,
-                @diastolic,
-                @weight,
-                @height,
-                @temperature,
-                @pulse,
-                @respiration,
-                @bmi,
-                @oxygenSaturation,
-                @note
-            from selected_encounter
-            cross join next_id
-            returning id;
-            """;
-        command.Parameters.AddWithValue("encounter", encounter);
-        command.Parameters.Add("vitalDateTime", NpgsqlDbType.Timestamp).Value = vitalDateTime;
-        AddNullableInt(command, "systolic", request.Systolic);
-        AddNullableInt(command, "diastolic", request.Diastolic);
-        AddNullableDecimal(command, "weight", request.Weight);
-        AddNullableDecimal(command, "height", request.Height);
-        AddNullableDecimal(command, "temperature", request.Temperature);
-        AddNullableInt(command, "pulse", request.Pulse);
-        AddNullableInt(command, "respiration", request.Respiration);
-        AddNullableDecimal(command, "bmi", bmi);
-        AddNullableInt(command, "oxygenSaturation", request.OxygenSaturation);
-        AddNullableText(command, "note", NormalizeText(request.Note));
-
-        var id = await command.ExecuteScalarAsync(cancellationToken);
-        if (id is null || id is DBNull)
-        {
-            return null;
-        }
-
-        var detail = await GetByEncounterAsync(encounter, cancellationToken);
-        return detail is null ? null : new EncounterFormMutationResponse(Convert.ToInt32(id), detail);
     }
 
     public async Task<EncounterFormMutationResponse?> CreateSoapNoteAsync(
@@ -837,42 +683,6 @@ public sealed class EncounterRepository(
 
         var detail = await GetByEncounterAsync(encounter, cancellationToken);
         return detail is null ? null : new EncounterSignatureMutationResponse(Convert.ToInt32(id), detail);
-    }
-
-    public async Task<bool> ArchiveAsync(int encounter, EncounterArchiveRequest request, string username, CancellationToken cancellationToken)
-    {
-        var reason = RequireArchiveReason(request.Reason);
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update encounters
-            set archived_at = now(), archive_version = archive_version + 1
-            where encounter = @encounter
-              and archived_at is null and archive_version = @expectedArchiveVersion;
-            """;
-        command.Parameters.AddWithValue("encounter", encounter);
-        command.Parameters.AddWithValue("expectedArchiveVersion", request.ExpectedArchiveVersion);
-        var archived = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-        if (archived) await RecordAuditAsync(connection, encounter, username, "archived", [$"reason:{reason}"], cancellationToken);
-        return archived;
-    }
-
-    public async Task<bool> RestoreAsync(int encounter, EncounterArchiveRequest request, string username, CancellationToken cancellationToken)
-    {
-        var reason = RequireArchiveReason(request.Reason);
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update encounters
-            set archived_at = null, archive_version = archive_version + 1
-            where encounter = @encounter
-              and archived_at is not null and archive_version = @expectedArchiveVersion;
-            """;
-        command.Parameters.AddWithValue("encounter", encounter);
-        command.Parameters.AddWithValue("expectedArchiveVersion", request.ExpectedArchiveVersion);
-        var restored = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-        if (restored) await RecordAuditAsync(connection, encounter, username, "restored", [$"reason:{reason}"], cancellationToken);
-        return restored;
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -1997,23 +1807,6 @@ public sealed class EncounterRepository(
 
     private static string NormalizePreviewText(string? value) => value?.Trim() ?? string.Empty;
 
-    private static async Task<EncounterSummaryAuditValues?> ReadSummaryAuditValuesAsync(
-        NpgsqlConnection connection, int encounter, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select reason, sensitivity, referral_source, external_id, pos_code, billing_note
-            from encounters where encounter = @encounter;
-            """;
-        command.Parameters.AddWithValue("encounter", encounter);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) return null;
-        return new EncounterSummaryAuditValues(
-            ReadNullableString(reader, "reason"), ReadNullableString(reader, "sensitivity"),
-            ReadNullableString(reader, "referral_source"), ReadNullableString(reader, "external_id"),
-            ReadNullableInt(reader, "pos_code"), ReadNullableString(reader, "billing_note"));
-    }
-
     private static async Task<bool> IsEncounterLockedAsync(
         NpgsqlConnection connection,
         int encounter,
@@ -2023,38 +1816,6 @@ public sealed class EncounterRepository(
         command.CommandText = "select count(*) from encounter_signatures where encounter = @encounter and is_lock;";
         command.Parameters.AddWithValue("encounter", encounter);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 0) > 0;
-    }
-
-    private static async Task RecordSummaryAuditAsync(NpgsqlConnection connection, int encounter, string username, IReadOnlyList<string> changedFields, CancellationToken cancellationToken)
-        => await RecordAuditAsync(connection, encounter, username, "summary-updated", changedFields, cancellationToken);
-
-    private static async Task RecordAuditAsync(NpgsqlConnection connection, int encounter, string username, string action, IReadOnlyList<string> changedFields, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            insert into encounter_audit_events (event_id, encounter, occurred_at, username, action, changed_fields)
-            values (@eventId, @encounter, @occurredAt, @username, @action, @changedFields);
-            """;
-        command.Parameters.AddWithValue("eventId", Guid.NewGuid());
-        command.Parameters.AddWithValue("encounter", encounter);
-        command.Parameters.AddWithValue("occurredAt", DateTimeOffset.UtcNow);
-        command.Parameters.AddWithValue("username", username);
-        command.Parameters.AddWithValue("action", action);
-        command.Parameters.AddWithValue("changedFields", string.Join(',', changedFields));
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private static string RequireArchiveReason(string? value)
-    {
-        var reason = NormalizeText(value);
-        return reason is null || reason.Length > 500
-            ? throw new ArgumentException("An archive or restore reason of 1 to 500 characters is required.")
-            : reason;
-    }
-
-    private static void AddChangedField(List<string> fields, string name, string? prior, string? updated)
-    {
-        if (!string.Equals(prior, updated, StringComparison.Ordinal)) fields.Add(name);
     }
 
     private static string? Normalize(string? value)
@@ -2089,16 +1850,6 @@ public sealed class EncounterRepository(
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexString(hash).ToLowerInvariant();
-    }
-
-    private static decimal? ComputeBmi(decimal? weight, decimal? height)
-    {
-        if (weight is null || height is null || height <= 0)
-        {
-            return null;
-        }
-
-        return Math.Round(weight.Value / (height.Value * height.Value) * 703m, 2);
     }
 
     private static void AddNullableInt(NpgsqlCommand command, string name, int? value)
@@ -2249,6 +2000,4 @@ public sealed class EncounterRepository(
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 
-    private sealed record EncounterSummaryAuditValues(
-        string? Reason, string? Sensitivity, string? ReferralSource, string? ExternalId, int? PosCode, string? BillingNote);
 }

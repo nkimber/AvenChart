@@ -39,6 +39,8 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
 
     public DbSet<EncounterEntity> Encounters => Set<EncounterEntity>();
 
+    public DbSet<EncounterAuditEventEntity> EncounterAuditEvents => Set<EncounterAuditEventEntity>();
+
     public DbSet<EncounterSignatureEntity> EncounterSignatures => Set<EncounterSignatureEntity>();
 
     public DbSet<FacilityEntity> Facilities => Set<FacilityEntity>();
@@ -72,6 +74,8 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
     public DbSet<TherapyGroupSessionEncounterEntity> TherapyGroupSessionEncounters => Set<TherapyGroupSessionEncounterEntity>();
 
     public DbSet<TherapyGroupSessionParticipantEntity> TherapyGroupSessionParticipants => Set<TherapyGroupSessionParticipantEntity>();
+
+    public DbSet<VitalEntity> Vitals => Set<VitalEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

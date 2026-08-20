@@ -240,6 +240,8 @@ public sealed record EncounterUpdateRequest(
 
 public sealed record EncounterArchiveRequest(string Reason, int ExpectedArchiveVersion);
 
+public sealed class EncounterStateConflictException(string message) : Exception(message);
+
 public sealed record EncounterVitalsCreateRequest(
     string DateTime,
     int? Systolic,
