@@ -10,6 +10,7 @@ public sealed class PatientEntity
     public required string PublicId { get; set; }
     public required string FirstName { get; set; }
     public required string LastName { get; set; }
+    public string? PreferredName { get; set; }
     public DateOnly DateOfBirth { get; set; }
     public string? MergedIntoPatientId { get; set; }
 }

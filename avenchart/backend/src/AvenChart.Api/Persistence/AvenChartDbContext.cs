@@ -35,6 +35,18 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
 
     public DbSet<StaffEntity> Staff => Set<StaffEntity>();
 
+    public DbSet<TherapyGroupEntity> TherapyGroups => Set<TherapyGroupEntity>();
+
+    public DbSet<TherapyGroupMemberEntity> TherapyGroupMembers => Set<TherapyGroupMemberEntity>();
+
+    public DbSet<TherapyGroupSessionEntity> TherapyGroupSessions => Set<TherapyGroupSessionEntity>();
+
+    public DbSet<TherapyGroupSessionAttendanceEntity> TherapyGroupSessionAttendance => Set<TherapyGroupSessionAttendanceEntity>();
+
+    public DbSet<TherapyGroupSessionEncounterEntity> TherapyGroupSessionEncounters => Set<TherapyGroupSessionEncounterEntity>();
+
+    public DbSet<TherapyGroupSessionParticipantEntity> TherapyGroupSessionParticipants => Set<TherapyGroupSessionParticipantEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AvenChartDbContext).Assembly);

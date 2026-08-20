@@ -1,241 +1,409 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-using Npgsql;
 using AvenChart.Api.Models;
+using AvenChart.Api.Persistence;
+using AvenChart.Api.Persistence.Entities;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AvenChart.Api.Data;
 
-public sealed class TherapyGroupRepository(NpgsqlDataSource dataSource)
+public sealed class TherapyGroupRepository(
+    NpgsqlDataSource dataSource,
+    AvenChartDbContext dbContext)
 {
     public async Task<TherapyGroupsResponse> GetAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "select id, name, status, facilitator_id, description, capacity, created_at from therapy_groups order by created_at desc;";
-        var groups = new List<TherapyGroupItem>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) groups.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetInt32(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetInt32(5), reader.GetFieldValue<DateTimeOffset>(6).ToString("O")));
-        return new(groups);
+        var groups = await dbContext.TherapyGroups
+            .AsNoTracking()
+            .OrderByDescending(group => group.CreatedAt)
+            .ToListAsync(cancellationToken);
+        return new TherapyGroupsResponse(groups.Select(ToItem).ToList());
     }
 
-    public async Task<TherapyGroupItem> CreateAsync(TherapyGroupCreateRequest request, CancellationToken cancellationToken)
+    public async Task<TherapyGroupItem> CreateAsync(
+        TherapyGroupCreateRequest request,
+        CancellationToken cancellationToken)
     {
-        var name = request.Name?.Trim(); if (string.IsNullOrWhiteSpace(name) || name.Length > 120) throw new ArgumentException("Group name is required and must be 120 characters or fewer.");
-        var capacity = Math.Clamp(request.Capacity, 1, 200); var id = Guid.NewGuid(); var created = DateTimeOffset.UtcNow;
-        await EnsureModuleEnabledAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
-        command.CommandText = "insert into therapy_groups (id, name, status, facilitator_id, description, capacity, created_at) values (@id, @name, 'active', @facilitator, @description, @capacity, @created);";
-        command.Parameters.AddWithValue("id", id); command.Parameters.AddWithValue("name", name); command.Parameters.AddWithValue("facilitator", (object?)request.FacilitatorId ?? DBNull.Value); command.Parameters.AddWithValue("description", (object?)request.Description?.Trim() ?? DBNull.Value); command.Parameters.AddWithValue("capacity", capacity); command.Parameters.AddWithValue("created", created); await command.ExecuteNonQueryAsync(cancellationToken);
-        return new(id, name, "active", request.FacilitatorId, request.Description?.Trim(), capacity, created.ToString("O"));
+        var name = request.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 120)
+        {
+            throw new ArgumentException("Group name is required and must be 120 characters or fewer.");
+        }
+
+        await EnsureModuleEnabledAsync(cancellationToken);
+        var group = new TherapyGroupEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            Status = "active",
+            FacilitatorId = request.FacilitatorId,
+            Description = request.Description?.Trim(),
+            Capacity = Math.Clamp(request.Capacity, 1, 200),
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        dbContext.TherapyGroups.Add(group);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToItem(group);
     }
 
-    public async Task<IReadOnlyList<TherapyGroupMemberItem>> GetMembersAsync(Guid groupId, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<TherapyGroupMemberItem>> GetMembersAsync(
+        Guid groupId,
+        CancellationToken cancellationToken)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select m.group_id, p.canonical_id, p.legacy_pid,
-              coalesce(nullif(trim(concat_ws(' ', p.preferred_name, p.last_name)), ''), p.canonical_id), m.joined_at
-            from therapy_group_members m
-            inner join patients p on p.canonical_id = m.patient_id
-            where m.group_id = @groupId
-            order by m.joined_at;
-            """;
-        command.Parameters.AddWithValue("groupId", groupId);
-        var members = new List<TherapyGroupMemberItem>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-            members.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.GetString(3), reader.GetFieldValue<DateTimeOffset>(4).ToString("O")));
-        return members;
+        var rows = await dbContext.TherapyGroupMembers
+            .AsNoTracking()
+            .Where(member => member.GroupId == groupId)
+            .OrderBy(member => member.JoinedAt)
+            .Select(member => new
+            {
+                Member = member,
+                member.Patient.LegacyPid,
+                member.Patient.PreferredName,
+                member.Patient.LastName
+            })
+            .ToListAsync(cancellationToken);
+        return rows.Select(row => new TherapyGroupMemberItem(
+            row.Member.GroupId,
+            row.Member.PatientId,
+            row.LegacyPid,
+            DisplayName(row.PreferredName, row.LastName, row.Member.PatientId),
+            row.Member.JoinedAt.ToString("O"))).ToList();
     }
 
-    public async Task<TherapyGroupMemberItem> AddMemberAsync(Guid groupId, TherapyGroupMemberRequest request, CancellationToken cancellationToken)
+    public async Task<TherapyGroupMemberItem> AddMemberAsync(
+        Guid groupId,
+        TherapyGroupMemberRequest request,
+        CancellationToken cancellationToken)
     {
         var patientId = request.PatientId?.Trim();
-        if (string.IsNullOrWhiteSpace(patientId)) throw new ArgumentException("Patient identifier is required.");
+        if (string.IsNullOrWhiteSpace(patientId))
+        {
+            throw new ArgumentException("Patient identifier is required.");
+        }
+
+        await EnsureModuleEnabledAsync(cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var group = await dbContext.TherapyGroups
+            .FromSqlInterpolated($"select * from therapy_groups where id = {groupId} for update")
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new ArgumentException("Therapy group was not found.");
+        if (!string.Equals(group.Status, "active", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Members can only be added to an active therapy group.");
+        }
+
+        var currentCount = await dbContext.TherapyGroupMembers.CountAsync(
+            member => member.GroupId == groupId,
+            cancellationToken);
+        if (currentCount >= group.Capacity)
+        {
+            throw new ArgumentException("The therapy group is at capacity.");
+        }
+
+        var normalizedPatientId = patientId.ToLowerInvariant();
+        var patient = await dbContext.Patients
+            .AsNoTracking()
+            .Where(candidate =>
+                candidate.CanonicalId.ToLower() == normalizedPatientId ||
+                candidate.PublicId.ToLower() == normalizedPatientId)
+            .Select(candidate => new
+            {
+                candidate.CanonicalId,
+                candidate.LegacyPid,
+                candidate.PreferredName,
+                candidate.LastName
+            })
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new ArgumentException("Patient was not found.");
+        var joinedAt = DateTimeOffset.UtcNow;
+        var member = new TherapyGroupMemberEntity
+        {
+            GroupId = groupId,
+            PatientId = patient.CanonicalId,
+            JoinedAt = joinedAt
+        };
+        dbContext.TherapyGroupMembers.Add(member);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (
+            exception.InnerException is PostgresException postgresException &&
+            postgresException.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new ArgumentException("Patient is already a member of this therapy group.");
+        }
+
+        return new TherapyGroupMemberItem(
+            groupId,
+            patient.CanonicalId,
+            patient.LegacyPid,
+            DisplayName(patient.PreferredName, patient.LastName, patient.CanonicalId),
+            joinedAt.ToString("O"));
+    }
+
+    public async Task<IReadOnlyList<TherapyGroupSessionItem>> GetSessionsAsync(
+        Guid groupId,
+        CancellationToken cancellationToken)
+    {
+        var sessions = await dbContext.TherapyGroupSessions
+            .AsNoTracking()
+            .Where(session => session.GroupId == groupId)
+            .OrderByDescending(session => session.StartsAt)
+            .ToListAsync(cancellationToken);
+        return sessions.Select(ToItem).ToList();
+    }
+
+    public async Task<TherapyGroupSessionItem> CreateSessionAsync(
+        Guid groupId,
+        TherapyGroupSessionCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!DateTimeOffset.TryParse(request.StartsAt, out var startsAt))
+        {
+            throw new ArgumentException("A valid session start date and time is required.");
+        }
+
+        if (request.DurationMinutes is < 15 or > 480)
+        {
+            throw new ArgumentException("Session duration must be between 15 and 480 minutes.");
+        }
+
+        var topic = request.Topic?.Trim();
+        if (topic?.Length > 400)
+        {
+            throw new ArgumentException("Session topic must be 400 characters or fewer.");
+        }
+
+        await EnsureModuleEnabledAsync(cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var groupStatus = await dbContext.TherapyGroups
+            .AsNoTracking()
+            .Where(group => group.Id == groupId)
+            .Select(group => group.Status)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (groupStatus is null)
+        {
+            throw new ArgumentException("Therapy group was not found.");
+        }
+
+        if (!string.Equals(groupStatus, "active", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Sessions can only be scheduled for an active therapy group.");
+        }
+
+        var session = new TherapyGroupSessionEntity
+        {
+            Id = Guid.NewGuid(),
+            GroupId = groupId,
+            StartsAt = startsAt,
+            DurationMinutes = request.DurationMinutes,
+            Topic = topic,
+            Status = "scheduled",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        dbContext.TherapyGroupSessions.Add(session);
+        var patientIds = await dbContext.TherapyGroupMembers
+            .AsNoTracking()
+            .Where(member => member.GroupId == groupId)
+            .Select(member => member.PatientId)
+            .ToListAsync(cancellationToken);
+        dbContext.TherapyGroupSessionAttendance.AddRange(patientIds.Select(patientId =>
+            new TherapyGroupSessionAttendanceEntity
+            {
+                SessionId = session.Id,
+                PatientId = patientId,
+                AttendanceStatus = "unrecorded"
+            }));
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return ToItem(session);
+    }
+
+    public async Task<TherapyGroupSessionAttendanceResponse> GetSessionAttendanceAsync(
+        Guid groupId,
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var exists = await dbContext.TherapyGroupSessions.AsNoTracking().AnyAsync(
+            session => session.Id == sessionId && session.GroupId == groupId,
+            cancellationToken);
+        if (!exists)
+        {
+            throw new ArgumentException("Therapy-group session was not found.");
+        }
+
+        return new TherapyGroupSessionAttendanceResponse(
+            sessionId,
+            await ReadSessionAttendanceAsync(sessionId, cancellationToken));
+    }
+
+    public async Task<TherapyGroupSessionAttendanceItem> RecordSessionAttendanceAsync(
+        Guid groupId,
+        Guid sessionId,
+        string patientId,
+        TherapyGroupSessionAttendanceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var status = request.Status?.Trim().ToLowerInvariant();
+        if (status is not ("present" or "absent" or "excused"))
+        {
+            throw new ArgumentException("Attendance status must be present, absent, or excused.");
+        }
+
+        var note = request.Note?.Trim();
+        if (note?.Length > 500)
+        {
+            throw new ArgumentException("Attendance note must be 500 characters or fewer.");
+        }
+
+        await EnsureModuleEnabledAsync(cancellationToken);
+        var attendance = await dbContext.TherapyGroupSessionAttendance
+            .Include(item => item.Patient)
+            .Include(item => item.Session)
+            .SingleOrDefaultAsync(
+                item =>
+                    item.SessionId == sessionId &&
+                    item.PatientId == patientId &&
+                    item.Session.GroupId == groupId &&
+                    item.Session.Status == "scheduled",
+                cancellationToken)
+            ?? throw new ArgumentException("Scheduled session attendance participant was not found.");
+        attendance.AttendanceStatus = status;
+        attendance.Note = note;
+        attendance.RecordedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToItem(attendance);
+    }
+
+    public async Task<TherapyGroupSessionItem> UpdateSessionStatusAsync(
+        Guid groupId,
+        Guid sessionId,
+        TherapyGroupSessionStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        var status = request.Status?.Trim().ToLowerInvariant();
+        if (status is not ("completed" or "cancelled"))
+        {
+            throw new ArgumentException("Session status must be completed or cancelled.");
+        }
+
+        await EnsureModuleEnabledAsync(cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var session = await dbContext.TherapyGroupSessions.SingleOrDefaultAsync(
+            candidate =>
+                candidate.Id == sessionId &&
+                candidate.GroupId == groupId &&
+                candidate.Status == "scheduled",
+            cancellationToken)
+            ?? throw new ArgumentException("Scheduled therapy-group session was not found.");
+        if (status == "completed" && await dbContext.TherapyGroupSessionAttendance.AsNoTracking().AnyAsync(
+                attendance =>
+                    attendance.SessionId == sessionId &&
+                    attendance.AttendanceStatus == "unrecorded",
+                cancellationToken))
+        {
+            throw new ArgumentException("Record attendance for every session participant before completing the session.");
+        }
+
+        session.Status = status;
+        if (status == "completed")
+        {
+            var patientIds = await dbContext.TherapyGroupSessionAttendance
+                .AsNoTracking()
+                .Where(attendance =>
+                    attendance.SessionId == sessionId &&
+                    attendance.AttendanceStatus == "present")
+                .Select(attendance => attendance.PatientId)
+                .ToListAsync(cancellationToken);
+            dbContext.TherapyGroupSessionParticipants.AddRange(patientIds.Select(patientId =>
+                new TherapyGroupSessionParticipantEntity
+                {
+                    SessionId = sessionId,
+                    PatientId = patientId
+                }));
+        }
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new ArgumentException("The therapy-group session status changed before this update could be saved.");
+        }
+
+        return ToItem(session);
+    }
+
+    public async Task<IReadOnlyList<TherapyGroupSessionEncounterItem>> GetSessionEncountersAsync(
+        Guid groupId,
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.TherapyGroupSessionEncounters
+            .AsNoTracking()
+            .Where(encounter =>
+                encounter.SessionId == sessionId &&
+                dbContext.TherapyGroupSessions.Any(session =>
+                    session.Id == encounter.SessionId && session.GroupId == groupId))
+            .OrderBy(encounter => encounter.Patient.LastName)
+            .ThenBy(encounter => encounter.Patient.FirstName)
+            .Select(encounter => new
+            {
+                Encounter = encounter,
+                encounter.Patient.LegacyPid,
+                encounter.Patient.PreferredName,
+                encounter.Patient.LastName
+            })
+            .ToListAsync(cancellationToken);
+        return rows.Select(row => new TherapyGroupSessionEncounterItem(
+            row.Encounter.SessionId,
+            row.Encounter.PatientId,
+            row.LegacyPid,
+            DisplayName(row.PreferredName, row.LastName, row.Encounter.PatientId),
+            row.Encounter.EncounterId,
+            "existing")).ToList();
+    }
+
+    // Encounter creation remains explicit SQL/orchestration because EncounterRepository owns a
+    // separate governed workflow and connection boundary.
+    public async Task<TherapyGroupSessionEncounterResponse> CreateSessionEncountersAsync(
+        Guid groupId,
+        Guid sessionId,
+        TherapyGroupSessionEncounterRequest request,
+        EncounterRepository encounterRepository,
+        CancellationToken cancellationToken)
+    {
         await EnsureModuleEnabledAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await using var groupCommand = connection.CreateCommand();
-        groupCommand.Transaction = transaction;
-        groupCommand.CommandText = "select status, capacity, (select count(*) from therapy_group_members where group_id = @groupId) from therapy_groups where id = @groupId for update;";
-        groupCommand.Parameters.AddWithValue("groupId", groupId);
-        await using var groupReader = await groupCommand.ExecuteReaderAsync(cancellationToken);
-        if (!await groupReader.ReadAsync(cancellationToken)) throw new ArgumentException("Therapy group was not found.");
-        var status = groupReader.GetString(0); var capacity = groupReader.GetInt32(1); var currentCount = groupReader.GetInt64(2);
-        await groupReader.DisposeAsync();
-        if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Members can only be added to an active therapy group.");
-        if (currentCount >= capacity) throw new ArgumentException("The therapy group is at capacity.");
-
-        await using var patientCommand = connection.CreateCommand();
-        patientCommand.Transaction = transaction;
-        patientCommand.CommandText = """
-            select canonical_id, legacy_pid,
-              coalesce(nullif(trim(concat_ws(' ', preferred_name, last_name)), ''), canonical_id)
-            from patients
-            where lower(canonical_id) = lower(@patientId) or lower(pubpid) = lower(@patientId)
-            limit 1;
-            """;
-        patientCommand.Parameters.AddWithValue("patientId", patientId);
-        await using var patientReader = await patientCommand.ExecuteReaderAsync(cancellationToken);
-        if (!await patientReader.ReadAsync(cancellationToken)) throw new ArgumentException("Patient was not found.");
-        var canonicalPatientId = patientReader.GetString(0); var legacyPid = patientReader.GetInt32(1); var displayName = patientReader.GetString(2);
-        await patientReader.DisposeAsync();
-
-        var joinedAt = DateTimeOffset.UtcNow;
-        await using var insertCommand = connection.CreateCommand();
-        insertCommand.Transaction = transaction;
-        insertCommand.CommandText = "insert into therapy_group_members (group_id, patient_id, joined_at) values (@groupId, @patientId, @joinedAt);";
-        insertCommand.Parameters.AddWithValue("groupId", groupId); insertCommand.Parameters.AddWithValue("patientId", canonicalPatientId); insertCommand.Parameters.AddWithValue("joinedAt", joinedAt);
-        try { await insertCommand.ExecuteNonQueryAsync(cancellationToken); }
-        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation) { throw new ArgumentException("Patient is already a member of this therapy group."); }
-        await transaction.CommitAsync(cancellationToken);
-        return new(groupId, canonicalPatientId, legacyPid, displayName, joinedAt.ToString("O"));
-    }
-
-    public async Task<IReadOnlyList<TherapyGroupSessionItem>> GetSessionsAsync(Guid groupId, CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "select id, group_id, starts_at, duration_minutes, topic, status, created_at from therapy_group_sessions where group_id = @groupId order by starts_at desc;";
-        command.Parameters.AddWithValue("groupId", groupId);
-        var sessions = new List<TherapyGroupSessionItem>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-            sessions.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetFieldValue<DateTimeOffset>(2).ToString("O"), reader.GetInt32(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6).ToString("O")));
-        return sessions;
-    }
-
-    public async Task<TherapyGroupSessionItem> CreateSessionAsync(Guid groupId, TherapyGroupSessionCreateRequest request, CancellationToken cancellationToken)
-    {
-        if (!DateTimeOffset.TryParse(request.StartsAt, out var startsAt)) throw new ArgumentException("A valid session start date and time is required.");
-        if (request.DurationMinutes is < 15 or > 480) throw new ArgumentException("Session duration must be between 15 and 480 minutes.");
-        var topic = request.Topic?.Trim(); if (topic?.Length > 400) throw new ArgumentException("Session topic must be 400 characters or fewer.");
-        await EnsureModuleEnabledAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var groupCommand = connection.CreateCommand(); groupCommand.CommandText = "select status from therapy_groups where id = @groupId;"; groupCommand.Parameters.AddWithValue("groupId", groupId);
-        var status = await groupCommand.ExecuteScalarAsync(cancellationToken) as string;
-        if (status is null) throw new ArgumentException("Therapy group was not found.");
-        if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Sessions can only be scheduled for an active therapy group.");
-        var id = Guid.NewGuid(); var createdAt = DateTimeOffset.UtcNow;
-        await using var command = connection.CreateCommand();
-        command.CommandText = "insert into therapy_group_sessions (id, group_id, starts_at, duration_minutes, topic, status, created_at) values (@id, @groupId, @startsAt, @duration, @topic, 'scheduled', @createdAt);";
-        command.Parameters.AddWithValue("id", id); command.Parameters.AddWithValue("groupId", groupId); command.Parameters.AddWithValue("startsAt", startsAt); command.Parameters.AddWithValue("duration", request.DurationMinutes); command.Parameters.AddWithValue("topic", (object?)topic ?? DBNull.Value); command.Parameters.AddWithValue("createdAt", createdAt);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        await using var rosterCommand = connection.CreateCommand();
-        rosterCommand.CommandText = "insert into therapy_group_session_attendance (session_id, patient_id, attendance_status) select @sessionId, patient_id, 'unrecorded' from therapy_group_members where group_id = @groupId on conflict do nothing;";
-        rosterCommand.Parameters.AddWithValue("sessionId", id); rosterCommand.Parameters.AddWithValue("groupId", groupId);
-        await rosterCommand.ExecuteNonQueryAsync(cancellationToken);
-        return new(id, groupId, startsAt.ToString("O"), request.DurationMinutes, topic, "scheduled", createdAt.ToString("O"));
-    }
-
-    public async Task<TherapyGroupSessionAttendanceResponse> GetSessionAttendanceAsync(Guid groupId, Guid sessionId, CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "select 1 from therapy_group_sessions where id = @sessionId and group_id = @groupId;";
-        command.Parameters.AddWithValue("sessionId", sessionId); command.Parameters.AddWithValue("groupId", groupId);
-        if (await command.ExecuteScalarAsync(cancellationToken) is null) throw new ArgumentException("Therapy-group session was not found.");
-        return new(sessionId, await ReadSessionAttendanceAsync(connection, sessionId, cancellationToken));
-    }
-
-    public async Task<TherapyGroupSessionAttendanceItem> RecordSessionAttendanceAsync(Guid groupId, Guid sessionId, string patientId, TherapyGroupSessionAttendanceRequest request, CancellationToken cancellationToken)
-    {
-        var status = request.Status?.Trim().ToLowerInvariant();
-        if (status is not ("present" or "absent" or "excused")) throw new ArgumentException("Attendance status must be present, absent, or excused.");
-        var note = request.Note?.Trim(); if (note?.Length > 500) throw new ArgumentException("Attendance note must be 500 characters or fewer.");
-        await EnsureModuleEnabledAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = """
-            update therapy_group_session_attendance a set attendance_status = @status, note = @note, recorded_at = @recordedAt
-            from therapy_group_sessions s
-            where a.session_id = @sessionId and a.patient_id = @patientId and s.id = a.session_id and s.group_id = @groupId and s.status = 'scheduled'
-            returning a.session_id, a.patient_id, a.attendance_status, a.note, a.recorded_at;
-            """;
-        command.Parameters.AddWithValue("status", status); command.Parameters.AddWithValue("note", (object?)note ?? DBNull.Value); command.Parameters.AddWithValue("recordedAt", DateTimeOffset.UtcNow);
-        command.Parameters.AddWithValue("sessionId", sessionId); command.Parameters.AddWithValue("patientId", patientId); command.Parameters.AddWithValue("groupId", groupId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) throw new ArgumentException("Scheduled session attendance participant was not found.");
-        var recorded = (SessionId: reader.GetGuid(0), PatientId: reader.GetString(1), Status: reader.GetString(2), Note: reader.IsDBNull(3) ? null : reader.GetString(3), RecordedAt: reader.GetFieldValue<DateTimeOffset>(4));
-        await reader.DisposeAsync();
-        await using var patientCommand = connection.CreateCommand(); patientCommand.Transaction = transaction;
-        patientCommand.CommandText = "select legacy_pid, coalesce(nullif(trim(concat_ws(' ', preferred_name, last_name)), ''), canonical_id) from patients where canonical_id = @patientId;";
-        patientCommand.Parameters.AddWithValue("patientId", recorded.PatientId);
-        await using var patientReader = await patientCommand.ExecuteReaderAsync(cancellationToken);
-        if (!await patientReader.ReadAsync(cancellationToken)) throw new ArgumentException("Attendance patient was not found.");
-        var item = new TherapyGroupSessionAttendanceItem(recorded.SessionId, recorded.PatientId, patientReader.GetInt32(0), patientReader.GetString(1), recorded.Status, recorded.Note, recorded.RecordedAt.ToString("O"));
-        await patientReader.DisposeAsync();
-        await transaction.CommitAsync(cancellationToken);
-        return item;
-    }
-
-    public async Task<TherapyGroupSessionItem> UpdateSessionStatusAsync(Guid groupId, Guid sessionId, TherapyGroupSessionStatusRequest request, CancellationToken cancellationToken)
-    {
-        var status = request.Status?.Trim().ToLowerInvariant();
-        if (status is not ("completed" or "cancelled")) throw new ArgumentException("Session status must be completed or cancelled.");
-        await EnsureModuleEnabledAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken); await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        if (status == "completed")
-        {
-            await using var unrecordedCommand = connection.CreateCommand(); unrecordedCommand.Transaction = transaction;
-            unrecordedCommand.CommandText = "select exists(select 1 from therapy_group_session_attendance where session_id = @sessionId and attendance_status = 'unrecorded');";
-            unrecordedCommand.Parameters.AddWithValue("sessionId", sessionId);
-            if ((bool)(await unrecordedCommand.ExecuteScalarAsync(cancellationToken) ?? false)) throw new ArgumentException("Record attendance for every session participant before completing the session.");
-        }
-        command.CommandText = """
-            update therapy_group_sessions set status = @status
-            where id = @sessionId and group_id = @groupId and status = 'scheduled'
-            returning id, group_id, starts_at, duration_minutes, topic, status, created_at;
-            """;
-        command.Parameters.AddWithValue("status", status); command.Parameters.AddWithValue("sessionId", sessionId); command.Parameters.AddWithValue("groupId", groupId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) throw new ArgumentException("Scheduled therapy-group session was not found.");
-        var session = new TherapyGroupSessionItem(reader.GetGuid(0), reader.GetGuid(1), reader.GetFieldValue<DateTimeOffset>(2).ToString("O"), reader.GetInt32(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6).ToString("O"));
-        await reader.DisposeAsync();
-        if (status == "completed")
-        {
-            await using var snapshotCommand = connection.CreateCommand(); snapshotCommand.Transaction = transaction;
-            snapshotCommand.CommandText = "insert into therapy_group_session_participants (session_id, patient_id) select @sessionId, patient_id from therapy_group_session_attendance where session_id = @sessionId and attendance_status = 'present' on conflict do nothing;";
-            snapshotCommand.Parameters.AddWithValue("sessionId", sessionId);
-            await snapshotCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-        await transaction.CommitAsync(cancellationToken);
-        return session;
-    }
-
-    public async Task<IReadOnlyList<TherapyGroupSessionEncounterItem>> GetSessionEncountersAsync(Guid groupId, Guid sessionId, CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select e.session_id, p.canonical_id, p.legacy_pid,
-              coalesce(nullif(trim(concat_ws(' ', p.preferred_name, p.last_name)), ''), p.canonical_id), e.encounter_id
-            from therapy_group_session_encounters e
-            inner join therapy_group_sessions s on s.id = e.session_id and s.group_id = @groupId
-            inner join patients p on p.canonical_id = e.patient_id
-            where e.session_id = @sessionId order by p.last_name, p.first_name;
-            """;
-        command.Parameters.AddWithValue("groupId", groupId); command.Parameters.AddWithValue("sessionId", sessionId);
-        var encounters = new List<TherapyGroupSessionEncounterItem>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) encounters.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.GetString(3), reader.GetInt32(4), "existing"));
-        return encounters;
-    }
-
-    public async Task<TherapyGroupSessionEncounterResponse> CreateSessionEncountersAsync(Guid groupId, Guid sessionId, TherapyGroupSessionEncounterRequest request, EncounterRepository encounterRepository, CancellationToken cancellationToken)
-    {
-        await EnsureModuleEnabledAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using var sessionCommand = connection.CreateCommand(); sessionCommand.Transaction = transaction;
+        await using var sessionCommand = connection.CreateCommand();
+        sessionCommand.Transaction = transaction;
         sessionCommand.CommandText = """
             select s.starts_at, coalesce(nullif(s.topic, ''), g.name)
             from therapy_group_sessions s inner join therapy_groups g on g.id = s.group_id
             where s.id = @sessionId and s.group_id = @groupId and s.status = 'completed' for update;
             """;
-        sessionCommand.Parameters.AddWithValue("sessionId", sessionId); sessionCommand.Parameters.AddWithValue("groupId", groupId);
+        sessionCommand.Parameters.AddWithValue("sessionId", sessionId);
+        sessionCommand.Parameters.AddWithValue("groupId", groupId);
         await using var sessionReader = await sessionCommand.ExecuteReaderAsync(cancellationToken);
-        if (!await sessionReader.ReadAsync(cancellationToken)) throw new ArgumentException("Completed therapy-group session was not found.");
-        var sessionStartsAt = sessionReader.GetFieldValue<DateTimeOffset>(0).ToString("O"); var sessionTopic = sessionReader.GetString(1);
-        await sessionReader.DisposeAsync();
+        if (!await sessionReader.ReadAsync(cancellationToken))
+        {
+            throw new ArgumentException("Completed therapy-group session was not found.");
+        }
 
-        await using var participantCommand = connection.CreateCommand(); participantCommand.Transaction = transaction;
+        var sessionStartsAt = sessionReader.GetFieldValue<DateTimeOffset>(0).ToString("O");
+        var sessionTopic = sessionReader.GetString(1);
+        await sessionReader.DisposeAsync();
+        await using var participantCommand = connection.CreateCommand();
+        participantCommand.Transaction = transaction;
         participantCommand.CommandText = """
             select p.canonical_id, p.legacy_pid,
               coalesce(nullif(trim(concat_ws(' ', p.preferred_name, p.last_name)), ''), p.canonical_id), e.encounter_id
@@ -245,50 +413,169 @@ public sealed class TherapyGroupRepository(NpgsqlDataSource dataSource)
             where sp.session_id = @sessionId order by p.last_name, p.first_name;
             """;
         participantCommand.Parameters.AddWithValue("sessionId", sessionId);
-        var participants = new List<(string PatientId, int LegacyPid, string DisplayName, int? Encounter)>(); await using var participantReader = await participantCommand.ExecuteReaderAsync(cancellationToken);
-        while (await participantReader.ReadAsync(cancellationToken)) participants.Add((participantReader.GetString(0), participantReader.GetInt32(1), participantReader.GetString(2), participantReader.IsDBNull(3) ? null : participantReader.GetInt32(3)));
+        var participants = new List<(string PatientId, int LegacyPid, string DisplayName, int? Encounter)>();
+        await using var participantReader = await participantCommand.ExecuteReaderAsync(cancellationToken);
+        while (await participantReader.ReadAsync(cancellationToken))
+        {
+            participants.Add((
+                participantReader.GetString(0),
+                participantReader.GetInt32(1),
+                participantReader.GetString(2),
+                participantReader.IsDBNull(3) ? null : participantReader.GetInt32(3)));
+        }
+
         await participantReader.DisposeAsync();
-        if (participants.Count == 0) throw new ArgumentException("The completed session has no enrolled participant snapshot.");
+        if (participants.Count == 0)
+        {
+            throw new ArgumentException("The completed session has no enrolled participant snapshot.");
+        }
 
         var results = new List<TherapyGroupSessionEncounterItem>();
         foreach (var participant in participants)
         {
-            if (participant.Encounter is not null) { results.Add(new(sessionId, participant.PatientId, participant.LegacyPid, participant.DisplayName, participant.Encounter, "existing")); continue; }
-            var encounter = await encounterRepository.CreateAsync(new(participant.PatientId, request.ProviderId, sessionStartsAt, $"Group therapy: {sessionTopic}", request.FacilityId, request.BillingFacilityId, request.Sensitivity, request.ReferralSource, null, request.PosCode, request.BillingNote, null), cancellationToken);
-            if (encounter is null) { results.Add(new(sessionId, participant.PatientId, participant.LegacyPid, participant.DisplayName, null, "failed")); continue; }
-            await using var insertCommand = connection.CreateCommand(); insertCommand.Transaction = transaction;
-            insertCommand.CommandText = "insert into therapy_group_session_encounters (session_id, patient_id, encounter_id, created_at) values (@sessionId, @patientId, @encounterId, @createdAt);";
-            insertCommand.Parameters.AddWithValue("sessionId", sessionId); insertCommand.Parameters.AddWithValue("patientId", participant.PatientId); insertCommand.Parameters.AddWithValue("encounterId", encounter.Encounter); insertCommand.Parameters.AddWithValue("createdAt", DateTimeOffset.UtcNow);
+            if (participant.Encounter is not null)
+            {
+                results.Add(new TherapyGroupSessionEncounterItem(
+                    sessionId,
+                    participant.PatientId,
+                    participant.LegacyPid,
+                    participant.DisplayName,
+                    participant.Encounter,
+                    "existing"));
+                continue;
+            }
+
+            var encounter = await encounterRepository.CreateAsync(
+                new EncounterCreateRequest(
+                    participant.PatientId,
+                    request.ProviderId,
+                    sessionStartsAt,
+                    $"Group therapy: {sessionTopic}",
+                    request.FacilityId,
+                    request.BillingFacilityId,
+                    request.Sensitivity,
+                    request.ReferralSource,
+                    null,
+                    request.PosCode,
+                    request.BillingNote,
+                    null),
+                cancellationToken);
+            if (encounter is null)
+            {
+                results.Add(new TherapyGroupSessionEncounterItem(
+                    sessionId,
+                    participant.PatientId,
+                    participant.LegacyPid,
+                    participant.DisplayName,
+                    null,
+                    "failed"));
+                continue;
+            }
+
+            await using var insertCommand = connection.CreateCommand();
+            insertCommand.Transaction = transaction;
+            insertCommand.CommandText = """
+                insert into therapy_group_session_encounters
+                  (session_id, patient_id, encounter_id, created_at)
+                values (@sessionId, @patientId, @encounterId, @createdAt);
+                """;
+            insertCommand.Parameters.AddWithValue("sessionId", sessionId);
+            insertCommand.Parameters.AddWithValue("patientId", participant.PatientId);
+            insertCommand.Parameters.AddWithValue("encounterId", encounter.Encounter);
+            insertCommand.Parameters.AddWithValue("createdAt", DateTimeOffset.UtcNow);
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
-            results.Add(new(sessionId, participant.PatientId, participant.LegacyPid, participant.DisplayName, encounter.Encounter, "created"));
+            results.Add(new TherapyGroupSessionEncounterItem(
+                sessionId,
+                participant.PatientId,
+                participant.LegacyPid,
+                participant.DisplayName,
+                encounter.Encounter,
+                "created"));
         }
+
         await transaction.CommitAsync(cancellationToken);
-        return new(sessionId, results);
+        return new TherapyGroupSessionEncounterResponse(sessionId, results);
     }
 
-    private static async Task<IReadOnlyList<TherapyGroupSessionAttendanceItem>> ReadSessionAttendanceAsync(NpgsqlConnection connection, Guid sessionId, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<TherapyGroupSessionAttendanceItem>> ReadSessionAttendanceAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select a.session_id, p.canonical_id, p.legacy_pid,
-              coalesce(nullif(trim(concat_ws(' ', p.preferred_name, p.last_name)), ''), p.canonical_id),
-              a.attendance_status, a.note, a.recorded_at
-            from therapy_group_session_attendance a
-            inner join patients p on p.canonical_id = a.patient_id
-            where a.session_id = @sessionId
-            order by p.last_name, p.first_name;
-            """;
-        command.Parameters.AddWithValue("sessionId", sessionId);
-        var items = new List<TherapyGroupSessionAttendanceItem>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) items.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6).ToString("O")));
-        return items;
+        var rows = await dbContext.TherapyGroupSessionAttendance
+            .AsNoTracking()
+            .Where(attendance => attendance.SessionId == sessionId)
+            .OrderBy(attendance => attendance.Patient.LastName)
+            .ThenBy(attendance => attendance.Patient.FirstName)
+            .Select(attendance => new
+            {
+                Attendance = attendance,
+                attendance.Patient.LegacyPid,
+                attendance.Patient.PreferredName,
+                attendance.Patient.LastName
+            })
+            .ToListAsync(cancellationToken);
+        return rows.Select(row => new TherapyGroupSessionAttendanceItem(
+            row.Attendance.SessionId,
+            row.Attendance.PatientId,
+            row.LegacyPid,
+            DisplayName(row.PreferredName, row.LastName, row.Attendance.PatientId),
+            row.Attendance.AttendanceStatus,
+            row.Attendance.Note,
+            row.Attendance.RecordedAt?.ToString("O"))).ToList();
     }
 
     private async Task EnsureModuleEnabledAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "select exists(select 1 from module_catalog where module_key='THERAPY_GROUPS' and status='enabled');";
-        if (!(bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false)) throw new ArgumentException("The Therapy Groups module is disabled.");
+        command.CommandText = """
+            select exists(
+              select 1 from module_catalog
+              where module_key = 'THERAPY_GROUPS' and status = 'enabled');
+            """;
+        if (!(bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false))
+        {
+            throw new ArgumentException("The Therapy Groups module is disabled.");
+        }
+    }
+
+    private static TherapyGroupItem ToItem(TherapyGroupEntity group) =>
+        new(
+            group.Id,
+            group.Name,
+            group.Status,
+            group.FacilitatorId,
+            group.Description,
+            group.Capacity,
+            group.CreatedAt.ToString("O"));
+
+    private static TherapyGroupSessionItem ToItem(TherapyGroupSessionEntity session) =>
+        new(
+            session.Id,
+            session.GroupId,
+            session.StartsAt.ToString("O"),
+            session.DurationMinutes,
+            session.Topic,
+            session.Status,
+            session.CreatedAt.ToString("O"));
+
+    private static TherapyGroupSessionAttendanceItem ToItem(
+        TherapyGroupSessionAttendanceEntity attendance) =>
+        new(
+            attendance.SessionId,
+            attendance.PatientId,
+            attendance.Patient.LegacyPid,
+            DisplayName(
+                attendance.Patient.PreferredName,
+                attendance.Patient.LastName,
+                attendance.PatientId),
+            attendance.AttendanceStatus,
+            attendance.Note,
+            attendance.RecordedAt?.ToString("O"));
+
+    private static string DisplayName(string? preferredName, string lastName, string patientId)
+    {
+        var displayName = $"{preferredName} {lastName}".Trim();
+        return string.IsNullOrWhiteSpace(displayName) ? patientId : displayName;
     }
 }

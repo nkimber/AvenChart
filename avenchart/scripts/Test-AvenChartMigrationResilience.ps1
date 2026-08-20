@@ -624,6 +624,62 @@ try {
     }
     $CompletedScenarios.Add("ef-core-patient-sdoh-concurrency")
 
+    $therapyGroupCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/therapy-groups/" `
+        -Headers $authenticatedHeaders `
+        -Body '{"name":"EF Core resilience group","facilitatorId":null,"description":"Therapy aggregate regression coverage","capacity":4}'
+    if ([int]$therapyGroupCreateResponse.StatusCode -ne 201) {
+        throw "EF-backed therapy-group creation returned HTTP $($therapyGroupCreateResponse.StatusCode). Body: $(Get-HttpResponseContent -Response $therapyGroupCreateResponse)"
+    }
+    $therapyGroup = (Get-HttpResponseContent -Response $therapyGroupCreateResponse) | ConvertFrom-Json
+    $therapyMemberResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/therapy-groups/$($therapyGroup.id)/members" `
+        -Headers $authenticatedHeaders `
+        -Body '{"patientId":"MOD-PAT-0001"}'
+    $therapySessionResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/therapy-groups/$($therapyGroup.id)/sessions" `
+        -Headers $authenticatedHeaders `
+        -Body '{"startsAt":"2026-12-15T15:00:00Z","durationMinutes":60,"topic":"EF Core aggregate verification"}'
+    if ([int]$therapyMemberResponse.StatusCode -ne 201 -or [int]$therapySessionResponse.StatusCode -ne 201) {
+        throw "EF-backed therapy-group membership or session creation failed."
+    }
+    $therapyMember = (Get-HttpResponseContent -Response $therapyMemberResponse) | ConvertFrom-Json
+    $therapySession = (Get-HttpResponseContent -Response $therapySessionResponse) | ConvertFrom-Json
+    $therapyAttendanceResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/therapy-groups/$($therapyGroup.id)/sessions/$($therapySession.id)/attendance/MOD-PAT-0001" `
+        -Headers $authenticatedHeaders `
+        -Body '{"status":"present","note":"EF aggregate test attendance"}'
+    $therapyCompletionResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/therapy-groups/$($therapyGroup.id)/sessions/$($therapySession.id)/status" `
+        -Headers $authenticatedHeaders `
+        -Body '{"status":"completed"}'
+    $therapyAttendanceListResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/therapy-groups/$($therapyGroup.id)/sessions/$($therapySession.id)/attendance" `
+        -Headers $authenticatedHeaders
+    if ([int]$therapyAttendanceResponse.StatusCode -ne 200 -or
+        [int]$therapyCompletionResponse.StatusCode -ne 200 -or
+        [int]$therapyAttendanceListResponse.StatusCode -ne 200) {
+        throw "EF-backed therapy-group attendance or completion failed."
+    }
+    $therapyAttendance = (Get-HttpResponseContent -Response $therapyAttendanceResponse) | ConvertFrom-Json
+    $therapyCompletion = (Get-HttpResponseContent -Response $therapyCompletionResponse) | ConvertFrom-Json
+    $therapyAttendanceList = (Get-HttpResponseContent -Response $therapyAttendanceListResponse) | ConvertFrom-Json
+    $therapyParticipantCount = [int](Invoke-DatabaseScalar -Sql "select count(*) from therapy_group_session_participants where session_id = '$($therapySession.id)' and patient_id = 'MOD-PAT-0001';")
+    if ($therapyMember.patientId -ne "MOD-PAT-0001" -or
+        $therapyAttendance.status -ne "present" -or
+        $therapyCompletion.status -ne "completed" -or
+        $therapyAttendanceList.attendance.patientId -notcontains "MOD-PAT-0001" -or
+        $therapyParticipantCount -ne 1) {
+        throw "EF-backed therapy-group aggregate returned unexpected state."
+    }
+    $CompletedScenarios.Add("ef-core-therapy-group-aggregate")
+
     $messageResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/messages/MOD-PAT-0001" `
