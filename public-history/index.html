@@ -48,18 +48,49 @@
         <a class="workbench-tab workbench-tab-intro" href="#introduction" data-workbench-view="introduction">
           <span>Start here</span>
           <strong>Introduction</strong>
+          <small>Program purpose and status</small>
         </a>
-        <div class="phase-tab-group" aria-labelledby="phase-one-nav-label">
-          <div class="phase-tab-heading">
-            <span id="phase-one-nav-label">Phase 01</span>
-            <strong>Experimental build</strong>
-            <small>Closed · fixed snapshot</small>
+        <div class="phase-tab-groups">
+          <div class="phase-tab-group is-closed" aria-labelledby="phase-one-nav-label">
+            <div class="phase-tab-heading">
+              <span id="phase-one-nav-label">Phase 01</span>
+              <strong>Experimental build</strong>
+              <small>Closed · fixed snapshot</small>
+            </div>
+            <div class="phase-tab-links">
+              <a class="workbench-tab" href="#phase-1-overview" data-workbench-view="phase-1-overview">Overview</a>
+              <a class="workbench-tab" href="#phase-1-pulse" data-workbench-view="phase-1-pulse">Development pulse</a>
+              <a class="workbench-tab" href="#phase-1-activity" data-workbench-view="phase-1-activity">Activity</a>
+              <a class="workbench-tab" href="#phase-1-history" data-workbench-view="phase-1-history">Source history</a>
+            </div>
           </div>
-          <div class="phase-tab-links">
-            <a class="workbench-tab" href="#phase-1-overview" data-workbench-view="phase-1-overview">Overview</a>
-            <a class="workbench-tab" href="#phase-1-pulse" data-workbench-view="phase-1-pulse">Development pulse</a>
-            <a class="workbench-tab" href="#phase-1-activity" data-workbench-view="phase-1-activity">Activity</a>
-            <a class="workbench-tab" href="#phase-1-history" data-workbench-view="phase-1-history">Source history</a>
+
+          <div class="phase-tab-group is-current" aria-labelledby="phase-two-nav-label">
+            <div class="phase-tab-heading">
+              <span id="phase-two-nav-label">Phase 02</span>
+              <strong>Assessment and planning</strong>
+              <small>In progress · setup</small>
+            </div>
+            <div class="phase-tab-links">
+              <a class="workbench-tab" href="#phase-2-overview" data-workbench-view="phase-2-overview">Overview</a>
+              <a class="workbench-tab" href="#phase-2-assessment" data-workbench-view="phase-2-assessment">Assessment framework</a>
+              <a class="workbench-tab" href="#phase-2-findings" data-workbench-view="phase-2-findings">Findings register</a>
+              <a class="workbench-tab" href="#phase-2-recommendations" data-workbench-view="phase-2-recommendations">Recommendations</a>
+            </div>
+          </div>
+
+          <div class="phase-tab-group is-planned" aria-labelledby="phase-three-nav-label">
+            <div class="phase-tab-heading">
+              <span id="phase-three-nav-label">Phase 03</span>
+              <strong>Improvement delivery</strong>
+              <small>Planned · not started</small>
+            </div>
+            <div class="phase-tab-links">
+              <a class="workbench-tab" href="#phase-3-overview" data-workbench-view="phase-3-overview">Overview</a>
+              <a class="workbench-tab" href="#phase-3-delivery" data-workbench-view="phase-3-delivery">Delivery sequence</a>
+              <a class="workbench-tab" href="#phase-3-gates" data-workbench-view="phase-3-gates">Quality gates</a>
+              <a class="workbench-tab" href="#phase-3-progress" data-workbench-view="phase-3-progress">Progress record</a>
+            </div>
           </div>
         </div>
       </nav>
@@ -384,6 +415,615 @@
 
           <ol id="commit-list" class="commit-list"></ol>
           <button id="load-more" class="load-more" type="button">Show more check-ins</button>
+        </section>
+      </section>
+
+      <section id="phase-2-overview" class="workbench-panel" data-workbench-panel="phase-2-overview" tabindex="-1" hidden>
+        <section class="phase-hero phase-two-hero" aria-labelledby="phase-two-title">
+          <div>
+            <p class="eyebrow">Phase 02 · Assessment and planning · In progress</p>
+            <h1 id="phase-two-title">Critically assess what Phase 1 produced.</h1>
+            <p class="phase-hero-lead">
+              Phase 2 converts a broad functional experiment into an evidence-based engineering decision. It asks
+              whether the generated system is coherent, understandable, secure, safe, efficient, testable, and
+              maintainable—and identifies what must change before continued development is justified.
+            </p>
+            <p class="scope-note">
+              This phase produces analysis and recommendations. It does not improve the application while the
+              assessment is still establishing what the real problems are and how they relate to one another.
+            </p>
+          </div>
+          <aside class="phase-status-stamp is-current" aria-label="Phase 2 status">
+            <span>Phase 02 status</span>
+            <strong>In progress</strong>
+            <p>Assessment setup and baseline preservation</p>
+            <time datetime="2026-08-20">Started August 20, 2026</time>
+          </aside>
+        </section>
+
+        <section class="charter-section" aria-labelledby="phase-two-charter-heading">
+          <div class="section-side-heading">
+            <p class="eyebrow">Phase charter</p>
+            <h2 id="phase-two-charter-heading">A decision phase, not a refactoring sprint.</h2>
+            <p>
+              The purpose is to replace impressions with a traceable account of the codebase’s strengths, risks,
+              liabilities, and opportunities.
+            </p>
+          </div>
+          <dl class="charter-ledger">
+            <div><dt>Primary question</dt><dd>Is this a sound foundation for a maintainable healthcare product?</dd></div>
+            <div><dt>Entry condition</dt><dd>Phase 1 source and measurements fixed at one revision</dd></div>
+            <div><dt>In scope</dt><dd>The complete solution, its runtime behavior, tests, data, operations, and documentation</dd></div>
+            <div><dt>Out of scope</dt><dd>Unapproved modernization work and claims of production readiness</dd></div>
+            <div><dt>Exit condition</dt><dd>Coverage is complete, findings are validated, and recommendations are ordered and accepted</dd></div>
+            <div><dt>Decision output</dt><dd>Proceed, proceed conditionally, reduce scope, replace components, or stop</dd></div>
+          </dl>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="phase-two-deliverables-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Required deliverables</p>
+              <h2 id="phase-two-deliverables-heading">The assessment must leave a usable body of evidence.</h2>
+            </div>
+            <p>
+              Phase 2 is complete only when another engineer can understand what was examined, reproduce the most
+              important conclusions, and see why the proposed sequence of work follows from the findings.
+            </p>
+          </div>
+          <div class="deliverable-grid">
+            <article><span>01</span><h3>Current-state architecture</h3><p>System boundaries, dependencies, data flows, deployment shape, and cross-cutting services as they actually exist.</p></article>
+            <article><span>02</span><h3>Assessment coverage matrix</h3><p>Every subsystem and quality domain, its review status, evidence sources, reviewer, and any justified exclusions.</p></article>
+            <article><span>03</span><h3>Quality scorecard</h3><p>A concise view of strengths, weaknesses, uncertainty, and production-blocking conditions without hiding nuance.</p></article>
+            <article><span>04</span><h3>Validated findings register</h3><p>Evidence-backed problems and opportunities with severity, reach, cause, risk, and affected components.</p></article>
+            <article><span>05</span><h3>Recommendation catalog</h3><p>Target states, benefits, prerequisites, complexity, risk, acceptance criteria, and alternatives for each proposal.</p></article>
+            <article><span>06</span><h3>Dependency-aware roadmap</h3><p>An implementation order that addresses blockers first and avoids spending effort on work likely to be displaced.</p></article>
+          </div>
+        </section>
+
+        <section class="phase-process" aria-labelledby="phase-two-process-heading">
+          <div class="phase-process-heading">
+            <p class="eyebrow">Assessment flow</p>
+            <h2 id="phase-two-process-heading">From inventory to an approved roadmap.</h2>
+          </div>
+          <ol class="process-steps">
+            <li><span>01</span><div><h3>Inventory</h3><p>Map projects, modules, routes, persistence, integrations, tests, and runtime boundaries.</p></div></li>
+            <li><span>02</span><div><h3>Assess</h3><p>Apply the same quality model to every subsystem and record both evidence and uncertainty.</p></div></li>
+            <li><span>03</span><div><h3>Validate</h3><p>Confirm important findings through tests, traces, measurements, and cross-component review.</p></div></li>
+            <li><span>04</span><div><h3>Recommend</h3><p>Describe target states and measurable benefits, including cost, prerequisites, and alternatives.</p></div></li>
+            <li><span>05</span><div><h3>Decide</h3><p>Accept, defer, reject, or combine recommendations and approve the Phase 3 sequence.</p></div></li>
+          </ol>
+        </section>
+
+        <section class="principle-band" aria-labelledby="phase-two-principles-heading">
+          <div>
+            <p class="eyebrow">Operating principles</p>
+            <h2 id="phase-two-principles-heading">Evidence before preference.</h2>
+          </div>
+          <ul>
+            <li>Assess the system that exists, not the architecture its names imply.</li>
+            <li>Separate production blockers from ordinary maintainability and style concerns.</li>
+            <li>Distinguish isolated defects from repeated patterns and systemic causes.</li>
+            <li>Do not recommend a fashionable pattern without a demonstrated problem and measurable benefit.</li>
+            <li>Record uncertainty explicitly when evidence is incomplete or behavior cannot yet be reproduced.</li>
+          </ul>
+        </section>
+      </section>
+
+      <section id="phase-2-assessment" class="workbench-panel" data-workbench-panel="phase-2-assessment" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 02 · Assessment framework</p>
+          <h1>Review every quality dimension consistently.</h1>
+          <p>
+            The framework prevents the review from becoming a collection of isolated code comments. Each domain is
+            evaluated across the complete solution using observable evidence, and each conclusion records what was
+            examined, what remains uncertain, and how much of the system it affects.
+          </p>
+        </div>
+
+        <section class="workbench-section" aria-labelledby="assessment-domains-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Assessment domains</p>
+              <h2 id="assessment-domains-heading">Twelve lenses on one system.</h2>
+            </div>
+            <p>
+              A domain is complete only after its relevant backend, frontend, database, runtime, and verification
+              surfaces have been considered. All domains begin unassessed; status changes only with recorded evidence.
+            </p>
+          </div>
+          <div class="assessment-domain-grid">
+            <article><div><span>01</span><small>Not assessed</small></div><h3>Architecture and boundaries</h3><p>Project responsibilities, dependency direction, modularity, coupling, cohesion, and cross-cutting ownership.</p><ul><li>Dependency and flow maps</li><li>Boundary violations</li><li>Change-impact sampling</li></ul></article>
+            <article><div><span>02</span><small>Not assessed</small></div><h3>Code structure and readability</h3><p>Naming, file and method size, organization, duplication, complexity, conventions, and human traceability.</p><ul><li>Complexity and duplication scans</li><li>Representative code tracing</li><li>Convention consistency</li></ul></article>
+            <article><div><span>03</span><small>Not assessed</small></div><h3>Domain correctness and clinical safety</h3><p>Business invariants, lifecycle rules, error states, clinical consequences, and protection against unsafe ambiguity.</p><ul><li>Workflow-to-code tracing</li><li>Invariant and edge-case tests</li><li>Safety-critical failure review</li></ul></article>
+            <article><div><span>04</span><small>Not assessed</small></div><h3>Data and persistence</h3><p>Schema quality, transaction boundaries, consistency, concurrency, ORM and SQL use, migrations, retention, and recovery.</p><ul><li>Query and transaction review</li><li>Migration replay</li><li>Concurrency scenarios</li></ul></article>
+            <article><div><span>05</span><small>Not assessed</small></div><h3>Security, privacy, and access control</h3><p>Identity, authorization, secrets, input trust, auditability, sensitive-data handling, isolation, and misuse resistance.</p><ul><li>Trust-boundary mapping</li><li>Authorization-path sampling</li><li>Secret and data-flow review</li></ul></article>
+            <article><div><span>06</span><small>Not assessed</small></div><h3>Performance and scalability</h3><p>Latency, query behavior, allocation, payload size, contention, caching, background work, and expected operating limits.</p><ul><li>Representative measurements</li><li>Hot-path and query analysis</li><li>Load-shape assumptions</li></ul></article>
+            <article><div><span>07</span><small>Not assessed</small></div><h3>APIs and integrations</h3><p>Contract clarity, validation, versioning, failure handling, idempotency, interoperability, and external dependency risk.</p><ul><li>Contract inventory</li><li>Error-response review</li><li>Retry and reconciliation paths</li></ul></article>
+            <article><div><span>08</span><small>Not assessed</small></div><h3>Frontend and accessibility</h3><p>Information architecture, interaction consistency, state management, responsiveness, keyboard use, semantics, and inclusion.</p><ul><li>Workflow walkthroughs</li><li>Automated and manual accessibility</li><li>Failure and recovery states</li></ul></article>
+            <article><div><span>09</span><small>Not assessed</small></div><h3>Testing and quality controls</h3><p>Test purpose, coverage by risk, reliability, isolation, realism, maintainability, regression power, and release confidence.</p><ul><li>Suite classification</li><li>Mutation and failure sampling</li><li>Flake and runtime review</li></ul></article>
+            <article><div><span>10</span><small>Not assessed</small></div><h3>Observability and operations</h3><p>Logs, metrics, traces, health, alerts, configuration, deployment, rollback, backup, incident response, and supportability.</p><ul><li>Operational walkthrough</li><li>Failure injection</li><li>Recovery evidence</li></ul></article>
+            <article><div><span>11</span><small>Not assessed</small></div><h3>Dependencies and supply chain</h3><p>Currency, support horizon, vulnerabilities, licensing, reproducibility, provenance, build integrity, and upgrade friction.</p><ul><li>Dependency inventory</li><li>Support and license checks</li><li>Clean-build reproduction</li></ul></article>
+            <article><div><span>12</span><small>Not assessed</small></div><h3>Documentation and developer experience</h3><p>Setup, mental model, decision records, local feedback, troubleshooting, contribution flow, and ownership clarity.</p><ul><li>Clean-checkout onboarding</li><li>Task completion sampling</li><li>Documentation accuracy</li></ul></article>
+          </div>
+        </section>
+
+        <section class="evidence-standard" aria-labelledby="evidence-standard-heading">
+          <div class="evidence-standard-heading">
+            <p class="eyebrow">Evidence standard</p>
+            <h2 id="evidence-standard-heading">Every conclusion must be traceable.</h2>
+          </div>
+          <div class="evidence-grid">
+            <article><span>Observe</span><h3>Concrete condition</h3><p>Name the behavior, structure, or absence that was actually found.</p></article>
+            <article><span>Locate</span><h3>Reproducible evidence</h3><p>Link the code, configuration, trace, query plan, test, or measured scenario.</p></article>
+            <article><span>Interpret</span><h3>Consequence and reach</h3><p>Explain why it matters, who or what is affected, and whether it is isolated or systemic.</p></article>
+            <article><span>Calibrate</span><h3>Confidence and uncertainty</h3><p>Record what supports the conclusion and what remains unknown or untested.</p></article>
+          </div>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="rating-scale-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Finding severity</p>
+              <h2 id="rating-scale-heading">Priority reflects consequence, not annoyance.</h2>
+            </div>
+            <p>
+              Severity combines plausible impact, likelihood, affected population, detectability, and blast radius.
+              Effort is recorded separately so a difficult problem is not mistaken for a low-priority problem.
+            </p>
+          </div>
+          <div class="severity-scale">
+            <article class="severity-blocker"><span>Blocker</span><p>Could make clinical or production use unacceptable; must be resolved or explicitly accepted before release.</p></article>
+            <article class="severity-high"><span>High</span><p>Material correctness, security, privacy, reliability, or systemic maintainability risk requiring early action.</p></article>
+            <article class="severity-medium"><span>Medium</span><p>Meaningful localized risk or recurring cost that should be planned but does not independently block all progress.</p></article>
+            <article class="severity-low"><span>Low</span><p>Contained defect, inconsistency, or inefficiency with limited consequence and straightforward workarounds.</p></article>
+            <article class="severity-opportunity"><span>Opportunity</span><p>Optional improvement with measurable value but no demonstrated defect or unmanaged risk.</p></article>
+          </div>
+        </section>
+
+        <section class="completion-panel" aria-labelledby="assessment-complete-heading">
+          <div><p class="eyebrow">Completion rule</p><h2 id="assessment-complete-heading">“Reviewed” must mean something.</h2></div>
+          <ul>
+            <li>All in-scope subsystems are mapped to every applicable assessment domain.</li>
+            <li>Each coverage item records evidence, status, reviewer, date, and unresolved uncertainty.</li>
+            <li>High-severity and systemic findings have been independently reproduced or corroborated.</li>
+            <li>Excluded areas are named with a reason, risk statement, and follow-up decision.</li>
+            <li>The findings register and scorecard agree with the underlying evidence.</li>
+          </ul>
+        </section>
+      </section>
+
+      <section id="phase-2-findings" class="workbench-panel" data-workbench-panel="phase-2-findings" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 02 · Findings register</p>
+          <h1>Record what the evidence supports.</h1>
+          <p>
+            Findings are the durable analytical output of the review. A finding is not a preference, a proposed
+            solution, or a vague concern: it is a reproducible condition with a stated consequence, affected scope,
+            severity, and confidence level.
+          </p>
+        </div>
+
+        <section class="register-status" aria-labelledby="findings-status-heading">
+          <div class="register-count"><strong>0</strong><span>validated findings</span></div>
+          <div>
+            <p class="eyebrow">Register status</p>
+            <h2 id="findings-status-heading">The register begins empty by design.</h2>
+            <p>
+              Phase 1 observations and assumptions are inputs to the review, not pre-approved findings. Entries will
+              appear here only after the relevant evidence has been captured and the consequence has been evaluated.
+            </p>
+          </div>
+          <span class="status-pill is-setup">Assessment setup</span>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="finding-record-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Finding record</p>
+              <h2 id="finding-record-heading">One schema for every quality domain.</h2>
+            </div>
+            <p>
+              Consistent fields make findings comparable, searchable, reviewable, and suitable for turning into
+              recommendations without losing the evidence that justified them.
+            </p>
+          </div>
+          <div class="data-table-scroll">
+            <table class="workbench-table">
+              <thead><tr><th>Field</th><th>Purpose</th><th>Required content</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Identifier and title</th><td>Stable reference</td><td>Domain prefix, sequence, and a precise condition—not a proposed fix</td></tr>
+                <tr><th scope="row">Condition</th><td>What exists</td><td>The behavior, structure, omission, or repeated pattern observed</td></tr>
+                <tr><th scope="row">Evidence</th><td>Reproducibility</td><td>Files, lines, tests, traces, measurements, requests, plans, or screenshots</td></tr>
+                <tr><th scope="row">Consequence</th><td>Why it matters</td><td>Impact on users, patients, data, operations, delivery, or future change</td></tr>
+                <tr><th scope="row">Cause and reach</th><td>System context</td><td>Likely cause, affected components, frequency, and isolated versus systemic classification</td></tr>
+                <tr><th scope="row">Risk</th><td>Priority input</td><td>Severity, likelihood, blast radius, detectability, confidence, and production-blocker status</td></tr>
+                <tr><th scope="row">Disposition</th><td>Governance</td><td>Open, validated, disputed, accepted risk, addressed, superseded, or closed</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="finding-lifecycle" aria-labelledby="finding-lifecycle-heading">
+          <div class="section-side-heading">
+            <p class="eyebrow">Finding lifecycle</p>
+            <h2 id="finding-lifecycle-heading">From observation to accepted evidence.</h2>
+          </div>
+          <ol>
+            <li><span>Observed</span><p>A potential condition is captured with its initial location and context.</p></li>
+            <li><span>Reproduced</span><p>The condition is confirmed through a second path, executable scenario, or corroborating evidence.</p></li>
+            <li><span>Analyzed</span><p>Cause, reach, consequence, severity, confidence, and uncertainty are recorded.</p></li>
+            <li><span>Validated</span><p>The finding is reviewed for accuracy, duplication, proportionality, and systemic implications.</p></li>
+            <li><span>Dispositioned</span><p>It is linked to a recommendation, accepted as risk, deferred, disputed, or closed with rationale.</p></li>
+          </ol>
+        </section>
+
+        <section class="context-boundary" aria-labelledby="context-boundary-heading">
+          <div><p class="eyebrow">Analytical boundary</p><h2 id="context-boundary-heading">Context is not a finding.</h2></div>
+          <div>
+            <p>
+              The approximately 86% coverage estimate, the GenAI-only creation method, and known functional gaps
+              explain why the assessment exists. They do not prove that any particular architecture, subsystem, or
+              implementation is poor.
+            </p>
+            <p>
+              Likewise, modern syntax, an ORM, a test suite, or a named architectural pattern does not prove quality.
+              Phase 2 evaluates whether each choice works in this system and whether its actual consequences are
+              acceptable.
+            </p>
+          </div>
+        </section>
+      </section>
+
+      <section id="phase-2-recommendations" class="workbench-panel" data-workbench-panel="phase-2-recommendations" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 02 · Recommendations</p>
+          <h1>Turn findings into an ordered decision.</h1>
+          <p>
+            A recommendation describes a justified change in direction or target state. It must identify the problem
+            it addresses, the value it creates, the evidence that will prove success, and the dependencies and risks
+            that determine when—or whether—it should be implemented.
+          </p>
+        </div>
+
+        <section class="workbench-section" aria-labelledby="recommendation-record-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Recommendation record</p>
+              <h2 id="recommendation-record-heading">A proposal must explain more than the desired technology.</h2>
+            </div>
+            <p>
+              Recommendations are written so they can be accepted, deferred, rejected, combined, or implemented
+              without reconstructing the original argument from memory.
+            </p>
+          </div>
+          <div class="recommendation-grid">
+            <article><span>Problem</span><h3>Linked findings</h3><p>The validated conditions, risks, and root causes this proposal addresses.</p></article>
+            <article><span>Direction</span><h3>Target state</h3><p>The intended structure or behavior, including what will remain unchanged.</p></article>
+            <article><span>Value</span><h3>Expected benefit</h3><p>Risk reduction, correctness, safety, performance, clarity, cost, or delivery improvement.</p></article>
+            <article><span>Sequence</span><h3>Dependencies</h3><p>Prerequisites, unlocked work, conflicts, migration order, and decisions that must come first.</p></article>
+            <article><span>Effort</span><h3>Size and complexity</h3><p>Estimated breadth, technical difficulty, coordination, migration needs, and specialist involvement.</p></article>
+            <article><span>Risk</span><h3>Change exposure</h3><p>Regression surface, data risk, operational impact, reversibility, and rollout strategy.</p></article>
+            <article><span>Proof</span><h3>Acceptance criteria</h3><p>Observable outcomes and tests that distinguish completion from partial implementation.</p></article>
+            <article><span>Choice</span><h3>Alternatives and disposition</h3><p>Viable alternatives, do-nothing consequences, and the accept, defer, reject, or combine decision.</p></article>
+          </div>
+        </section>
+
+        <section class="priority-stack" aria-labelledby="priority-stack-heading">
+          <div class="priority-stack-heading">
+            <p class="eyebrow">Default ordering logic</p>
+            <h2 id="priority-stack-heading">Protect the system before polishing it.</h2>
+            <p>
+              The final roadmap will follow actual dependencies, but it begins with a risk-first bias so attractive
+              cleanup does not displace safety, correctness, security, privacy, or recoverability work.
+            </p>
+          </div>
+          <ol>
+            <li><span>01</span><div><h3>Production and safety blockers</h3><p>Conditions that make deployment or clinical reliance unacceptable.</p></div></li>
+            <li><span>02</span><div><h3>High-risk correctness, security, and privacy</h3><p>Material exposure that can be addressed without waiting for broader redesign.</p></div></li>
+            <li><span>03</span><div><h3>Foundational architecture and boundaries</h3><p>Changes that reduce systemic coupling and make later work safer and smaller.</p></div></li>
+            <li><span>04</span><div><h3>Data, performance, and operational resilience</h3><p>Measured bottlenecks, consistency risks, failure recovery, and capacity constraints.</p></div></li>
+            <li><span>05</span><div><h3>Maintainability and duplication</h3><p>Repeated implementation cost, excessive bulk, unclear ownership, and difficult change paths.</p></div></li>
+            <li><span>06</span><div><h3>Developer experience and stylistic consistency</h3><p>Tooling, conventions, documentation, and refinements that compound future delivery quality.</p></div></li>
+          </ol>
+        </section>
+
+        <section class="sizing-section" aria-labelledby="recommendation-sizing-heading">
+          <div class="section-side-heading">
+            <p class="eyebrow">Sizing language</p>
+            <h2 id="recommendation-sizing-heading">Size and difficulty remain separate from value.</h2>
+          </div>
+          <div class="sizing-grid">
+            <article><strong>S</strong><div><h3>Contained</h3><p>One component or narrow behavior; minimal migration and coordination.</p></div></article>
+            <article><strong>M</strong><div><h3>Multi-file or multi-layer</h3><p>Several related components with meaningful regression coverage and review.</p></div></article>
+            <article><strong>L</strong><div><h3>Cross-cutting</h3><p>Multiple subsystems, data or contract migration, staged rollout, or broad verification.</p></div></article>
+            <article><strong>XL</strong><div><h3>Program-level</h3><p>Architectural transition requiring decomposition, milestones, coordination, and explicit rollback strategy.</p></div></article>
+          </div>
+        </section>
+
+        <section class="phase-exit-gate" aria-labelledby="phase-two-exit-heading">
+          <div>
+            <p class="eyebrow">Phase 2 exit gate</p>
+            <h2 id="phase-two-exit-heading">Phase 3 starts only after the roadmap is defensible.</h2>
+          </div>
+          <div class="exit-gate-checks">
+            <label><input type="checkbox" disabled /> Assessment coverage is complete or exclusions are approved.</label>
+            <label><input type="checkbox" disabled /> High-risk and systemic findings have been validated.</label>
+            <label><input type="checkbox" disabled /> Every accepted recommendation links to findings and measurable acceptance criteria.</label>
+            <label><input type="checkbox" disabled /> Dependencies, migration risks, alternatives, and estimated size are recorded.</label>
+            <label><input type="checkbox" disabled /> The implementation order and Phase 3 scope have explicit approval.</label>
+          </div>
+        </section>
+      </section>
+
+      <section id="phase-3-overview" class="workbench-panel" data-workbench-panel="phase-3-overview" tabindex="-1" hidden>
+        <section class="phase-hero phase-three-hero" aria-labelledby="phase-three-title">
+          <div>
+            <p class="eyebrow">Phase 03 · Improvement delivery · Planned</p>
+            <h1 id="phase-three-title">Improve the system in evidence-led order.</h1>
+            <p class="phase-hero-lead">
+              Phase 3 will implement the recommendations accepted at the end of Phase 2. It is not a general rewrite
+              mandate: every change must trace back to a validated problem or opportunity, preserve required behavior,
+              and produce evidence that the intended risk or cost has actually been reduced.
+            </p>
+            <p class="scope-note">
+              The phase is deliberately not started. Its final scope, milestones, and estimates depend on the Phase 2
+              findings and recommendation decisions.
+            </p>
+          </div>
+          <aside class="phase-status-stamp is-planned" aria-label="Phase 3 status">
+            <span>Phase 03 status</span>
+            <strong>Planned</strong>
+            <p>Waiting for an approved Phase 2 roadmap</p>
+            <time>Start date not set</time>
+          </aside>
+        </section>
+
+        <section class="charter-section" aria-labelledby="phase-three-charter-heading">
+          <div class="section-side-heading">
+            <p class="eyebrow">Phase charter</p>
+            <h2 id="phase-three-charter-heading">Delivery governed by findings and gates.</h2>
+            <p>
+              Phase 3 converts accepted recommendations into small, reviewable changes while maintaining a usable
+              system and an auditable account of progress.
+            </p>
+          </div>
+          <dl class="charter-ledger">
+            <div><dt>Primary question</dt><dd>Can the generated baseline become a trustworthy and sustainable engineering foundation?</dd></div>
+            <div><dt>Entry condition</dt><dd>Phase 2 coverage, findings, recommendations, and ordering approved</dd></div>
+            <div><dt>Unit of delivery</dt><dd>One recommendation or independently valuable slice with explicit acceptance criteria</dd></div>
+            <div><dt>Change policy</dt><dd>Preserve required behavior; migrate deliberately; measure before and after</dd></div>
+            <div><dt>Exit condition</dt><dd>Accepted scope complete, quality gates satisfied, residual risks documented</dd></div>
+            <div><dt>Decision output</dt><dd>Readiness posture and the justified scope of any subsequent product phase</dd></div>
+          </dl>
+        </section>
+
+        <section class="locked-entry-gate" aria-labelledby="phase-three-entry-heading">
+          <div class="gate-lock" aria-hidden="true">03</div>
+          <div>
+            <p class="eyebrow">Entry gate · Closed</p>
+            <h2 id="phase-three-entry-heading">Implementation waits for the assessment.</h2>
+            <p>
+              Starting broad modernization early would mix diagnosis with treatment, hide the original baseline, and
+              risk optimizing components that a later architectural decision would replace. Small emergency fixes may
+              be handled separately, but they do not silently open Phase 3.
+            </p>
+          </div>
+          <ul>
+            <li>Phase 2 assessment complete</li>
+            <li>Findings validated and dispositioned</li>
+            <li>Recommendations accepted and ordered</li>
+            <li>Regression baseline and ownership agreed</li>
+          </ul>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="phase-three-principles-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Delivery principles</p>
+              <h2 id="phase-three-principles-heading">Improve without losing the ability to explain why.</h2>
+            </div>
+            <p>
+              Progress is defined by accepted outcomes and retired risk, not lines changed, technologies introduced,
+              or the number of recommendations marked complete.
+            </p>
+          </div>
+          <div class="delivery-principle-grid">
+            <article><span>Traceability</span><h3>Findings stay attached</h3><p>Every change identifies its recommendation, affected findings, acceptance criteria, and evidence.</p></article>
+            <article><span>Incrementality</span><h3>Smallest valuable slice</h3><p>Large target states are decomposed into reversible milestones that leave the system coherent.</p></article>
+            <article><span>Behavior</span><h3>Required outcomes remain protected</h3><p>Functional contracts, data meaning, and user workflows change only when the recommendation explicitly requires it.</p></article>
+            <article><span>Measurement</span><h3>Before and after are comparable</h3><p>Performance, reliability, complexity, and operational claims use agreed baselines and repeatable measurements.</p></article>
+            <article><span>Migration</span><h3>Transitions are first-class work</h3><p>Data, APIs, configuration, deployments, and rollback receive the same design attention as the end state.</p></article>
+            <article><span>Restraint</span><h3>No architecture for its own sake</h3><p>New abstractions, services, libraries, or patterns must remove a demonstrated problem at acceptable cost.</p></article>
+          </div>
+        </section>
+
+        <section class="phase-outcomes" aria-labelledby="phase-three-outcomes-heading">
+          <div><p class="eyebrow">Expected outputs</p><h2 id="phase-three-outcomes-heading">A changed system and a stronger evidence record.</h2></div>
+          <div class="outcome-list">
+            <article><strong>Implemented roadmap</strong><p>Accepted recommendations completed, deferred, or revised with decision history intact.</p></article>
+            <article><strong>Verified risk reduction</strong><p>Closed findings link to tests, measurements, migrations, or operational evidence.</p></article>
+            <article><strong>Updated architecture</strong><p>Current-state diagrams and decision records reflect what was actually delivered.</p></article>
+            <article><strong>Readiness assessment</strong><p>Residual blockers, accepted risks, operating limits, and next-phase options are explicit.</p></article>
+          </div>
+        </section>
+      </section>
+
+      <section id="phase-3-delivery" class="workbench-panel" data-workbench-panel="phase-3-delivery" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 03 · Delivery sequence</p>
+          <h1>Deliver in dependency-aware waves.</h1>
+          <p>
+            The sequence below is a planning frame, not a pre-approved backlog. Phase 2 will determine which waves are
+            needed, what belongs in each one, and where dependencies require a different order.
+          </p>
+        </div>
+
+        <section class="delivery-waves" aria-labelledby="delivery-waves-heading">
+          <div class="section-side-heading">
+            <p class="eyebrow">Provisional sequence</p>
+            <h2 id="delivery-waves-heading">Stabilize, reshape, then optimize.</h2>
+            <p>Each wave must leave a tested and supportable system; later waves do not excuse unfinished earlier gates.</p>
+          </div>
+          <ol>
+            <li><div class="wave-number">00</div><div><span>Preparation</span><h3>Baselines and safety rails</h3><p>Confirm ownership, acceptance tests, measurements, migration rehearsal, rollback, and the first approved change packets.</p><small>Unlocks reliable comparison and controlled delivery</small></div></li>
+            <li><div class="wave-number">01</div><div><span>Protection</span><h3>Production and safety blockers</h3><p>Resolve unacceptable clinical, correctness, security, privacy, recovery, and data-integrity conditions.</p><small>Required before readiness can advance</small></div></li>
+            <li><div class="wave-number">02</div><div><span>Foundation</span><h3>Architecture and boundaries</h3><p>Reduce systemic coupling, clarify ownership, and establish the seams required for safe downstream changes.</p><small>Prevents later work from reinforcing structural liabilities</small></div></li>
+            <li><div class="wave-number">03</div><div><span>Resilience</span><h3>Data, performance, and operations</h3><p>Address measured bottlenecks, concurrency and consistency risk, observability gaps, capacity, deployment, and recovery.</p><small>Improves predictable behavior under real operating conditions</small></div></li>
+            <li><div class="wave-number">04</div><div><span>Sustainability</span><h3>Maintainability and developer experience</h3><p>Remove costly duplication and bulk, simplify change paths, align conventions, and improve feedback and documentation.</p><small>Reduces the recurring cost of future delivery</small></div></li>
+            <li><div class="wave-number">05</div><div><span>Readiness</span><h3>System validation and residual risk</h3><p>Re-run end-to-end evidence, close or accept remaining findings, update architecture, and determine the next posture.</p><small>Produces the Phase 3 closure decision</small></div></li>
+          </ol>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="change-packet-heading">
+          <div class="wide-section-heading">
+            <div><p class="eyebrow">Unit of delivery</p><h2 id="change-packet-heading">Every change begins as a complete packet.</h2></div>
+            <p>A packet is ready only when implementation can begin without guessing at purpose, boundaries, proof, or rollback.</p>
+          </div>
+          <div class="change-packet-grid">
+            <article><span>Why</span><p>Recommendation, linked findings, intended value, and consequences of doing nothing.</p></article>
+            <article><span>What</span><p>Scope, target state, preserved behavior, exclusions, dependencies, and migration path.</p></article>
+            <article><span>Proof</span><p>Acceptance criteria, required tests, measurements, review evidence, and operational checks.</p></article>
+            <article><span>Safety</span><p>Risk analysis, rollout controls, observability, rollback, data protection, and recovery.</p></article>
+            <article><span>Ownership</span><p>Responsible engineer, reviewers, stakeholders, decision authority, and follow-up owner.</p></article>
+            <article><span>Closure</span><p>Delivered evidence, changed assumptions, residual risk, documentation, and finding dispositions.</p></article>
+          </div>
+        </section>
+
+        <section class="delivery-state-flow" aria-labelledby="delivery-state-heading">
+          <div><p class="eyebrow">Recommendation lifecycle</p><h2 id="delivery-state-heading">Status follows evidence.</h2></div>
+          <ol>
+            <li><span>Accepted</span><small>Direction approved</small></li>
+            <li><span>Ready</span><small>Packet and prerequisites complete</small></li>
+            <li><span>Active</span><small>Implementation in progress</small></li>
+            <li><span>Validating</span><small>Acceptance and regression evidence running</small></li>
+            <li><span>Complete</span><small>Criteria met and findings dispositioned</small></li>
+          </ol>
+          <p>At any point a recommendation may be blocked, revised, deferred, superseded, or rejected—with the reason retained.</p>
+        </section>
+      </section>
+
+      <section id="phase-3-gates" class="workbench-panel" data-workbench-panel="phase-3-gates" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 03 · Quality gates</p>
+          <h1>Completion requires proof, not confidence.</h1>
+          <p>
+            Quality gates define the minimum evidence a change must produce before it can advance. The exact tests and
+            measurements vary by recommendation, but no delivery can waive relevant safety, data, security, migration,
+            or operational concerns by declaring them out of scope after implementation begins.
+          </p>
+        </div>
+
+        <section class="workbench-section" aria-labelledby="change-gates-heading">
+          <div class="wide-section-heading">
+            <div><p class="eyebrow">Per-change gates</p><h2 id="change-gates-heading">Seven questions before “done.”</h2></div>
+            <p>Each gate is marked applicable or not applicable during planning; a not-applicable decision includes a reason.</p>
+          </div>
+          <div class="quality-gate-grid">
+            <article><span>01</span><h3>Intent</h3><p>Do implementation and review agree with the accepted target state and scope?</p></article>
+            <article><span>02</span><h3>Correctness</h3><p>Do focused and end-to-end tests protect required behavior, invariants, and failure cases?</p></article>
+            <article><span>03</span><h3>Safety and security</h3><p>Have relevant clinical, privacy, authorization, misuse, and sensitive-data risks been reviewed?</p></article>
+            <article><span>04</span><h3>Data and migration</h3><p>Are schema, compatibility, conversion, concurrency, rollback, retention, and recovery demonstrated?</p></article>
+            <article><span>05</span><h3>Performance</h3><p>Are affected latency, throughput, resource, query, and capacity claims measured against the baseline?</p></article>
+            <article><span>06</span><h3>Operations</h3><p>Can the change be observed, deployed, supported, diagnosed, rolled back, and recovered safely?</p></article>
+            <article><span>07</span><h3>Maintainability</h3><p>Are ownership, documentation, architecture records, tests, and future change paths clearer than before?</p></article>
+          </div>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="gate-evidence-heading">
+          <div class="wide-section-heading">
+            <div><p class="eyebrow">Evidence matrix</p><h2 id="gate-evidence-heading">Claims and proof remain adjacent.</h2></div>
+            <p>The delivery record links each claimed outcome to the artifact that demonstrates it and the authority that accepted it.</p>
+          </div>
+          <div class="data-table-scroll">
+            <table class="workbench-table">
+              <thead><tr><th>Claim</th><th>Expected evidence</th><th>Acceptance authority</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Behavior preserved or deliberately changed</th><td>Focused tests, workflow suites, contract comparisons, and approved behavior change</td><td>Feature owner and engineering reviewer</td></tr>
+                <tr><th scope="row">Risk reduced</th><td>Finding-specific reproduction no longer succeeds, plus regression evidence</td><td>Finding owner and relevant specialist</td></tr>
+                <tr><th scope="row">Performance improved</th><td>Repeatable before-and-after measurement under a documented workload</td><td>Engineering and operations</td></tr>
+                <tr><th scope="row">Migration is safe</th><td>Rehearsal, compatibility window, rollback or forward recovery, and data verification</td><td>Data owner and operations</td></tr>
+                <tr><th scope="row">System is supportable</th><td>Logs, metrics, traces, health, runbook, alert path, and failure exercise</td><td>Operations and support owner</td></tr>
+                <tr><th scope="row">Recommendation is complete</th><td>All acceptance criteria, documentation, finding dispositions, and residual risk</td><td>Recommendation decision owner</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="phase-level-gates" aria-labelledby="phase-level-gates-heading">
+          <div class="section-side-heading">
+            <p class="eyebrow">Phase-level gates</p>
+            <h2 id="phase-level-gates-heading">Local success must add up to system confidence.</h2>
+          </div>
+          <div>
+            <article><span>Wave gate</span><p>All required change packets complete; wave-wide regression, migration, operational, and architecture evidence reviewed.</p></article>
+            <article><span>Readiness gate</span><p>Production blockers resolved or explicitly accepted by the proper authority; operating limits and residual risks current.</p></article>
+            <article><span>Closure gate</span><p>Accepted Phase 3 scope dispositioned, final architecture and evidence published, and next-phase decision recorded.</p></article>
+          </div>
+        </section>
+      </section>
+
+      <section id="phase-3-progress" class="workbench-panel" data-workbench-panel="phase-3-progress" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 03 · Progress record</p>
+          <h1>Track outcomes without rewriting history.</h1>
+          <p>
+            Phase 3 progress will be reported against the accepted roadmap. It will not change the Phase 1 record or
+            retroactively improve Phase 2 scores; instead, completed work will link to the findings it addresses and
+            the evidence that supports a new current-state assessment.
+          </p>
+        </div>
+
+        <section class="progress-status" aria-labelledby="phase-three-progress-heading">
+          <div class="progress-zero"><strong>—</strong><span>Delivery progress</span></div>
+          <div>
+            <p class="eyebrow">Current status</p>
+            <h2 id="phase-three-progress-heading">No delivery work is authorized yet.</h2>
+            <p>
+              Progress remains empty until Phase 2 approves the scope and creates the first ready change packets.
+              This avoids counting preparatory ideas, unrelated commits, or Phase 1 work as Phase 3 improvement.
+            </p>
+          </div>
+          <span class="status-pill is-planned">Not started</span>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="progress-measures-heading">
+          <div class="wide-section-heading">
+            <div><p class="eyebrow">Future measures</p><h2 id="progress-measures-heading">Progress will describe value and remaining risk.</h2></div>
+            <p>Counts support governance, but the narrative must explain what changed and whether the system is actually safer or easier to sustain.</p>
+          </div>
+          <div class="progress-measure-grid">
+            <article><strong>—</strong><span>Accepted recommendations</span><p>The approved Phase 3 denominator, including deferred and rejected decisions.</p></article>
+            <article><strong>—</strong><span>Validated complete</span><p>Recommendations that passed every applicable acceptance and quality gate.</p></article>
+            <article><strong>—</strong><span>Findings addressed</span><p>Validated findings closed, reduced, or explicitly accepted through delivered work.</p></article>
+            <article><strong>—</strong><span>Blockers remaining</span><p>Unresolved production, clinical safety, security, privacy, data, or recovery blockers.</p></article>
+            <article><strong>—</strong><span>Change failure</span><p>Rollback, escaped regression, migration issue, or gate failure trends during delivery.</p></article>
+            <article><strong>—</strong><span>Residual risk</span><p>Accepted and deferred exposure carried into the final readiness decision.</p></article>
+          </div>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="progress-ledger-heading">
+          <div class="wide-section-heading">
+            <div><p class="eyebrow">Delivery ledger</p><h2 id="progress-ledger-heading">The future record is ready before work begins.</h2></div>
+            <p>Each row will preserve the recommendation decision, current delivery state, ownership, evidence, and effect on findings.</p>
+          </div>
+          <div class="data-table-scroll">
+            <table class="workbench-table empty-ledger">
+              <thead><tr><th>Recommendation</th><th>Wave</th><th>State</th><th>Owner</th><th>Findings</th><th>Evidence</th><th>Decision</th></tr></thead>
+              <tbody><tr><td colspan="7">No Phase 3 recommendations have been authorized.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="decision-record" aria-labelledby="decision-record-heading">
+          <div><p class="eyebrow">Decision history</p><h2 id="decision-record-heading">Changes in direction stay visible.</h2></div>
+          <div class="decision-types">
+            <article><span>Accept</span><p>Authorize the recommendation and its target state.</p></article>
+            <article><span>Revise</span><p>Change scope, sequence, target, or acceptance criteria with rationale.</p></article>
+            <article><span>Defer</span><p>Move work later while retaining consequence, trigger, and owner.</p></article>
+            <article><span>Reject</span><p>Decline the recommendation and record why its risk or value is not persuasive.</p></article>
+            <article><span>Accept risk</span><p>Keep the condition with named authority, limits, review date, and compensating controls.</p></article>
+          </div>
         </section>
       </section>
     </main>
