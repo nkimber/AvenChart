@@ -725,6 +725,403 @@ footer p {
   margin: 0;
 }
 
+.workbench-masthead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2rem;
+  align-items: end;
+  padding: clamp(2.5rem, 6vw, 5rem) 0 2rem;
+}
+
+.workbench-masthead .eyebrow {
+  margin-bottom: 0.5rem;
+}
+
+.workbench-purpose {
+  max-width: 760px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: clamp(1rem, 1.8vw, 1.2rem);
+  line-height: 1.55;
+}
+
+.current-phase {
+  display: grid;
+  min-width: 210px;
+  gap: 0.2rem;
+  padding: 1rem 1.15rem;
+  color: var(--white);
+  background: var(--teal);
+  border-radius: 6px;
+}
+
+.current-phase span,
+.current-phase small,
+.phase-tab-heading span,
+.phase-tab-heading small,
+.workbench-tab-intro span,
+.roadmap-card-topline,
+.closure-ledger dt,
+.roadmap-facts dt {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.current-phase span,
+.current-phase small {
+  color: #d7ece9;
+}
+
+.workbench-navigation {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.38fr) minmax(0, 1.62fr);
+  overflow: hidden;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 35px rgba(18, 51, 58, 0.06);
+}
+
+.workbench-tab {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 62px;
+  padding: 0.85rem 1rem;
+  color: var(--ink-soft);
+  background: var(--white);
+  border-left: 1px solid var(--line);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.workbench-tab:hover {
+  color: var(--ink);
+  background: #edf3f0;
+}
+
+.workbench-tab.is-current {
+  color: var(--ink);
+  background: #e0eeea;
+}
+
+.workbench-tab.is-current::after {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0;
+  left: 0.75rem;
+  height: 3px;
+  background: var(--teal);
+  content: "";
+}
+
+.workbench-tab-intro {
+  align-content: center;
+  justify-items: start;
+  place-items: initial;
+  border-left: 0;
+  text-align: left;
+}
+
+.workbench-tab-intro span {
+  color: var(--teal);
+}
+
+.workbench-tab-intro strong {
+  margin-top: 0.2rem;
+  font-size: 1rem;
+}
+
+.phase-tab-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+}
+
+.phase-tab-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-content: center;
+  align-items: center;
+  gap: 0.18rem;
+  column-gap: 1rem;
+  min-height: 54px;
+  padding: 0.65rem 1rem;
+  background: var(--ink);
+}
+
+.phase-tab-heading span {
+  color: var(--teal-bright);
+}
+
+.phase-tab-heading strong {
+  color: var(--white);
+  font-size: 0.92rem;
+}
+
+.phase-tab-heading small {
+  color: #bed2cf;
+}
+
+.phase-tab-links {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+  border-top: 1px solid var(--line);
+}
+
+.phase-tab-links .workbench-tab:first-child {
+  border-left: 0;
+}
+
+.workbench-panel {
+  min-height: 55vh;
+  outline: none;
+}
+
+.workbench-panel[hidden] {
+  display: none;
+}
+
+.intro-hero,
+.phase-overview-hero {
+  padding-top: clamp(4.5rem, 9vw, 8rem);
+}
+
+.intro-hero h1 {
+  max-width: 850px;
+  font-size: clamp(3.3rem, 7.8vw, 7rem);
+}
+
+.phase-close-stamp strong {
+  margin-top: 3.5rem;
+  font-size: clamp(3.2rem, 6vw, 5rem);
+}
+
+.program-roadmap {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.65fr) minmax(0, 2.35fr);
+  gap: clamp(2.5rem, 6vw, 6rem);
+  padding: 1rem 0 clamp(6rem, 11vw, 9rem);
+}
+
+.roadmap-heading > p:last-child {
+  max-width: 390px;
+  margin: 1.2rem 0 0;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.phase-roadmap-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.roadmap-card {
+  display: flex;
+  min-height: 510px;
+  flex-direction: column;
+  padding: clamp(1.4rem, 2.7vw, 2.2rem);
+  background: var(--white);
+}
+
+.roadmap-card + .roadmap-card {
+  border-left: 1px solid var(--line);
+}
+
+.roadmap-card.is-current {
+  background: #e0eeea;
+  box-shadow: inset 0 5px 0 var(--teal);
+}
+
+.roadmap-card.is-planned {
+  background: #f0f3ef;
+}
+
+.roadmap-card-topline {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--teal);
+}
+
+.roadmap-card-topline strong {
+  padding: 0.3rem 0.45rem;
+  color: var(--white);
+  background: var(--teal);
+  border-radius: 3px;
+  font-size: 0.6rem;
+}
+
+.roadmap-card.is-planned .roadmap-card-topline strong {
+  color: var(--ink-soft);
+  background: var(--mist);
+}
+
+.roadmap-card .phase-kind {
+  min-height: 2.3rem;
+  margin-top: 3.2rem;
+}
+
+.roadmap-card h3 {
+  margin: 0;
+  font-size: clamp(1.25rem, 2vw, 1.65rem);
+  letter-spacing: -0.025em;
+  line-height: 1.18;
+}
+
+.roadmap-card > p:not(.phase-kind) {
+  margin: 1rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.roadmap-facts {
+  display: grid;
+  gap: 0.8rem;
+  margin: auto 0 0;
+  padding-top: 2rem;
+}
+
+.roadmap-facts div {
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--line);
+}
+
+.roadmap-facts dt {
+  color: var(--teal);
+  font-weight: 700;
+}
+
+.roadmap-facts dd {
+  margin: 0.3rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 0.88em;
+}
+
+.phase-governance {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.7fr) minmax(0, 1.5fr);
+  gap: clamp(2.5rem, 7vw, 7rem);
+  margin-bottom: clamp(6rem, 11vw, 9rem);
+  padding: clamp(2rem, 5vw, 4rem);
+  color: var(--white);
+  background: var(--ink);
+  border-radius: 8px 8px 64px 8px;
+  box-shadow: var(--shadow);
+}
+
+.phase-governance .eyebrow {
+  color: var(--teal-bright);
+}
+
+.governance-copy p {
+  margin: 0;
+  color: #d7e5e1;
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+.governance-copy ul {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.5rem 0 0;
+  padding-left: 1.2rem;
+  color: #bed2cf;
+  line-height: 1.5;
+}
+
+.closure-record {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.7fr) minmax(0, 1.7fr);
+  gap: clamp(2.5rem, 7vw, 7rem);
+  margin-bottom: clamp(6rem, 11vw, 9rem);
+  padding-top: 2rem;
+  border-top: 2px solid var(--ink);
+}
+
+.closure-ledger {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+
+.closure-ledger div {
+  min-width: 0;
+  padding: 1.15rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.closure-ledger div:nth-child(odd) {
+  padding-right: 1.5rem;
+}
+
+.closure-ledger div:nth-child(even) {
+  padding-left: 1.5rem;
+  border-left: 1px solid var(--line);
+}
+
+.closure-ledger dt {
+  color: var(--teal);
+  font-weight: 700;
+}
+
+.closure-ledger dd {
+  margin: 0.4rem 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.closure-ledger a {
+  color: var(--teal);
+  text-underline-offset: 0.2rem;
+}
+
+.panel-introduction {
+  max-width: 900px;
+  padding: clamp(4.5rem, 9vw, 8rem) 0 clamp(3rem, 6vw, 5rem);
+}
+
+.panel-introduction h1 {
+  max-width: 900px;
+  font-size: clamp(3.3rem, 7.5vw, 6.8rem);
+}
+
+.panel-introduction > p:last-child {
+  max-width: 760px;
+  margin: 1.8rem 0 0;
+  color: var(--ink-soft);
+  font-size: 1.1rem;
+  line-height: 1.65;
+}
+
+.phase-activity-grid {
+  margin-bottom: clamp(7rem, 13vw, 11rem);
+}
+
 :focus-visible {
   outline: 3px solid var(--coral);
   outline-offset: 3px;
@@ -734,8 +1131,44 @@ footer p {
   .hero,
   .experiment-overview,
   .phase-section,
-  .activity-grid {
+  .activity-grid,
+  .program-roadmap,
+  .phase-governance,
+  .closure-record {
     grid-template-columns: 1fr;
+  }
+
+  .workbench-navigation {
+    grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1.65fr);
+  }
+
+  .phase-tab-group {
+    grid-template-columns: 1fr;
+  }
+
+  .phase-tab-heading {
+    min-height: 58px;
+  }
+
+  .phase-tab-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .phase-roadmap-list {
+    grid-template-columns: 1fr;
+  }
+
+  .roadmap-card {
+    min-height: 0;
+  }
+
+  .roadmap-card + .roadmap-card {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .roadmap-facts {
+    margin-top: 2rem;
   }
 
   .experiment-heading h2,
@@ -788,6 +1221,52 @@ footer p {
     flex-direction: column;
     gap: 0.4rem;
     text-align: right;
+  }
+
+  .workbench-masthead {
+    grid-template-columns: 1fr;
+  }
+
+  .current-phase {
+    width: 100%;
+  }
+
+  .workbench-navigation {
+    grid-template-columns: 1fr;
+  }
+
+  .workbench-tab-intro,
+  .phase-tab-group {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .phase-tab-links {
+    grid-template-columns: 1fr;
+  }
+
+  .phase-tab-heading {
+    grid-template-columns: 1fr;
+    gap: 0.18rem;
+  }
+
+  .workbench-tab {
+    justify-items: start;
+    min-height: 52px;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+    text-align: left;
+  }
+
+  .closure-ledger {
+    grid-template-columns: 1fr;
+  }
+
+  .closure-ledger div:nth-child(odd),
+  .closure-ledger div:nth-child(even) {
+    padding-right: 0;
+    padding-left: 0;
+    border-left: 0;
   }
 
   .hero {

@@ -5,7 +5,7 @@ AvenChart is an experimental, independently branded electronic-health-record and
 > [!WARNING]
 > AvenChart is not ready or authorized for production clinical use. It has not been certified for regulatory programs and must be evaluated independently for security, privacy, safety, accessibility, interoperability, and legal compliance. Use synthetic data only.
 
-[Explore the public development history](https://nkimber.github.io/AvenChart/) · [License](LICENSE) · [Attribution](NOTICE.md) · [Security policy](SECURITY.md)
+[Explore the program workbench](https://nkimber.github.io/AvenChart/) · [License](LICENSE) · [Attribution](NOTICE.md) · [Security policy](SECURITY.md)
 
 ## Repository layout
 
@@ -15,7 +15,7 @@ AvenChart is an experimental, independently branded electronic-health-record and
 | [`avenchart-ui/`](avenchart-ui/) | Independent React and TypeScript clinician and patient-portal interface for the same API |
 | [`demo-data/`](demo-data/) | Deterministic synthetic dataset and generated database adapters |
 | [`infra/`](infra/) | AvenChart deployment container definitions and web-server configuration |
-| [`public-history/`](public-history/) | Static, read-only source history and statistics site |
+| [`public-history/`](public-history/) | Static program workbench with phase status and fixed historical evidence |
 | [`scripts/`](scripts/) | Docker Desktop build, component startup, full deployment, status, and shutdown commands |
 
 ## Docker Desktop quickstart
@@ -123,15 +123,19 @@ npm test --prefix .\avenchart-ui
 npm run build --prefix .\avenchart-ui
 ```
 
-## Public history
+## Program workbench and public history
 
-The repository preserves 749 application-source check-ins from the private project archive. Former internal product paths and commit subjects were normalized to AvenChart, commit bodies and non-source planning material were omitted, and source-only dates and authorship were retained. See [HISTORY.md](HISTORY.md) for the exact public-history boundary.
+Phase 1, the experimental autonomous build, is formally closed at the annotated tag `phase-1-experimental`. The workbench preserves 773 application-source check-ins through that exact revision and retains the approximately 86% functional-coverage estimate as a historical Phase 1 observation. Its introduction explains the purpose and status of the assessment and improvement phases that follow.
 
-The static history site is generated from the retained Git graph:
+Former internal product paths and commit subjects were normalized to AvenChart, commit bodies and non-source planning material were omitted, and source-only dates and authorship were retained. See [HISTORY.md](HISTORY.md) for the exact phase and public-history boundaries.
+
+The static workbench dataset is generated from the retained Git graph:
 
 ```powershell
 node .\tools\generate-history-data.mjs
 ```
+
+The generator is pinned to the exact Phase 1 closure revision recorded in `.public-history-base`; it does not follow `HEAD`. New Phase 2 commits therefore do not alter Phase 1 totals or source history.
 
 ## License and upstream attribution
 

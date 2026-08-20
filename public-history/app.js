@@ -6,6 +6,7 @@ const number = new Intl.NumberFormat('en-US')
 const shortDate = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 const axisDate = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 const pageSize = 50
+const defaultView = 'introduction'
 let visibleCount = pageSize
 let filteredCommits = historyData.commits
 
@@ -13,13 +14,64 @@ const byId = (id) => document.getElementById(id)
 const formatDate = (value) => shortDate.format(new Date(`${value}T00:00:00Z`))
 
 function populateSummary() {
-  const { summary } = historyData
+  const { phase, summary } = historyData
   byId('hero-commit-count').textContent = number.format(summary.commits)
   byId('hero-date-range').textContent = `${formatDate(summary.firstDate)} — ${formatDate(summary.lastDate)}`
   byId('active-days').textContent = number.format(summary.activeDays)
   byId('total-additions').textContent = number.format(summary.additions)
   byId('total-deletions').textContent = number.format(summary.deletions)
   byId('net-source-growth').textContent = number.format(summary.net)
+
+  if (phase) {
+    byId('phase-one-coverage').textContent = number.format(phase.functionalCoverageEstimate)
+    byId('phase-one-closure-date').textContent = formatDate(phase.closedOn)
+    byId('phase-one-closure-date').dateTime = phase.closedOn
+    byId('phase-one-snapshot-ref').textContent = phase.snapshotRef
+    byId('phase-one-revision').textContent = historyData.sourceRevision.slice(0, 12)
+    byId('phase-one-revision-link').href = `${historyData.repositoryUrl}/commit/${historyData.sourceRevision}`
+  }
+}
+
+function activateWorkbenchView(requestedView, { focus = false } = {}) {
+  const panel = document.querySelector(`[data-workbench-panel="${CSS.escape(requestedView)}"]`)
+  const view = panel ? requestedView : defaultView
+
+  document.querySelectorAll('[data-workbench-panel]').forEach((candidate) => {
+    candidate.hidden = candidate.dataset.workbenchPanel !== view
+  })
+
+  document.querySelectorAll('[data-workbench-view]').forEach((link) => {
+    const isCurrent = link.dataset.workbenchView === view
+    link.classList.toggle('is-current', isCurrent)
+    if (isCurrent) link.setAttribute('aria-current', 'page')
+    else link.removeAttribute('aria-current')
+  })
+
+  const activePanel = document.querySelector(`[data-workbench-panel="${CSS.escape(view)}"]`)
+  if (focus) activePanel?.focus({ preventScroll: true })
+  document.title = view === defaultView
+    ? 'AvenChart · Program workbench'
+    : `${activePanel?.querySelector('h1')?.textContent ?? 'Phase 1'} · AvenChart workbench`
+}
+
+function initializeWorkbenchNavigation() {
+  const viewFromHash = window.location.hash.slice(1)
+  activateWorkbenchView(viewFromHash || defaultView)
+
+  document.querySelectorAll('[data-workbench-view]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault()
+      const view = link.dataset.workbenchView
+      if (!view) return
+      if (window.location.hash !== `#${view}`) window.history.pushState(null, '', `#${view}`)
+      activateWorkbenchView(view, { focus: true })
+      window.scrollTo({ top: byId('workbench-navigation').offsetTop - 16, behavior: 'smooth' })
+    })
+  })
+
+  window.addEventListener('popstate', () => {
+    activateWorkbenchView(window.location.hash.slice(1) || defaultView)
+  })
 }
 
 function renderPulse() {
@@ -182,6 +234,7 @@ function applyFilters() {
 }
 
 function initialize() {
+  initializeWorkbenchNavigation()
   populateSummary()
   renderPulse()
   renderActivity()

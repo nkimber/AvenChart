@@ -5,19 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="A two-phase experiment in autonomous software engineering: rebuilding OpenEMR functionality on a new technology stack with zero human-authored application code."
+      content="The AvenChart program workbench: a phase-by-phase record of the autonomous build, its fixed Phase 1 snapshot, and the assessment work that follows."
     />
     <meta name="theme-color" content="#12333a" />
-    <title>AvenChart · Public history</title>
+    <title>AvenChart · Program workbench</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
     <script src="history-data.js" defer></script>
     <script src="app.js" defer></script>
   </head>
   <body>
-    <a class="skip-link" href="#history">Skip to check-in history</a>
+    <a class="skip-link" href="#workbench-navigation">Skip to workbench navigation</a>
     <header class="site-header">
-      <a class="wordmark" href="./" aria-label="AvenChart public history home">
+      <a class="wordmark" href="./" aria-label="AvenChart workbench home">
         <span class="wordmark-mark" aria-hidden="true">A</span>
         <span>AvenChart</span>
       </a>
@@ -29,208 +29,362 @@
     </header>
 
     <main>
-      <section class="hero" aria-labelledby="page-title">
-        <div class="hero-copy">
-          <p class="eyebrow">An unattended software-engineering experiment</p>
-          <h1 id="page-title">Can an agent rebuild a mature application?</h1>
-          <p class="hero-intro">
-            AvenChart tests whether autonomous coding agents can completely recreate and modernize an existing product
-            in a brand-new technology stack. OpenEMR supplies the functional benchmark; every line of AvenChart
-            application code was produced by coding agents.
-          </p>
-          <p class="scope-note">
-            This is a functional reimplementation, not a line-by-line translation of OpenEMR. Its source was used as
-            reference material to understand what the product does, not as code to port.
-          </p>
-          <p class="coverage-note">
-            <strong>Estimated functional coverage is approximately 86% of OpenEMR.</strong> Most of the remaining gap
-            is concentrated in security capabilities, including authentication support, and external integrations.
-            The core clinical and practice-management business functionality is largely in place.
-          </p>
-        </div>
-        <div class="chart-stamp" aria-label="History snapshot">
-          <span class="chart-stamp-label">Record</span>
-          <strong id="hero-commit-count">—</strong>
-          <span>source check-ins</span>
-          <time id="hero-date-range">Loading history…</time>
-        </div>
-      </section>
-
-      <section class="experiment-intro" aria-labelledby="experiment-heading">
-        <div class="experiment-overview">
-          <div class="experiment-heading">
-            <p class="eyebrow">The experiment</p>
-            <h2 id="experiment-heading">The question behind the code.</h2>
-          </div>
-          <div class="experiment-copy">
-            <p class="experiment-lead">
-              Are autonomous coding agents now capable of understanding a mature system, one behavior slice at a
-              time, and rebuilding it cleanly on a modern stack&mdash;fully unattended?
-            </p>
-            <p>
-              OpenEMR was selected because it is a robust, mature, extensively used open-source EHR and
-              practice-management application. Its breadth, depth, and proven real-world functionality made it an
-              ideal and demanding candidate for this experiment.
-            </p>
-          </div>
-        </div>
-
-        <aside class="experiment-constraint" aria-label="Core experimental constraint">
-          <span class="constraint-label">Core experimental constraint</span>
-          <strong>Zero human-authored application code.</strong>
-          <p>
-            Across both phases, no human wrote or edited a line of application code. During phase one, the
-            experimenter did not inspect the code either; the human role was limited to defining the objective and
-            directing the agents.
-          </p>
-        </aside>
-
-        <div class="method-grid">
-          <article>
-            <p class="eyebrow">Why OpenEMR</p>
-            <h3>A respected functional benchmark</h3>
-            <p>
-              The choice reflects OpenEMR's strength, not a criticism of it. A mature, widely adopted open-source
-              solution offered enough real functionality to make the autonomy test meaningful.
-            </p>
-          </article>
-          <article>
-            <p class="eyebrow">How the source was used</p>
-            <h3>Reference, not translation</h3>
-            <p>
-              The agents examined OpenEMR to identify behavior and workflows. Those functional slices became the
-              direction for clean, new implementation work; the existing code was never translated line by line.
-            </p>
-          </article>
-        </div>
-
-        <div class="phase-section" aria-labelledby="phases-heading">
-          <div class="phase-heading">
-            <p class="eyebrow">Two phases</p>
-            <h2 id="phases-heading">One foundation, two interfaces.</h2>
-            <p>
-              The first phase pursued functional parity. The second tested whether another agent could improve
-              the experience without replacing the working backend.
-            </p>
-          </div>
-          <div class="phase-cards">
-            <article class="phase-card">
-              <span class="phase-number">Phase 01</span>
-              <p class="phase-kind">Functional baseline</p>
-              <h3>An unattended, like-for-like rebuild.</h3>
-              <p>
-                The first agent worked through OpenEMR functionality slice by slice, creating a new ASP.NET Core API,
-                PostgreSQL data model, and React reference interface. The experimenter neither viewed nor wrote the
-                code. The resulting application appears functional and functionally correct, though its interface is
-                utilitarian rather than elegant.
-              </p>
-            </article>
-            <article class="phase-card phase-card-accent">
-              <span class="phase-number">Phase 02</span>
-              <p class="phase-kind">Interface modernization</p>
-              <h3>A new UI by Claude Code.</h3>
-              <p>
-                Claude Code was pointed at the phase-one codebase and asked to create a more polished, modern React
-                and TypeScript interface. This phase changed only the UI: it connects to exactly the same .NET web API
-                and data foundation created in phase one.
-              </p>
-            </article>
-          </div>
-        </div>
-
-        <div class="history-bridge">
-          <p class="eyebrow">What follows</p>
-          <p>
-            The history below is the retained source record of this autonomous build. Each check-in captures the agent
-            completing or refining a functional slice as the replacement system accumulated over time.
-          </p>
-        </div>
-      </section>
-
-      <section class="pulse-panel" aria-labelledby="pulse-heading">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Development pulse</p>
-            <h2 id="pulse-heading">The rewrite growing over time</h2>
-          </div>
-          <p>
-            Calendar time runs continuously from the first check-in to the latest. Each vertical pulse is one retained
-            source check-in; days with no agent activity remain visible as flat, unmarked spans.
-          </p>
-        </div>
-        <div class="pulse-chart-wrap">
-          <svg id="pulse-chart" class="pulse-chart" role="img" aria-labelledby="pulse-title pulse-description"></svg>
-          <div id="pulse-tooltip" class="pulse-tooltip" hidden></div>
-        </div>
-        <div id="date-axis" class="date-axis" aria-hidden="true"></div>
-        <dl class="chart-key" aria-label="Development pulse chart key">
-          <div><dt>Pulse</dt><dd>One retained check-in</dd></div>
-          <div><dt>Line</dt><dd>Cumulative net source change</dd></div>
-          <div><dt>Flat + unmarked</dt><dd>No retained check-ins</dd></div>
-        </dl>
-      </section>
-
-      <section class="measure-strip" aria-label="History totals">
-        <article>
-          <span class="measure-label">Calendar span</span>
-          <strong id="active-days">—</strong>
-          <span>calendar days</span>
-        </article>
-        <article>
-          <span class="measure-label">Source added</span>
-          <strong id="total-additions">—</strong>
-          <span>lines</span>
-        </article>
-        <article>
-          <span class="measure-label">Source refined</span>
-          <strong id="total-deletions">—</strong>
-          <span>lines removed</span>
-        </article>
-        <article>
-          <span class="measure-label">Net source growth</span>
-          <strong id="net-source-growth">—</strong>
-          <span>lines added minus removed</span>
-        </article>
-      </section>
-
-      <section class="activity-grid" aria-labelledby="activity-heading">
+      <div class="workbench-masthead">
         <div>
-          <p class="eyebrow">Monthly record</p>
-          <h2 id="activity-heading">Where the work accumulated</h2>
-          <p class="section-copy">
-            The bars count the agent's retained source check-ins per month; the adjacent ledger groups those changes
-            by implementation area.
+          <p class="eyebrow">Program workbench</p>
+          <p class="workbench-purpose">
+            A phase-by-phase record of what AvenChart set out to prove, what was produced, what is fixed as historical
+            evidence, and what remains to be evaluated.
           </p>
         </div>
-        <div id="monthly-bars" class="monthly-bars"></div>
-        <div id="area-ledger" class="area-ledger"></div>
+        <div class="current-phase" aria-label="Current program phase">
+          <span>Current phase</span>
+          <strong>02 · Assessment</strong>
+          <small>In progress</small>
+        </div>
+      </div>
+
+      <nav id="workbench-navigation" class="workbench-navigation" aria-label="Workbench views">
+        <a class="workbench-tab workbench-tab-intro" href="#introduction" data-workbench-view="introduction">
+          <span>Start here</span>
+          <strong>Introduction</strong>
+        </a>
+        <div class="phase-tab-group" aria-labelledby="phase-one-nav-label">
+          <div class="phase-tab-heading">
+            <span id="phase-one-nav-label">Phase 01</span>
+            <strong>Experimental build</strong>
+            <small>Closed · fixed snapshot</small>
+          </div>
+          <div class="phase-tab-links">
+            <a class="workbench-tab" href="#phase-1-overview" data-workbench-view="phase-1-overview">Overview</a>
+            <a class="workbench-tab" href="#phase-1-pulse" data-workbench-view="phase-1-pulse">Development pulse</a>
+            <a class="workbench-tab" href="#phase-1-activity" data-workbench-view="phase-1-activity">Activity</a>
+            <a class="workbench-tab" href="#phase-1-history" data-workbench-view="phase-1-history">Source history</a>
+          </div>
+        </div>
+      </nav>
+
+      <section id="introduction" class="workbench-panel" data-workbench-panel="introduction" tabindex="-1">
+        <section class="hero intro-hero" aria-labelledby="intro-title">
+          <div class="hero-copy">
+            <p class="eyebrow">From generation to evaluation</p>
+            <h1 id="intro-title">A deliberate pause to understand the code.</h1>
+            <p class="hero-intro">
+              Phase 1 established that coding agents could produce a broad, functioning reimplementation of a mature
+              healthcare application. Phase 2 asks a different question: is the result understandable, safe,
+              maintainable, efficient, and structurally sound enough to justify continued investment?
+            </p>
+            <p class="scope-note">
+              Phase 1 is now historical. Its source revision, measurements, and approximately 86% functional-coverage
+              estimate are fixed and will not be revised as later work changes the application.
+            </p>
+          </div>
+          <aside class="chart-stamp phase-close-stamp" aria-label="Phase 1 closure record">
+            <span class="chart-stamp-label">Phase 01 status</span>
+            <strong>Closed</strong>
+            <span>Experimental baseline retained</span>
+            <time datetime="2026-08-20">August 20, 2026</time>
+          </aside>
+        </section>
+
+        <section class="program-roadmap" aria-labelledby="roadmap-heading">
+          <div class="roadmap-heading">
+            <p class="eyebrow">Program phases</p>
+            <h2 id="roadmap-heading">Each phase answers a different question.</h2>
+            <p>
+              Separating generation, assessment, and improvement prevents later success from rewriting the evidence
+              of the original experiment.
+            </p>
+          </div>
+          <ol class="phase-roadmap-list">
+            <li class="roadmap-card is-complete">
+              <div class="roadmap-card-topline">
+                <span>Phase 01</span>
+                <strong>Complete</strong>
+              </div>
+              <p class="phase-kind">Experimental autonomous build</p>
+              <h3>Can agents recreate the product?</h3>
+              <p>
+                Reimplement OpenEMR behavior on a new ASP.NET Core, PostgreSQL, React, and TypeScript foundation,
+                without human-authored application code. The retained result is a functional baseline, not a quality
+                endorsement or production-readiness claim.
+              </p>
+              <dl class="roadmap-facts">
+                <div><dt>Result</dt><dd>Approximately 86% functional coverage</dd></div>
+                <div><dt>Record</dt><dd>Fixed at <code>phase-1-experimental</code></dd></div>
+              </dl>
+            </li>
+            <li class="roadmap-card is-current">
+              <div class="roadmap-card-topline">
+                <span>Phase 02</span>
+                <strong>In progress</strong>
+              </div>
+              <p class="phase-kind">Codebase assessment and modernization planning</p>
+              <h3>Is the generated system worthy of continued development?</h3>
+              <p>
+                Critically assess architecture, structure, correctness, security, privacy, performance,
+                maintainability, testing, operations, accessibility, and human readability. Findings must be tied to
+                evidence and converted into ordered, measurable recommendations.
+              </p>
+              <dl class="roadmap-facts">
+                <div><dt>Current work</dt><dd>Baseline preservation and assessment setup</dd></div>
+                <div><dt>Outcome</dt><dd>Prioritized, dependency-aware improvement roadmap</dd></div>
+              </dl>
+            </li>
+            <li class="roadmap-card is-planned">
+              <div class="roadmap-card-topline">
+                <span>Phase 03</span>
+                <strong>Planned</strong>
+              </div>
+              <p class="phase-kind">Evidence-led improvement delivery</p>
+              <h3>Can the system be made trustworthy and sustainable?</h3>
+              <p>
+                Implement the accepted recommendations in risk-aware order, with explicit acceptance criteria and
+                regression evidence. Its final scope will be determined by Phase 2 rather than assumed in advance.
+              </p>
+              <dl class="roadmap-facts">
+                <div><dt>Entry condition</dt><dd>Phase 2 findings and recommendations approved</dd></div>
+                <div><dt>Status</dt><dd>Not started</dd></div>
+              </dl>
+            </li>
+          </ol>
+        </section>
+
+        <section class="phase-governance" aria-labelledby="governance-heading">
+          <div>
+            <p class="eyebrow">Evidence rules</p>
+            <h2 id="governance-heading">The baseline remains fixed.</h2>
+          </div>
+          <div class="governance-copy">
+            <p>
+              The Phase 1 tabs read from a generated dataset pinned to one exact source revision. Running the history
+              generator again produces the same Phase 1 record even after new commits are added to the repository.
+            </p>
+            <ul>
+              <li>Later fixes do not increase the Phase 1 coverage estimate or change its historical metrics.</li>
+              <li>Phase 2 findings describe the Phase 1 baseline and cite concrete evidence from that snapshot.</li>
+              <li>Future phases receive their own status and evidence instead of being folded into Phase 1.</li>
+            </ul>
+          </div>
+        </section>
       </section>
 
-      <section id="history" class="history-section" aria-labelledby="history-heading">
-        <div class="history-heading-row">
-          <div>
-            <p class="eyebrow">Check-in ledger</p>
-            <h2 id="history-heading">Retained source history</h2>
+      <section id="phase-1-overview" class="workbench-panel" data-workbench-panel="phase-1-overview" tabindex="-1" hidden>
+        <section class="hero phase-overview-hero" aria-labelledby="phase-one-title">
+          <div class="hero-copy">
+            <p class="eyebrow">Phase 01 · Experimental build · Closed</p>
+            <h1 id="phase-one-title">Can an agent rebuild a mature application?</h1>
+            <p class="hero-intro">
+              AvenChart tested whether autonomous coding agents could recreate and modernize the behavior of an
+              established EHR and practice-management product on a new technology stack. OpenEMR supplied the
+              functional benchmark; the retained AvenChart application code was produced by coding agents.
+            </p>
+            <p class="scope-note">
+              This was a functional reimplementation, not a line-by-line translation. OpenEMR source was used to
+              understand product behavior and workflows, not as code to port.
+            </p>
+            <p class="coverage-note">
+              <strong>Estimated functional coverage at closure was approximately <span id="phase-one-coverage">86</span>%.</strong>
+              Most of the remaining gap was concentrated in security capabilities and external integrations. This
+              estimate is retained as a Phase 1 observation, not a certification of correctness or completeness.
+            </p>
           </div>
-          <p id="history-result-count" class="result-count" aria-live="polite"></p>
+          <aside class="chart-stamp" aria-label="Phase 1 history snapshot">
+            <span class="chart-stamp-label">Fixed record</span>
+            <strong id="hero-commit-count">—</strong>
+            <span>source check-ins</span>
+            <time id="hero-date-range">Loading history…</time>
+          </aside>
+        </section>
+
+        <section class="closure-record" aria-labelledby="closure-record-heading">
+          <div class="closure-record-heading">
+            <p class="eyebrow">Formal closure record</p>
+            <h2 id="closure-record-heading">The evidence boundary for Phase 1.</h2>
+          </div>
+          <dl class="closure-ledger">
+            <div><dt>Status</dt><dd>Closed</dd></div>
+            <div><dt>Closure date</dt><dd><time id="phase-one-closure-date" datetime="2026-08-20">August 20, 2026</time></dd></div>
+            <div><dt>Named reference</dt><dd><code id="phase-one-snapshot-ref">phase-1-experimental</code></dd></div>
+            <div><dt>Source revision</dt><dd><a id="phase-one-revision-link" href="#"><code id="phase-one-revision">—</code></a></dd></div>
+            <div><dt>Functional coverage</dt><dd>Approximately 86%</dd></div>
+            <div><dt>Production status</dt><dd>Experimental; not approved for clinical use</dd></div>
+          </dl>
+        </section>
+
+        <section class="experiment-intro" aria-labelledby="experiment-heading">
+          <div class="experiment-overview">
+            <div class="experiment-heading">
+              <p class="eyebrow">The experiment</p>
+              <h2 id="experiment-heading">Generation came before evaluation.</h2>
+            </div>
+            <div class="experiment-copy">
+              <p class="experiment-lead">
+                The Phase 1 objective was broad functional reconstruction, one behavior slice at a time, under an
+                unusual autonomy constraint.
+              </p>
+              <p>
+                OpenEMR was selected because it is a mature, extensively used open-source EHR and
+                practice-management application. Its breadth and real-world functionality made the autonomy test
+                demanding enough to be meaningful.
+              </p>
+            </div>
+          </div>
+
+          <aside class="experiment-constraint" aria-label="Core Phase 1 constraint">
+            <span class="constraint-label">Core experimental constraint</span>
+            <strong>Zero human-authored application code.</strong>
+            <p>
+              The human role was limited to setting direction and objectives. That constraint makes Phase 1 useful
+              as an experiment, but it also means the output now requires deliberate human-oriented critique before
+              it can be trusted as an engineering foundation.
+            </p>
+          </aside>
+
+          <div class="method-grid">
+            <article>
+              <p class="eyebrow">Generation pass 01</p>
+              <h3>Functional baseline</h3>
+              <p>
+                Agents created an ASP.NET Core API, PostgreSQL data model, migrations, verification scripts, and a
+                utilitarian React reference interface while working through OpenEMR functionality slice by slice.
+              </p>
+            </article>
+            <article>
+              <p class="eyebrow">Generation pass 02</p>
+              <h3>Interface modernization</h3>
+              <p>
+                A second agent produced a more polished React and TypeScript clinician and portal interface against
+                the same API and data foundation. Both generation passes belong to the Phase 1 experiment.
+              </p>
+            </article>
+          </div>
+
+          <div class="history-bridge">
+            <p class="eyebrow">What Phase 1 does not claim</p>
+            <p>
+              Functional breadth does not establish architectural quality, clinical safety, privacy, security,
+              performance, maintainability, accessibility, regulatory readiness, or production fitness. Those are
+              explicit subjects of Phase 2, not conclusions imported into this historical record.
+            </p>
+          </div>
+        </section>
+      </section>
+
+      <section id="phase-1-pulse" class="workbench-panel" data-workbench-panel="phase-1-pulse" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 01 · Fixed historical data</p>
+          <h1>Development pulse</h1>
+          <p>
+            A time-based view of the retained check-ins in the frozen Phase 1 source record. This measures source
+            activity and growth, not feature completeness or quality.
+          </p>
         </div>
+        <section class="pulse-panel" aria-labelledby="pulse-heading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Development pulse</p>
+              <h2 id="pulse-heading">The experimental build growing over time</h2>
+            </div>
+            <p>
+              Calendar time runs continuously from the first retained check-in to the Phase 1 boundary. Each vertical
+              pulse is one source check-in; days without activity remain visible as flat spans.
+            </p>
+          </div>
+          <div class="pulse-chart-wrap">
+            <svg id="pulse-chart" class="pulse-chart" role="img" aria-labelledby="pulse-title pulse-description"></svg>
+            <div id="pulse-tooltip" class="pulse-tooltip" hidden></div>
+          </div>
+          <div id="date-axis" class="date-axis" aria-hidden="true"></div>
+          <dl class="chart-key" aria-label="Development pulse chart key">
+            <div><dt>Pulse</dt><dd>One retained check-in</dd></div>
+            <div><dt>Line</dt><dd>Cumulative net source change</dd></div>
+            <div><dt>Flat + unmarked</dt><dd>No retained check-ins</dd></div>
+          </dl>
+        </section>
 
-        <form class="history-controls" id="history-controls" role="search">
-          <label>
-            <span>Search subjects</span>
-            <input id="history-search" type="search" placeholder="Try “patient portal” or “billing”" autocomplete="off" />
-          </label>
-          <label>
-            <span>Source area</span>
-            <select id="area-filter">
-              <option value="">All source areas</option>
-            </select>
-          </label>
-          <button id="clear-filters" type="button">Clear</button>
-        </form>
+        <section class="measure-strip" aria-label="Phase 1 history totals">
+          <article>
+            <span class="measure-label">Calendar span</span>
+            <strong id="active-days">—</strong>
+            <span>calendar days</span>
+          </article>
+          <article>
+            <span class="measure-label">Source added</span>
+            <strong id="total-additions">—</strong>
+            <span>lines</span>
+          </article>
+          <article>
+            <span class="measure-label">Source refined</span>
+            <strong id="total-deletions">—</strong>
+            <span>lines removed</span>
+          </article>
+          <article>
+            <span class="measure-label">Net source growth</span>
+            <strong id="net-source-growth">—</strong>
+            <span>lines added minus removed</span>
+          </article>
+        </section>
+      </section>
 
-        <ol id="commit-list" class="commit-list"></ol>
-        <button id="load-more" class="load-more" type="button">Show more check-ins</button>
+      <section id="phase-1-activity" class="workbench-panel" data-workbench-panel="phase-1-activity" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 01 · Fixed historical data</p>
+          <h1>Activity by month and source area</h1>
+          <p>
+            The monthly bars count retained Phase 1 check-ins. The adjacent ledger shows how often each broad
+            implementation area appeared in those check-ins.
+          </p>
+        </div>
+        <section class="activity-grid phase-activity-grid" aria-labelledby="activity-heading">
+          <div>
+            <p class="eyebrow">Monthly record</p>
+            <h2 id="activity-heading">Where the work accumulated</h2>
+            <p class="section-copy">
+              These are source-history measurements. A high count can indicate feature work, refinement, testing, or
+              churn and should not be interpreted as a quality score.
+            </p>
+          </div>
+          <div id="monthly-bars" class="monthly-bars"></div>
+          <div id="area-ledger" class="area-ledger"></div>
+        </section>
+      </section>
+
+      <section id="phase-1-history" class="workbench-panel" data-workbench-panel="phase-1-history" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 01 · Fixed historical data</p>
+          <h1>Retained source history</h1>
+          <p>
+            Search and filter the immutable source record that led to the Phase 1 closure revision. Later Phase 2
+            commits do not appear here.
+          </p>
+        </div>
+        <section class="history-section" aria-labelledby="history-heading">
+          <div class="history-heading-row">
+            <div>
+              <p class="eyebrow">Check-in ledger</p>
+              <h2 id="history-heading">Phase 1 source record</h2>
+            </div>
+            <p id="history-result-count" class="result-count" aria-live="polite"></p>
+          </div>
+
+          <form class="history-controls" id="history-controls" role="search">
+            <label>
+              <span>Search subjects</span>
+              <input id="history-search" type="search" placeholder="Try “patient portal” or “billing”" autocomplete="off" />
+            </label>
+            <label>
+              <span>Source area</span>
+              <select id="area-filter">
+                <option value="">All source areas</option>
+              </select>
+            </label>
+            <button id="clear-filters" type="button">Clear</button>
+          </form>
+
+          <ol id="commit-list" class="commit-list"></ol>
+          <button id="load-more" class="load-more" type="button">Show more check-ins</button>
+        </section>
       </section>
     </main>
 
@@ -240,7 +394,7 @@
         the source of the <a href="https://www.open-emr.org/">original OpenEMR project</a> as its functional
         specification; we gratefully thank its maintainers and community.
       </p>
-      <p>AvenChart is not affiliated with, certified by, or endorsed by the OpenEMR Foundation or community.</p>
+      <p>AvenChart is experimental and is not affiliated with, certified by, or endorsed by the OpenEMR Foundation or community.</p>
     </footer>
   </body>
 </html>

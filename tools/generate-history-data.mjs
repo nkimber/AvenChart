@@ -10,7 +10,24 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = resolve(here, '..')
 const outputPath = resolve(repositoryRoot, 'public-history', 'history-data.js')
 const historyBasePath = resolve(repositoryRoot, '.public-history-base')
-const historyRef = existsSync(historyBasePath) ? readFileSync(historyBasePath, 'utf8').trim() : 'HEAD'
+if (!existsSync(historyBasePath)) {
+  throw new Error('The fixed Phase 1 history boundary is missing: .public-history-base')
+}
+
+const historyRef = readFileSync(historyBasePath, 'utf8').trim()
+if (!/^[0-9a-f]{40}$/.test(historyRef)) {
+  throw new Error('.public-history-base must contain one exact 40-character Git revision')
+}
+
+const sourceRevision = execFileSync('git', ['rev-parse', `${historyRef}^{commit}`], {
+  cwd: repositoryRoot,
+  encoding: 'utf8',
+}).trim()
+
+if (sourceRevision !== historyRef) {
+  throw new Error(`Phase 1 history boundary did not resolve exactly: expected ${historyRef}, received ${sourceRevision}`)
+}
+
 const recordSeparator = '\x1e'
 const fieldSeparator = '\x1f'
 
@@ -111,8 +128,19 @@ const activeDays = firstDate && lastDate
 
 const payload = {
   generatedAt: execFileSync('git', ['show', '-s', '--format=%cI', historyRef], { cwd: repositoryRoot, encoding: 'utf8' }).trim(),
-  sourceRevision: execFileSync('git', ['rev-parse', historyRef], { cwd: repositoryRoot, encoding: 'utf8' }).trim(),
+  sourceRevision,
   repositoryUrl: 'https://github.com/nkimber/AvenChart',
+  phase: {
+    id: 'phase-1',
+    number: 1,
+    name: 'Experimental autonomous build',
+    status: 'closed',
+    closedOn: '2026-08-20',
+    snapshotRef: 'phase-1-experimental',
+    functionalCoverageEstimate: 86,
+    functionalCoverageQualifier: 'approximately',
+    immutable: true,
+  },
   summary: {
     commits: commits.length,
     firstDate,
