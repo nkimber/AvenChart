@@ -695,10 +695,7 @@ public sealed class ManagedRecordRepository(NpgsqlDataSource dataSource)
         await using (var idCommand = connection.CreateCommand())
         {
             idCommand.Transaction = transaction;
-            idCommand.CommandText = """
-                select avenchart_next_integer('patient_documents.id', greatest(coalesce(max(id), 0), 8999999))
-                from patient_documents;
-                """;
+            idCommand.CommandText = "select nextval('patient_documents_id_seq');";
             documentId = Convert.ToInt32(await idCommand.ExecuteScalarAsync(cancellationToken));
         }
 

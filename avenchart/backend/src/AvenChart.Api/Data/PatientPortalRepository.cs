@@ -5802,10 +5802,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = """
-            select avenchart_next_integer('portal_mailbox_messages.id', greatest(coalesce(max(id), 0), 9390000))
-            from portal_mailbox_messages;
-            """;
+        command.CommandText = "select nextval('portal_mailbox_messages_id_seq');";
 
         var value = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(value);

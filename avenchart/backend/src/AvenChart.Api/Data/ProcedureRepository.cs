@@ -2387,7 +2387,18 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
-        if (tableName is not ("lab_orders" or "lab_reports" or "lab_results" or "lab_specimens" or "lab_providers" or "lab_provider_address_book" or "lab_order_catalog")
+        var sequenceName = tableName switch
+        {
+            "lab_orders" => "lab_orders_id_seq",
+            "lab_reports" => "lab_reports_id_seq",
+            "lab_results" => "lab_results_id_seq",
+            "lab_specimens" => "lab_specimens_id_seq",
+            "lab_providers" => "lab_providers_id_seq",
+            "lab_provider_address_book" => "lab_provider_address_book_id_seq",
+            "lab_order_catalog" => "lab_order_catalog_id_seq",
+            _ => null
+        };
+        if (sequenceName is null
             || columnName != "id")
         {
             throw new ArgumentException("Unsupported procedure id source.");
@@ -2395,9 +2406,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = tableName == "lab_order_catalog"
-            ? "select nextval('lab_order_catalog_id_seq');"
-            : $"select avenchart_next_integer('{tableName}.{columnName}', coalesce(max({columnName}), 0)) from {tableName};";
+        command.CommandText = $"select nextval('{sequenceName}');";
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 

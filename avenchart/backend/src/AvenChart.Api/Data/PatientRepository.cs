@@ -932,7 +932,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                  hipaa_allow_sms, hipaa_allow_email, marital_status, occupation, provider_id, facility_id,
                  portal_enabled, registration_date)
             values
-                (@canonicalId, (select avenchart_next_integer('patients.legacy_pid', greatest(coalesce(max(legacy_pid), 0), 100000)) from patients), @pubpid,
+                (@canonicalId, nextval('patients_legacy_pid_seq'), @pubpid,
                  @firstName, @lastName, @preferredName, @sex, @dateOfBirth,
                  null, 'registered via modernized patient workspace', @street, @city, @state, @postalCode,
                  @email, @phoneHome, @phoneHome, @phoneCell, @hipaaAllowSms, @hipaaAllowEmail,

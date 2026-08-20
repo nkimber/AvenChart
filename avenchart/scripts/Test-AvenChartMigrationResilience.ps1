@@ -26,6 +26,9 @@ if ([regex]::IsMatch($repositorySource, '(?i)\b(create\s+table|alter\s+table|cre
 if ([regex]::IsMatch($repositorySource, '(?is)max\s*\([^)]*\)[^;\r\n]{0,120}\+\s*1\b')) {
     throw "A concurrency-unsafe MAX(...) + 1 allocator was detected in a repository."
 }
+if ([regex]::IsMatch($repositorySource, "(?i)avenchart_next_integer\s*\(\s*'")) {
+    throw "A global literal-key integer allocator was detected. Use a database-owned sequence; reserve avenchart_next_integer for aggregate-scoped counters."
+}
 foreach ($checkpoint in $FaultCheckpoints) {
     if ($checkpoint -lt 1 -or $checkpoint -ge $ExpectedMigrationCount) {
         throw "Fault checkpoint $checkpoint must be between 1 and $($ExpectedMigrationCount - 1)."
@@ -345,6 +348,31 @@ try {
     }
     Invoke-DatabaseScalar -Sql "delete from avenchart_integer_counters where counter_key = 'test.atomic-integer-allocation';" | Out-Null
     $CompletedScenarios.Add("atomic-integer-allocation")
+
+    $globalIdentityDefaultCount = [int](Invoke-DatabaseScalar -Sql @"
+select count(*)
+from (values
+  ('patient_documents', 'id', 'patient_documents_id_seq'),
+  ('payment_sessions', 'id', 'payment_sessions_id_seq'),
+  ('encounters', 'id', 'encounters_id_seq'),
+  ('encounter_signatures', 'id', 'encounter_signatures_id_seq'),
+  ('portal_mailbox_messages', 'id', 'portal_mailbox_messages_id_seq'),
+  ('patients', 'legacy_pid', 'patients_legacy_pid_seq'),
+  ('lab_orders', 'id', 'lab_orders_id_seq'),
+  ('lab_reports', 'id', 'lab_reports_id_seq'),
+  ('lab_results', 'id', 'lab_results_id_seq'),
+  ('lab_specimens', 'id', 'lab_specimens_id_seq')
+) expected(table_name, column_name, sequence_name)
+join information_schema.columns actual
+  on actual.table_schema = 'public'
+ and actual.table_name = expected.table_name
+ and actual.column_name = expected.column_name
+where actual.column_default = 'nextval(''' || expected.sequence_name || '''::regclass)';
+"@)
+    if ($globalIdentityDefaultCount -ne 10) {
+        throw "Expected 10 global integer identities to use database-owned sequence defaults, but found $globalIdentityDefaultCount."
+    }
+    $CompletedScenarios.Add("database-owned-global-identities")
 
     $officeCreateResponse = Invoke-Http `
         -Method "POST" `

@@ -854,7 +854,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "select avenchart_next_integer('patient_documents.id', greatest(coalesce(max(id), 0), 8099999)) from patient_documents;";
+        command.CommandText = "select nextval('patient_documents_id_seq');";
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
@@ -1843,7 +1843,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             sessionId = await NextIntAsync(
                 connection,
                 transaction,
-                "select avenchart_next_integer('payment_sessions.id', greatest(coalesce(max(id), 0), 1200000)) from payment_sessions;",
+                "select nextval('payment_sessions_id_seq');",
                 cancellationToken);
             var sequenceNo = await NextIntAsync(
                 connection,
@@ -2022,7 +2022,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             sessionId = await NextIntAsync(
                 connection,
                 transaction,
-                "select avenchart_next_integer('payment_sessions.id', greatest(coalesce(max(id), 0), 1200000)) from payment_sessions;",
+                "select nextval('payment_sessions_id_seq');",
                 cancellationToken);
             sequenceNo = await NextIntAsync(
                 connection,
@@ -2344,7 +2344,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             var nextSessionId = await NextIntAsync(
                 connection,
                 transaction,
-                "select avenchart_next_integer('payment_sessions.id', greatest(coalesce(max(id), 0), 1200000)) from payment_sessions;",
+                "select nextval('payment_sessions_id_seq');",
                 cancellationToken);
             var nextSequenceNo = await NextIntAsync(
                 connection,

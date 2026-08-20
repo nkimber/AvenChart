@@ -274,8 +274,7 @@ public sealed class EncounterRepository(
                 limit 1
             ),
             next_id as (
-                select avenchart_next_integer('encounters.id', coalesce(max(greatest(id, encounter)), 0)) as id
-                from encounters
+                select nextval('encounters_id_seq')::integer as id
             ),
             source_appointment as (
                 select a.id,
@@ -629,8 +628,7 @@ public sealed class EncounterRepository(
                 limit 1
             ),
             next_id as (
-                select avenchart_next_integer('encounter_signatures.id', coalesce(max(id), 0)) as id
-                from encounter_signatures
+                select nextval('encounter_signatures_id_seq')::integer as id
             )
             insert into encounter_signatures (
                 id,
