@@ -522,6 +522,108 @@ try {
     }
     $CompletedScenarios.Add("ef-core-chart-tracker-aggregate")
 
+    $recordRequestCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/patients/MOD-PAT-0010/record-requests" `
+        -Headers $authenticatedHeaders `
+        -Body '{}'
+    if ([int]$recordRequestCreateResponse.StatusCode -ne 201) {
+        throw "EF-backed patient record-request creation returned HTTP $($recordRequestCreateResponse.StatusCode)."
+    }
+    $recordRequest = (Get-HttpResponseContent -Response $recordRequestCreateResponse) | ConvertFrom-Json
+    $duplicateRecordRequestResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/patients/MOD-PAT-0010/record-requests" `
+        -Headers $authenticatedHeaders `
+        -Body '{}'
+    if ([int]$duplicateRecordRequestResponse.StatusCode -ne 400) {
+        throw "The EF-backed open record-request uniqueness rule was not enforced."
+    }
+    $recordRequestCompleteResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/patients/MOD-PAT-0010/record-requests/$($recordRequest.requestId)/complete" `
+        -Headers $authenticatedHeaders `
+        -Body '{}'
+    $recordRequestHistoryResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/patients/MOD-PAT-0010/record-requests" `
+        -Headers $authenticatedHeaders
+    if ([int]$recordRequestCompleteResponse.StatusCode -ne 200 -or [int]$recordRequestHistoryResponse.StatusCode -ne 200) {
+        throw "EF-backed patient record-request completion or history failed."
+    }
+    $recordRequestComplete = (Get-HttpResponseContent -Response $recordRequestCompleteResponse) | ConvertFrom-Json
+    $recordRequestHistory = (Get-HttpResponseContent -Response $recordRequestHistoryResponse) | ConvertFrom-Json
+    $recordRequestVersion = [int](Invoke-DatabaseScalar -Sql "select row_version from patient_record_requests where request_id = '$($recordRequest.requestId)';")
+    if ($recordRequestComplete.status -ne "Completed" -or
+        $recordRequestHistory.requestId -notcontains $recordRequest.requestId -or
+        $recordRequestVersion -ne 2) {
+        throw "EF-backed patient record-request operations returned unexpected data or concurrency state."
+    }
+    $CompletedScenarios.Add("ef-core-patient-record-request-concurrency")
+
+    $sdohCreateBody = @{
+        assessmentDate = "2026-07-25"
+        screeningTool = "Hunger Vital Signs"
+        assessor = ""
+        domains = @{
+            transportation_insecurity = @{
+                status = "sometimes"
+                notes = "Needs transport support"
+            }
+        }
+        hungerQuestionOne = "LA28397-0"
+        hungerQuestionTwo = "LA6729-3"
+        disabilityScale = @{}
+        interventions = "Provide transportation resources."
+    } | ConvertTo-Json -Depth 8
+    $sdohCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/patients/MOD-PAT-0010/sdoh-assessments" `
+        -Headers $authenticatedHeaders `
+        -Body $sdohCreateBody
+    if ([int]$sdohCreateResponse.StatusCode -ne 201) {
+        throw "EF-backed SDOH creation returned HTTP $($sdohCreateResponse.StatusCode). Body: $(Get-HttpResponseContent -Response $sdohCreateResponse)"
+    }
+    $sdohCreate = (Get-HttpResponseContent -Response $sdohCreateResponse) | ConvertFrom-Json
+    $sdohUpdateBody = @{
+        assessmentDate = "2026-07-25"
+        screeningTool = "Hunger Vital Signs"
+        assessor = "EF assessor"
+        domains = @{
+            transportation_insecurity = @{
+                status = "present"
+                notes = "Transport plan active"
+            }
+        }
+        hungerQuestionOne = "LA6729-3"
+        hungerQuestionTwo = "LA6729-3"
+        disabilityScale = @{}
+        interventions = "Transportation resources retained."
+    } | ConvertTo-Json -Depth 8
+    $sdohUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/patients/MOD-PAT-0010/sdoh-assessments/$($sdohCreate.assessmentId)" `
+        -Headers $authenticatedHeaders `
+        -Body $sdohUpdateBody
+    $sdohHistoryResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/patients/MOD-PAT-0010/sdoh-assessments" `
+        -Headers $authenticatedHeaders
+    if ([int]$sdohUpdateResponse.StatusCode -ne 200 -or [int]$sdohHistoryResponse.StatusCode -ne 200) {
+        throw "EF-backed SDOH update or history failed."
+    }
+    $sdohUpdate = (Get-HttpResponseContent -Response $sdohUpdateResponse) | ConvertFrom-Json
+    $sdohHistory = (Get-HttpResponseContent -Response $sdohHistoryResponse) | ConvertFrom-Json
+    $sdohVersion = [int](Invoke-DatabaseScalar -Sql "select row_version from patient_sdoh_assessments where assessment_id = '$($sdohCreate.assessmentId)';")
+    if ($sdohCreate.assessor -ne "admin" -or
+        $sdohUpdate.assessor -ne "EF assessor" -or
+        $sdohUpdate.domains.transportation_insecurity.status -ne "present" -or
+        $sdohHistory.assessmentId -notcontains $sdohCreate.assessmentId -or
+        $sdohVersion -ne 2) {
+        throw "EF-backed SDOH operations returned unexpected data or concurrency state."
+    }
+    $CompletedScenarios.Add("ef-core-patient-sdoh-concurrency")
+
     $messageResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/messages/MOD-PAT-0001" `

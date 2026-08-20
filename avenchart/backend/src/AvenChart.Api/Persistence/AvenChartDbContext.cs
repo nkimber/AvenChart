@@ -25,6 +25,10 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
 
     public DbSet<PatientEducationResourceEntity> PatientEducationResources => Set<PatientEducationResourceEntity>();
 
+    public DbSet<PatientRecordRequestEntity> PatientRecordRequests => Set<PatientRecordRequestEntity>();
+
+    public DbSet<PatientSdohAssessmentEntity> PatientSdohAssessments => Set<PatientSdohAssessmentEntity>();
+
     public DbSet<RecallActivityEntity> RecallActivities => Set<RecallActivityEntity>();
 
     public DbSet<RecallEntity> Recalls => Set<RecallEntity>();

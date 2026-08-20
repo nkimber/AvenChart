@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Text.Json;
-using Npgsql;
-using NpgsqlTypes;
 using AvenChart.Api.Models;
+using AvenChart.Api.Persistence;
+using AvenChart.Api.Persistence.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace AvenChart.Api.Data;
 
-public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
+public sealed class PatientSdohRepository(AvenChartDbContext dbContext)
 {
     private static readonly HashSet<string> SupportedDomainKeys = new(StringComparer.Ordinal)
     {
@@ -60,109 +61,109 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
         ["interpersonal_safety"] = ("Provide IPV resources and safety planning; social work referral", "IPV risk present")
     };
 
-    public async Task<IReadOnlyList<PatientSdohAssessmentResponse>> GetAsync(string patientId, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<PatientSdohAssessmentResponse>> GetAsync(
+        string patientId,
+        CancellationToken cancellationToken)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var patient = await ResolvePatientAsync(connection, patientId, cancellationToken)
+        var patient = await ResolvePatientAsync(patientId, cancellationToken)
             ?? throw new ArgumentException("The patient does not exist.");
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select assessment_id, patient_id, pid, assessment_date, screening_tool, assessor, instrument_score,
-                   hunger_q1, hunger_q2, hunger_score, pregnancy_status, pregnancy_edd, pregnancy_intent, postpartum_status, postpartum_end,
-                   disability_status, disability_status_notes, disability_scale,
-                   domains, interventions, created_at, created_by, updated_at, updated_by
-            from patient_sdoh_assessments
-            where patient_id = @patientId
-            order by assessment_date desc, updated_at desc, assessment_id desc;
-            """;
-        command.Parameters.AddWithValue("patientId", patient.CanonicalId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var assessments = new List<PatientSdohAssessmentResponse>();
-        while (await reader.ReadAsync(cancellationToken)) assessments.Add(ToResponse(reader));
-        return assessments;
+        var assessments = await dbContext.PatientSdohAssessments
+            .AsNoTracking()
+            .Where(assessment => assessment.PatientId == patient.CanonicalId)
+            .OrderByDescending(assessment => assessment.AssessmentDate)
+            .ThenByDescending(assessment => assessment.UpdatedAt)
+            .ThenByDescending(assessment => assessment.AssessmentId)
+            .ToListAsync(cancellationToken);
+        return assessments.Select(ToResponse).ToList();
     }
 
-    public async Task<PatientSdohAssessmentResponse> CreateAsync(string patientId, PatientSdohAssessmentRequest request, string username, CancellationToken cancellationToken)
+    public async Task<PatientSdohAssessmentResponse> CreateAsync(
+        string patientId,
+        PatientSdohAssessmentRequest request,
+        string username,
+        CancellationToken cancellationToken)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var patient = await ResolvePatientAsync(connection, patientId, cancellationToken)
+        var patient = await ResolvePatientAsync(patientId, cancellationToken)
             ?? throw new ArgumentException("The patient does not exist.");
         var normalized = Normalize(request, username);
-        var assessmentId = Guid.NewGuid();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            insert into patient_sdoh_assessments (
-                assessment_id, patient_id, pid, assessment_date, screening_tool, assessor, instrument_score,
-                hunger_q1, hunger_q2, hunger_score, pregnancy_status, pregnancy_edd, pregnancy_intent, postpartum_status, postpartum_end,
-                disability_status, disability_status_notes, disability_scale,
-                domains, interventions, created_at, created_by, updated_at, updated_by)
-            values (
-                @assessmentId, @patientId, @pid, @assessmentDate, @screeningTool, @assessor, @instrumentScore,
-                @hungerQuestionOne, @hungerQuestionTwo, @hungerScore, @pregnancyStatus, @pregnancyEdd, @pregnancyIntent, @postpartumStatus, @postpartumEnd,
-                @disabilityStatus, @disabilityStatusNotes, @disabilityScale,
-                @domains, @interventions, now(), @username, now(), @username)
-            returning assessment_id, patient_id, pid, assessment_date, screening_tool, assessor, instrument_score,
-                      hunger_q1, hunger_q2, hunger_score, pregnancy_status, pregnancy_edd, pregnancy_intent, postpartum_status, postpartum_end,
-                      disability_status, disability_status_notes, disability_scale,
-                      domains, interventions, created_at, created_by, updated_at, updated_by;
-            """;
-        AddMutationParameters(command, assessmentId, patient, normalized, username);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) throw new InvalidOperationException("The SDOH assessment could not be created.");
-        return ToResponse(reader);
+        var now = DateTimeOffset.UtcNow;
+        var assessment = new PatientSdohAssessmentEntity
+        {
+            AssessmentId = Guid.NewGuid(),
+            PatientId = patient.CanonicalId,
+            LegacyPid = patient.LegacyPid,
+            CreatedAt = now,
+            CreatedBy = username,
+            UpdatedAt = now,
+            UpdatedBy = username,
+            RowVersion = 1,
+            DomainsJson = "{}",
+            DisabilityScaleJson = "{}",
+            Assessor = username
+        };
+        Apply(assessment, normalized, username);
+        dbContext.PatientSdohAssessments.Add(assessment);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToResponse(assessment);
     }
 
-    public async Task<PatientSdohAssessmentResponse> UpdateAsync(string patientId, Guid assessmentId, PatientSdohAssessmentRequest request, string username, CancellationToken cancellationToken)
+    public async Task<PatientSdohAssessmentResponse> UpdateAsync(
+        string patientId,
+        Guid assessmentId,
+        PatientSdohAssessmentRequest request,
+        string username,
+        CancellationToken cancellationToken)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var patient = await ResolvePatientAsync(connection, patientId, cancellationToken)
+        var patient = await ResolvePatientAsync(patientId, cancellationToken)
             ?? throw new ArgumentException("The patient does not exist.");
-        var normalized = Normalize(request, username);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update patient_sdoh_assessments
-            set assessment_date = @assessmentDate, screening_tool = @screeningTool, assessor = @assessor,
-                instrument_score = @instrumentScore, hunger_q1 = @hungerQuestionOne, hunger_q2 = @hungerQuestionTwo,
-                hunger_score = @hungerScore, pregnancy_status = @pregnancyStatus, pregnancy_edd = @pregnancyEdd,
-                pregnancy_intent = @pregnancyIntent, postpartum_status = @postpartumStatus, postpartum_end = @postpartumEnd,
-                disability_status = @disabilityStatus, disability_status_notes = @disabilityStatusNotes, disability_scale = @disabilityScale,
-                domains = @domains, interventions = @interventions,
-                updated_at = now(), updated_by = @username
-            where assessment_id = @assessmentId and patient_id = @patientId
-            returning assessment_id, patient_id, pid, assessment_date, screening_tool, assessor, instrument_score,
-                      hunger_q1, hunger_q2, hunger_score, pregnancy_status, pregnancy_edd, pregnancy_intent, postpartum_status, postpartum_end,
-                      disability_status, disability_status_notes, disability_scale,
-                      domains, interventions, created_at, created_by, updated_at, updated_by;
-            """;
-        AddMutationParameters(command, assessmentId, patient, normalized, username);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) throw new ArgumentException("The SDOH assessment does not exist for this patient.");
-        return ToResponse(reader);
+        var assessment = await dbContext.PatientSdohAssessments.SingleOrDefaultAsync(
+            candidate =>
+                candidate.AssessmentId == assessmentId &&
+                candidate.PatientId == patient.CanonicalId,
+            cancellationToken);
+        if (assessment is null)
+        {
+            throw new ArgumentException("The SDOH assessment does not exist for this patient.");
+        }
+
+        Apply(assessment, Normalize(request, username), username);
+        assessment.RowVersion++;
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ArgumentException("The SDOH assessment changed before this update could be saved.");
+        }
+
+        return ToResponse(assessment);
     }
 
-    private static void AddMutationParameters(NpgsqlCommand command, Guid assessmentId, PatientIdentity patient, NormalizedAssessment assessment, string username)
+    private static void Apply(
+        PatientSdohAssessmentEntity entity,
+        NormalizedAssessment assessment,
+        string username)
     {
-        command.Parameters.AddWithValue("assessmentId", assessmentId);
-        command.Parameters.AddWithValue("patientId", patient.CanonicalId);
-        command.Parameters.AddWithValue("pid", patient.LegacyPid);
-        command.Parameters.AddWithValue("assessmentDate", assessment.AssessmentDate);
-        command.Parameters.AddWithValue("screeningTool", (object?)assessment.ScreeningTool ?? DBNull.Value);
-        command.Parameters.AddWithValue("assessor", assessment.Assessor);
-        command.Parameters.AddWithValue("instrumentScore", assessment.InstrumentScore);
-        command.Parameters.AddWithValue("hungerQuestionOne", (object?)assessment.HungerQuestionOne ?? DBNull.Value);
-        command.Parameters.AddWithValue("hungerQuestionTwo", (object?)assessment.HungerQuestionTwo ?? DBNull.Value);
-        command.Parameters.AddWithValue("hungerScore", assessment.HungerScore);
-        command.Parameters.AddWithValue("pregnancyStatus", (object?)assessment.PregnancyStatus ?? DBNull.Value);
-        command.Parameters.AddWithValue("pregnancyEdd", (object?)assessment.PregnancyEdd ?? DBNull.Value);
-        command.Parameters.AddWithValue("pregnancyIntent", (object?)assessment.PregnancyIntent ?? DBNull.Value);
-        command.Parameters.AddWithValue("postpartumStatus", (object?)assessment.PostpartumStatus ?? DBNull.Value);
-        command.Parameters.AddWithValue("postpartumEnd", (object?)assessment.PostpartumEnd ?? DBNull.Value);
-        command.Parameters.AddWithValue("disabilityStatus", (object?)assessment.DisabilityStatus ?? DBNull.Value);
-        command.Parameters.AddWithValue("disabilityStatusNotes", (object?)assessment.DisabilityStatusNotes ?? DBNull.Value);
-        command.Parameters.Add("disabilityScale", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(assessment.DisabilityScale);
-        command.Parameters.Add("domains", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(assessment.Domains);
-        command.Parameters.AddWithValue("interventions", (object?)assessment.Interventions ?? DBNull.Value);
-        command.Parameters.AddWithValue("username", username);
+        entity.AssessmentDate = assessment.AssessmentDate;
+        entity.ScreeningTool = assessment.ScreeningTool;
+        entity.Assessor = assessment.Assessor;
+        entity.InstrumentScore = assessment.InstrumentScore;
+        entity.HungerQuestionOne = assessment.HungerQuestionOne;
+        entity.HungerQuestionTwo = assessment.HungerQuestionTwo;
+        entity.HungerScore = assessment.HungerScore;
+        entity.PregnancyStatus = assessment.PregnancyStatus;
+        entity.PregnancyEstimatedDueDate = assessment.PregnancyEdd;
+        entity.PregnancyIntent = assessment.PregnancyIntent;
+        entity.PostpartumStatus = assessment.PostpartumStatus;
+        entity.PostpartumEnd = assessment.PostpartumEnd;
+        entity.DisabilityStatus = assessment.DisabilityStatus;
+        entity.DisabilityStatusNotes = assessment.DisabilityStatusNotes;
+        entity.DisabilityScaleJson = JsonSerializer.Serialize(assessment.DisabilityScale);
+        entity.DomainsJson = JsonSerializer.Serialize(assessment.Domains);
+        entity.Interventions = assessment.Interventions;
+        entity.UpdatedAt = DateTimeOffset.UtcNow;
+        entity.UpdatedBy = username;
     }
 
     private static NormalizedAssessment Normalize(PatientSdohAssessmentRequest request, string username)
@@ -220,26 +221,28 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
             disabilityScale);
     }
 
-    private static async Task<PatientIdentity?> ResolvePatientAsync(NpgsqlConnection connection, string patientId, CancellationToken cancellationToken)
+    private async Task<PatientIdentity?> ResolvePatientAsync(
+        string patientId,
+        CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select canonical_id, legacy_pid
-            from patients
-            where (lower(canonical_id) = lower(@patientId)
-                   or lower(pubpid) = lower(@patientId)
-                   or legacy_pid::text = @patientId)
-              and merged_into_patient_id is null;
-            """;
-        command.Parameters.AddWithValue("patientId", patientId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken) ? new PatientIdentity(reader.GetString(0), reader.GetInt32(1)) : null;
+        var normalized = patientId.Trim();
+        var normalizedLower = normalized.ToLowerInvariant();
+        var hasLegacyPid = int.TryParse(normalized, out var legacyPid);
+        return await dbContext.Patients
+            .AsNoTracking()
+            .Where(patient =>
+                patient.MergedIntoPatientId == null &&
+                (patient.CanonicalId.ToLower() == normalizedLower ||
+                 patient.PublicId.ToLower() == normalizedLower ||
+                 (hasLegacyPid && patient.LegacyPid == legacyPid)))
+            .Select(patient => new PatientIdentity(patient.CanonicalId, patient.LegacyPid))
+            .SingleOrDefaultAsync(cancellationToken);
     }
 
-    private static PatientSdohAssessmentResponse ToResponse(NpgsqlDataReader reader)
+    private static PatientSdohAssessmentResponse ToResponse(PatientSdohAssessmentEntity assessment)
     {
-        var disabilityScale = JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(17)) ?? [];
-        var domains = JsonSerializer.Deserialize<Dictionary<string, PatientSdohDomainValue>>(reader.GetString(18)) ?? [];
+        var disabilityScale = JsonSerializer.Deserialize<Dictionary<string, string>>(assessment.DisabilityScaleJson) ?? [];
+        var domains = JsonSerializer.Deserialize<Dictionary<string, PatientSdohDomainValue>>(assessment.DomainsJson) ?? [];
         var goalDueDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(90).ToString("yyyy-MM-dd");
         var generatedGoals = GoalDomainLabels
             .Where(pair => domains.TryGetValue(pair.Key, out var value) && GoalPositiveStatuses.Contains(value.Status))
@@ -250,17 +253,32 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
             .Select(pair => new PatientSdohGeneratedIntervention(pair.Key, pair.Value.Description, pair.Value.Reason))
             .ToArray();
         return new(
-            reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.GetFieldValue<DateOnly>(3).ToString("yyyy-MM-dd"),
-            reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.GetInt32(6),
-            reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetInt32(9),
-            reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetFieldValue<DateOnly>(11).ToString("yyyy-MM-dd"),
-            reader.IsDBNull(12) ? null : reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetFieldValue<DateOnly>(14).ToString("yyyy-MM-dd"),
-            reader.IsDBNull(15) ? null : reader.GetString(15), reader.IsDBNull(16) ? null : reader.GetString(16), disabilityScale,
+            assessment.AssessmentId,
+            assessment.PatientId,
+            assessment.LegacyPid,
+            assessment.AssessmentDate.ToString("yyyy-MM-dd"),
+            assessment.ScreeningTool,
+            assessment.Assessor,
+            assessment.InstrumentScore,
+            assessment.HungerQuestionOne,
+            assessment.HungerQuestionTwo,
+            assessment.HungerScore,
+            assessment.PregnancyStatus,
+            assessment.PregnancyEstimatedDueDate?.ToString("yyyy-MM-dd"),
+            assessment.PregnancyIntent,
+            assessment.PostpartumStatus,
+            assessment.PostpartumEnd?.ToString("yyyy-MM-dd"),
+            assessment.DisabilityStatus,
+            assessment.DisabilityStatusNotes,
+            disabilityScale,
             generatedGoals,
             generatedInterventions,
             domains,
-            reader.IsDBNull(19) ? null : reader.GetString(19), reader.GetFieldValue<DateTimeOffset>(20).ToString("O"), reader.GetString(21),
-            reader.GetFieldValue<DateTimeOffset>(22).ToString("O"), reader.GetString(23));
+            assessment.Interventions,
+            assessment.CreatedAt.ToString("O"),
+            assessment.CreatedBy,
+            assessment.UpdatedAt.ToString("O"),
+            assessment.UpdatedBy);
     }
 
     private static string? NormalizeText(string? value, int maximumLength)
