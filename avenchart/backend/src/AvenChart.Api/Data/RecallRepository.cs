@@ -1,16 +1,134 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-using Npgsql;
 using AvenChart.Api.Models;
+using AvenChart.Api.Persistence;
+using AvenChart.Api.Persistence.Entities;
+using Microsoft.EntityFrameworkCore;
+
 namespace AvenChart.Api.Data;
-public sealed class RecallRepository(NpgsqlDataSource source)
+
+public sealed class RecallRepository(AvenChartDbContext dbContext)
 {
- public async Task<IReadOnlyList<RecallItem>> GetAsync(CancellationToken ct){await using var c=await source.OpenConnectionAsync(ct);await using var q=c.CreateCommand();q.CommandText="select r.id,r.patient_id,p.last_name||', '||p.first_name,r.recall_date,r.reason,r.provider_id,r.facility_id,r.status,r.created_at from recalls r join patients p on p.canonical_id=r.patient_id where r.status='active' order by r.recall_date;";var x=new List<RecallItem>();await using var r=await q.ExecuteReaderAsync(ct);while(await r.ReadAsync(ct))x.Add(Read(r));return x;}
- public async Task<RecallItem?> CreateAsync(RecallRequest x,CancellationToken ct){if(string.IsNullOrWhiteSpace(x.Reason))return null;await using var c=await source.OpenConnectionAsync(ct);await using var q=c.CreateCommand();q.CommandText="insert into recalls(id,patient_id,recall_date,reason,provider_id,facility_id,status) values(@id,@patient,@date,@reason,@provider,@facility,'active') returning id;";var id=Guid.NewGuid();q.Parameters.AddWithValue("id",id);q.Parameters.AddWithValue("patient",x.PatientId);q.Parameters.AddWithValue("date",x.RecallDate);q.Parameters.AddWithValue("reason",x.Reason.Trim());q.Parameters.AddWithValue("provider",(object?)x.ProviderId??DBNull.Value);q.Parameters.AddWithValue("facility",(object?)x.FacilityId??DBNull.Value);if(await q.ExecuteScalarAsync(ct)is null)return null;return (await GetAsync(ct)).FirstOrDefault(a=>a.Id==id);}
- public async Task<bool> DeleteAsync(Guid id,CancellationToken ct){await using var c=await source.OpenConnectionAsync(ct);await using var q=c.CreateCommand();q.CommandText="delete from recalls where id=@id;";q.Parameters.AddWithValue("id",id);return await q.ExecuteNonQueryAsync(ct)>0;}
- public async Task<IReadOnlyList<RecallActivityItem>?> GetActivityAsync(Guid id,CancellationToken ct){await using var c=await source.OpenConnectionAsync(ct);if(!await ExistsAsync(c,id,ct))return null;await using var q=c.CreateCommand();q.CommandText="select id,activity_type,note,recorded_at from recall_activity where recall_id=@id order by recorded_at desc;";q.Parameters.AddWithValue("id",id);var x=new List<RecallActivityItem>();await using var r=await q.ExecuteReaderAsync(ct);while(await r.ReadAsync(ct))x.Add(new(r.GetGuid(0),r.GetString(1),r.IsDBNull(2)?null:r.GetString(2),r.GetFieldValue<DateTimeOffset>(3).ToString("O")));return x;}
- public async Task<RecallActivityItem?> AddActivityAsync(Guid id,RecallActivityRequest x,CancellationToken ct){var type=x.ActivityType?.Trim().ToLowerInvariant();if(type is not("phone" or "postcard" or "label"))throw new ArgumentException("Activity type must be phone, postcard, or label.");await using var c=await source.OpenConnectionAsync(ct);if(!await ExistsAsync(c,id,ct))return null;await using var q=c.CreateCommand();q.CommandText="insert into recall_activity(id,recall_id,activity_type,note) values(@activity,@id,@type,@note) returning id,activity_type,note,recorded_at;";q.Parameters.AddWithValue("activity",Guid.NewGuid());q.Parameters.AddWithValue("id",id);q.Parameters.AddWithValue("type",type);q.Parameters.AddWithValue("note",string.IsNullOrWhiteSpace(x.Note)?DBNull.Value:x.Note.Trim());await using var r=await q.ExecuteReaderAsync(ct);return await r.ReadAsync(ct)?new(r.GetGuid(0),r.GetString(1),r.IsDBNull(2)?null:r.GetString(2),r.GetFieldValue<DateTimeOffset>(3).ToString("O")):null;}
- static async Task<bool> ExistsAsync(NpgsqlConnection connection,Guid id,CancellationToken ct){await using var q=connection.CreateCommand();q.CommandText="select exists(select 1 from recalls where id=@id);";q.Parameters.AddWithValue("id",id);return (bool)(await q.ExecuteScalarAsync(ct) ?? false);}
- static RecallItem Read(NpgsqlDataReader r)=>new(r.GetGuid(0),r.GetString(1),r.GetString(2),r.GetFieldValue<DateOnly>(3).ToString("yyyy-MM-dd"),r.GetString(4),r.IsDBNull(5)?null:r.GetInt32(5),r.IsDBNull(6)?null:r.GetInt32(6),r.GetString(7),r.GetFieldValue<DateTimeOffset>(8).ToString("O"));
+    public async Task<IReadOnlyList<RecallItem>> GetAsync(CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.Recalls
+            .AsNoTracking()
+            .Where(recall => recall.Status == "active")
+            .OrderBy(recall => recall.RecallDate)
+            .Select(recall => new
+            {
+                Recall = recall,
+                recall.Patient.FirstName,
+                recall.Patient.LastName
+            })
+            .ToListAsync(cancellationToken);
+        return rows.Select(row => ToItem(row.Recall, row.FirstName, row.LastName)).ToList();
+    }
+
+    public async Task<RecallItem?> CreateAsync(
+        RecallRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return null;
+        }
+
+        var patient = await dbContext.Patients
+            .AsNoTracking()
+            .Where(candidate => candidate.CanonicalId == request.PatientId)
+            .Select(candidate => new { candidate.FirstName, candidate.LastName })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var recall = new RecallEntity
+        {
+            Id = Guid.NewGuid(),
+            PatientId = request.PatientId,
+            RecallDate = request.RecallDate,
+            Reason = request.Reason.Trim(),
+            ProviderId = request.ProviderId,
+            FacilityId = request.FacilityId,
+            Status = "active"
+        };
+        dbContext.Recalls.Add(recall);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToItem(recall, patient.FirstName, patient.LastName);
+    }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var deleted = await dbContext.Recalls
+            .Where(recall => recall.Id == id)
+            .ExecuteDeleteAsync(cancellationToken);
+        return deleted == 1;
+    }
+
+    public async Task<IReadOnlyList<RecallActivityItem>?> GetActivityAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        if (!await dbContext.Recalls.AsNoTracking().AnyAsync(recall => recall.Id == id, cancellationToken))
+        {
+            return null;
+        }
+
+        var activity = await dbContext.RecallActivities
+            .AsNoTracking()
+            .Where(item => item.RecallId == id)
+            .OrderByDescending(item => item.RecordedAt)
+            .ToListAsync(cancellationToken);
+        return activity.Select(ToActivityItem).ToList();
+    }
+
+    public async Task<RecallActivityItem?> AddActivityAsync(
+        Guid id,
+        RecallActivityRequest request,
+        CancellationToken cancellationToken)
+    {
+        var activityType = request.ActivityType?.Trim().ToLowerInvariant();
+        if (activityType is not ("phone" or "postcard" or "label"))
+        {
+            throw new ArgumentException("Activity type must be phone, postcard, or label.");
+        }
+
+        if (!await dbContext.Recalls.AsNoTracking().AnyAsync(recall => recall.Id == id, cancellationToken))
+        {
+            return null;
+        }
+
+        var activity = new RecallActivityEntity
+        {
+            Id = Guid.NewGuid(),
+            RecallId = id,
+            ActivityType = activityType,
+            Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim()
+        };
+        dbContext.RecallActivities.Add(activity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToActivityItem(activity);
+    }
+
+    private static RecallItem ToItem(RecallEntity recall, string firstName, string lastName) =>
+        new(
+            recall.Id,
+            recall.PatientId,
+            $"{lastName}, {firstName}",
+            recall.RecallDate.ToString("yyyy-MM-dd"),
+            recall.Reason,
+            recall.ProviderId,
+            recall.FacilityId,
+            recall.Status,
+            recall.CreatedAt.ToString("O"));
+
+    private static RecallActivityItem ToActivityItem(RecallActivityEntity activity) =>
+        new(
+            activity.Id,
+            activity.ActivityType,
+            activity.Note,
+            activity.RecordedAt.ToString("O"));
 }

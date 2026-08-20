@@ -1,15 +1,174 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-using Npgsql;
 using AvenChart.Api.Models;
+using AvenChart.Api.Persistence;
+using AvenChart.Api.Persistence.Entities;
+using Microsoft.EntityFrameworkCore;
+
 namespace AvenChart.Api.Data;
-public sealed class ChartTrackerRepository(NpgsqlDataSource dataSource)
+
+public sealed class ChartTrackerRepository(AvenChartDbContext dbContext)
 {
- public async Task<ChartTrackerPatient?> FindAsync(string identifier,CancellationToken ct){if(string.IsNullOrWhiteSpace(identifier))return null;await using var c=await dataSource.OpenConnectionAsync(ct);await using var q=c.CreateCommand();q.CommandText="select canonical_id,pubpid,last_name||', '||first_name,date_of_birth from patients where canonical_id=@id or pubpid=@id limit 1;";q.Parameters.AddWithValue("id",identifier.Trim());await using var r=await q.ExecuteReaderAsync(ct);if(!await r.ReadAsync(ct))return null;var item=new ChartTrackerPatient(r.GetString(0),r.GetString(1),r.GetString(2),r.GetFieldValue<DateOnly>(3).ToString("yyyy-MM-dd"),null);await r.CloseAsync();var history=await GetHistoryAsync(c,item.PatientId,ct);return item with {Current=history.FirstOrDefault()};}
- public async Task<IReadOnlyList<ChartTrackerEvent>?> GetHistoryAsync(string patientId,CancellationToken ct){await using var c=await dataSource.OpenConnectionAsync(ct);if(!await PatientExistsAsync(c,patientId,ct))return null;return await GetHistoryAsync(c,patientId,ct);}
- public async Task<ChartTrackerOptions> GetOptionsAsync(CancellationToken ct){await using var c=await dataSource.OpenConnectionAsync(ct);var locations=new List<string>();await using(var q=c.CreateCommand()){q.CommandText="select name from chart_tracker_locations where active order by position,name;";await using var r=await q.ExecuteReaderAsync(ct);while(await r.ReadAsync(ct))locations.Add(r.GetString(0));}var users=new List<ChartTrackerUser>();await using(var q=c.CreateCommand()){q.CommandText="select id,last_name||', '||first_name from staff where active order by last_name,first_name;";await using var r=await q.ExecuteReaderAsync(ct);while(await r.ReadAsync(ct))users.Add(new(r.GetInt32(0),r.GetString(1)));}return new(locations,users);}
- public async Task<ChartTrackerEvent?> RecordAsync(string patientId,ChartTrackerUpdateRequest request,CancellationToken ct){var location=request.Location?.Trim();if(request.UserId is null&&string.IsNullOrWhiteSpace(location))throw new ArgumentException("Select a chart location or an active staff member.");if(request.UserId is not null)location=null;await using var c=await dataSource.OpenConnectionAsync(ct);if(!await PatientExistsAsync(c,patientId,ct))return null;if(location is not null){await using var l=c.CreateCommand();l.CommandText="select exists(select 1 from chart_tracker_locations where active and name=@name);";l.Parameters.AddWithValue("name",location);if(!(bool)(await l.ExecuteScalarAsync(ct)??false))throw new ArgumentException("Select an active chart location.");}if(request.UserId is not null){await using var u=c.CreateCommand();u.CommandText="select exists(select 1 from staff where active and id=@id);";u.Parameters.AddWithValue("id",request.UserId.Value);if(!(bool)(await u.ExecuteScalarAsync(ct)??false))throw new ArgumentException("Select an active staff member.");}var id=Guid.NewGuid();await using(var q=c.CreateCommand()){q.CommandText="insert into chart_tracker_events(id,patient_id,location,user_id) values(@id,@patient,@location,@user);";q.Parameters.AddWithValue("id",id);q.Parameters.AddWithValue("patient",patientId);q.Parameters.AddWithValue("location",(object?)location??DBNull.Value);q.Parameters.AddWithValue("user",(object?)request.UserId??DBNull.Value);await q.ExecuteNonQueryAsync(ct);}return (await GetHistoryAsync(c,patientId,ct)).FirstOrDefault(x=>x.Id==id);}
- static async Task<IReadOnlyList<ChartTrackerEvent>> GetHistoryAsync(NpgsqlConnection c,string patientId,CancellationToken ct){await using var q=c.CreateCommand();q.CommandText="select e.id,e.location,e.user_id,s.last_name||', '||s.first_name,e.recorded_at from chart_tracker_events e left join staff s on s.id=e.user_id where e.patient_id=@id order by e.recorded_at desc;";q.Parameters.AddWithValue("id",patientId);var items=new List<ChartTrackerEvent>();await using var r=await q.ExecuteReaderAsync(ct);while(await r.ReadAsync(ct))items.Add(new(r.GetGuid(0),r.IsDBNull(1)?null:r.GetString(1),r.IsDBNull(2)?null:r.GetInt32(2),r.IsDBNull(3)?null:r.GetString(3),r.GetFieldValue<DateTimeOffset>(4).ToString("O")));return items;}
- static async Task<bool> PatientExistsAsync(NpgsqlConnection c,string id,CancellationToken ct){await using var q=c.CreateCommand();q.CommandText="select exists(select 1 from patients where canonical_id=@id);";q.Parameters.AddWithValue("id",id);return (bool)(await q.ExecuteScalarAsync(ct)??false);}
+    public async Task<ChartTrackerPatient?> FindAsync(
+        string identifier,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(identifier))
+        {
+            return null;
+        }
+
+        var normalizedIdentifier = identifier.Trim();
+        var patient = await dbContext.Patients
+            .AsNoTracking()
+            .Where(candidate =>
+                candidate.CanonicalId == normalizedIdentifier ||
+                candidate.PublicId == normalizedIdentifier)
+            .Select(candidate => new
+            {
+                candidate.CanonicalId,
+                candidate.PublicId,
+                candidate.FirstName,
+                candidate.LastName,
+                candidate.DateOfBirth
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var history = await GetHistoryCoreAsync(patient.CanonicalId, cancellationToken);
+        return new ChartTrackerPatient(
+            patient.CanonicalId,
+            patient.PublicId,
+            $"{patient.LastName}, {patient.FirstName}",
+            patient.DateOfBirth.ToString("yyyy-MM-dd"),
+            history.FirstOrDefault());
+    }
+
+    public async Task<IReadOnlyList<ChartTrackerEvent>?> GetHistoryAsync(
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        if (!await dbContext.Patients.AsNoTracking().AnyAsync(
+                patient => patient.CanonicalId == patientId,
+                cancellationToken))
+        {
+            return null;
+        }
+
+        return await GetHistoryCoreAsync(patientId, cancellationToken);
+    }
+
+    public async Task<ChartTrackerOptions> GetOptionsAsync(CancellationToken cancellationToken)
+    {
+        var locations = await dbContext.ChartTrackerLocations
+            .AsNoTracking()
+            .Where(location => location.Active)
+            .OrderBy(location => location.Position)
+            .ThenBy(location => location.Name)
+            .Select(location => location.Name)
+            .ToListAsync(cancellationToken);
+        var staffRows = await dbContext.Staff
+            .AsNoTracking()
+            .Where(staff => staff.Active)
+            .OrderBy(staff => staff.LastName)
+            .ThenBy(staff => staff.FirstName)
+            .Select(staff => new { staff.Id, staff.FirstName, staff.LastName })
+            .ToListAsync(cancellationToken);
+        var users = staffRows
+            .Select(staff => new ChartTrackerUser(staff.Id, $"{staff.LastName}, {staff.FirstName}"))
+            .ToList();
+        return new ChartTrackerOptions(locations, users);
+    }
+
+    public async Task<ChartTrackerEvent?> RecordAsync(
+        string patientId,
+        ChartTrackerUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var location = request.Location?.Trim();
+        if (request.UserId is null && string.IsNullOrWhiteSpace(location))
+        {
+            throw new ArgumentException("Select a chart location or an active staff member.");
+        }
+
+        if (request.UserId is not null)
+        {
+            location = null;
+        }
+
+        if (!await dbContext.Patients.AsNoTracking().AnyAsync(
+                patient => patient.CanonicalId == patientId,
+                cancellationToken))
+        {
+            return null;
+        }
+
+        if (location is not null && !await dbContext.ChartTrackerLocations.AsNoTracking().AnyAsync(
+                candidate => candidate.Active && candidate.Name == location,
+                cancellationToken))
+        {
+            throw new ArgumentException("Select an active chart location.");
+        }
+
+        string? userName = null;
+        if (request.UserId is not null)
+        {
+            var user = await dbContext.Staff
+                .AsNoTracking()
+                .Where(candidate => candidate.Active && candidate.Id == request.UserId.Value)
+                .Select(candidate => new { candidate.FirstName, candidate.LastName })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (user is null)
+            {
+                throw new ArgumentException("Select an active staff member.");
+            }
+
+            userName = $"{user.LastName}, {user.FirstName}";
+        }
+
+        var trackerEvent = new ChartTrackerEventEntity
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            Location = location,
+            UserId = request.UserId
+        };
+        dbContext.ChartTrackerEvents.Add(trackerEvent);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToItem(trackerEvent, userName);
+    }
+
+    private async Task<IReadOnlyList<ChartTrackerEvent>> GetHistoryCoreAsync(
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.ChartTrackerEvents
+            .AsNoTracking()
+            .Where(trackerEvent => trackerEvent.PatientId == patientId)
+            .OrderByDescending(trackerEvent => trackerEvent.RecordedAt)
+            .Select(trackerEvent => new
+            {
+                TrackerEvent = trackerEvent,
+                UserFirstName = trackerEvent.User == null ? null : trackerEvent.User.FirstName,
+                UserLastName = trackerEvent.User == null ? null : trackerEvent.User.LastName
+            })
+            .ToListAsync(cancellationToken);
+        return rows
+            .Select(row => ToItem(
+                row.TrackerEvent,
+                row.UserLastName is null ? null : $"{row.UserLastName}, {row.UserFirstName}"))
+            .ToList();
+    }
+
+    private static ChartTrackerEvent ToItem(ChartTrackerEventEntity trackerEvent, string? userName) =>
+        new(
+            trackerEvent.Id,
+            trackerEvent.Location,
+            trackerEvent.UserId,
+            userName,
+            trackerEvent.RecordedAt.ToString("O"));
 }

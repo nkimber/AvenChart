@@ -453,6 +453,75 @@ try {
     }
     $CompletedScenarios.Add("ef-core-patient-education-queries")
 
+    $recallCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/recalls/" `
+        -Headers $authenticatedHeaders `
+        -Body '{"patientId":"MOD-PAT-0001","recallDate":"2026-12-01","reason":"EF slice outreach"}'
+    if ([int]$recallCreateResponse.StatusCode -ne 201) {
+        throw "EF-backed recall creation returned HTTP $($recallCreateResponse.StatusCode)."
+    }
+    $recall = (Get-HttpResponseContent -Response $recallCreateResponse) | ConvertFrom-Json
+    $recallActivityResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/recalls/$($recall.id)/activity" `
+        -Headers $authenticatedHeaders `
+        -Body '{"activityType":"phone","note":"EF slice phone evidence"}'
+    $recallHistoryResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/recalls/$($recall.id)/activity" `
+        -Headers $authenticatedHeaders
+    if ([int]$recallActivityResponse.StatusCode -ne 201 -or [int]$recallHistoryResponse.StatusCode -ne 200) {
+        throw "EF-backed recall activity creation or history failed."
+    }
+    $recallActivity = (Get-HttpResponseContent -Response $recallActivityResponse) | ConvertFrom-Json
+    $recallHistory = (Get-HttpResponseContent -Response $recallHistoryResponse) | ConvertFrom-Json
+    if ($recallActivity.activityType -ne "phone" -or $recallHistory.id -notcontains $recallActivity.id) {
+        throw "EF-backed recall operations returned unexpected data."
+    }
+    $recallDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/recalls/$($recall.id)" `
+        -Headers $authenticatedHeaders
+    if ([int]$recallDeleteResponse.StatusCode -ne 204) {
+        throw "EF-backed recall deletion returned HTTP $($recallDeleteResponse.StatusCode)."
+    }
+    $CompletedScenarios.Add("ef-core-recall-aggregate")
+
+    $trackerLookupResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/chart-tracker/lookup/MOD-PAT-0001" `
+        -Headers $authenticatedHeaders
+    $trackerOptionsResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/chart-tracker/options" `
+        -Headers $authenticatedHeaders
+    $trackerEventResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/chart-tracker/patients/MOD-PAT-0001/events" `
+        -Headers $authenticatedHeaders `
+        -Body '{"location":"Front Desk"}'
+    if ([int]$trackerLookupResponse.StatusCode -ne 200 -or
+        [int]$trackerOptionsResponse.StatusCode -ne 200 -or
+        [int]$trackerEventResponse.StatusCode -ne 201) {
+        throw "EF-backed chart-tracker lookup, options, or event creation failed."
+    }
+    $trackerLookup = (Get-HttpResponseContent -Response $trackerLookupResponse) | ConvertFrom-Json
+    $trackerOptions = (Get-HttpResponseContent -Response $trackerOptionsResponse) | ConvertFrom-Json
+    $trackerEvent = (Get-HttpResponseContent -Response $trackerEventResponse) | ConvertFrom-Json
+    $trackerHistoryResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/chart-tracker/patients/MOD-PAT-0001/history" `
+        -Headers $authenticatedHeaders
+    $trackerHistory = (Get-HttpResponseContent -Response $trackerHistoryResponse) | ConvertFrom-Json
+    if ($trackerLookup.patientId -ne "MOD-PAT-0001" -or
+        $trackerOptions.locations -notcontains "Front Desk" -or
+        $trackerEvent.location -ne "Front Desk" -or
+        $trackerHistory.id -notcontains $trackerEvent.id) {
+        throw "EF-backed chart-tracker operations returned unexpected data."
+    }
+    $CompletedScenarios.Add("ef-core-chart-tracker-aggregate")
+
     $messageResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/messages/MOD-PAT-0001" `

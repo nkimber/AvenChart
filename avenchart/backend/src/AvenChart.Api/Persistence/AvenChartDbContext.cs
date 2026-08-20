@@ -15,9 +15,21 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
 {
     public DbSet<AddressBookContactEntity> AddressBookContacts => Set<AddressBookContactEntity>();
 
+    public DbSet<ChartTrackerEventEntity> ChartTrackerEvents => Set<ChartTrackerEventEntity>();
+
+    public DbSet<ChartTrackerLocationEntity> ChartTrackerLocations => Set<ChartTrackerLocationEntity>();
+
     public DbSet<OfficeNoteEntity> OfficeNotes => Set<OfficeNoteEntity>();
 
+    public DbSet<PatientEntity> Patients => Set<PatientEntity>();
+
     public DbSet<PatientEducationResourceEntity> PatientEducationResources => Set<PatientEducationResourceEntity>();
+
+    public DbSet<RecallActivityEntity> RecallActivities => Set<RecallActivityEntity>();
+
+    public DbSet<RecallEntity> Recalls => Set<RecallEntity>();
+
+    public DbSet<StaffEntity> Staff => Set<StaffEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
