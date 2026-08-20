@@ -23,6 +23,12 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
 
     public DbSet<ClinicalWorkflowEventEntity> ClinicalWorkflowEvents => Set<ClinicalWorkflowEventEntity>();
 
+    public DbSet<DocumentTemplateBinaryVersionEntity> DocumentTemplateBinaryVersions => Set<DocumentTemplateBinaryVersionEntity>();
+
+    public DbSet<DocumentTemplateEntity> DocumentTemplates => Set<DocumentTemplateEntity>();
+
+    public DbSet<DocumentTemplateEventEntity> DocumentTemplateEvents => Set<DocumentTemplateEventEntity>();
+
     public DbSet<EncounterEntity> Encounters => Set<EncounterEntity>();
 
     public DbSet<EncounterSignatureEntity> EncounterSignatures => Set<EncounterSignatureEntity>();

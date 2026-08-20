@@ -3829,6 +3829,12 @@ documentTemplates
                 detail: exception.Message,
                 statusCode: StatusCodes.Status409Conflict);
         }
+        catch (DocumentTemplateConcurrencyException exception)
+        {
+            return Results.Problem(
+                detail: exception.Message,
+                statusCode: StatusCodes.Status409Conflict);
+        }
         catch (ArgumentException exception)
         {
             return Results.Problem(
@@ -3862,6 +3868,12 @@ documentTemplates
             return item is null ? Results.NotFound() : Results.Ok(item);
         }
         catch (DocumentTemplateNameConflictException exception)
+        {
+            return Results.Problem(
+                detail: exception.Message,
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (DocumentTemplateConcurrencyException exception)
         {
             return Results.Problem(
                 detail: exception.Message,

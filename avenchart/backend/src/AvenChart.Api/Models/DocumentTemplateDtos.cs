@@ -80,3 +80,6 @@ public sealed record DocumentTemplateHistoryResponse(
 
 public sealed class DocumentTemplateNameConflictException(string message)
     : Exception(message);
+
+public sealed class DocumentTemplateConcurrencyException(string message)
+    : Exception(message);

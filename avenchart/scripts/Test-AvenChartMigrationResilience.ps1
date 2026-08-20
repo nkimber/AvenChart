@@ -741,6 +741,84 @@ try {
     }
     $CompletedScenarios.Add("ef-core-referral-workflow-concurrency")
 
+    $templateCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/administration/document-templates/" `
+        -Headers $authenticatedHeaders `
+        -Body '{"name":"TMP-DOC-TEMPLATE-EF-RESILIENCE","content":"Hello ***NAME***, DOB ***DOB***, ID ***PATIENT_ID***","active":true}'
+    if ([int]$templateCreateResponse.StatusCode -ne 201) {
+        throw "EF-backed document-template creation returned HTTP $($templateCreateResponse.StatusCode). Body: $(Get-HttpResponseContent -Response $templateCreateResponse)"
+    }
+    $template = (Get-HttpResponseContent -Response $templateCreateResponse) | ConvertFrom-Json
+    $templateListResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/administration/document-templates/?search=TMP-DOC-TEMPLATE-EF-RESILIENCE&includeInactive=true" `
+        -Headers $authenticatedHeaders
+    $templateRenderResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/administration/document-templates/$($template.id)/render" `
+        -Headers $authenticatedHeaders `
+        -Body '{"patientId":"MOD-PAT-0001"}'
+    $templateBinaryResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/administration/document-templates/$($template.id)/binary-versions" `
+        -Headers $authenticatedHeaders `
+        -Body '{"fileName":"ef-resilience.txt","mimetype":"text/plain","contentBase64":"RUYgQ29yZSBiaW5hcnkgdGVtcGxhdGU="}'
+    if ([int]$templateListResponse.StatusCode -ne 200 -or
+        [int]$templateRenderResponse.StatusCode -ne 200 -or
+        [int]$templateBinaryResponse.StatusCode -ne 201) {
+        throw "EF-backed document-template list, render, or binary-version creation failed."
+    }
+    $templateList = (Get-HttpResponseContent -Response $templateListResponse) | ConvertFrom-Json
+    $templateRender = (Get-HttpResponseContent -Response $templateRenderResponse) | ConvertFrom-Json
+    $templateBinary = (Get-HttpResponseContent -Response $templateBinaryResponse) | ConvertFrom-Json
+    $templateVersionsResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/administration/document-templates/$($template.id)/binary-versions" `
+        -Headers $authenticatedHeaders
+    $templateDownloadResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/administration/document-templates/$($template.id)/binary-versions/$($templateBinary.id)/download" `
+        -Headers $authenticatedHeaders
+    $templateRetireResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/administration/document-templates/$($template.id)" `
+        -Headers $authenticatedHeaders `
+        -Body '{"name":"TMP-DOC-TEMPLATE-EF-RESILIENCE","content":"Retired ***NAME***","active":false}'
+    $templateHistoryResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/administration/document-templates/$($template.id)/history" `
+        -Headers $authenticatedHeaders
+    if ([int]$templateVersionsResponse.StatusCode -ne 200 -or
+        [int]$templateDownloadResponse.StatusCode -ne 200 -or
+        [int]$templateRetireResponse.StatusCode -ne 200 -or
+        [int]$templateHistoryResponse.StatusCode -ne 200) {
+        throw "EF-backed document-template version, download, update, or history failed."
+    }
+    $templateVersions = (Get-HttpResponseContent -Response $templateVersionsResponse) | ConvertFrom-Json
+    $templateRetire = (Get-HttpResponseContent -Response $templateRetireResponse) | ConvertFrom-Json
+    $templateHistory = (Get-HttpResponseContent -Response $templateHistoryResponse) | ConvertFrom-Json
+    $templateRowVersion = [int](Invoke-DatabaseScalar -Sql "select row_version from document_templates where id = '$($template.id)';")
+    if ($templateList.items.id -notcontains $template.id -or
+        $templateRender.content -notlike "Hello Avery Stone*MOD-PAT-0001" -or
+        $templateBinary.version -ne 1 -or
+        $templateVersions.id -notcontains $templateBinary.id -or
+        (Get-HttpResponseContent -Response $templateDownloadResponse) -ne "EF Core binary template" -or
+        $templateRetire.active -ne $false -or
+        $templateHistory.eventCount -ne 3 -or
+        $templateHistory.events.action -notcontains "binary-version-uploaded" -or
+        $templateRowVersion -ne 2) {
+        throw "EF-backed document-template aggregate returned unexpected state."
+    }
+    $templateDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/administration/document-templates/$($template.id)/test-fixture" `
+        -Headers $authenticatedHeaders
+    if ([int]$templateDeleteResponse.StatusCode -ne 204) {
+        throw "EF-backed document-template fixture cleanup returned HTTP $($templateDeleteResponse.StatusCode)."
+    }
+    $CompletedScenarios.Add("ef-core-document-template-aggregate")
+
     $messageResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/messages/MOD-PAT-0001" `

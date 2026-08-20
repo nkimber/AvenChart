@@ -3,13 +3,17 @@
 
 using System.IO.Compression;
 using System.Security.Cryptography;
+using AvenChart.Api.Models;
+using AvenChart.Api.Persistence;
+using AvenChart.Api.Persistence.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using NpgsqlTypes;
-using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
 
-public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
+public sealed class DocumentTemplateRepository(AvenChartDbContext dbContext)
 {
     private const int MaxBinaryBytes = 25 * 1024 * 1024;
     private const int HistoryLimit = 100;
@@ -24,53 +28,30 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
         var normalizedSearch = NormalizeSearch(search);
         var boundedOffset = Math.Max(0, offset);
         var boundedLimit = Math.Clamp(limit, 1, 100);
-        await using var connection = await source.OpenConnectionAsync(ct);
-
-        await using var count = connection.CreateCommand();
-        count.CommandText = """
-            select
-              count(*) filter (where @includeInactive or active)::int,
-              count(*) filter (where active)::int,
-              count(*) filter (where not active)::int
-            from document_templates
-            where @search is null
-               or name ilike '%' || @search || '%'
-               or content ilike '%' || @search || '%';
-            """;
-        AddListParameters(count, normalizedSearch, includeInactive);
-        int total;
-        int activeCount;
-        int retiredCount;
-        await using (var reader = await count.ExecuteReaderAsync(ct))
+        var searched = dbContext.DocumentTemplates.AsNoTracking().AsQueryable();
+        if (normalizedSearch is not null)
         {
-            await reader.ReadAsync(ct);
-            total = reader.GetInt32(0);
-            activeCount = reader.GetInt32(1);
-            retiredCount = reader.GetInt32(2);
+            var pattern = $"%{normalizedSearch}%";
+            searched = searched.Where(template =>
+                EF.Functions.ILike(template.Name, pattern) ||
+                EF.Functions.ILike(template.Content, pattern));
         }
 
-        await using var query = connection.CreateCommand();
-        query.CommandText = """
-            select id,name,content,active,created_at,updated_at
-            from document_templates
-            where (@includeInactive or active)
-              and (@search is null or name ilike '%' || @search || '%' or content ilike '%' || @search || '%')
-            order by active desc, name, id
-            offset @offset limit @limit;
-            """;
-        AddListParameters(query, normalizedSearch, includeInactive);
-        query.Parameters.AddWithValue("offset", boundedOffset);
-        query.Parameters.AddWithValue("limit", boundedLimit);
-        var items = new List<DocumentTemplateItem>();
-        await using (var reader = await query.ExecuteReaderAsync(ct))
-        {
-            while (await reader.ReadAsync(ct))
-            {
-                items.Add(Read(reader));
-            }
-        }
+        var total = await searched.CountAsync(
+            template => includeInactive || template.Active,
+            ct);
+        var activeCount = await searched.CountAsync(template => template.Active, ct);
+        var retiredCount = await searched.CountAsync(template => !template.Active, ct);
+        var items = await searched
+            .Where(template => includeInactive || template.Active)
+            .OrderByDescending(template => template.Active)
+            .ThenBy(template => template.Name)
+            .ThenBy(template => template.Id)
+            .Skip(boundedOffset)
+            .Take(boundedLimit)
+            .ToListAsync(ct);
 
-        return new(
+        return new DocumentTemplateListResponse(
             normalizedSearch ?? string.Empty,
             includeInactive,
             boundedOffset,
@@ -78,7 +59,7 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
             total,
             activeCount,
             retiredCount,
-            items);
+            items.Select(ToItem).ToList());
     }
 
     public async Task<DocumentTemplateItem?> SaveAsync(
@@ -90,97 +71,83 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
         var name = NormalizeName(request.Name);
         var content = NormalizeContent(request.Content);
         var actor = NormalizeActor(username);
-        var key = id ?? Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var template = id is null
+            ? new DocumentTemplateEntity
+            {
+                Id = Guid.NewGuid(),
+                Name = name,
+                Content = content,
+                Active = request.Active,
+                CreatedAt = now,
+                UpdatedAt = now,
+                RowVersion = 1
+            }
+            : await dbContext.DocumentTemplates.SingleOrDefaultAsync(
+                candidate => candidate.Id == id.Value,
+                ct);
+        if (template is null)
+        {
+            return null;
+        }
 
+        string action;
+        string summary;
+        if (id is null)
+        {
+            action = "created";
+            summary = $"Created template \"{name}\".";
+            dbContext.DocumentTemplates.Add(template);
+        }
+        else
+        {
+            var priorName = template.Name;
+            var priorActive = template.Active;
+            action = priorActive == request.Active
+                ? "updated"
+                : request.Active
+                    ? "activated"
+                    : "retired";
+            summary = action switch
+            {
+                "activated" => $"Activated template \"{name}\".",
+                "retired" => $"Retired template \"{name}\".",
+                _ when !string.Equals(priorName, name, StringComparison.Ordinal) =>
+                    $"Updated and renamed template \"{priorName}\" to \"{name}\".",
+                _ => $"Updated template \"{name}\"."
+            };
+            template.Name = name;
+            template.Content = content;
+            template.Active = request.Active;
+            template.UpdatedAt = now;
+            template.RowVersion++;
+        }
+
+        dbContext.DocumentTemplateEvents.Add(CreateEvent(
+            template.Id,
+            action,
+            summary,
+            null,
+            null,
+            null,
+            actor,
+            now));
         try
         {
-            await using var connection = await source.OpenConnectionAsync(ct);
-            await using var transaction = await connection.BeginTransactionAsync(ct);
-            string action;
-            string summary;
-
-            if (id is not null)
-            {
-                await using var prior = connection.CreateCommand();
-                prior.Transaction = transaction;
-                prior.CommandText = "select name,active from document_templates where id=@id for update;";
-                prior.Parameters.AddWithValue("id", key);
-                await using var reader = await prior.ExecuteReaderAsync(ct);
-                if (!await reader.ReadAsync(ct))
-                {
-                    return null;
-                }
-
-                var priorName = reader.GetString(0);
-                var priorActive = reader.GetBoolean(1);
-                action = priorActive == request.Active
-                    ? "updated"
-                    : request.Active
-                        ? "activated"
-                        : "retired";
-                summary = action switch
-                {
-                    "activated" => $"Activated template \"{name}\".",
-                    "retired" => $"Retired template \"{name}\".",
-                    _ when !string.Equals(priorName, name, StringComparison.Ordinal) =>
-                        $"Updated and renamed template \"{priorName}\" to \"{name}\".",
-                    _ => $"Updated template \"{name}\"."
-                };
-            }
-            else
-            {
-                action = "created";
-                summary = $"Created template \"{name}\".";
-            }
-
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = id is null
-                ? """
-                  insert into document_templates(id,name,content,active)
-                  values(@id,@name,@content,@active)
-                  returning id,name,content,active,created_at,updated_at;
-                  """
-                : """
-                  update document_templates
-                  set name=@name,content=@content,active=@active,updated_at=now()
-                  where id=@id
-                  returning id,name,content,active,created_at,updated_at;
-                  """;
-            command.Parameters.AddWithValue("id", key);
-            command.Parameters.AddWithValue("name", name);
-            command.Parameters.AddWithValue("content", content);
-            command.Parameters.AddWithValue("active", request.Active);
-
-            DocumentTemplateItem? result;
-            await using (var reader = await command.ExecuteReaderAsync(ct))
-            {
-                result = await reader.ReadAsync(ct) ? Read(reader) : null;
-            }
-
-            if (result is null)
-            {
-                return null;
-            }
-
-            await WriteEventAsync(
-                connection,
-                transaction,
-                key,
-                action,
-                summary,
-                null,
-                null,
-                null,
-                actor,
-                ct);
-            await transaction.CommitAsync(ct);
-            return result;
+            await dbContext.SaveChangesAsync(ct);
+            return ToItem(template);
         }
-        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
+        catch (DbUpdateException exception) when (
+            exception.InnerException is PostgresException postgresException &&
+            postgresException.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             throw new DocumentTemplateNameConflictException(
                 $"A document template named \"{name}\" already exists.");
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new DocumentTemplateConcurrencyException(
+                "The document template changed before this update could be saved.");
         }
     }
 
@@ -190,57 +157,48 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
         CancellationToken ct)
     {
         var patientId = NormalizePatientId(request.PatientId);
-        await using var connection = await source.OpenConnectionAsync(ct);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select
-              t.id,t.name,t.content,t.active,t.created_at,t.updated_at,
-              p.first_name,p.last_name,p.date_of_birth,p.pubpid
-            from document_templates t
-            join patients p on p.canonical_id=@patient
-            where t.id=@id and t.active;
-            """;
-        command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("patient", patientId);
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+        var result = await (
+                from template in dbContext.DocumentTemplates.AsNoTracking()
+                from patient in dbContext.Patients.AsNoTracking()
+                where template.Id == id && template.Active && patient.CanonicalId == patientId
+                select new
+                {
+                    Template = template,
+                    patient.FirstName,
+                    patient.LastName,
+                    patient.DateOfBirth,
+                    patient.PublicId
+                })
+            .SingleOrDefaultAsync(ct);
+        if (result is null)
         {
             return null;
         }
 
-        var template = Read(reader);
+        var templateItem = ToItem(result.Template);
         var content = ReplaceTokens(
-            template.Content,
-            reader.GetString(6),
-            reader.GetString(7),
-            reader.GetFieldValue<DateOnly>(8),
-            reader.GetString(9));
-        return new(template, patientId, content);
+            templateItem.Content,
+            result.FirstName,
+            result.LastName,
+            result.DateOfBirth,
+            result.PublicId);
+        return new DocumentTemplateRenderResult(templateItem, patientId, content);
     }
 
     public async Task<IReadOnlyList<DocumentTemplateBinaryVersion>> GetBinaryVersionsAsync(
         Guid templateId,
         CancellationToken ct)
     {
-        await using var connection = await source.OpenConnectionAsync(ct);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select id,template_id,version,file_name,mimetype,size_bytes,sha256,created_at
-            from document_template_binary_versions
-            where template_id=@templateId
-            order by version desc;
-            """;
-        command.Parameters.AddWithValue("templateId", templateId);
-        var results = new List<DocumentTemplateBinaryVersion>();
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
-        {
-            results.Add(ReadVersion(reader));
-        }
-
-        return results;
+        var versions = await dbContext.DocumentTemplateBinaryVersions
+            .AsNoTracking()
+            .Where(version => version.TemplateId == templateId)
+            .OrderByDescending(version => version.Version)
+            .ToListAsync(ct);
+        return versions.Select(ToVersion).ToList();
     }
 
+    // The scoped version number is allocated by the database so concurrent uploads cannot
+    // choose the same per-template value. The version row and its EF event share one transaction.
     public async Task<DocumentTemplateBinaryVersion?> AddBinaryVersionAsync(
         Guid templateId,
         DocumentTemplateBinaryUploadRequest request,
@@ -249,21 +207,20 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
     {
         var upload = DecodeAndValidate(request);
         var actor = NormalizeActor(username);
-        await using var connection = await source.OpenConnectionAsync(ct);
-        await using var transaction = await connection.BeginTransactionAsync(ct);
-
-        await using var template = connection.CreateCommand();
-        template.Transaction = transaction;
-        template.CommandText = "select name from document_templates where id=@id for update;";
-        template.Parameters.AddWithValue("id", templateId);
-        var templateName = await template.ExecuteScalarAsync(ct) as string;
+        await using var dbTransaction = await dbContext.Database.BeginTransactionAsync(ct);
+        var templateName = await dbContext.DocumentTemplates
+            .AsNoTracking()
+            .Where(template => template.Id == templateId)
+            .Select(template => template.Name)
+            .SingleOrDefaultAsync(ct);
         if (templateName is null)
         {
             return null;
         }
 
+        var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
         await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
+        command.Transaction = (NpgsqlTransaction)dbTransaction.GetDbTransaction();
         command.CommandText = """
             insert into document_template_binary_versions(
               id,template_id,version,file_name,mimetype,size_bytes,sha256,content)
@@ -286,7 +243,6 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
             "sha",
             Convert.ToHexString(SHA256.HashData(upload.Content)).ToLowerInvariant());
         command.Parameters.Add("content", NpgsqlDbType.Bytea).Value = upload.Content;
-
         DocumentTemplateBinaryVersion? version;
         await using (var reader = await command.ExecuteReaderAsync(ct))
         {
@@ -298,9 +254,7 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
             return null;
         }
 
-        await WriteEventAsync(
-            connection,
-            transaction,
+        dbContext.DocumentTemplateEvents.Add(CreateEvent(
             templateId,
             "binary-version-uploaded",
             $"Uploaded binary version {version.Version} ({version.FileName}) for template \"{templateName}\".",
@@ -308,8 +262,9 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
             null,
             null,
             actor,
-            ct);
-        await transaction.CommitAsync(ct);
+            DateTimeOffset.UtcNow));
+        await dbContext.SaveChangesAsync(ct);
+        await dbTransaction.CommitAsync(ct);
         return version;
     }
 
@@ -318,81 +273,48 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
         Guid versionId,
         CancellationToken ct)
     {
-        await using var connection = await source.OpenConnectionAsync(ct);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select file_name,mimetype,content
-            from document_template_binary_versions
-            where id=@id and template_id=@templateId;
-            """;
-        command.Parameters.AddWithValue("id", versionId);
-        command.Parameters.AddWithValue("templateId", templateId);
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        return await reader.ReadAsync(ct)
-            ? new(
-                reader.GetString(0),
-                reader.GetString(1),
-                reader.GetFieldValue<byte[]>(2))
-            : null;
+        var version = await dbContext.DocumentTemplateBinaryVersions
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                candidate => candidate.Id == versionId && candidate.TemplateId == templateId,
+                ct);
+        return version is null
+            ? null
+            : new DocumentTemplateBinaryDownload(
+                version.FileName,
+                version.Mimetype,
+                version.Content);
     }
 
     public async Task<DocumentTemplateHistoryResponse?> GetHistoryAsync(
         Guid templateId,
         CancellationToken ct)
     {
-        await using var connection = await source.OpenConnectionAsync(ct);
-        DocumentTemplateItem? template;
-        await using (var templateCommand = connection.CreateCommand())
-        {
-            templateCommand.CommandText = """
-                select id,name,content,active,created_at,updated_at
-                from document_templates
-                where id=@id;
-                """;
-            templateCommand.Parameters.AddWithValue("id", templateId);
-            await using var reader = await templateCommand.ExecuteReaderAsync(ct);
-            template = await reader.ReadAsync(ct) ? Read(reader) : null;
-        }
-
+        var template = await dbContext.DocumentTemplates
+            .AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == templateId, ct);
         if (template is null)
         {
             return null;
         }
 
-        int eventCount;
-        await using (var count = connection.CreateCommand())
-        {
-            count.CommandText = """
-                select count(*)::int
-                from document_template_events
-                where template_id=@id;
-                """;
-            count.Parameters.AddWithValue("id", templateId);
-            eventCount = (int)(await count.ExecuteScalarAsync(ct) ?? 0);
-        }
-
-        var events = new List<DocumentTemplateEvent>();
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = """
-                select
-                  event_id,template_id,action,summary,binary_version_id,
-                  patient_document_id,patient_id,occurred_at,username
-                from document_template_events
-                where template_id=@id
-                order by occurred_at desc,event_id desc
-                limit @limit;
-                """;
-            command.Parameters.AddWithValue("id", templateId);
-            command.Parameters.AddWithValue("limit", HistoryLimit);
-            await using var reader = await command.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
-            {
-                events.Add(ReadEvent(reader));
-            }
-        }
-
-        return new(template, eventCount, events.Count, HistoryLimit, events);
+        var eventCount = await dbContext.DocumentTemplateEvents
+            .AsNoTracking()
+            .CountAsync(templateEvent => templateEvent.TemplateId == templateId, ct);
+        var eventEntities = await dbContext.DocumentTemplateEvents
+            .AsNoTracking()
+            .Where(templateEvent => templateEvent.TemplateId == templateId)
+            .OrderByDescending(templateEvent => templateEvent.OccurredAt)
+            .ThenByDescending(templateEvent => templateEvent.EventId)
+            .Take(HistoryLimit)
+            .ToListAsync(ct);
+        var events = eventEntities.Select(ToEvent).ToList();
+        return new DocumentTemplateHistoryResponse(
+            ToItem(template),
+            eventCount,
+            events.Count,
+            HistoryLimit,
+            events);
     }
 
     public async Task RecordAttachmentGeneratedAsync(
@@ -405,21 +327,13 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
     {
         var normalizedPatientId = NormalizePatientId(patientId);
         var actor = NormalizeActor(username);
-        await using var connection = await source.OpenConnectionAsync(ct);
-        await using var transaction = await connection.BeginTransactionAsync(ct);
-        await using var template = connection.CreateCommand();
-        template.Transaction = transaction;
-        template.CommandText = "select name from document_templates where id=@id for update;";
-        template.Parameters.AddWithValue("id", templateId);
-        var templateName = await template.ExecuteScalarAsync(ct) as string;
-        if (templateName is null)
-        {
-            throw new ArgumentException("The document template no longer exists.");
-        }
-
-        await WriteEventAsync(
-            connection,
-            transaction,
+        var templateName = await dbContext.DocumentTemplates
+            .AsNoTracking()
+            .Where(template => template.Id == templateId)
+            .Select(template => template.Name)
+            .SingleOrDefaultAsync(ct)
+            ?? throw new ArgumentException("The document template no longer exists.");
+        dbContext.DocumentTemplateEvents.Add(CreateEvent(
             templateId,
             "patient-attachment-generated",
             $"Generated patient document {patientDocumentId} for {normalizedPatientId} from template \"{templateName}\".",
@@ -427,57 +341,50 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
             patientDocumentId,
             normalizedPatientId,
             actor,
-            ct);
-        await transaction.CommitAsync(ct);
+            DateTimeOffset.UtcNow));
+        try
+        {
+            await dbContext.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException exception) when (
+            exception.InnerException is PostgresException postgresException &&
+            postgresException.SqlState == PostgresErrorCodes.ForeignKeyViolation)
+        {
+            throw new ArgumentException("The document template no longer exists.");
+        }
     }
 
     public async Task<bool> DeleteTestFixtureAsync(
         Guid templateId,
         CancellationToken ct)
     {
-        await using var connection = await source.OpenConnectionAsync(ct);
-        await using var transaction = await connection.BeginTransactionAsync(ct);
-        await using var template = connection.CreateCommand();
-        template.Transaction = transaction;
-        template.CommandText = "select name from document_templates where id=@id for update;";
-        template.Parameters.AddWithValue("id", templateId);
-        var name = await template.ExecuteScalarAsync(ct) as string;
-        if (name is null)
+        var template = await dbContext.DocumentTemplates.SingleOrDefaultAsync(
+            candidate => candidate.Id == templateId,
+            ct);
+        if (template is null)
         {
             return false;
         }
 
-        if (!name.StartsWith("TMP-DOC-TEMPLATE-", StringComparison.Ordinal))
+        if (!template.Name.StartsWith("TMP-DOC-TEMPLATE-", StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 "Only TMP-DOC-TEMPLATE-* browser-test fixtures can be removed through this cleanup route.");
         }
 
-        await using var delete = connection.CreateCommand();
-        delete.Transaction = transaction;
-        delete.CommandText = "delete from document_templates where id=@id;";
-        delete.Parameters.AddWithValue("id", templateId);
-        var deleted = await delete.ExecuteNonQueryAsync(ct) == 1;
-        await transaction.CommitAsync(ct);
-        return deleted;
+        dbContext.DocumentTemplates.Remove(template);
+        try
+        {
+            await dbContext.SaveChangesAsync(ct);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return false;
+        }
     }
 
-    private static void AddListParameters(
-        NpgsqlCommand command,
-        string? search,
-        bool includeInactive)
-    {
-        command.Parameters.AddWithValue("includeInactive", includeInactive);
-        command.Parameters.Add(
-            new NpgsqlParameter("search", NpgsqlDbType.Text)
-            {
-                Value = (object?)search ?? DBNull.Value
-            });
-    }
-
-    private static async Task WriteEventAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+    private static DocumentTemplateEventEntity CreateEvent(
         Guid templateId,
         string action,
         string summary,
@@ -485,31 +392,18 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
         long? patientDocumentId,
         string? patientId,
         string username,
-        CancellationToken ct)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            insert into document_template_events(
-              template_id,action,summary,binary_version_id,patient_document_id,
-              patient_id,occurred_at,username)
-            values(
-              @templateId,@action,@summary,@binaryVersionId,@patientDocumentId,
-              @patientId,now(),@username);
-            """;
-        command.Parameters.AddWithValue("templateId", templateId);
-        command.Parameters.AddWithValue("action", action);
-        command.Parameters.AddWithValue("summary", summary);
-        command.Parameters.AddWithValue(
-            "binaryVersionId",
-            (object?)binaryVersionId ?? DBNull.Value);
-        command.Parameters.AddWithValue(
-            "patientDocumentId",
-            (object?)patientDocumentId ?? DBNull.Value);
-        command.Parameters.AddWithValue("patientId", (object?)patientId ?? DBNull.Value);
-        command.Parameters.AddWithValue("username", username);
-        await command.ExecuteNonQueryAsync(ct);
-    }
+        DateTimeOffset occurredAt) =>
+        new()
+        {
+            TemplateId = templateId,
+            Action = action,
+            Summary = summary,
+            BinaryVersionId = binaryVersionId,
+            PatientDocumentId = patientDocumentId,
+            PatientId = patientId,
+            OccurredAt = occurredAt,
+            Username = username
+        };
 
     private static BinaryUpload DecodeAndValidate(DocumentTemplateBinaryUploadRequest request)
     {
@@ -523,7 +417,8 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
         var fileName = Path.GetFileName(request.FileName.Trim());
         if (string.IsNullOrWhiteSpace(fileName) || fileName.Length > 255)
         {
-            throw new ArgumentException("Template file name must be between 1 and 255 characters.");
+            throw new ArgumentException(
+                "Template file name must be between 1 and 255 characters.");
         }
 
         var extension = Path.GetExtension(fileName).ToLowerInvariant();
@@ -570,7 +465,7 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
             }
         }
 
-        return new(fileName, mimetype, bytes);
+        return new BinaryUpload(fileName, mimetype, bytes);
     }
 
     private static string NormalizeName(string? value)
@@ -599,7 +494,8 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
 
         if (normalized.Length > 250_000)
         {
-            throw new ArgumentException("Template text content may not exceed 250,000 characters.");
+            throw new ArgumentException(
+                "Template text content may not exceed 250,000 characters.");
         }
 
         return normalized;
@@ -659,14 +555,26 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
             .Replace("***DOB***", dob.ToString("yyyy-MM-dd"), StringComparison.Ordinal)
             .Replace("***PATIENT_ID***", pubpid, StringComparison.Ordinal);
 
-    private static DocumentTemplateItem Read(NpgsqlDataReader reader) =>
+    private static DocumentTemplateItem ToItem(DocumentTemplateEntity template) =>
         new(
-            reader.GetGuid(0),
-            reader.GetString(1),
-            reader.GetString(2),
-            reader.GetBoolean(3),
-            reader.GetFieldValue<DateTimeOffset>(4).ToString("O"),
-            reader.GetFieldValue<DateTimeOffset>(5).ToString("O"));
+            template.Id,
+            template.Name,
+            template.Content,
+            template.Active,
+            template.CreatedAt.ToString("O"),
+            template.UpdatedAt.ToString("O"));
+
+    private static DocumentTemplateBinaryVersion ToVersion(
+        DocumentTemplateBinaryVersionEntity version) =>
+        new(
+            version.Id,
+            version.TemplateId,
+            version.Version,
+            version.FileName,
+            version.Mimetype,
+            version.SizeBytes,
+            version.Sha256,
+            version.CreatedAt.ToString("O"));
 
     private static DocumentTemplateBinaryVersion ReadVersion(NpgsqlDataReader reader) =>
         new(
@@ -679,17 +587,17 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
             reader.GetString(6),
             reader.GetFieldValue<DateTimeOffset>(7).ToString("O"));
 
-    private static DocumentTemplateEvent ReadEvent(NpgsqlDataReader reader) =>
+    private static DocumentTemplateEvent ToEvent(DocumentTemplateEventEntity templateEvent) =>
         new(
-            reader.GetInt64(0),
-            reader.GetGuid(1),
-            reader.GetString(2),
-            reader.GetString(3),
-            reader.IsDBNull(4) ? null : reader.GetGuid(4),
-            reader.IsDBNull(5) ? null : reader.GetInt64(5),
-            reader.IsDBNull(6) ? null : reader.GetString(6),
-            reader.GetFieldValue<DateTimeOffset>(7).ToString("O"),
-            reader.GetString(8));
+            templateEvent.EventId,
+            templateEvent.TemplateId,
+            templateEvent.Action,
+            templateEvent.Summary,
+            templateEvent.BinaryVersionId,
+            templateEvent.PatientDocumentId,
+            templateEvent.PatientId,
+            templateEvent.OccurredAt.ToString("O"),
+            templateEvent.Username);
 
     private sealed record BinaryUpload(
         string FileName,
