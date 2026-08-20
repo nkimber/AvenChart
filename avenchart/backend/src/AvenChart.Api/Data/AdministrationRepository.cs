@@ -3061,7 +3061,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "select coalesce(max(id), 0) + 1 from staff;";
+        command.CommandText = "select avenchart_next_integer('staff.id', coalesce(max(id), 0)) from staff;";
         return (int)(await command.ExecuteScalarAsync(cancellationToken)
             ?? throw new InvalidOperationException("User ID allocation failed."));
     }
@@ -3070,7 +3070,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "select coalesce(max(id), 0) + 1 from facilities;";
+        command.CommandText = "select avenchart_next_integer('facilities.id', coalesce(max(id), 0)) from facilities;";
         return (int)(await command.ExecuteScalarAsync(cancellationToken)
             ?? throw new InvalidOperationException("Facility ID allocation failed."));
     }

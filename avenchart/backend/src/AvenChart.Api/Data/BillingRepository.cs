@@ -478,7 +478,6 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         var entries = new List<StatementDeliveryAuditHistoryEntry>();
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureStatementDeliveryAuditTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select
@@ -689,7 +688,6 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureStatementDeliveryAuditTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         foreach (var entry in response.Entries)
@@ -856,7 +854,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "select greatest(coalesce(max(id), 0) + 1, 8100000) from patient_documents;";
+        command.CommandText = "select avenchart_next_integer('patient_documents.id', greatest(coalesce(max(id), 0), 8099999)) from patient_documents;";
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
@@ -968,46 +966,6 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
-    }
-
-    private static async Task EnsureStatementDeliveryAuditTableAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists statement_delivery_audit_events (
-              dispatch_audit_id text primary key,
-              dataset_id text not null,
-              dataset_version text not null,
-              as_of_date date not null,
-              delivery_id text not null,
-              dispatch_id text not null,
-              dispatched_at timestamp not null,
-              pubpid text not null,
-              legacy_pid integer not null,
-              patient_display_name text not null,
-              statement_number text not null,
-              statement_status text not null,
-              statement_date date not null,
-              due_date date not null,
-              balance_due_amount numeric(12,2) not null default 0,
-              past_due_amount numeric(12,2) not null default 0,
-              current_due_amount numeric(12,2) not null default 0,
-              delivery_method text not null,
-              destination text not null,
-              file_name text not null,
-              queue_name text not null,
-              dispatch_status text not null,
-              external_reference text not null,
-              created_at timestamp not null
-            );
-            create index if not exists idx_statement_delivery_audit_dispatch
-              on statement_delivery_audit_events (dispatch_id, dispatched_at desc);
-            create index if not exists idx_statement_delivery_audit_pid_created
-              on statement_delivery_audit_events (legacy_pid, created_at desc);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static DateTime ReadDispatchTimestamp(string value)
@@ -1487,7 +1445,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             version = await NextIntAsync(
                 connection,
                 transaction,
-                "select coalesce(max(version), 0) + 1 from claims where pid = @pid and encounter = @encounter;",
+                "select avenchart_next_integer(concat('claims.version:', @pid, ':', @encounter), coalesce(max(version), 0)) from claims where pid = @pid and encounter = @encounter;",
                 cancellationToken,
                 command =>
                 {
@@ -1885,12 +1843,12 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             sessionId = await NextIntAsync(
                 connection,
                 transaction,
-                "select coalesce(max(id), 1200000) + 1 from payment_sessions;",
+                "select avenchart_next_integer('payment_sessions.id', greatest(coalesce(max(id), 0), 1200000)) from payment_sessions;",
                 cancellationToken);
             var sequenceNo = await NextIntAsync(
                 connection,
                 transaction,
-                "select coalesce(max(sequence_no), 0) + 1 from payment_activities where pid = @pid and encounter = @encounter;",
+                "select avenchart_next_integer(concat('payment_activities.sequence:', @pid, ':', @encounter), coalesce(max(sequence_no), 0)) from payment_activities where pid = @pid and encounter = @encounter;",
                 cancellationToken,
                 command =>
                 {
@@ -2064,12 +2022,12 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             sessionId = await NextIntAsync(
                 connection,
                 transaction,
-                "select coalesce(max(id), 1200000) + 1 from payment_sessions;",
+                "select avenchart_next_integer('payment_sessions.id', greatest(coalesce(max(id), 0), 1200000)) from payment_sessions;",
                 cancellationToken);
             sequenceNo = await NextIntAsync(
                 connection,
                 transaction,
-                "select coalesce(max(sequence_no), 0) + 1 from payment_activities where pid = @pid and encounter = @encounter;",
+                "select avenchart_next_integer(concat('payment_activities.sequence:', @pid, ':', @encounter), coalesce(max(sequence_no), 0)) from payment_activities where pid = @pid and encounter = @encounter;",
                 cancellationToken,
                 command =>
                 {
@@ -2386,12 +2344,12 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             var nextSessionId = await NextIntAsync(
                 connection,
                 transaction,
-                "select coalesce(max(id), 1200000) + 1 from payment_sessions;",
+                "select avenchart_next_integer('payment_sessions.id', greatest(coalesce(max(id), 0), 1200000)) from payment_sessions;",
                 cancellationToken);
             var nextSequenceNo = await NextIntAsync(
                 connection,
                 transaction,
-                "select coalesce(max(sequence_no), 0) + 1 from payment_activities where pid = @pid and encounter = @encounter;",
+                "select avenchart_next_integer(concat('payment_activities.sequence:', @pid, ':', @encounter), coalesce(max(sequence_no), 0)) from payment_activities where pid = @pid and encounter = @encounter;",
                 cancellationToken,
                 command =>
                 {

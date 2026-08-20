@@ -28,7 +28,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         var metadata = await GetMetadataAsync(cancellationToken);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureProcedureResultVersionTableAsync(connection, cancellationToken);
         var patient = await GetPatientAsync(connection, patientId, cancellationToken);
         if (patient is null)
         {
@@ -1911,7 +1910,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureProcedureResultVersionTableAsync(connection, cancellationToken);
         var result = await GetResultMutationContextAsync(connection, resultId, cancellationToken);
         if (result is null)
         {
@@ -2304,34 +2302,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return rows;
     }
 
-    private static async Task EnsureProcedureResultVersionTableAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists procedure_result_versions (
-              id bigserial primary key,
-              result_id integer not null references lab_results(id) on delete cascade,
-              version_no integer not null,
-              captured_at timestamp not null,
-              code text,
-              text text,
-              units text,
-              result text,
-              range text,
-              abnormal text,
-              result_date timestamp,
-              result_status text,
-              unique (result_id, version_no)
-            );
-
-            create index if not exists idx_procedure_result_versions_result
-              on procedure_result_versions (result_id, version_no desc);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
     private static async Task SnapshotCurrentProcedureResultVersionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -2346,7 +2316,9 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             )
             select
               lr.id,
-              coalesce((select max(v.version_no) from procedure_result_versions v where v.result_id = lr.id), 0) + 1,
+              avenchart_next_integer(
+                concat('procedure_result_versions.version:', lr.id),
+                coalesce((select max(v.version_no) from procedure_result_versions v where v.result_id = lr.id), 0)),
               current_timestamp,
               lr.code,
               lr.text,
@@ -2695,7 +2667,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = $"select coalesce(max({columnName}), 0) + 1 from {tableName};";
+        command.CommandText = $"select avenchart_next_integer('{tableName}.{columnName}', coalesce(max({columnName}), 0)) from {tableName};";
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 

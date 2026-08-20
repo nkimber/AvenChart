@@ -696,7 +696,7 @@ public sealed class ManagedRecordRepository(NpgsqlDataSource dataSource)
         {
             idCommand.Transaction = transaction;
             idCommand.CommandText = """
-                select greatest(coalesce(max(id), 8999999) + 1, 9000000)
+                select avenchart_next_integer('patient_documents.id', greatest(coalesce(max(id), 0), 8999999))
                 from patient_documents;
                 """;
             documentId = Convert.ToInt32(await idCommand.ExecuteScalarAsync(cancellationToken));

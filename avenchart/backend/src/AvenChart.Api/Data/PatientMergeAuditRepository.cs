@@ -14,7 +14,6 @@ public sealed class PatientMergeAuditRepository(NpgsqlDataSource dataSource)
         string username,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
         var auditId = Guid.NewGuid();
         var plannedAt = DateTimeOffset.UtcNow;
         var rationale = Normalize(request.Rationale);
@@ -48,28 +47,6 @@ public sealed class PatientMergeAuditRepository(NpgsqlDataSource dataSource)
             "Previewed",
             rationale,
             preview);
-    }
-
-    private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists patient_merge_audit_plans (
-                audit_id uuid primary key,
-                target_patient_id text not null,
-                source_patient_id text not null,
-                target_legacy_pid integer not null,
-                source_legacy_pid integer not null,
-                match_score integer not null,
-                match_reasons text[] not null,
-                rationale text null,
-                planned_by text not null,
-                planned_at timestamptz not null,
-                status text not null
-            );
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static string? Normalize(string? value)

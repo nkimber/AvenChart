@@ -1104,7 +1104,6 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             return EmptyMessages(session, session.FailureReason ?? "Session is not active.");
         }
 
-        await EnsureMessageAttachmentSchemaAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var metadata = await GetMetadataAsync(connection, cancellationToken);
         var messages = await GetPortalMessagesAsync(
@@ -1332,7 +1331,6 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             return ThreadFailure(session, messageId.ToString(), 0, session.FailureReason ?? "Session is not active.");
         }
 
-        await EnsureMessageAttachmentSchemaAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var metadata = await GetMetadataAsync(connection, cancellationToken);
         var anchor = await GetPortalOwnedMessageAsync(connection, session.PortalUsername, messageId, cancellationToken);
@@ -1386,7 +1384,6 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             return new(false, string.Empty, "application/octet-stream", Array.Empty<byte>(), session.FailureReason ?? "Session is not active.");
         }
 
-        await EnsureMessageAttachmentSchemaAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -1443,7 +1440,6 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             return ComposeFailure(session, "Secure message body is required.", recipientId);
         }
 
-        await EnsureMessageAttachmentSchemaAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var recipientOptions = await GetPortalMessageRecipientOptionsAsync(connection, cancellationToken);
         var recipientOption = recipientOptions.FirstOrDefault(
@@ -1555,7 +1551,6 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
         var prescription = await GetPortalPrescriptionAsync(connection, session.LegacyPid.Value, prescriptionId, cancellationToken);
         if (prescription is null)
         {
@@ -1704,7 +1699,6 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
         var metadata = await GetMetadataAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -1803,7 +1797,6 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             return ReplyFailure(session, messageId.ToString(), "Secure message reply body is required.");
         }
 
-        await EnsureMessageAttachmentSchemaAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var original = await GetPortalInboxMessageAsync(connection, session.PortalUsername, messageId, cancellationToken);
         if (original is null)
@@ -5076,73 +5069,6 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         return facilities;
     }
 
-    private static async Task EnsurePrescriptionRefillLifecycleTableAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists prescription_refill_request_lifecycle (
-                thread_id integer primary key,
-                staff_message_id integer not null,
-                pid integer not null,
-                patient_id text not null,
-                prescription_id text not null,
-                request_date date,
-                drug text,
-                patient_note text,
-                status text not null check (
-                    status in (
-                        'pending',
-                        'clarification-requested',
-                        'approved',
-                        'denied',
-                        'completed'
-                    )
-                ),
-                staff_response text,
-                updated_at timestamp not null,
-                updated_by text not null
-            );
-            alter table prescription_refill_request_lifecycle
-                add column if not exists request_date date,
-                add column if not exists drug text,
-                add column if not exists patient_note text;
-            create index if not exists idx_prescription_refill_lifecycle_status
-                on prescription_refill_request_lifecycle (status, updated_at desc, thread_id desc);
-            create index if not exists idx_prescription_refill_lifecycle_patient
-                on prescription_refill_request_lifecycle (pid, updated_at desc, thread_id desc);
-            insert into prescription_refill_request_lifecycle
-                (thread_id, staff_message_id, pid, patient_id, prescription_id,
-                 request_date, drug, patient_note, status, staff_response, updated_at, updated_by)
-            select
-                message.reply_mail_chain,
-                message.id,
-                message.pid,
-                prescription.patient_id,
-                prescription.id::text,
-                message.message_date,
-                prescription.drug,
-                nullif(substring(message.body from 'Patient note: ([^\r\n]+)'), ''),
-                case when message.message_status = 'Done' then 'approved' else 'pending' end,
-                null,
-                message.message_date::timestamp,
-                message.assigned_to
-            from portal_mailbox_messages message
-            join prescriptions prescription
-              on prescription.pid = message.pid
-             and prescription.id::text = nullif(
-                substring(message.body from 'Prescription ID: ([^\r\n]+)'),
-                ''
-             )
-            where message.deleted = 0
-              and message.owner = message.assigned_to
-              and message.portal_relation = 'portal:prescription-refill-request'
-            on conflict (thread_id) do nothing;
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
     private static async Task InsertPrescriptionRefillLifecycleAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -5815,29 +5741,6 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
     }
 
-    private async Task EnsureMessageAttachmentSchemaAsync(CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists patient_portal_message_attachments (
-              id uuid primary key,
-              message_id integer not null references portal_mailbox_messages(id) on delete cascade,
-              patient_id text not null references patients(canonical_id),
-              pid integer not null,
-              file_name text not null,
-              content_type text not null,
-              size_bytes integer not null,
-              content bytea not null,
-              source text not null default 'portal-upload',
-              uploaded_at timestamptz not null default now()
-            );
-            create index if not exists idx_patient_portal_message_attachments_message
-              on patient_portal_message_attachments (message_id, uploaded_at, id);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
     private static int ResolvePortalThreadId(PatientPortalMessageItem message, int fallbackMessageId)
     {
         if (message.ReplyMailChain > 0)
@@ -5900,7 +5803,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            select greatest(coalesce(max(id), 9390000) + 1, 9390001)
+            select avenchart_next_integer('portal_mailbox_messages.id', greatest(coalesce(max(id), 0), 9390000))
             from portal_mailbox_messages;
             """;
 

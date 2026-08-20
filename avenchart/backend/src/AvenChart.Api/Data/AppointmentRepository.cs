@@ -662,7 +662,6 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureReminderDispatchTableAsync(connection, cancellationToken);
         await using var lookup = connection.CreateCommand();
         lookup.CommandText = """
             select
@@ -719,7 +718,6 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureReminderDispatchTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into appointment_reminder_dispatch_audit (
@@ -828,7 +826,6 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var metadata = await GetMetadataAsync(cancellationToken);
         var safeLimit = Math.Clamp(limit, 1, 50);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureReminderDispatchTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select
@@ -1750,56 +1747,6 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             ExternalReference: externalReference,
             TemplateName: template.TemplateId,
             MessagePreview: BuildReminderMessagePreview(patientDisplayName, appointmentDate, startTime, title, reminder, template));
-    }
-
-    private static async Task EnsureReminderDispatchTableAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists appointment_reminder_dispatch_audit (
-              audit_id text primary key,
-              dataset_id text not null,
-              dataset_version text not null,
-              as_of_date date not null,
-              appointment_id text not null,
-              dispatch_id text not null,
-              dispatched_at timestamp not null,
-              patient_id text not null,
-              legacy_pid integer not null,
-              pubpid text not null,
-              patient_display_name text not null,
-              appointment_date date not null,
-              start_time time not null,
-              end_time time not null,
-              title text not null,
-              reminder_status text not null,
-              reminder_channel text not null,
-              reminder_contact text,
-              reminder_lead_days integer,
-              queue_name text not null,
-              dispatch_status text not null,
-              external_reference text not null,
-              template_name text not null,
-              message_preview text not null,
-              retry_of_dispatch_id text,
-              retry_attempt integer not null default 0,
-              created_at timestamp not null
-            );
-            alter table appointment_reminder_dispatch_audit
-              add column if not exists retry_of_dispatch_id text;
-            alter table appointment_reminder_dispatch_audit
-              add column if not exists retry_attempt integer not null default 0;
-            create index if not exists idx_appointment_reminder_dispatch_appointment
-              on appointment_reminder_dispatch_audit (appointment_id, created_at desc);
-            create index if not exists idx_appointment_reminder_dispatch_dispatch
-              on appointment_reminder_dispatch_audit (dispatch_id, dispatched_at desc);
-            create index if not exists idx_appointment_reminder_dispatch_retry
-              on appointment_reminder_dispatch_audit (retry_of_dispatch_id)
-              where retry_of_dispatch_id is not null;
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static void AddReminderDispatchParameters(

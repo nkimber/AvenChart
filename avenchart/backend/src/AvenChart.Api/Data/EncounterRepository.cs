@@ -29,7 +29,6 @@ public sealed class EncounterRepository(
         var fromDate = ParseDateOrDefault(from, new DateOnly(metadata.BaseDate.Year, 1, 1));
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureEncounterArchiveColumnAsync(connection, cancellationToken);
         var totalMatches = await CountMatchesAsync(connection, normalizedPatientId, fromDate, archived, cancellationToken);
 
         await using var command = connection.CreateCommand();
@@ -93,7 +92,6 @@ public sealed class EncounterRepository(
         bool includeArchivedDocuments = false)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureEncounterArchiveColumnAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select
@@ -276,7 +274,7 @@ public sealed class EncounterRepository(
                 limit 1
             ),
             next_id as (
-                select coalesce(max(greatest(id, encounter)), 0) + 1 as id
+                select avenchart_next_integer('encounters.id', coalesce(max(greatest(id, encounter)), 0)) as id
                 from encounters
             ),
             source_appointment as (
@@ -508,7 +506,7 @@ public sealed class EncounterRepository(
                 limit 1
             ),
             next_id as (
-                select coalesce(max(id), 0) + 1 as id
+                select avenchart_next_integer('vitals.id', coalesce(max(id), 0)) as id
                 from vitals
             )
             insert into vitals (
@@ -785,7 +783,7 @@ public sealed class EncounterRepository(
                 limit 1
             ),
             next_id as (
-                select coalesce(max(id), 0) + 1 as id
+                select avenchart_next_integer('encounter_signatures.id', coalesce(max(id), 0)) as id
                 from encounter_signatures
             )
             insert into encounter_signatures (
@@ -845,7 +843,6 @@ public sealed class EncounterRepository(
     {
         var reason = RequireArchiveReason(request.Reason);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureEncounterArchiveColumnAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             update encounters
@@ -864,7 +861,6 @@ public sealed class EncounterRepository(
     {
         var reason = RequireArchiveReason(request.Reason);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureEncounterArchiveColumnAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             update encounters
@@ -934,15 +930,6 @@ public sealed class EncounterRepository(
     {
         command.Parameters.Add("patientId", NpgsqlDbType.Text).Value = patientId is null ? DBNull.Value : patientId;
         command.Parameters.Add("fromDate", NpgsqlDbType.Date).Value = fromDate;
-    }
-
-    private static async Task EnsureEncounterArchiveColumnAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = "alter table encounters add column if not exists archived_at timestamp null; alter table encounters add column if not exists archive_version integer not null default 1;";
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static EncounterListItem ReadListItem(DbDataReader reader) => new(

@@ -8,6 +8,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -16,6 +17,7 @@ using AvenChart.Api.Data;
 using AvenChart.Api.Experience;
 using AvenChart.Api.Infrastructure;
 using AvenChart.Api.Models;
+using AvenChart.Api.Persistence;
 using AvenChart.Api.Security;
 using AvenChart.Api.Workflows;
 
@@ -113,6 +115,8 @@ var connectionString = builder.Configuration.GetConnectionString("AvenChart")
     ?? "Host=localhost;Port=5433;Database=avenchart;Username=avenchart;Password=avenchart_demo";
 
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
+builder.Services.AddDbContext<AvenChartDbContext>((services, options) =>
+    options.UseNpgsql(services.GetRequiredService<NpgsqlDataSource>()));
 builder.Services.AddScoped<PatientRepository>();
 builder.Services.AddScoped<PatientXmlExchangeRepository>();
 builder.Services.AddScoped<PatientPrintRepository>();

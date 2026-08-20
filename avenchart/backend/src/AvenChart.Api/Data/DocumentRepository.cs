@@ -56,10 +56,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     private const int MaxInlineThumbnailBytes = 262_144;
     public const int MaxOcrExtractedTextCharacters = 262_144;
     public const int MaxBinaryDocumentBytes = 25 * 1024 * 1024;
-    // Retained only while older document schema helper code is removed in a
-    // later cleanup. No request path invokes either helper after V0083.
-    private static readonly SemaphoreSlim DocumentMetadataSchemaGate = new(1, 1);
-    private static readonly SemaphoreSlim DocumentVersionSchemaGate = new(1, 1);
     private static readonly IReadOnlyList<PatientDocumentCategoryOption> CategoryOptions =
     [
         new(2, "Lab Report"),
@@ -1589,7 +1585,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             {
                 idCommand.Transaction = transaction;
                 idCommand.CommandText = """
-                    select greatest(coalesce(max(id), 8999999) + 1, 9000000)
+                    select avenchart_next_integer('patient_documents.id', greatest(coalesce(max(id), 0), 8999999))
                     from patient_documents;
                     """;
                 id = Convert.ToInt32(await idCommand.ExecuteScalarAsync(cancellationToken));
@@ -1701,7 +1697,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             {
                 idCommand.Transaction = transaction;
                 idCommand.CommandText = """
-                    select greatest(coalesce(max(id), 8999999) + 1, 9000000)
+                    select avenchart_next_integer('patient_documents.id', greatest(coalesce(max(id), 0), 8999999))
                     from patient_documents;
                     """;
                 id = Convert.ToInt32(await idCommand.ExecuteScalarAsync(cancellationToken));
@@ -1817,7 +1813,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             {
                 idCommand.Transaction = transaction;
                 idCommand.CommandText = """
-                    select greatest(coalesce(max(id), 8999999) + 1, 9000000)
+                    select avenchart_next_integer('patient_documents.id', greatest(coalesce(max(id), 0), 8999999))
                     from patient_documents;
                     """;
                 id = Convert.ToInt32(await idCommand.ExecuteScalarAsync(cancellationToken));
@@ -1913,7 +1909,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             {
                 idCommand.Transaction = transaction;
                 idCommand.CommandText = """
-                    select greatest(coalesce(max(id), 8999999) + 1, 9000000)
+                    select avenchart_next_integer('patient_documents.id', greatest(coalesce(max(id), 0), 8999999))
                     from patient_documents;
                     """;
                 id = Convert.ToInt32(await idCommand.ExecuteScalarAsync(cancellationToken));
@@ -3918,266 +3914,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         ];
     }
 
-    private static async Task EnsureDocumentVersionTableAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await DocumentVersionSchemaGate.WaitAsync(cancellationToken);
-        try
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                create table if not exists patient_document_versions (
-                  id bigserial primary key,
-                  document_id integer not null references patient_documents(id) on delete cascade,
-                  version_no integer not null,
-                  captured_at timestamp not null,
-                  file_name text,
-                  mimetype text,
-                  size_bytes integer,
-                  pages integer,
-                  storage_method text,
-                  url text,
-                  hash text,
-                  content text,
-                  content_bytes bytea,
-                  unique (document_id, version_no)
-                );
-
-                create index if not exists idx_patient_document_versions_document
-                  on patient_document_versions (document_id, version_no desc);
-
-                create table if not exists patient_document_content_events (
-                  event_id uuid primary key,
-                  document_id integer not null references patient_documents(id) on delete cascade,
-                  document_key text not null,
-                  patient_id text not null,
-                  legacy_pid integer not null,
-                  from_version integer not null,
-                  to_version integer not null,
-                  from_file_name text,
-                  to_file_name text,
-                  from_mimetype text,
-                  to_mimetype text,
-                  from_size_bytes integer,
-                  to_size_bytes integer,
-                  from_hash text,
-                  to_hash text,
-                  reason varchar(250) not null,
-                  actor text not null,
-                  occurred_at timestamptz not null default now(),
-                  unique (document_id, to_version)
-                );
-
-                create index if not exists ix_patient_document_content_events_document_time
-                  on patient_document_content_events (document_id, occurred_at desc, event_id desc);
-
-                create index if not exists ix_patient_document_content_events_patient_time
-                  on patient_document_content_events (patient_id, occurred_at desc, event_id desc);
-
-                create table if not exists patient_document_review_events (
-                  event_id uuid primary key,
-                  document_id integer not null references patient_documents(id) on delete cascade,
-                  document_key text not null,
-                  patient_id text not null,
-                  legacy_pid integer not null,
-                  from_status varchar(20) not null,
-                  to_status varchar(20) not null,
-                  reason varchar(250) not null,
-                  actor text not null,
-                  occurred_at timestamptz not null default now(),
-                  document_version integer not null,
-                  content_hash text
-                );
-
-                create index if not exists ix_patient_document_review_events_document_time
-                  on patient_document_review_events (document_id, occurred_at desc, event_id desc);
-
-                create index if not exists ix_patient_document_review_events_patient_time
-                  on patient_document_review_events (patient_id, occurred_at desc, event_id desc);
-
-                create table if not exists patient_document_archive_events (
-                  event_id uuid primary key,
-                  document_id integer not null references patient_documents(id) on delete cascade,
-                  document_key text not null,
-                  patient_id text not null,
-                  legacy_pid integer not null,
-                  from_archived boolean not null,
-                  to_archived boolean not null,
-                  reason varchar(250) not null,
-                  actor text not null,
-                  occurred_at timestamptz not null default now(),
-                  document_version integer not null,
-                  review_status varchar(20) not null,
-                  content_hash text
-                );
-
-                create index if not exists ix_patient_document_archive_events_document_time
-                  on patient_document_archive_events (document_id, occurred_at desc, event_id desc);
-
-                create index if not exists ix_patient_document_archive_events_patient_time
-                  on patient_document_archive_events (patient_id, occurred_at desc, event_id desc);
-
-                create table if not exists patient_document_ocr_tasks (
-                  document_id integer primary key references patient_documents(id) on delete cascade,
-                  task_version integer not null,
-                  status varchar(20) not null,
-                  priority varchar(20) not null,
-                  extracted_text text,
-                  failure_reason varchar(500),
-                  started_by text,
-                  started_at timestamptz,
-                  completed_by text,
-                  completed_at timestamptz,
-                  failed_by text,
-                  failed_at timestamptz,
-                  updated_by text not null,
-                  updated_at timestamptz not null default now()
-                );
-
-                create index if not exists ix_patient_document_ocr_tasks_status_updated
-                  on patient_document_ocr_tasks (status, updated_at, document_id);
-
-                create index if not exists ix_patient_document_ocr_tasks_priority_status
-                  on patient_document_ocr_tasks (priority, status, updated_at);
-
-                create table if not exists patient_document_ocr_events (
-                  event_id uuid primary key,
-                  document_id integer not null references patient_documents(id) on delete cascade,
-                  document_key text not null,
-                  patient_id text not null,
-                  legacy_pid integer not null,
-                  action varchar(20) not null,
-                  from_status varchar(20) not null,
-                  to_status varchar(20) not null,
-                  reason varchar(500) not null,
-                  actor text not null,
-                  occurred_at timestamptz not null default now(),
-                  task_version integer not null,
-                  document_version integer not null,
-                  review_status varchar(20) not null,
-                  from_extracted_text_length integer not null,
-                  to_extracted_text_length integer not null,
-                  from_extracted_text_preview varchar(500),
-                  to_extracted_text_preview varchar(500),
-                  from_extracted_text_hash text,
-                  to_extracted_text_hash text,
-                  failure_reason varchar(500)
-                );
-
-                create index if not exists ix_patient_document_ocr_events_document_time
-                  on patient_document_ocr_events (document_id, occurred_at desc, event_id desc);
-
-                create index if not exists ix_patient_document_ocr_events_patient_time
-                  on patient_document_ocr_events (patient_id, occurred_at desc, event_id desc);
-
-                create table if not exists patient_document_routing_tasks (
-                  document_id integer primary key references patient_documents(id) on delete cascade,
-                  task_version integer not null,
-                  status varchar(20) not null,
-                  destination varchar(100) not null,
-                  priority varchar(20) not null,
-                  assigned_to text,
-                  routing_reason varchar(250) not null,
-                  routed_by text not null,
-                  routed_at timestamptz not null default now(),
-                  due_at timestamptz not null,
-                  completed_by text,
-                  completed_at timestamptz,
-                  completion_note varchar(250)
-                );
-
-                create index if not exists ix_patient_document_routing_tasks_status_due
-                  on patient_document_routing_tasks (status, due_at, document_id);
-
-                create index if not exists ix_patient_document_routing_tasks_assignee_status
-                  on patient_document_routing_tasks (assigned_to, status, due_at);
-
-                create table if not exists patient_document_routing_events (
-                  event_id uuid primary key,
-                  document_id integer not null references patient_documents(id) on delete cascade,
-                  document_key text not null,
-                  patient_id text not null,
-                  legacy_pid integer not null,
-                  action varchar(20) not null,
-                  from_status varchar(20) not null,
-                  to_status varchar(20) not null,
-                  from_destination varchar(100),
-                  to_destination varchar(100) not null,
-                  from_priority varchar(20),
-                  to_priority varchar(20) not null,
-                  from_assigned_to text,
-                  to_assigned_to text,
-                  reason varchar(250) not null,
-                  actor text not null,
-                  occurred_at timestamptz not null default now(),
-                  due_at timestamptz not null,
-                  task_version integer not null,
-                  document_version integer not null,
-                  review_status varchar(20) not null,
-                  content_hash text
-                );
-
-                create index if not exists ix_patient_document_routing_events_document_time
-                  on patient_document_routing_events (document_id, occurred_at desc, event_id desc);
-
-                create index if not exists ix_patient_document_routing_events_patient_time
-                  on patient_document_routing_events (patient_id, occurred_at desc, event_id desc);
-                """;
-            await command.ExecuteNonQueryAsync(cancellationToken);
-        }
-        finally
-        {
-            DocumentVersionSchemaGate.Release();
-        }
-    }
-
-    private async Task EnsureDocumentMetadataEventsAsync(
-        CancellationToken cancellationToken)
-    {
-        await DocumentMetadataSchemaGate.WaitAsync(cancellationToken);
-        try
-        {
-            await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                create table if not exists patient_document_metadata_events (
-                    event_id uuid primary key,
-                    document_id integer not null references patient_documents(id) on delete cascade,
-                    document_key text not null,
-                    patient_id text not null,
-                    legacy_pid integer not null,
-                    changed_fields text[] not null,
-                    from_category_id integer not null,
-                    from_category_name text not null,
-                    to_category_id integer not null,
-                    to_category_name text not null,
-                    from_name text not null,
-                    to_name text not null,
-                    from_doc_date date not null,
-                    to_doc_date date not null,
-                    from_encounter integer,
-                    to_encounter integer,
-                    from_notes text,
-                    to_notes text,
-                    reason varchar(250) not null,
-                    actor text not null,
-                    occurred_at timestamptz not null default now()
-                );
-
-                create index if not exists ix_patient_document_metadata_events_document_time
-                    on patient_document_metadata_events (document_id, occurred_at desc, event_id desc);
-
-                create index if not exists ix_patient_document_metadata_events_patient_time
-                    on patient_document_metadata_events (patient_id, occurred_at desc, event_id desc);
-                """;
-            await command.ExecuteNonQueryAsync(cancellationToken);
-        }
-        finally
-        {
-            DocumentMetadataSchemaGate.Release();
-        }
-    }
 
     private static async Task<DocumentContentSnapshot?> GetContentSnapshotForUpdateAsync(
         NpgsqlConnection connection,
@@ -4235,7 +3971,9 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
               storage_method, url, hash, content, content_bytes
             )
             select d.id,
-              coalesce((select max(v.version_no) from patient_document_versions v where v.document_id = d.id), 0) + 1,
+              avenchart_next_integer(
+                concat('patient_document_versions.version:', d.id),
+                coalesce((select max(v.version_no) from patient_document_versions v where v.document_id = d.id), 0)),
               d.uploaded_at,
               d.file_name,
               d.mimetype,

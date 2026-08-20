@@ -269,7 +269,9 @@ public sealed class DocumentTemplateRepository(NpgsqlDataSource source)
               id,template_id,version,file_name,mimetype,size_bytes,sha256,content)
             values(
               @id,@templateId,
-              (select coalesce(max(version),0)+1
+              (select avenchart_next_integer(
+                   concat('document_template_binary_versions.version:', @templateId),
+                   coalesce(max(version), 0))
                from document_template_binary_versions
                where template_id=@templateId),
               @fileName,@mimetype,@size,@sha,@content)

@@ -16,7 +16,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureMedicationVocabularyTableAsync(connection, cancellationToken);
 
         var normalizedQuery = query?.Trim() ?? string.Empty;
         await using var command = connection.CreateCommand();
@@ -122,7 +121,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         var boundedOffset = Math.Max(0, offset);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
 
         PrescriptionRefillQueueCounts counts;
         await using (var countCommand = connection.CreateCommand())
@@ -782,8 +780,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        await EnsurePrescriptionStructuredDoseColumnsAsync(connection, cancellationToken);
-        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
 
         var id = $"RX-MODERN-{Guid.NewGuid():N}";
         await using var command = connection.CreateCommand();
@@ -873,8 +869,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         var note = NormalizeOptionalText(request.Note);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsurePrescriptionStructuredDoseColumnsAsync(connection, cancellationToken);
-        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         PrescriptionEditSnapshot? current = null;
@@ -1069,7 +1063,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         await using (var command = connection.CreateCommand())
         {
-            await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
             command.CommandText = """
                 update prescriptions
                 set active = 0,
@@ -1131,7 +1124,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         await using (var command = connection.CreateCommand())
         {
-            await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
             command.CommandText = """
                 update prescriptions
                 set refills = refills + @additionalRefills,
@@ -1194,8 +1186,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
-        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var refillRequest = await GetPrescriptionRefillRequestAsync(
             connection,
@@ -1315,8 +1305,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
-        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var anchor = await GetPrescriptionRefillRequestAsync(
             connection,
@@ -1421,7 +1409,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         PharmacyRouteAnchor anchor;
@@ -1569,7 +1556,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
         await using (var auditCommand = connection.CreateCommand())
         {
             auditCommand.CommandText = """
@@ -1599,7 +1585,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
 
         await using (var exists = connection.CreateCommand())
         {
@@ -1677,7 +1662,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             with next_immunization as (
-                select coalesce(max(id), 8500000) + 1 as id
+                select avenchart_next_integer('immunizations.id', greatest(coalesce(max(id), 0), 8500000)) as id
                 from immunizations
             )
             insert into immunizations
@@ -1935,7 +1920,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         int legacyPid,
         CancellationToken cancellationToken)
     {
-        await EnsurePrescriptionStructuredDoseColumnsAsync(connection, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -2019,7 +2003,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         int legacyPid,
         CancellationToken cancellationToken)
     {
-        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select
@@ -2579,160 +2562,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     private static string? NormalizeOptionalText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
-
-    private static async Task EnsureMedicationVocabularyTableAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists medication_vocabulary (
-                rx_norm_code text primary key,
-                drug_name text not null,
-                display_name text not null,
-                form text not null,
-                strength text not null,
-                route text not null,
-                dose_amount numeric(10,2),
-                dose_unit text,
-                frequency text,
-                duration_days integer,
-                controlled_substance_schedule text
-            );
-
-            insert into medication_vocabulary
-                (rx_norm_code, drug_name, display_name, form, strength, route, dose_amount, dose_unit, frequency, duration_days, controlled_substance_schedule)
-            values
-                ('860975', 'Metformin', 'Metformin 500 mg tablet', 'tablet', '500 mg', 'oral', 500, 'mg', 'twice daily', 30, null),
-                ('1049502', 'Omeprazole', 'Omeprazole 20 mg delayed release capsule', 'capsule', '20 mg', 'oral', 20, 'mg', 'once daily', 30, null),
-                ('312615', 'Lisinopril', 'Lisinopril 10 mg tablet', 'tablet', '10 mg', 'oral', 10, 'mg', 'once daily', 30, null),
-                ('617314', 'Atorvastatin', 'Atorvastatin 20 mg tablet', 'tablet', '20 mg', 'oral', 20, 'mg', 'nightly', 30, null),
-                ('1049621', 'Oxycodone', 'Oxycodone 5 mg tablet', 'tablet', '5 mg', 'oral', 5, 'mg', 'every 6 hours as needed', 7, 'CII')
-            on conflict (rx_norm_code) do update
-            set drug_name = excluded.drug_name,
-                display_name = excluded.display_name,
-                form = excluded.form,
-                strength = excluded.strength,
-                route = excluded.route,
-                dose_amount = excluded.dose_amount,
-                dose_unit = excluded.dose_unit,
-                frequency = excluded.frequency,
-                duration_days = excluded.duration_days,
-                controlled_substance_schedule = excluded.controlled_substance_schedule;
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private static async Task EnsurePrescriptionStructuredDoseColumnsAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            alter table prescriptions
-                add column if not exists dose_amount numeric(10,2),
-                add column if not exists dose_unit text,
-                add column if not exists frequency text,
-                add column if not exists duration_days integer;
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private static async Task EnsurePrescriptionAuditTableAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists prescription_audit_events (
-                event_id text primary key,
-                prescription_id text not null,
-                patient_id text not null,
-                pid integer not null,
-                action text not null,
-                occurred_at timestamp not null,
-                actor text not null,
-                detail text,
-                before_refills integer,
-                after_refills integer,
-                pharmacy_id integer,
-                pharmacy_name text,
-                failure_reason text
-            );
-            create index if not exists idx_prescription_audit_events_prescription
-                on prescription_audit_events (prescription_id, occurred_at, event_id);
-            create index if not exists idx_prescription_audit_events_pid
-                on prescription_audit_events (pid, occurred_at desc, event_id desc);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private static async Task EnsurePrescriptionRefillLifecycleTableAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists prescription_refill_request_lifecycle (
-                thread_id integer primary key,
-                staff_message_id integer not null,
-                pid integer not null,
-                patient_id text not null,
-                prescription_id text not null,
-                request_date date,
-                drug text,
-                patient_note text,
-                status text not null check (
-                    status in (
-                        'pending',
-                        'clarification-requested',
-                        'approved',
-                        'denied',
-                        'completed'
-                    )
-                ),
-                staff_response text,
-                updated_at timestamp not null,
-                updated_by text not null
-            );
-            alter table prescription_refill_request_lifecycle
-                add column if not exists request_date date,
-                add column if not exists drug text,
-                add column if not exists patient_note text;
-            create index if not exists idx_prescription_refill_lifecycle_status
-                on prescription_refill_request_lifecycle (status, updated_at desc, thread_id desc);
-            create index if not exists idx_prescription_refill_lifecycle_patient
-                on prescription_refill_request_lifecycle (pid, updated_at desc, thread_id desc);
-            insert into prescription_refill_request_lifecycle
-                (thread_id, staff_message_id, pid, patient_id, prescription_id,
-                 request_date, drug, patient_note, status, staff_response, updated_at, updated_by)
-            select
-                message.reply_mail_chain,
-                message.id,
-                message.pid,
-                prescription.patient_id,
-                prescription.id::text,
-                message.message_date,
-                prescription.drug,
-                nullif(substring(message.body from 'Patient note: ([^\r\n]+)'), ''),
-                case when message.message_status = 'Done' then 'approved' else 'pending' end,
-                null,
-                message.message_date::timestamp,
-                message.assigned_to
-            from portal_mailbox_messages message
-            join prescriptions prescription
-              on prescription.pid = message.pid
-             and prescription.id::text = nullif(
-                substring(message.body from 'Prescription ID: ([^\r\n]+)'),
-                ''
-             )
-            where message.deleted = 0
-              and message.owner = message.assigned_to
-              and message.portal_relation = 'portal:prescription-refill-request'
-            on conflict (thread_id) do nothing;
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertPrescriptionAuditEventAsync(

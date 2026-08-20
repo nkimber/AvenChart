@@ -18,6 +18,14 @@ $ExpectedMigrationCount = @(Get-ChildItem (Join-Path $SolutionRoot "database\mig
 if ($ExpectedMigrationCount -lt 2) {
     throw "The packaged migration catalog is unexpectedly empty."
 }
+$repositoryFiles = Get-ChildItem (Join-Path $SolutionRoot "backend\src\AvenChart.Api\Data") -Filter '*Repository.cs' -File
+$repositorySource = ($repositoryFiles | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
+if ([regex]::IsMatch($repositorySource, '(?i)\b(create\s+table|alter\s+table|create\s+(unique\s+)?index)\b')) {
+    throw "Repository-time schema DDL was detected. Add schema changes to a versioned migration instead."
+}
+if ([regex]::IsMatch($repositorySource, '(?is)max\s*\([^)]*\)[^;\r\n]{0,120}\+\s*1\b')) {
+    throw "A concurrency-unsafe MAX(...) + 1 allocator was detected in a repository."
+}
 foreach ($checkpoint in $FaultCheckpoints) {
     if ($checkpoint -lt 1 -or $checkpoint -ge $ExpectedMigrationCount) {
         throw "Fault checkpoint $checkpoint must be between 1 and $($ExpectedMigrationCount - 1)."
@@ -217,7 +225,8 @@ try {
         throw "PostgreSQL did not become ready for migration resilience testing."
     }
 
-    docker compose build --quiet migrator
+    # The migrator and API share avenchart-api:local; only the API service owns the build definition.
+    docker compose build --quiet api
     if ($LASTEXITCODE -ne 0) {
         throw "Could not build the packaged migrator image for resilience testing."
     }
@@ -303,10 +312,96 @@ try {
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
         throw "Could not establish the isolated API session required for schema-shape error testing."
     }
+    $authenticatedHeaders = @{ "X-AvenChart-Session" = $login.sessionId }
+
+    Invoke-DatabaseScalar -Sql "delete from avenchart_integer_counters where counter_key = 'test.atomic-integer-allocation';" | Out-Null
+    $postgresContainerId = (docker compose ps -q postgres).Trim()
+    if ([string]::IsNullOrWhiteSpace($postgresContainerId)) {
+        throw "Could not resolve the PostgreSQL container for allocator concurrency testing."
+    }
+    $allocatorScript = Join-Path $SolutionRoot "scripts\sql\test-atomic-integer-allocation.sql"
+    docker cp $allocatorScript "${postgresContainerId}:/tmp/test-atomic-integer-allocation.sql" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not stage the allocator concurrency script in PostgreSQL."
+    }
+    $allocatorClients = 16
+    $allocatorTransactionsPerClient = 20
+    docker compose exec -T postgres pgbench `
+        -U avenchart `
+        -d $DatabaseName `
+        -n `
+        -c $allocatorClients `
+        -j 4 `
+        -t $allocatorTransactionsPerClient `
+        -f /tmp/test-atomic-integer-allocation.sql *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Parallel allocator execution failed."
+    }
+    $expectedAllocatedValue = $allocatorClients * $allocatorTransactionsPerClient
+    $allocatedValue = [int](Invoke-DatabaseScalar -Sql "select current_value from avenchart_integer_counters where counter_key = 'test.atomic-integer-allocation';")
+    if ($allocatedValue -ne $expectedAllocatedValue) {
+        throw "Expected atomic allocator value $expectedAllocatedValue, but found $allocatedValue."
+    }
+    Invoke-DatabaseScalar -Sql "delete from avenchart_integer_counters where counter_key = 'test.atomic-integer-allocation';" | Out-Null
+    $CompletedScenarios.Add("atomic-integer-allocation")
+
+    $officeCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/office-notes/" `
+        -Headers $authenticatedHeaders `
+        -Body '{"body":"EF Core migration-resilience note"}'
+    if ([int]$officeCreateResponse.StatusCode -ne 201) {
+        throw "EF-backed office note creation returned HTTP $($officeCreateResponse.StatusCode)."
+    }
+    $officeCreate = (Get-HttpResponseContent -Response $officeCreateResponse) | ConvertFrom-Json
+    $officeUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/office-notes/$($officeCreate.id)" `
+        -Headers $authenticatedHeaders `
+        -Body '{"body":"EF Core migration-resilience note updated"}'
+    $officeInactiveResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/office-notes/$($officeCreate.id)/activity" `
+        -Headers $authenticatedHeaders `
+        -Body '{"active":false}'
+    $officeInactiveListResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/office-notes/?activity=inactive" `
+        -Headers $authenticatedHeaders
+    if ([int]$officeUpdateResponse.StatusCode -ne 200 -or
+        [int]$officeInactiveResponse.StatusCode -ne 200 -or
+        [int]$officeInactiveListResponse.StatusCode -ne 200) {
+        throw "EF-backed office note update, activity, or list operation failed."
+    }
+    $officeUpdate = (Get-HttpResponseContent -Response $officeUpdateResponse) | ConvertFrom-Json
+    $officeInactive = (Get-HttpResponseContent -Response $officeInactiveResponse) | ConvertFrom-Json
+    $officeInactiveList = (Get-HttpResponseContent -Response $officeInactiveListResponse) | ConvertFrom-Json
+    if ($officeUpdate.body -ne "EF Core migration-resilience note updated" -or
+        $officeInactive.active -ne $false -or
+        $officeInactiveList.notes.id -notcontains $officeCreate.id) {
+        throw "EF-backed office note CRUD returned unexpected data."
+    }
+    $officeDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/office-notes/$($officeCreate.id)" `
+        -Headers $authenticatedHeaders
+    if ([int]$officeDeleteResponse.StatusCode -ne 204) {
+        throw "EF-backed office note deletion returned HTTP $($officeDeleteResponse.StatusCode)."
+    }
+    $officeAllResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/office-notes/?activity=all" `
+        -Headers $authenticatedHeaders
+    $officeAll = (Get-HttpResponseContent -Response $officeAllResponse) | ConvertFrom-Json
+    if ($officeAll.notes.id -contains $officeCreate.id) {
+        throw "Deleted EF-backed office note remained visible."
+    }
+    $CompletedScenarios.Add("ef-core-office-note-crud")
+
     $messageResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/messages/MOD-PAT-0001" `
-        -Headers @{ "X-AvenChart-Session" = $login.sessionId }
+        -Headers $authenticatedHeaders
     if ([int]$messageResponse.StatusCode -ne 200) {
         throw "Patient messages without includeArchived should default to active-only, but returned HTTP $($messageResponse.StatusCode)."
     }
@@ -318,7 +413,7 @@ try {
 
     Wait-ForApiReady
     Invoke-DatabaseScalar -Sql "alter table patients rename column marital_status to marital_status_fault;" | Out-Null
-    $chartResponse = Invoke-Http -Method "GET" -Path "/api/patients/MOD-PAT-0001" -Headers @{ "X-AvenChart-Session" = $login.sessionId }
+    $chartResponse = Invoke-Http -Method "GET" -Path "/api/patients/MOD-PAT-0001" -Headers $authenticatedHeaders
     Assert-SchemaNotReadyResponse -Response $chartResponse
     $CompletedScenarios.Add("undefined-column-mapped-to-503")
 

@@ -44,7 +44,7 @@ public sealed class EncounterLayoutFormRepository(NpgsqlDataSource dataSource)
         await using (var insertRecord = connection.CreateCommand())
         {
             insertRecord.Transaction = transaction;
-            insertRecord.CommandText = "insert into encounter_layout_form_records(record_id,encounter,layout_key,revision,saved_at,saved_by) values(@id,@encounter,@layout,(select coalesce(max(revision),0)+1 from encounter_layout_form_records where encounter=@encounter and layout_key=@layout),now(),@user);";
+            insertRecord.CommandText = "insert into encounter_layout_form_records(record_id,encounter,layout_key,revision,saved_at,saved_by) values(@id,@encounter,@layout,(select avenchart_next_integer(concat('encounter_layout_form_records.revision:',@encounter,':',@layout),coalesce(max(revision),0)) from encounter_layout_form_records where encounter=@encounter and layout_key=@layout),now(),@user);";
             insertRecord.Parameters.AddWithValue("id", recordId); insertRecord.Parameters.AddWithValue("encounter", encounter); insertRecord.Parameters.AddWithValue("layout", definition.LayoutKey); insertRecord.Parameters.AddWithValue("user", username);
             await insertRecord.ExecuteNonQueryAsync(cancellationToken);
         }

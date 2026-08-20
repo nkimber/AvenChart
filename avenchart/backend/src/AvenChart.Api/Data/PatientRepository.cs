@@ -14,7 +14,6 @@ namespace AvenChart.Api.Data;
 public sealed class PatientRepository(NpgsqlDataSource dataSource)
 {
     private const int MaximumSearchLimit = 100;
-    private static int mergeColumnsInitialized;
 
     public async Task<PatientSearchResponse> SearchAsync(string? search, int limit, CancellationToken cancellationToken)
     {
@@ -933,7 +932,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                  hipaa_allow_sms, hipaa_allow_email, marital_status, occupation, provider_id, facility_id,
                  portal_enabled, registration_date)
             values
-                (@canonicalId, (select coalesce(max(legacy_pid), 100000) + 1 from patients), @pubpid,
+                (@canonicalId, (select avenchart_next_integer('patients.legacy_pid', greatest(coalesce(max(legacy_pid), 0), 100000)) from patients), @pubpid,
                  @firstName, @lastName, @preferredName, @sex, @dateOfBirth,
                  null, 'registered via modernized patient workspace', @street, @city, @state, @postalCode,
                  @email, @phoneHome, @phoneHome, @phoneCell, @hipaaAllowSms, @hipaaAllowEmail,
@@ -1072,7 +1071,6 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         string username,
         CancellationToken cancellationToken)
     {
-        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var prior = await ReadPatientAdministrationSnapshotAsync(
@@ -1138,7 +1136,6 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var prior = await ReadPatientAdministrationSnapshotAsync(
@@ -1735,7 +1732,6 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        await EnsureProviderAssignmentEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -1898,7 +1894,6 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
-        await EnsureProviderAssignmentEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
 
         ProviderAssignmentPatient? patient;
@@ -2011,7 +2006,6 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     {
         const int resultLimit = 100;
         var metadata = await GetMetadataAsync(cancellationToken);
-        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var patient = await GetPatientIdentityAsync(connection, patientId, cancellationToken);
         if (patient is null)
@@ -2209,7 +2203,6 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var patient = await GetPatientIdentityAsync(connection, patientId, cancellationToken);
         if (patient is null)
@@ -2319,7 +2312,6 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var prior = await ReadInsuranceAuditSnapshotAsync(
@@ -2399,7 +2391,6 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var prior = await ReadInsuranceAuditSnapshotAsync(
@@ -2438,7 +2429,6 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
-        await EnsureMergeColumnsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -2458,77 +2448,6 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             reader.GetString(reader.GetOrdinal("dataset_id")),
             reader.GetString(reader.GetOrdinal("version")),
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("base_date")));
-    }
-
-    private async Task EnsureMergeColumnsAsync(CancellationToken cancellationToken)
-    {
-        if (Volatile.Read(ref mergeColumnsInitialized) == 1)
-        {
-            return;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            alter table patients add column if not exists merged_into_patient_id text references patients(canonical_id);
-            alter table patients add column if not exists merged_at timestamptz;
-            alter table patients add column if not exists merged_by text;
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        Volatile.Write(ref mergeColumnsInitialized, 1);
-    }
-
-    private async Task EnsureProviderAssignmentEventsAsync(CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists patient_provider_assignment_events (
-                event_id uuid primary key,
-                patient_id text not null,
-                legacy_pid integer not null,
-                from_provider_id integer,
-                from_provider_name text,
-                from_facility_id integer,
-                from_facility_name text,
-                to_provider_id integer,
-                to_provider_name text,
-                to_facility_id integer,
-                to_facility_name text,
-                reason varchar(250) not null,
-                actor text not null,
-                occurred_at timestamptz not null default now()
-            );
-
-            create index if not exists ix_patient_provider_assignment_events_patient_time
-                on patient_provider_assignment_events (patient_id, occurred_at desc, event_id desc);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private async Task EnsurePatientAdministrationAuditEventsAsync(CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists patient_administration_audit_events (
-                event_id uuid primary key,
-                patient_id text not null,
-                legacy_pid integer not null,
-                area varchar(24) not null,
-                action varchar(24) not null,
-                entity_id text,
-                changed_fields text[] not null,
-                before_values jsonb not null,
-                after_values jsonb not null,
-                actor text not null,
-                occurred_at timestamptz not null default now()
-            );
-
-            create index if not exists ix_patient_administration_audit_events_patient_time
-                on patient_administration_audit_events (patient_id, occurred_at desc, event_id desc);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<PatientAdministrationSnapshot?> ReadPatientAdministrationSnapshotAsync(

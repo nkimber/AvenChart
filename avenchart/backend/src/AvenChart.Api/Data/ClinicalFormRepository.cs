@@ -2227,15 +2227,6 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
         string patientId,
         CancellationToken cancellationToken)
     {
-        // Older local databases predate the archive lifecycle migration. The form
-        // engine must fail closed on archived encounters without turning a
-        // compatible database into a server error during instance creation.
-        await using (var schema = connection.CreateCommand())
-        {
-            schema.Transaction = transaction;
-            schema.CommandText = "alter table encounters add column if not exists archived_at timestamp null; alter table encounters add column if not exists archive_version integer not null default 1;";
-            await schema.ExecuteNonQueryAsync(cancellationToken);
-        }
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """

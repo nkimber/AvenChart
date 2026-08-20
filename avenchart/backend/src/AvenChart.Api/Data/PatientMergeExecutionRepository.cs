@@ -58,7 +58,6 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
         string username,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -116,7 +115,6 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
         string username,
         CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -474,37 +472,6 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("username", username);
         command.Parameters.AddWithValue("changedAt", changedAt);
         command.Parameters.AddWithValue("executionId", executionId);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            alter table patients add column if not exists merged_into_patient_id text references patients(canonical_id);
-            alter table patients add column if not exists merged_at timestamptz;
-            alter table patients add column if not exists merged_by text;
-
-            create table if not exists patient_merge_executions (
-                execution_id uuid primary key,
-                audit_id uuid not null references patient_merge_audit_plans(audit_id),
-                target_patient_id text not null references patients(canonical_id),
-                source_patient_id text not null references patients(canonical_id),
-                executed_by text not null,
-                executed_at timestamptz not null,
-                rolled_back_by text,
-                rolled_back_at timestamptz,
-                status text not null
-            );
-
-            create table if not exists patient_merge_execution_manifest_rows (
-                execution_id uuid not null references patient_merge_executions(execution_id),
-                table_name text not null,
-                record_id text not null,
-                primary key (execution_id, table_name, record_id)
-            );
-            """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
