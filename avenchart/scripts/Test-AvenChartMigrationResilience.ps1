@@ -680,6 +680,67 @@ try {
     }
     $CompletedScenarios.Add("ef-core-therapy-group-aggregate")
 
+    $referralCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/patients/MOD-PAT-0001/referrals" `
+        -Headers $authenticatedHeaders `
+        -Body '{"encounterId":null,"destination":"EF Core referral destination","reason":"Referral aggregate regression coverage","externalReference":"EF-REF-001","notes":"Created by the migration-resilience suite","requestedAt":"2026-08-20T12:00:00Z","assignedTo":"admin","dueAt":"2026-12-20T12:00:00Z","workflowReason":"Verify EF-backed referral creation."}'
+    if ([int]$referralCreateResponse.StatusCode -ne 201) {
+        throw "EF-backed referral creation returned HTTP $($referralCreateResponse.StatusCode). Body: $(Get-HttpResponseContent -Response $referralCreateResponse)"
+    }
+    $referral = (Get-HttpResponseContent -Response $referralCreateResponse) | ConvertFrom-Json
+    $referralAssignmentResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/patients/MOD-PAT-0001/referrals/$($referral.id)/assignment" `
+        -Headers $authenticatedHeaders `
+        -Body '{"assignedTo":"gold-provider-01","dueAt":"2026-12-22T12:00:00Z","expectedVersion":1,"reasonCode":"responsibility-transfer","reason":"Route to the responsible provider."}'
+    if ([int]$referralAssignmentResponse.StatusCode -ne 200) {
+        throw "EF-backed referral reassignment returned HTTP $($referralAssignmentResponse.StatusCode). Body: $(Get-HttpResponseContent -Response $referralAssignmentResponse)"
+    }
+    $referralAssignment = (Get-HttpResponseContent -Response $referralAssignmentResponse) | ConvertFrom-Json
+    $referralStaleResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/patients/MOD-PAT-0001/referrals/$($referral.id)/status" `
+        -Headers $authenticatedHeaders `
+        -Body '{"status":"sent","expectedVersion":1,"reasonCode":"referral-sent","reason":"Deliberately stale transition."}'
+    if ([int]$referralStaleResponse.StatusCode -ne 409) {
+        throw "The EF-backed referral workflow accepted a stale version."
+    }
+    $referralStatusResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/patients/MOD-PAT-0001/referrals/$($referral.id)/status" `
+        -Headers $authenticatedHeaders `
+        -Body '{"status":"sent","expectedVersion":2,"reasonCode":"referral-sent","reason":"Send the verified referral."}'
+    $referralHistoryResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/patients/MOD-PAT-0001/referrals/$($referral.id)/history" `
+        -Headers $authenticatedHeaders
+    $referralQueueResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/clinical-workflows/referral-work-queue?assignedTo=gold-provider-01&query=EF%20Core%20referral%20destination" `
+        -Headers $authenticatedHeaders
+    if ([int]$referralStatusResponse.StatusCode -ne 200 -or
+        [int]$referralHistoryResponse.StatusCode -ne 200 -or
+        [int]$referralQueueResponse.StatusCode -ne 200) {
+        throw "EF-backed referral transition, history, or retained SQL work queue failed."
+    }
+    $referralStatus = (Get-HttpResponseContent -Response $referralStatusResponse) | ConvertFrom-Json
+    $referralHistory = (Get-HttpResponseContent -Response $referralHistoryResponse) | ConvertFrom-Json
+    $referralQueue = (Get-HttpResponseContent -Response $referralQueueResponse) | ConvertFrom-Json
+    $referralDatabaseVersion = [int](Invoke-DatabaseScalar -Sql "select workflow_version from referrals where id = '$($referral.id)';")
+    $referralEventCount = [int](Invoke-DatabaseScalar -Sql "select count(*) from clinical_workflow_events where workflow_type = 'patient-referral' and entity_id = '$($referral.id)';")
+    if ($referralAssignment.assignedTo -ne "gold-provider-01" -or
+        $referralAssignment.assignedDisplayName -ne "Alex Walker" -or
+        $referralStatus.status -ne "sent" -or
+        $referralStatus.workflowVersion -ne 3 -or
+        $referralHistory.total -ne 3 -or
+        $referralQueue.items.referral.id -notcontains $referral.id -or
+        $referralDatabaseVersion -ne 3 -or
+        $referralEventCount -ne 3) {
+        throw "EF-backed referral aggregate returned unexpected state."
+    }
+    $CompletedScenarios.Add("ef-core-referral-workflow-concurrency")
+
     $messageResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/messages/MOD-PAT-0001" `

@@ -15,9 +15,17 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
 {
     public DbSet<AddressBookContactEntity> AddressBookContacts => Set<AddressBookContactEntity>();
 
+    public DbSet<AuthAccountEntity> AuthAccounts => Set<AuthAccountEntity>();
+
     public DbSet<ChartTrackerEventEntity> ChartTrackerEvents => Set<ChartTrackerEventEntity>();
 
     public DbSet<ChartTrackerLocationEntity> ChartTrackerLocations => Set<ChartTrackerLocationEntity>();
+
+    public DbSet<ClinicalWorkflowEventEntity> ClinicalWorkflowEvents => Set<ClinicalWorkflowEventEntity>();
+
+    public DbSet<EncounterEntity> Encounters => Set<EncounterEntity>();
+
+    public DbSet<EncounterSignatureEntity> EncounterSignatures => Set<EncounterSignatureEntity>();
 
     public DbSet<OfficeNoteEntity> OfficeNotes => Set<OfficeNoteEntity>();
 
@@ -32,6 +40,8 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
     public DbSet<RecallActivityEntity> RecallActivities => Set<RecallActivityEntity>();
 
     public DbSet<RecallEntity> Recalls => Set<RecallEntity>();
+
+    public DbSet<ReferralEntity> Referrals => Set<ReferralEntity>();
 
     public DbSet<StaffEntity> Staff => Set<StaffEntity>();
 
