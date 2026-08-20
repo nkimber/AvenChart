@@ -13,24 +13,14 @@ namespace AvenChart.Api.Persistence;
 public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> options)
     : DbContext(options)
 {
+    public DbSet<AddressBookContactEntity> AddressBookContacts => Set<AddressBookContactEntity>();
+
     public DbSet<OfficeNoteEntity> OfficeNotes => Set<OfficeNoteEntity>();
+
+    public DbSet<PatientEducationResourceEntity> PatientEducationResources => Set<PatientEducationResourceEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<OfficeNoteEntity>(entity =>
-        {
-            entity.ToTable("office_notes", table => table.ExcludeFromMigrations());
-            entity.HasKey(note => note.Id);
-            entity.Property(note => note.Id).HasColumnName("id").ValueGeneratedNever();
-            entity.Property(note => note.Body).HasColumnName("body").IsRequired();
-            entity.Property(note => note.Author).HasColumnName("author").IsRequired();
-            entity.Property(note => note.GroupName).HasColumnName("group_name");
-            entity.Property(note => note.Active).HasColumnName("active").IsRequired();
-            entity.Property(note => note.CreatedAt).HasColumnName("created_at").IsRequired();
-            entity.Property(note => note.UpdatedAt).HasColumnName("updated_at").IsRequired();
-            entity.HasIndex(note => note.CreatedAt).HasDatabaseName("ix_office_notes_created_at");
-            entity.HasIndex(note => new { note.Active, note.CreatedAt })
-                .HasDatabaseName("ix_office_notes_active_created_at");
-        });
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AvenChartDbContext).Assembly);
     }
 }

@@ -398,6 +398,61 @@ try {
     }
     $CompletedScenarios.Add("ef-core-office-note-crud")
 
+    $addressCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/administration/address-book/" `
+        -Headers $authenticatedHeaders `
+        -Body '{"organization":"EF Slice Directory","firstName":"Taylor","lastName":"Contact","specialty":"Care Coordination","npi":"1234567890","type":"external_provider","active":true}'
+    if ([int]$addressCreateResponse.StatusCode -ne 201) {
+        throw "EF-backed address-book creation returned HTTP $($addressCreateResponse.StatusCode)."
+    }
+    $addressCreate = (Get-HttpResponseContent -Response $addressCreateResponse) | ConvertFrom-Json
+    $addressSearchResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/administration/address-book/?organization=EF%20Slice%20Directory" `
+        -Headers $authenticatedHeaders
+    $addressUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/administration/address-book/$($addressCreate.id)" `
+        -Headers $authenticatedHeaders `
+        -Body '{"organization":"EF Slice Directory","firstName":"Taylor","lastName":"Updated Contact","specialty":"Care Coordination","npi":"1234567890","type":"external_provider","active":true}'
+    if ([int]$addressSearchResponse.StatusCode -ne 200 -or [int]$addressUpdateResponse.StatusCode -ne 200) {
+        throw "EF-backed address-book search or update failed."
+    }
+    $addressSearch = (Get-HttpResponseContent -Response $addressSearchResponse) | ConvertFrom-Json
+    $addressUpdate = (Get-HttpResponseContent -Response $addressUpdateResponse) | ConvertFrom-Json
+    if ($addressSearch.entries.id -notcontains $addressCreate.id -or $addressUpdate.lastName -ne "Updated Contact") {
+        throw "EF-backed address-book operations returned unexpected data."
+    }
+    $addressDeleteResponse = Invoke-Http `
+        -Method "DELETE" `
+        -Path "/api/administration/address-book/$($addressCreate.id)" `
+        -Headers $authenticatedHeaders
+    if ([int]$addressDeleteResponse.StatusCode -ne 204) {
+        throw "EF-backed address-book deletion returned HTTP $($addressDeleteResponse.StatusCode)."
+    }
+    $CompletedScenarios.Add("ef-core-address-book-crud")
+
+    $educationResourcesResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/patient-education/resources" `
+        -Headers $authenticatedHeaders
+    $educationSearchResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/patient-education/search" `
+        -Headers $authenticatedHeaders `
+        -Body '{"resourceKey":"medlineplus","searchText":"heart health"}'
+    if ([int]$educationResourcesResponse.StatusCode -ne 200 -or [int]$educationSearchResponse.StatusCode -ne 200) {
+        throw "EF-backed patient-education resource or search operation failed."
+    }
+    $educationResources = (Get-HttpResponseContent -Response $educationResourcesResponse) | ConvertFrom-Json
+    $educationSearch = (Get-HttpResponseContent -Response $educationSearchResponse) | ConvertFrom-Json
+    if ($educationResources.resources.key -notcontains "medlineplus" -or
+        -not ([string]$educationSearch.url).StartsWith("https://", [StringComparison]::Ordinal)) {
+        throw "EF-backed patient-education operations returned unexpected data."
+    }
+    $CompletedScenarios.Add("ef-core-patient-education-queries")
+
     $messageResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/messages/MOD-PAT-0001" `
