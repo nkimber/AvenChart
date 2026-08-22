@@ -187,6 +187,13 @@ public sealed record AppointmentAvailabilityValidationResponse(
     IReadOnlyList<AppointmentAvailabilityConflict> Conflicts,
     IReadOnlyList<string> Messages);
 
+public sealed class AppointmentAvailabilityConflictException(
+    AppointmentAvailabilityValidationResponse validation)
+    : InvalidOperationException("Appointment conflicts with the current schedule availability.")
+{
+    public AppointmentAvailabilityValidationResponse Validation { get; } = validation;
+}
+
 public sealed record AppointmentAvailabilityConflict(
     string AppointmentId,
     string ConflictType,

@@ -409,14 +409,54 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsurePatientActiveForSchedulingAsync(connection, null, request.PatientId, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var patient = await EnsurePatientActiveForSchedulingAsync(
+            connection,
+            transaction,
+            request.PatientId,
+            cancellationToken);
         await ValidateActiveSchedulingReferencesAsync(
             connection,
             request.ProviderId,
             request.FacilityId,
             request.BillingLocationId,
             cancellationToken);
+
+        if (request.EnforceConflictPolicy)
+        {
+            await AcquireSchedulingConflictLocksAsync(
+                connection,
+                transaction,
+                appointmentDate,
+                patient.LegacyPid,
+                request.ProviderId ?? patient.ProviderId,
+                NormalizeText(request.Room),
+                cancellationToken);
+
+            var validation = await ValidateAvailabilityAsync(
+                new AppointmentAvailabilityValidationRequest(
+                    PatientId: patient.CanonicalId,
+                    ProviderId: request.ProviderId,
+                    Date: request.Date,
+                    StartTime: request.StartTime,
+                    DurationMinutes: request.DurationMinutes,
+                    FacilityId: request.FacilityId,
+                    Room: request.Room,
+                    ExcludeAppointmentId: null),
+                cancellationToken);
+            if (validation is null)
+            {
+                throw new ArgumentException("Appointment availability could not be validated from the supplied patient, date, time, and duration.");
+            }
+
+            if (!validation.Available)
+            {
+                throw new AppointmentAvailabilityConflictException(validation);
+            }
+        }
+
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             with patient_match as (
                 select canonical_id, legacy_pid, provider_id, facility_id
@@ -504,6 +544,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             request.RecurrenceExdates);
 
         var insertedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return insertedId is null ? null : await GetByIdAsync(insertedId, cancellationToken);
     }
 
@@ -2430,6 +2471,39 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return new ProviderOverlapSummary(overlapIds.Count, overlapIds);
     }
 
+    private static async Task AcquireSchedulingConflictLocksAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        DateOnly appointmentDate,
+        int patientPid,
+        int? providerId,
+        string? room,
+        CancellationToken cancellationToken)
+    {
+        var lockKeys = new List<string>
+        {
+            $"appointment-conflict|{appointmentDate:yyyy-MM-dd}|patient|{patientPid}"
+        };
+        if (providerId is not null)
+        {
+            lockKeys.Add($"appointment-conflict|{appointmentDate:yyyy-MM-dd}|provider|{providerId.Value}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(room))
+        {
+            lockKeys.Add($"appointment-conflict|{appointmentDate:yyyy-MM-dd}|room|{room.Trim().ToLowerInvariant()}");
+        }
+
+        foreach (var lockKey in lockKeys.Order(StringComparer.Ordinal))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "select pg_advisory_xact_lock(hashtextextended(@lockKey, 0));";
+            command.Parameters.AddWithValue("lockKey", lockKey);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
     private static async Task ValidateActiveSchedulingReferencesAsync(
         NpgsqlConnection connection,
         int? providerId,
@@ -2460,7 +2534,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             cancellationToken);
     }
 
-    private static async Task EnsurePatientActiveForSchedulingAsync(
+    private static async Task<SchedulingPatient> EnsurePatientActiveForSchedulingAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         string patientId,
@@ -2469,12 +2543,13 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            select lifecycle_status, deceased_date
+            select canonical_id, legacy_pid, provider_id, facility_id, lifecycle_status, deceased_date, merged_into_patient_id
             from patients
             where lower(canonical_id) = lower(@patientId)
                or lower(pubpid) = lower(@patientId)
                or legacy_pid::text = @patientId
-            limit 1;
+            limit 1
+            for update;
             """;
         command.Parameters.AddWithValue("patientId", patientId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2484,6 +2559,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         }
 
         var status = reader.GetString(reader.GetOrdinal("lifecycle_status"));
+        var mergedIntoPatientId = ReadNullableString(reader, "merged_into_patient_id");
+
+        if (mergedIntoPatientId is not null)
+        {
+            throw new ArgumentException("A merged patient cannot receive a new or rescheduled appointment. Use the surviving patient chart.");
+        }
 
         if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase))
         {
@@ -2494,6 +2575,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         {
             throw new ArgumentException("A deceased patient cannot receive a new or rescheduled appointment.");
         }
+
+        return new SchedulingPatient(
+            CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+            ProviderId: ReadNullableInt(reader, "provider_id"),
+            FacilityId: ReadNullableInt(reader, "facility_id"));
     }
 
     private static async Task ValidateActiveSchedulingReferenceAsync(
@@ -3294,6 +3381,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+
+    private sealed record SchedulingPatient(
+        string CanonicalId,
+        int LegacyPid,
+        int? ProviderId,
+        int? FacilityId);
 
     private sealed record AppointmentOccurrenceReference(string RootAppointmentId, DateOnly? OccurrenceDate);
 

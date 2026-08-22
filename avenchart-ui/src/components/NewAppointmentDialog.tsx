@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Search, UserRoundCheck } from 'lucide-react'
 import {
+  ApiRequestError,
   createAppointment,
   getAppointmentSchedulingOptions,
   isRequestCancellation,
@@ -191,8 +192,17 @@ export function NewAppointmentDialog({
       })
       showToast('Appointment created.', 'success')
       onCreated(appointment)
-    } catch {
-      showToast('Could not create appointment.', 'error')
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 409) {
+        try {
+          setAvailability(await validateAvailability())
+        } catch {
+          // The conflict response is still actionable even if refresh fails.
+        }
+        showToast('This time was just taken. Review the refreshed availability before saving.', 'error')
+      } else {
+        showToast('Could not create appointment.', 'error')
+      }
     } finally {
       setSaving(false)
     }

@@ -3276,6 +3276,87 @@ finally {
     }
 }
 
+$appointmentAtomicConflictId = $null
+$appointmentAtomicConflictJobs = @()
+try {
+    $atomicConflictDate = [DateTime]::UtcNow.Date.AddDays(45)
+    while ($atomicConflictDate.DayOfWeek -in @([DayOfWeek]::Saturday, [DayOfWeek]::Sunday)) {
+        $atomicConflictDate = $atomicConflictDate.AddDays(1)
+    }
+    $atomicConflictMarker = [Guid]::NewGuid().ToString('N').Substring(0, 10)
+    $atomicConflictPayloads = @(
+        @{
+            patientId = "MOD-PAT-0003"
+            providerId = 102
+            facilityId = 10
+            billingLocationId = 10
+            title = "Smoke atomic conflict A $atomicConflictMarker"
+            date = $atomicConflictDate.ToString("yyyy-MM-dd")
+            startTime = "10:00"
+            durationMinutes = 30
+            categoryId = 9
+            room = "Atomic-$atomicConflictMarker"
+            comments = "Concurrent enforced-conflict smoke check"
+            enforceConflictPolicy = $true
+        },
+        @{
+            patientId = "MOD-PAT-0004"
+            providerId = 102
+            facilityId = 10
+            billingLocationId = 10
+            title = "Smoke atomic conflict B $atomicConflictMarker"
+            date = $atomicConflictDate.ToString("yyyy-MM-dd")
+            startTime = "10:00"
+            durationMinutes = 30
+            categoryId = 9
+            room = "Atomic-$atomicConflictMarker"
+            comments = "Concurrent enforced-conflict smoke check"
+            enforceConflictPolicy = $true
+        }
+    )
+    foreach ($payload in $atomicConflictPayloads) {
+        $appointmentAtomicConflictJobs += Start-Job -ScriptBlock {
+            param($baseUrl, $sessionId, $body)
+            try {
+                $response = Invoke-WebRequest -Uri "$baseUrl/api/appointments" -Method Post -Headers @{ "X-AvenChart-Session" = $sessionId } -ContentType "application/json" -Body $body -UseBasicParsing -TimeoutSec 30
+                [pscustomobject]@{ status = [int]$response.StatusCode; content = $response.Content }
+            }
+            catch {
+                $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+                [pscustomobject]@{ status = $status; content = "" }
+            }
+        } -ArgumentList $ApiBaseUrl, (Get-AdministrationHeaders)["X-AvenChart-Session"], ($payload | ConvertTo-Json -Depth 5 -Compress)
+    }
+    $atomicConflictResults = @($appointmentAtomicConflictJobs | Wait-Job | Receive-Job)
+    $atomicConflictCreated = @($atomicConflictResults | Where-Object { $_.status -eq 201 })
+    $atomicConflictRejected = @($atomicConflictResults | Where-Object { $_.status -eq 409 })
+    if ($atomicConflictCreated.Count -eq 1) {
+        $appointmentAtomicConflictId = ($atomicConflictCreated[0].content | ConvertFrom-Json).id
+    }
+    $appointmentAtomicConflictPassed = $atomicConflictCreated.Count -eq 1 -and $atomicConflictRejected.Count -eq 1
+
+    Add-Check -Name "appointment enforced-conflict atomicity" -Result $(if ($appointmentAtomicConflictPassed) { "passed" } else { "failed" }) -Details @{
+        date = $atomicConflictDate.ToString("yyyy-MM-dd")
+        statuses = @($atomicConflictResults | ForEach-Object { $_.status })
+        createdAppointmentId = $appointmentAtomicConflictId
+    }
+}
+catch {
+    Add-Check -Name "appointment enforced-conflict atomicity" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    foreach ($job in @($appointmentAtomicConflictJobs)) {
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+    }
+    if ($appointmentAtomicConflictId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentAtomicConflictId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $appointmentRescheduleId = $null
 try {
     $createBody = @{
