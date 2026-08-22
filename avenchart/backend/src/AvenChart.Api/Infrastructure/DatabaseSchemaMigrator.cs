@@ -8,6 +8,7 @@ namespace AvenChart.Api.Infrastructure;
 public sealed class DatabaseSchemaMigrator(
     NpgsqlDataSource dataSource,
     SchemaMigrationCatalog catalog,
+    DatabaseBootstrapCatalog bootstrap,
     SchemaMigrationState state,
     IConfiguration configuration,
     ILogger<DatabaseSchemaMigrator> logger)
@@ -19,6 +20,10 @@ public sealed class DatabaseSchemaMigrator(
         if (catalog.Error is not null)
         {
             throw new InvalidOperationException(catalog.Error);
+        }
+        if (bootstrap.Error is not null)
+        {
+            throw new InvalidOperationException(bootstrap.Error);
         }
 
         var faultAfterAppliedCount = configuration.GetValue<int?>("DatabaseSchema:FaultAfterAppliedMigrationCount") ?? 0;
@@ -46,6 +51,7 @@ public sealed class DatabaseSchemaMigrator(
         await AcquireLockAsync(connection, cancellationToken);
         try
         {
+            await EnsureBaseSchemaAsync(connection, bootstrap, cancellationToken);
             var ledger = await BootstrapLedgerAsync(connection, cancellationToken);
             ValidateExistingLedger(ledger);
 
@@ -125,6 +131,40 @@ public sealed class DatabaseSchemaMigrator(
 
         await transaction.CommitAsync(cancellationToken);
         return ledger;
+    }
+
+    private async Task EnsureBaseSchemaAsync(
+        NpgsqlConnection connection,
+        DatabaseBootstrapCatalog bootstrap,
+        CancellationToken cancellationToken)
+    {
+        var presence = await bootstrap.GetPresenceAsync(connection, cancellationToken);
+        if (presence.IsComplete)
+        {
+            return;
+        }
+
+        if (!presence.IsEmpty)
+        {
+            throw new InvalidOperationException(
+                $"The database has a partial base schema. Present anchor tables: {string.Join(", ", presence.Present)}. " +
+                $"Missing anchor tables: {string.Join(", ", presence.Missing)}. Recover or provision a clean database before migration.");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = bootstrap.Sql;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        var afterBootstrap = await bootstrap.GetPresenceAsync(connection, cancellationToken);
+        if (!afterBootstrap.IsComplete)
+        {
+            throw new InvalidOperationException(
+                $"The packaged base schema did not create all required tables. Missing: {string.Join(", ", afterBootstrap.Missing)}.");
+        }
+
+        logger.LogInformation(
+            "Provisioned empty database base schema from {BootstrapPath} with SHA-256 {BootstrapChecksum}.",
+            bootstrap.Path,
+            bootstrap.ChecksumSha256);
     }
 
     private void ValidateExistingLedger(IReadOnlyDictionary<string, string> ledger)

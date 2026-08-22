@@ -9,6 +9,11 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const solutionRoot = path.resolve(__dirname, '..')
 const workspaceRoot = path.resolve(solutionRoot, '..')
+const bootstrapOnly = process.argv.includes('--bootstrap-schema')
+const verifyBootstrap = process.argv.includes('--verify-bootstrap')
+if (bootstrapOnly && verifyBootstrap) {
+  throw new Error('--bootstrap-schema and --verify-bootstrap cannot be used together.')
+}
 const datasetPath = path.join(
   workspaceRoot,
   'demo-data',
@@ -18,10 +23,11 @@ const datasetPath = path.join(
   'gold-dataset.json',
 )
 const outputDir = path.join(solutionRoot, 'artifacts', 'postgres')
-const outputPath = path.join(outputDir, 'seed-gold.sql')
+const bootstrapPath = path.join(solutionRoot, 'database', 'bootstrap', 'base-schema.sql')
+const outputPath = bootstrapOnly ? bootstrapPath : path.join(outputDir, 'seed-gold.sql')
 
 const dataset = JSON.parse(fs.readFileSync(datasetPath, 'utf8'))
-fs.mkdirSync(outputDir, { recursive: true })
+fs.mkdirSync(bootstrapOnly ? path.dirname(bootstrapPath) : outputDir, { recursive: true })
 
 const copyEmptyString = Symbol('copy-empty-string')
 const demoCredentialSalt = 'avenchart-demo-v1'
@@ -2496,7 +2502,9 @@ copyRows('inventory_lots', [
   'lot_id', 'item_id', 'facility_id', 'lot_number', 'expiration_date', 'quantity_on_hand', 'unit_cost', 'status',
 ], inventoryLots)
 
-lines.push("select setval('inventory_lot_id_seq', (select max(lot_id) from inventory_lots));")
+if (!bootstrapOnly && !verifyBootstrap) {
+  lines.push("select setval('inventory_lot_id_seq', (select max(lot_id) from inventory_lots));")
+}
 
 copyRows('inventory_transactions', [
   'transaction_id', 'lot_id', 'transaction_type', 'quantity_delta', 'reason', 'performed_by', 'occurred_at',
@@ -3222,8 +3230,30 @@ create index idx_access_user_memberships_group on access_user_memberships (group
 commit;
 `)
 
-fs.writeFileSync(outputPath, `${lines.join('\n')}\n`)
+const generatedSql = `${lines.join('\n').trimEnd()}\n`
+// A gold reset drops and recreates its disposable synthetic data. The
+// independently bootstrappable schema must never contain those destructive
+// reset statements or fixture rows.
+const renderedSql = bootstrapOnly || verifyBootstrap
+  ? generatedSql
+    .replace(/^drop (?:table|sequence) if exists [^;]+;\r?\n/gm, '')
+    .replace(/^alter table if exists [^\r\n]+\r?\n\s+drop constraint if exists [^;]+;\r?\n/gm, '')
+  : generatedSql
 
+if (verifyBootstrap) {
+  if (!fs.existsSync(bootstrapPath)) {
+    throw new Error(`The committed bootstrap schema is missing: ${bootstrapPath}`)
+  }
+  if (fs.readFileSync(bootstrapPath, 'utf8') !== renderedSql) {
+    throw new Error('The committed database/bootstrap/base-schema.sql is stale. Run node scripts/generate-postgres-seed.mjs --bootstrap-schema and commit the generated artifact.')
+  }
+  console.log(`Verified ${bootstrapPath}`)
+  process.exit(0)
+}
+
+fs.writeFileSync(outputPath, renderedSql)
+
+if (!bootstrapOnly) {
 const summaryPath = path.join(outputDir, 'seed-gold-summary.json')
 fs.writeFileSync(summaryPath, JSON.stringify({
   generatedAt: new Date().toISOString(),
@@ -3264,10 +3294,14 @@ fs.writeFileSync(summaryPath, JSON.stringify({
     accessUserMemberships: accessUserMemberships.length,
   },
 }, null, 2))
+}
 
-console.log(`Generated ${outputPath}`)
+console.log(`Generated ${bootstrapOnly ? 'empty-database bootstrap schema' : 'gold synthetic seed'} ${outputPath}`)
 
 function copyRows(table, columns, rows) {
+  if (bootstrapOnly || verifyBootstrap) {
+    return
+  }
   lines.push(`copy ${table} (${columns.join(', ')}) from stdin;`)
   for (const row of rows) {
     lines.push(row.map(copyValue).join('\t'))

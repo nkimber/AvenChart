@@ -8,6 +8,7 @@ namespace AvenChart.Api.Infrastructure;
 public sealed class SchemaMigrationState(
     NpgsqlDataSource dataSource,
     SchemaMigrationCatalog catalog,
+    DatabaseBootstrapCatalog bootstrap,
     ILogger<SchemaMigrationState> logger)
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(1);
@@ -63,11 +64,32 @@ public sealed class SchemaMigrationState(
                 [],
                 []);
         }
+        if (bootstrap.Error is not null)
+        {
+            return SchemaMigrationValidationResult.Invalid(
+                catalog,
+                0,
+                bootstrap.Error,
+                [],
+                [],
+                []);
+        }
 
         try
         {
             var applied = new Dictionary<string, string>(StringComparer.Ordinal);
             await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+            var baseSchema = await bootstrap.GetPresenceAsync(connection, cancellationToken);
+            if (!baseSchema.IsComplete)
+            {
+                return SchemaMigrationValidationResult.Invalid(
+                    catalog,
+                    0,
+                    $"The database base schema is incomplete. Missing anchor tables: {string.Join(", ", baseSchema.Missing)}.",
+                    [],
+                    [],
+                    []);
+            }
             await using var command = connection.CreateCommand();
             command.CommandText = "select migration_id, checksum_sha256 from schema_migrations order by migration_id;";
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);

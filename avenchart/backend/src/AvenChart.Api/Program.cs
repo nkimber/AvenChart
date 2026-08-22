@@ -35,6 +35,7 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.AddResponseCompression();
 builder.Services.AddSingleton<SchemaMigrationCatalog>();
+builder.Services.AddSingleton<DatabaseBootstrapCatalog>();
 builder.Services.AddSingleton<SchemaMigrationState>();
 builder.Services.AddSingleton<DatabaseSchemaMigrator>();
 builder.Services.AddHealthChecks()

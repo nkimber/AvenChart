@@ -19,6 +19,14 @@ $ExpectedMigrationCount = @(Get-ChildItem (Join-Path $SolutionRoot "database\mig
 if ($ExpectedMigrationCount -lt 2) {
     throw "The packaged migration catalog is unexpectedly empty."
 }
+$BootstrapSchemaPath = Join-Path $SolutionRoot "database\bootstrap\base-schema.sql"
+if (-not (Test-Path -LiteralPath $BootstrapSchemaPath)) {
+    throw "The packaged empty-database bootstrap schema is missing."
+}
+$BootstrapSchema = Get-Content -LiteralPath $BootstrapSchemaPath -Raw
+if ($BootstrapSchema -match '(?im)^\s*(copy\s+|drop\s+(table|sequence)\s+)') {
+    throw "The packaged empty-database bootstrap schema must not contain fixture COPY rows or destructive reset DDL."
+}
 $repositoryFiles = Get-ChildItem (Join-Path $SolutionRoot "backend\src\AvenChart.Api\Data") -Filter '*Repository.cs' -File
 $repositorySource = ($repositoryFiles | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
 $persistenceRoot = Join-Path $SolutionRoot "backend\src\AvenChart.Api\Persistence"
@@ -274,6 +282,37 @@ try {
         throw "Could not create isolated migration test database '$DatabaseName'."
     }
     $DatabaseCreated = $true
+
+    # The production migrator, without the gold-data reset helper, must build
+    # an empty schema and complete every versioned migration.  No synthetic
+    # chart or local credential is permitted to be a hidden prerequisite.
+    node .\scripts\generate-postgres-seed.mjs --verify-bootstrap
+    if ($LASTEXITCODE -ne 0) {
+        throw "The committed empty-database bootstrap schema is stale."
+    }
+    & .\scripts\Invoke-AvenChartMigrations.ps1 -SkipPostgresStartup -SkipArtifact -SkipImageBuild -DatabaseName $DatabaseName
+    Assert-LedgerCount -Expected $ExpectedMigrationCount
+    $emptyBootstrapShape = (Invoke-DatabaseScalar -Sql @"
+select json_build_object(
+  'patients', (select count(*) from patients),
+  'accounts', (select count(*) from auth_accounts),
+  'facilities', (select count(*) from facilities),
+  'labOrders', (select count(*) from lab_orders),
+  'portalAccounts', (select count(*) from patient_portal_accounts),
+  'migrationCount', (select count(*) from schema_migrations)
+);
+"@) | ConvertFrom-Json
+    if ([int]$emptyBootstrapShape.patients -ne 0 -or
+        [int]$emptyBootstrapShape.accounts -ne 0 -or
+        [int]$emptyBootstrapShape.facilities -ne 0 -or
+        [int]$emptyBootstrapShape.labOrders -ne 0 -or
+        [int]$emptyBootstrapShape.portalAccounts -ne 0 -or
+        [int]$emptyBootstrapShape.migrationCount -ne $ExpectedMigrationCount) {
+        throw "Empty-database migration provisioning produced fixture data or an incomplete migration ledger."
+    }
+    & .\scripts\Invoke-AvenChartMigrations.ps1 -SkipPostgresStartup -SkipArtifact -SkipImageBuild -DatabaseName $DatabaseName
+    Assert-LedgerCount -Expected $ExpectedMigrationCount
+    $CompletedScenarios.Add("empty-database-bootstrap-and-idempotency")
 
     foreach ($checkpoint in $FaultCheckpoints) {
         $faultObserved = $false

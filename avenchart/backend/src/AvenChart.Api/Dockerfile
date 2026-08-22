@@ -20,6 +20,7 @@ RUN apt-get update \
 
 COPY --from=build /app/publish ./
 COPY database/migrations ./database/migrations
+COPY database/bootstrap ./database/bootstrap
 EXPOSE 8080
 
 ENTRYPOINT ["dotnet", "AvenChart.Api.dll"]
