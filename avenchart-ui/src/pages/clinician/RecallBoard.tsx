@@ -3,11 +3,11 @@
 
 import { useEffect, useEffectEvent, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Mail, Phone, Plus, Tag, Trash2 } from "lucide-react";
+import { Ban, CheckCircle2, Mail, Phone, Plus, Tag } from "lucide-react";
 import {
   addRecallActivity,
   createRecall,
-  deleteRecall,
+  closeRecall,
   getRecallActivity,
   getRecalls,
   type RecallActivityItem,
@@ -18,6 +18,7 @@ import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
 export default function RecallBoard() {
   const { session } = useOutletContext<ClinicianOutletContext>();
   const [items, setItems] = useState<RecallItem[]>([]);
+  const [showClosed, setShowClosed] = useState(false);
   const [activity, setActivity] = useState<
     Record<string, RecallActivityItem[]>
   >({});
@@ -28,7 +29,7 @@ export default function RecallBoard() {
   });
   const load = async () => {
     try {
-      setItems(await getRecalls(session.sessionId));
+      setItems(await getRecalls(session.sessionId, showClosed));
     } catch {
       showToast("Could not load recalls.", "error");
     }
@@ -44,7 +45,7 @@ export default function RecallBoard() {
   const loadOnMount = useEffectEvent(load);
   useEffect(() => {
     void loadOnMount();
-  }, [session.sessionId]);
+  }, [session.sessionId, showClosed]);
   const save = async () => {
     try {
       await createRecall(session.sessionId, form);
@@ -67,6 +68,22 @@ export default function RecallBoard() {
       showToast("Recall activity recorded.", "success");
     } catch {
       showToast("Recall activity could not be recorded.", "error");
+    }
+  };
+  const close = async (id: string, status: "completed" | "cancelled") => {
+    const action = status === "completed" ? "complete" : "cancel";
+    const reason = window.prompt(`Reason to ${action} this recall:`);
+    if (reason === null) return;
+    if (reason.trim().length < 10) {
+      showToast("Enter a closure reason of at least 10 characters.", "error");
+      return;
+    }
+    try {
+      await closeRecall(session.sessionId, id, { status, reason: reason.trim() });
+      await load();
+      showToast(`Recall ${status}.`, "success");
+    } catch {
+      showToast(`Recall could not be ${status}.`, "error");
     }
   };
   return (
@@ -115,6 +132,17 @@ export default function RecallBoard() {
         </button>
       </section>
       <section className="cl-card">
+        <label className="cl-admin-field" style={{ marginBottom: 12 }}>
+          <span>Recall status</span>
+          <select
+            className="ne-input"
+            value={showClosed ? "all" : "active"}
+            onChange={(event) => setShowClosed(event.target.value === "all")}
+          >
+            <option value="active">Active recalls</option>
+            <option value="all">All recalls, including closed</option>
+          </select>
+        </label>
         <table className="cl-table">
           <thead>
             <tr>
@@ -136,9 +164,17 @@ export default function RecallBoard() {
                 <td>
                   {x.reason}
                   <p className="cl-table-sub">{x.status}</p>
+                  {x.closedAt && (
+                    <p className="cl-table-sub">
+                      {x.status} by {x.closedBy ?? "unknown"} ·{" "}
+                      {new Date(x.closedAt).toLocaleString()}
+                      {x.closureReason ? `: ${x.closureReason}` : ""}
+                    </p>
+                  )}
                 </td>
                 <td>
                   <div className="cl-actions">
+                    {x.status === "active" && <>
                     <button
                       className="cl-btn-secondary"
                       onClick={() => void record(x.id, "phone")}
@@ -163,6 +199,15 @@ export default function RecallBoard() {
                     >
                       History
                     </button>
+                    </>}
+                    {x.status !== "active" && (
+                      <button
+                        className="cl-btn-secondary"
+                        onClick={() => void loadActivity(x.id)}
+                      >
+                        History
+                      </button>
+                    )}
                   </div>
                   {activity[x.id]?.map((a) => (
                     <p className="cl-table-sub" key={a.id}>
@@ -173,15 +218,22 @@ export default function RecallBoard() {
                   ))}
                 </td>
                 <td>
-                  <button
-                    className="cl-icon-button cl-icon-button-danger"
-                    onClick={() =>
-                      void deleteRecall(session.sessionId, x.id).then(load)
-                    }
-                    aria-label="Delete recall"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {x.status === "active" && (
+                    <div className="cl-actions">
+                      <button
+                        className="cl-btn-secondary"
+                        onClick={() => void close(x.id, "completed")}
+                      >
+                        <CheckCircle2 size={14} /> Complete
+                      </button>
+                      <button
+                        className="cl-btn-secondary"
+                        onClick={() => void close(x.id, "cancelled")}
+                      >
+                        <Ban size={14} /> Cancel
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}

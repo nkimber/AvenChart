@@ -10,11 +10,13 @@ namespace AvenChart.Api.Data;
 
 public sealed class RecallRepository(AvenChartDbContext dbContext)
 {
-    public async Task<IReadOnlyList<RecallItem>> GetAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<RecallItem>> GetAsync(
+        bool includeClosed,
+        CancellationToken cancellationToken)
     {
         var rows = await dbContext.Recalls
             .AsNoTracking()
-            .Where(recall => recall.Status == "active")
+            .Where(recall => includeClosed || recall.Status == "active")
             .OrderBy(recall => recall.RecallDate)
             .Select(recall => new
             {
@@ -28,6 +30,7 @@ public sealed class RecallRepository(AvenChartDbContext dbContext)
 
     public async Task<RecallItem?> CreateAsync(
         RecallRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Reason))
@@ -56,23 +59,83 @@ public sealed class RecallRepository(AvenChartDbContext dbContext)
             Status = "active"
         };
         dbContext.Recalls.Add(recall);
+        dbContext.RecallLifecycleEvents.Add(new RecallLifecycleEventEntity
+        {
+            EventId = Guid.NewGuid(),
+            RecallId = recall.Id,
+            Status = "active",
+            EventType = "created",
+            Actor = actor
+        });
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToItem(recall, patient.FirstName, patient.LastName);
     }
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    public async Task<RecallItem?> CloseAsync(
+        Guid id,
+        RecallClosureRequest request,
+        string actor,
+        CancellationToken cancellationToken)
     {
-        var deleted = await dbContext.Recalls
+        var status = request.Status?.Trim().ToLowerInvariant();
+        var reason = request.Reason?.Trim();
+        if (status is not ("completed" or "cancelled"))
+        {
+            throw new ArgumentException("Recall status must be completed or cancelled.");
+        }
+
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length < 10)
+        {
+            throw new ArgumentException("A closure reason of at least 10 characters is required.");
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var changed = await dbContext.Recalls
+            .Where(recall => recall.Id == id && recall.Status == "active")
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(recall => recall.Status, status)
+                    .SetProperty(recall => recall.ClosedAt, _ => DateTimeOffset.UtcNow)
+                    .SetProperty(recall => recall.ClosedBy, actor)
+                    .SetProperty(recall => recall.ClosureReason, reason),
+                cancellationToken);
+        if (changed != 1)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        dbContext.RecallLifecycleEvents.Add(new RecallLifecycleEventEntity
+        {
+            EventId = Guid.NewGuid(),
+            RecallId = id,
+            PreviousStatus = "active",
+            Status = status,
+            EventType = status,
+            Actor = actor,
+            Reason = reason
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var row = await dbContext.Recalls
+            .AsNoTracking()
             .Where(recall => recall.Id == id)
-            .ExecuteDeleteAsync(cancellationToken);
-        return deleted == 1;
+            .Select(recall => new
+            {
+                Recall = recall,
+                recall.Patient.FirstName,
+                recall.Patient.LastName
+            })
+            .SingleAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return ToItem(row.Recall, row.FirstName, row.LastName);
     }
 
     public async Task<IReadOnlyList<RecallActivityItem>?> GetActivityAsync(
         Guid id,
         CancellationToken cancellationToken)
     {
-        if (!await dbContext.Recalls.AsNoTracking().AnyAsync(recall => recall.Id == id, cancellationToken))
+        if (!await dbContext.Recalls.AsNoTracking().AnyAsync(recall => recall.Id == id && recall.Status == "active", cancellationToken))
         {
             return null;
         }
@@ -123,7 +186,10 @@ public sealed class RecallRepository(AvenChartDbContext dbContext)
             recall.ProviderId,
             recall.FacilityId,
             recall.Status,
-            recall.CreatedAt.ToString("O"));
+            recall.CreatedAt.ToString("O"),
+            recall.ClosedAt?.ToString("O"),
+            recall.ClosedBy,
+            recall.ClosureReason);
 
     private static RecallActivityItem ToActivityItem(RecallActivityEntity activity) =>
         new(

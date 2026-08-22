@@ -641,12 +641,22 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
     if ($recallActivity.activityType -ne "phone" -or $recallHistory.id -notcontains $recallActivity.id) {
         throw "EF-backed recall operations returned unexpected data."
     }
-    $recallDeleteResponse = Invoke-Http `
-        -Method "DELETE" `
-        -Path "/api/recalls/$($recall.id)" `
+    $recallCloseResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/recalls/$($recall.id)/close" `
+        -Headers $authenticatedHeaders `
+        -Body '{"status":"completed","reason":"EF slice retained closure evidence"}'
+    $closedRecallsResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/recalls/?includeClosed=true" `
         -Headers $authenticatedHeaders
-    if ([int]$recallDeleteResponse.StatusCode -ne 204) {
-        throw "EF-backed recall deletion returned HTTP $($recallDeleteResponse.StatusCode)."
+    if ([int]$recallCloseResponse.StatusCode -ne 200 -or [int]$closedRecallsResponse.StatusCode -ne 200) {
+        throw "EF-backed recall closure or retained-history listing failed."
+    }
+    $closedRecall = (Get-HttpResponseContent -Response $recallCloseResponse) | ConvertFrom-Json
+    $closedRecalls = @((Get-HttpResponseContent -Response $closedRecallsResponse) | ConvertFrom-Json)
+    if ($closedRecall.status -ne "completed" -or [string]::IsNullOrWhiteSpace($closedRecall.closedBy) -or $closedRecalls.id -notcontains $recall.id) {
+        throw "EF-backed recall closure did not retain the recall evidence."
     }
     $CompletedScenarios.Add("ef-core-recall-aggregate")
 

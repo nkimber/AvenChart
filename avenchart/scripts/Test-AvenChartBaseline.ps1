@@ -10632,17 +10632,19 @@ try {
     $recallMutationId = $recall.id
     $activity = Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/$recallMutationId/activity" -Method Post -Headers $recallHeaders -ContentType "application/json" -Body (@{ activityType = "phone"; note = "Smoke phone evidence" } | ConvertTo-Json) -TimeoutSec 20
     $history = Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/$recallMutationId/activity" -Method Get -Headers $recallHeaders -TimeoutSec 20
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/$recallMutationId" -Method Delete -Headers $recallHeaders -TimeoutSec 20 | Out-Null
+    $closedRecall = Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/$recallMutationId/close" -Method Post -Headers $recallHeaders -ContentType "application/json" -Body (@{ status = "completed"; reason = "Smoke outreach completed successfully" } | ConvertTo-Json) -TimeoutSec 20
+    $closedRecalls = @(Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/?includeClosed=true" -Method Get -Headers $recallHeaders -TimeoutSec 20)
     $recallMutationId = $null
-    $recallPassed = $activity.activityType -eq "phone" -and $activity.note -eq "Smoke phone evidence" -and ($history.id -contains $activity.id)
-    Add-Check -Name "recall board outreach activity lifecycle" -Result $(if ($recallPassed) { "passed" } else { "failed" }) -Details @{ recallId = $recall.id; activityId = $activity.id; activityCount = @($history).Count }
+    $closedRecallInList = $closedRecalls | Where-Object { $_.id -eq $recall.id } | Select-Object -First 1
+    $recallPassed = $activity.activityType -eq "phone" -and $activity.note -eq "Smoke phone evidence" -and ($history.id -contains $activity.id) -and $closedRecall.status -eq "completed" -and $closedRecall.closedBy -eq "admin" -and $closedRecall.closureReason -eq "Smoke outreach completed successfully" -and $null -ne $closedRecallInList
+    Add-Check -Name "recall board retained outreach lifecycle" -Result $(if ($recallPassed) { "passed" } else { "failed" }) -Details @{ recallId = $recall.id; activityId = $activity.id; activityCount = @($history).Count; status = $closedRecall.status; closedBy = $closedRecall.closedBy }
 }
 catch {
-    Add-Check -Name "recall board outreach activity lifecycle" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "recall board retained outreach lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 finally {
     if ($null -ne $recallMutationId) {
-        try { Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/$recallMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null } catch { }
+        try { Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/$recallMutationId/close" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "cancelled"; reason = "Smoke cleanup after an incomplete recall test" } | ConvertTo-Json) -TimeoutSec 20 | Out-Null } catch { }
     }
 }
 

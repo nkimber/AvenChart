@@ -24,6 +24,9 @@ public sealed class RecallConfiguration : IEntityTypeConfiguration<RecallEntity>
             .HasColumnName("created_at")
             .HasDefaultValueSql("now()")
             .ValueGeneratedOnAdd();
+        entity.Property(recall => recall.ClosedAt).HasColumnName("closed_at");
+        entity.Property(recall => recall.ClosedBy).HasColumnName("closed_by");
+        entity.Property(recall => recall.ClosureReason).HasColumnName("closure_reason");
         entity.HasOne(recall => recall.Patient)
             .WithMany()
             .HasForeignKey(recall => recall.PatientId)

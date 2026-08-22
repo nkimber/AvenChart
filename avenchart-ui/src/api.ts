@@ -5232,9 +5232,15 @@ export type RecallItem = {
   facilityId?: number | null
   status: string
   createdAt: string
+  closedAt?: string | null
+  closedBy?: string | null
+  closureReason?: string | null
 }
-export async function getRecalls(sessionId: string): Promise<RecallItem[]> {
-  return clinicianGet(sessionId, '/api/recalls/')
+export async function getRecalls(
+  sessionId: string,
+  includeClosed = false,
+): Promise<RecallItem[]> {
+  return clinicianGet(sessionId, `/api/recalls/?includeClosed=${includeClosed}`)
 }
 export async function createRecall(
   sessionId: string,
@@ -5248,11 +5254,12 @@ export async function createRecall(
 ): Promise<RecallItem> {
   return clinicianPost(sessionId, '/api/recalls/', input)
 }
-export async function deleteRecall(
+export async function closeRecall(
   sessionId: string,
   id: string,
-): Promise<void> {
-  await clinicianDelete(sessionId, `/api/recalls/${id}`)
+  input: { status: 'completed' | 'cancelled'; reason: string },
+): Promise<RecallItem> {
+  return clinicianPost(sessionId, `/api/recalls/${id}/close`, input)
 }
 export type RecallActivityItem = {
   id: string

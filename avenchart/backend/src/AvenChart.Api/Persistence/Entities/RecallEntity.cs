@@ -13,6 +13,9 @@ public sealed class RecallEntity
     public int? FacilityId { get; set; }
     public required string Status { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? ClosedAt { get; set; }
+    public string? ClosedBy { get; set; }
+    public string? ClosureReason { get; set; }
     public PatientEntity Patient { get; set; } = null!;
     public ICollection<RecallActivityEntity> Activities { get; } = new List<RecallActivityEntity>();
 }

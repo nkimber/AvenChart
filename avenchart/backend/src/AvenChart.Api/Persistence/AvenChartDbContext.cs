@@ -77,6 +77,8 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
 
     public DbSet<RecallEntity> Recalls => Set<RecallEntity>();
 
+    public DbSet<RecallLifecycleEventEntity> RecallLifecycleEvents => Set<RecallLifecycleEventEntity>();
+
     public DbSet<ReferralEntity> Referrals => Set<ReferralEntity>();
 
     public DbSet<StaffEntity> Staff => Set<StaffEntity>();
