@@ -9,20 +9,27 @@ public sealed record FhirCapabilityStatement(
     string Date,
     string Kind,
     string FhirVersion,
-    string Format,
+    FhirSoftware Software,
+    FhirImplementation Implementation,
+    IReadOnlyList<string> Format,
     IReadOnlyList<FhirCapabilityResource> Rest);
+
+public sealed record FhirSoftware(string Name, string Version);
+public sealed record FhirImplementation(string Description, string Url);
 
 public sealed record FhirCapabilityResource(
     string Mode,
-    IReadOnlyList<FhirCapabilityInteraction> Interaction,
-    IReadOnlyList<FhirPatientCapability> Resource);
+    IReadOnlyList<FhirCapabilityInteraction>? Interaction,
+    IReadOnlyList<FhirResourceCapability> Resource);
 
 public sealed record FhirCapabilityInteraction(string Code);
 
-public sealed record FhirPatientCapability(
+public sealed record FhirResourceCapability(
     string Type,
     IReadOnlyList<FhirCapabilityInteraction> Interaction,
-    IReadOnlyList<string> SearchParam);
+    IReadOnlyList<FhirSearchParameter> SearchParam);
+
+public sealed record FhirSearchParameter(string Name, string Type);
 
 public sealed record FhirPatientResource(
     string ResourceType,
@@ -47,7 +54,14 @@ public sealed record FhirSearchBundle(
 
 public sealed record FhirSearchEntry(string FullUrl, FhirPatientResource Resource);
 
-public sealed record FhirEncounterResource(string ResourceType, string Id, string Status, FhirReference Subject, FhirPeriod Period, string? Reason);
+public sealed record FhirEncounterResource(
+    string ResourceType,
+    string Id,
+    string Status,
+    FhirCoding Class,
+    FhirReference Subject,
+    FhirPeriod Period,
+    IReadOnlyList<FhirCodeableConcept>? ReasonCode);
 public sealed record FhirReference(string Reference);
 public sealed record FhirPeriod(string Start);
 public sealed record FhirEncounterBundle(string ResourceType, string Type, int Total, IReadOnlyList<FhirEncounterSearchEntry> Entry);
@@ -72,3 +86,6 @@ public sealed record FhirQuantity(decimal Value, string? Unit);
 public sealed record FhirObservationReferenceRange(string? Text);
 public sealed record FhirObservationBundle(string ResourceType, string Type, int Total, IReadOnlyList<FhirObservationSearchEntry> Entry);
 public sealed record FhirObservationSearchEntry(string FullUrl, FhirObservationResource Resource);
+
+public sealed record FhirOperationOutcome(string ResourceType, IReadOnlyList<FhirOperationOutcomeIssue> Issue);
+public sealed record FhirOperationOutcomeIssue(string Severity, string Code, string Diagnostics);

@@ -2622,6 +2622,39 @@ catch {
 }
 
 try {
+    $fhirHeaders = Get-AdministrationHeaders
+    $fhirMetadataResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/api/fhir/R4/metadata" -Method Get -Headers $fhirHeaders -UseBasicParsing -TimeoutSec 20
+    $fhirMetadata = $fhirMetadataResponse.Content | ConvertFrom-Json
+    $fhirPatientResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/api/fhir/R4/Patient/MOD-PAT-0001" -Method Get -Headers $fhirHeaders -UseBasicParsing -TimeoutSec 20
+    $fhirPatient = $fhirPatientResponse.Content | ConvertFrom-Json
+    $fhirEncounterResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/api/fhir/R4/Encounter/1000013" -Method Get -Headers $fhirHeaders -UseBasicParsing -TimeoutSec 20
+    $fhirEncounter = $fhirEncounterResponse.Content | ConvertFrom-Json
+    $patientCapability = @($fhirMetadata.rest[0].resource | Where-Object { $_.type -eq "Patient" }) | Select-Object -First 1
+    $fhirContractPassed = ($fhirMetadataResponse.Headers["Content-Type"] -join ",") -like "application/fhir+json*" `
+        -and $fhirMetadata.resourceType -eq "CapabilityStatement" `
+        -and $fhirMetadata.kind -eq "instance" `
+        -and $fhirMetadata.fhirVersion -eq "4.0.1" `
+        -and $fhirMetadata.format -contains "json" `
+        -and -not [string]::IsNullOrWhiteSpace($fhirMetadata.software.name) `
+        -and -not [string]::IsNullOrWhiteSpace($fhirMetadata.implementation.description) `
+        -and -not [string]::IsNullOrWhiteSpace($fhirMetadata.implementation.url) `
+        -and $null -ne $patientCapability `
+        -and (@($patientCapability.searchParam | Where-Object { $_.name -eq "identifier" -and $_.type -eq "token" }).Count -eq 1) `
+        -and ($fhirPatientResponse.Headers["Content-Type"] -join ",") -like "application/fhir+json*" `
+        -and $fhirPatient.resourceType -eq "Patient" `
+        -and $fhirPatient.id -eq "MOD-PAT-0001" `
+        -and ($fhirEncounterResponse.Headers["Content-Type"] -join ",") -like "application/fhir+json*" `
+        -and $fhirEncounter.resourceType -eq "Encounter" `
+        -and $fhirEncounter.class.code -eq "AMB" `
+        -and $fhirEncounter.PSObject.Properties.Name -contains "reasonCode" `
+        -and $fhirEncounter.PSObject.Properties.Name -notcontains "reason"
+    Add-Check -Name "FHIR R4 capability and resource contract" -Result $(if ($fhirContractPassed) { "passed" } else { "failed" }) -Details @{ metadataContentType = ($fhirMetadataResponse.Headers["Content-Type"] -join ","); patientContentType = ($fhirPatientResponse.Headers["Content-Type"] -join ","); encounterContentType = ($fhirEncounterResponse.Headers["Content-Type"] -join ","); patientCapability = $patientCapability }
+}
+catch {
+    Add-Check -Name "FHIR R4 capability and resource contract" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $coverageChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $coverage = @($coverageChart.insurance)
     $primary = $coverage | Where-Object { $_.type -eq "primary" } | Select-Object -First 1

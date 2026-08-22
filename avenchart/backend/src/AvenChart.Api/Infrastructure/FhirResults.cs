@@ -1,0 +1,31 @@
+// SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using AvenChart.Api.Models;
+using Microsoft.AspNetCore.Http;
+
+namespace AvenChart.Api.Infrastructure;
+
+public static class FhirResults
+{
+    public const string ContentType = "application/fhir+json";
+
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    public static IResult Ok<T>(T resource) =>
+        Results.Json(resource, SerializerOptions, contentType: ContentType);
+
+    public static IResult NotFound(string resourceType, string id) =>
+        Results.Json(
+            new FhirOperationOutcome(
+                "OperationOutcome",
+                [new FhirOperationOutcomeIssue("error", "not-found", $"{resourceType}/{id} was not found.")]),
+            SerializerOptions,
+            statusCode: StatusCodes.Status404NotFound,
+            contentType: ContentType);
+}

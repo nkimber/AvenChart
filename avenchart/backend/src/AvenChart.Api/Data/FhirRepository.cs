@@ -59,7 +59,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
     public async Task<FhirEncounterBundle> SearchEncountersAsync(string? subject, int? count, CancellationToken cancellationToken)
     {
         var limit = Math.Clamp(count ?? 20, 1, MaximumSearchLimit);
-        var normalizedSubject = subject?.Trim();
+        var normalizedSubject = NormalizePatientReference(subject);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var countCommand = connection.CreateCommand();
         countCommand.CommandText = "select count(*) from encounters e join patients p on p.legacy_pid = e.pid where (@subject is null or p.canonical_id = @subject or p.pubpid = @subject);";
@@ -216,11 +216,18 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             address);
     }
 
-    private static FhirEncounterResource ReadEncounter(NpgsqlDataReader reader) => new(
-        "Encounter", reader.GetInt32(0).ToString(CultureInfo.InvariantCulture), "finished",
-        new FhirReference($"Patient/{reader.GetString(1)}"),
-        new FhirPeriod(reader.GetFieldValue<DateOnly>(2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
-        ReadNullableString(reader, 3));
+    private static FhirEncounterResource ReadEncounter(NpgsqlDataReader reader)
+    {
+        var reason = ReadNullableString(reader, 3);
+        return new FhirEncounterResource(
+            "Encounter",
+            reader.GetInt32(0).ToString(CultureInfo.InvariantCulture),
+            "finished",
+            new FhirCoding("http://terminology.hl7.org/CodeSystem/v3-ActCode", "AMB", "ambulatory"),
+            new FhirReference($"Patient/{reader.GetString(1)}"),
+            new FhirPeriod(reader.GetFieldValue<DateOnly>(2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+            string.IsNullOrWhiteSpace(reason) ? null : [new FhirCodeableConcept([], reason)]);
+    }
 
     private static FhirObservationResource ReadObservation(NpgsqlDataReader reader)
     {
