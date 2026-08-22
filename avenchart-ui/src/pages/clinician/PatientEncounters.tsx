@@ -49,6 +49,7 @@ import {
   saveEncounterLayoutForm,
   updatePatientDocumentMetadata,
   updateEncounter,
+  ApiRequestError,
   type EncounterDetail,
   type EncounterListItem,
   type EncounterSoapNoteTemplate,
@@ -2800,6 +2801,9 @@ export default function PatientEncounters() {
     string | null
   >(null);
   const [editSummaryOpen, setEditSummaryOpen] = useState(false);
+  const [summaryExpectedVersion, setSummaryExpectedVersion] = useState<
+    number | null
+  >(null);
   const [summaryForm, setSummaryForm] = useState({
     reason: "",
     sensitivity: "",
@@ -2936,6 +2940,7 @@ export default function PatientEncounters() {
   }
 
   function openSummaryEditor(enc: EncounterDetail) {
+    setSummaryExpectedVersion(enc.rowVersion);
     setSummaryForm({
       reason: enc.reason ?? "",
       sensitivity: enc.sensitivity ?? "",
@@ -2949,6 +2954,10 @@ export default function PatientEncounters() {
 
   async function saveSummary(event: React.FormEvent, encounter: number) {
     event.preventDefault();
+    if (summaryExpectedVersion == null) {
+      showToast("Reload the encounter before editing its summary.", "error");
+      return;
+    }
     setSaving(true);
     try {
       const updated = await updateEncounter(session.sessionId, encounter, {
@@ -2958,13 +2967,38 @@ export default function PatientEncounters() {
         externalId: summaryForm.externalId || null,
         posCode: summaryForm.posCode ? Number(summaryForm.posCode) : null,
         billingNote: summaryForm.billingNote || null,
+        expectedVersion: summaryExpectedVersion,
       });
       setDetailState({ status: "ready", data: updated });
       setDetailCache((current) => new Map(current).set(updated.id, updated));
       setEditSummaryOpen(false);
+      setSummaryExpectedVersion(null);
       showToast("Encounter summary updated.", "success");
-    } catch {
-      showToast("Could not update encounter summary.", "error");
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 409) {
+        setEditSummaryOpen(false);
+        setSummaryExpectedVersion(null);
+        try {
+          const refreshed = await getEncounterDetail(
+            session.sessionId,
+            encounter,
+            undefined,
+            true,
+          );
+          setDetailState({ status: "ready", data: refreshed });
+          setDetailCache((current) =>
+            new Map(current).set(refreshed.id, refreshed),
+          );
+        } catch {
+          // The saved record could not be refreshed; retain the conflict warning.
+        }
+        showToast(
+          "This encounter changed after you opened it. Your summary was not saved; review the refreshed record.",
+          "error",
+        );
+      } else {
+        showToast("Could not update encounter summary.", "error");
+      }
     } finally {
       setSaving(false);
     }
@@ -2991,6 +3025,7 @@ export default function PatientEncounters() {
     setAddVitalsOpen(false);
     setAddSoapOpen(false);
     setEditSummaryOpen(false);
+    setSummaryExpectedVersion(null);
     setEncounterArchiveAction(null);
     setEncounterArchiveError(null);
     setVitalsForm(BLANK_VITALS);
@@ -3542,7 +3577,10 @@ export default function PatientEncounters() {
                           <button
                             className="cl-btn-secondary"
                             type="button"
-                            onClick={() => setEditSummaryOpen(false)}
+                            onClick={() => {
+                              setEditSummaryOpen(false);
+                              setSummaryExpectedVersion(null);
+                            }}
                             disabled={saving}
                           >
                             Cancel

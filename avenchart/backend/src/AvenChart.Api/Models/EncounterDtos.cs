@@ -61,6 +61,7 @@ public sealed record EncounterDetail(
     string? SourceAppointmentId,
     string? ArchivedAt,
     int ArchiveVersion,
+    long RowVersion,
     EncounterVitals? Vitals,
     EncounterSoapNote? SoapNote,
     int BillingLineCount,
@@ -236,11 +237,20 @@ public sealed record EncounterUpdateRequest(
     string? ReferralSource,
     string? ExternalId,
     int? PosCode,
-    string? BillingNote);
+    string? BillingNote,
+    long ExpectedVersion);
 
 public sealed record EncounterArchiveRequest(string Reason, int ExpectedArchiveVersion);
 
-public sealed class EncounterStateConflictException(string message) : Exception(message);
+public sealed class EncounterStateConflictException(
+    string message,
+    long expectedVersion,
+    long? currentVersion = null) : Exception(message)
+{
+    public long ExpectedVersion { get; } = expectedVersion;
+
+    public long? CurrentVersion { get; } = currentVersion;
+}
 
 public sealed record EncounterVitalsCreateRequest(
     string DateTime,

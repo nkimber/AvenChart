@@ -3947,6 +3947,7 @@ export type EncounterDetail = {
   externalId?: string | null
   posCode?: number | null
   billingNote?: string | null
+  rowVersion: number
   vitals?: EncounterVitals | null
   soapNote?: EncounterSoapNote | null
   billingLineCount: number
@@ -3999,6 +4000,7 @@ export type EncounterUpdateInput = {
   externalId?: string | null
   posCode?: number | null
   billingNote?: string | null
+  expectedVersion: number
 }
 export async function updateEncounter(
   sessionId: string,

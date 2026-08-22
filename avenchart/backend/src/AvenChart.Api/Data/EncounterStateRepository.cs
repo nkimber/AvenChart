@@ -27,6 +27,12 @@ public sealed class EncounterStateRepository(
         {
             return null;
         }
+        if (request.ExpectedVersion < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(request.ExpectedVersion),
+                "An encounter version is required to update the summary.");
+        }
 
         await EnsureEncounterIsUnlockedAsync(encounter, cancellationToken);
         var entity = await dbContext.Encounters.SingleOrDefaultAsync(
@@ -35,6 +41,13 @@ public sealed class EncounterStateRepository(
         if (entity is null)
         {
             return null;
+        }
+        if (entity.RowVersion != request.ExpectedVersion)
+        {
+            throw new EncounterStateConflictException(
+                "The encounter changed after this summary was opened. Refresh it before saving.",
+                request.ExpectedVersion,
+                entity.RowVersion);
         }
 
         var sensitivity = NormalizeText(request.Sensitivity);
@@ -69,7 +82,8 @@ public sealed class EncounterStateRepository(
             catch (DbUpdateConcurrencyException)
             {
                 throw new EncounterStateConflictException(
-                    "The encounter changed before the summary update could be saved.");
+                    "The encounter changed before the summary update could be saved.",
+                    request.ExpectedVersion);
             }
         }
 

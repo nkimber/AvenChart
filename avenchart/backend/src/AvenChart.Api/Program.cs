@@ -2452,7 +2452,17 @@ encounters.MapPut("/{encounter:int}", async (
         }
         catch (EncounterStateConflictException exception)
         {
-            return Results.Conflict(new { error = exception.Message, code = "encounter_changed" });
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                code = "encounter_changed",
+                exception.ExpectedVersion,
+                exception.CurrentVersion
+            });
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message, code = "invalid_encounter_version" });
         }
     })
     .WithName("UpdateEncounter")

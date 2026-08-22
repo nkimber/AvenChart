@@ -6860,13 +6860,23 @@ try {
     $updateBody = @{
         reason = "Smoke Encounter Mutation Updated"
         billingNote = "Updated by the smoke encounter mutation check."
+        expectedVersion = $createdEncounter.rowVersion
     } | ConvertTo-Json
     $updatedEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Put -ContentType "application/json" -Body $updateBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $staleEncounterUpdateStatus = 0
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Put -ContentType "application/json" -Body $updateBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $staleEncounterUpdateStatus = [int]$_.Exception.Response.StatusCode } else { throw }
+    }
     $encounterMutationPassed = $createdEncounter.reason -eq "Smoke Encounter Mutation" `
         -and $createdVitals.id -gt 0 `
         -and $createdSoap.id -gt 0 `
         -and $updatedEncounter.reason -eq "Smoke Encounter Mutation Updated" `
         -and $updatedEncounter.billingNote -eq "Updated by the smoke encounter mutation check." `
+        -and $updatedEncounter.rowVersion -gt $createdEncounter.rowVersion `
+        -and $staleEncounterUpdateStatus -eq 409 `
         -and $updatedEncounter.vitals.bloodPressure -eq "128/76" `
         -and $updatedEncounter.soapNote.assessment -eq "Stable smoke workflow condition."
 
@@ -6878,6 +6888,8 @@ try {
         vitalsId = $createdVitals.id
         soapId = $createdSoap.id
         updatedReason = $updatedEncounter.reason
+        updatedRowVersion = $updatedEncounter.rowVersion
+        staleUpdateStatus = $staleEncounterUpdateStatus
         bloodPressure = $updatedEncounter.vitals.bloodPressure
         assessment = $updatedEncounter.soapNote.assessment
     }
@@ -6921,6 +6933,7 @@ try {
         externalId = "UPD-$metadataSuffix"
         posCode = 22
         billingNote = "Updated by the smoke encounter metadata check."
+        expectedVersion = $createdMetadataEncounter.rowVersion
     } | ConvertTo-Json
     $updatedMetadataEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Put -ContentType "application/json" -Body $updateMetadataBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $encounterMetadataPassed = $createdMetadataEncounter.sensitivity -eq "normal" `

@@ -155,6 +155,7 @@ import {
   updatePatientMessageStatus,
   updatePatientDocumentMetadata,
   updatePatientProviderAssignment,
+  updateEncounter,
   updateProcedureOrderCatalogItem,
   updateProcedureResult,
   updatePrescription,
@@ -1506,6 +1507,34 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/encounters/?patientId=MOD-PAT-0901&from=1900-01-01&limit=50',
       expect.objectContaining({
         headers: { 'X-AvenChart-Session': 'staff-session' },
+      }),
+    )
+  })
+
+  it('sends the opened encounter version with a summary update', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ encounter: 1000123, rowVersion: 8 }),
+    )
+
+    await updateEncounter('staff-session', 1000123, {
+      reason: 'Follow-up review',
+      billingNote: 'Reviewed today.',
+      expectedVersion: 7,
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/encounters/1000123',
+      expect.objectContaining({
+        method: 'PUT',
+        headers: {
+          'X-AvenChart-Session': 'staff-session',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          reason: 'Follow-up review',
+          billingNote: 'Reviewed today.',
+          expectedVersion: 7,
+        }),
       }),
     )
   })
