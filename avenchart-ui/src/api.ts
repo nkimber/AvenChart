@@ -9860,18 +9860,6 @@ export async function deactivateProblem(
   )
 }
 
-export async function deleteProblem(
-  sessionId: string,
-  problemId: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  return clinicianDelete(
-    sessionId,
-    `/api/clinical-lists/problems/${problemId}`,
-    signal,
-  )
-}
-
 export type CreateAllergyInput = {
   patientId: string
   title: string
@@ -9900,18 +9888,6 @@ export async function deactivateAllergy(
     sessionId,
     `/api/clinical-lists/allergies/${allergyId}/deactivate`,
     { comments },
-    signal,
-  )
-}
-
-export async function deleteAllergy(
-  sessionId: string,
-  allergyId: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  return clinicianDelete(
-    sessionId,
-    `/api/clinical-lists/allergies/${allergyId}`,
     signal,
   )
 }
@@ -10631,18 +10607,6 @@ export async function markImmunizationEnteredInError(
     sessionId,
     `/api/clinical-lists/immunizations/${immunizationId}/entered-in-error`,
     { note },
-    signal,
-  )
-}
-
-export async function deleteImmunization(
-  sessionId: string,
-  immunizationId: number,
-  signal?: AbortSignal,
-): Promise<void> {
-  return clinicianDelete(
-    sessionId,
-    `/api/clinical-lists/immunizations/${immunizationId}`,
     signal,
   )
 }

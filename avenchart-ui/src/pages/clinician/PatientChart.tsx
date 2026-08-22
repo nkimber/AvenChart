@@ -8,17 +8,14 @@ import {
   getClinicalLists,
   createProblem,
   deactivateProblem,
-  deleteProblem,
   createAllergy,
   deactivateAllergy,
-  deleteAllergy,
   createMedication,
   deactivateMedication,
   restoreMedication,
   updateMedication,
   createImmunization,
   createPrescription,
-  deleteImmunization,
   markImmunizationEnteredInError,
   searchClinicalMedicationVocabulary,
   type ClinicalListsResponse,
@@ -62,7 +59,7 @@ type VocabularyState =
 
 type LifecycleTarget = {
   type: "problem" | "allergy" | "medication" | "immunization";
-  action: "deactivate" | "delete" | "entered-in-error" | "restore";
+  action: "deactivate" | "entered-in-error" | "restore";
   id: string;
   title: string;
   expectedVersion?: number;
@@ -454,29 +451,11 @@ export default function PatientChart() {
           )
         ).detail;
       } else {
-        if (lifecycleTarget.type === "problem") {
-          await deleteProblem(
-            session.sessionId,
-            lifecycleTarget.id,
-          );
-        } else if (lifecycleTarget.type === "allergy") {
-          await deleteAllergy(
-            session.sessionId,
-            lifecycleTarget.id,
-          );
-        } else {
-          await deleteImmunization(
-            session.sessionId,
-            Number(lifecycleTarget.id),
-          );
-        }
-        detail = await getClinicalLists(session.sessionId, patientId);
+        throw new Error("Unsupported clinical-list lifecycle action.");
       }
       setState({ status: "ready", data: detail });
       showToast(
-        lifecycleTarget.action === "delete"
-          ? `${lifecycleTarget.title} permanently deleted.`
-          : lifecycleTarget.action === "restore"
+        lifecycleTarget.action === "restore"
             ? `${lifecycleTarget.title} restored to the active medication list.`
             : `${lifecycleTarget.title} moved to history.`,
         "success",
@@ -497,18 +476,15 @@ export default function PatientChart() {
     )
       return null;
 
-    const destructive = lifecycleTarget.action === "delete";
     return (
       <div className="cl-lifecycle-confirmation">
         <p>
-          {destructive
-            ? `Permanently delete ${lifecycleTarget.title}? This removes the local record and its visible history.`
-            : lifecycleTarget.action === "entered-in-error"
+          {lifecycleTarget.action === "entered-in-error"
               ? `Why was ${lifecycleTarget.title} entered in error?`
               : `Why is ${lifecycleTarget.title} being deactivated?`}
         </p>
         <label>
-          {destructive ? "Type DELETE to confirm" : "Clinical reason"}
+          Clinical reason
           <input
             className="ne-input"
             value={lifecycleReason}
@@ -520,17 +496,12 @@ export default function PatientChart() {
         </label>
         <div className="cl-inline-form-actions">
           <button
-            className={destructive ? "cl-btn-danger" : "cl-btn-primary"}
+            className="cl-btn-primary"
             type="button"
-            disabled={
-              working ||
-              (destructive
-                ? lifecycleReason.trim() !== "DELETE"
-                : !lifecycleReason.trim())
-            }
+            disabled={working || !lifecycleReason.trim()}
             onClick={confirmLifecycleAction}
           >
-            {destructive ? "Delete permanently" : "Confirm"}
+            Confirm
           </button>
           <button
             className="cl-btn-secondary"
@@ -697,29 +668,27 @@ export default function PatientChart() {
                       <p className="cl-clinical-meta">{p.comments}</p>
                     )}
                   </div>
-                  <div className="cl-lifecycle-actions">
-                    <button
+                  {p.activity === 1 && (
+                    <div className="cl-lifecycle-actions">
+                      <button
                       className="cl-clinical-action"
                       type="button"
-                      aria-label={
-                        p.activity === 1
-                          ? `Deactivate ${p.title}`
-                          : `Delete ${p.title}`
-                      }
+                      aria-label={`Deactivate ${p.title}`}
                       disabled={working}
                       onClick={() =>
                         beginLifecycleAction({
                           type: "problem",
-                          action: p.activity === 1 ? "deactivate" : "delete",
+                          action: "deactivate",
                           id: p.id,
                           title: p.title,
                         })
                       }
                     >
                       <X size={12} />
-                      {p.activity === 1 ? "Deactivate" : "Delete record"}
+                      Deactivate
                     </button>
-                  </div>
+                    </div>
+                  )}
                   {renderLifecycleConfirmation("problem", p.id)}
                 </li>
               ))}
@@ -855,29 +824,27 @@ export default function PatientChart() {
                       <p className="cl-clinical-meta">{a.comments}</p>
                     )}
                   </div>
-                  <div className="cl-lifecycle-actions">
-                    <button
+                  {a.activity === 1 && (
+                    <div className="cl-lifecycle-actions">
+                      <button
                       className="cl-clinical-action"
                       type="button"
-                      aria-label={
-                        a.activity === 1
-                          ? `Deactivate ${a.title}`
-                          : `Delete ${a.title}`
-                      }
+                      aria-label={`Deactivate ${a.title}`}
                       disabled={working}
                       onClick={() =>
                         beginLifecycleAction({
                           type: "allergy",
-                          action: a.activity === 1 ? "deactivate" : "delete",
+                          action: "deactivate",
                           id: a.id,
                           title: a.title,
                         })
                       }
                     >
                       <X size={12} />
-                      {a.activity === 1 ? "Deactivate" : "Delete record"}
+                      Deactivate
                     </button>
-                  </div>
+                    </div>
+                  )}
                   {renderLifecycleConfirmation("allergy", a.id)}
                 </li>
               ))}
@@ -1511,33 +1478,27 @@ export default function PatientChart() {
                       <p className="cl-clinical-meta">{imm.note}</p>
                     )}
                   </div>
-                  <div className="cl-lifecycle-actions">
-                    <button
+                  {!imm.enteredInError && (
+                    <div className="cl-lifecycle-actions">
+                      <button
                       className="cl-clinical-action"
                       type="button"
-                      aria-label={
-                        imm.enteredInError
-                          ? `Delete ${imm.vaccine}`
-                          : `Mark ${imm.vaccine} entered in error`
-                      }
+                      aria-label={`Mark ${imm.vaccine} entered in error`}
                       disabled={working}
                       onClick={() =>
                         beginLifecycleAction({
                           type: "immunization",
-                          action: imm.enteredInError
-                            ? "delete"
-                            : "entered-in-error",
+                          action: "entered-in-error",
                           id: String(imm.id),
                           title: imm.vaccine,
                         })
                       }
                     >
                       <X size={12} />
-                      {imm.enteredInError
-                        ? "Delete record"
-                        : "Entered in error"}
+                      Entered in error
                     </button>
-                  </div>
+                    </div>
+                  )}
                   {renderLifecycleConfirmation(
                     "immunization",
                     String(imm.id),

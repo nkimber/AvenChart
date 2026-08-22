@@ -47,15 +47,12 @@ import {
   createProcedureSpecimen,
   transitionProcedureSpecimenLifecycle,
   createPrescription,
-  deleteAllergy,
   deactivateMedication,
-  deleteImmunization,
   deletePatientDocument,
   deletePatientAuthorizationTestFixture,
   deleteProcedureLabProviderOrganization,
   deleteProcedureOrderCatalogItem,
   denyLabReportReview,
-  deleteProblem,
   decidePrescriptionRefillRequest,
   decideInventoryPurchaseRequisition,
   dispenseInventoryPrescription,
@@ -1539,37 +1536,23 @@ describe('authenticated API transport', () => {
     )
   })
 
-  it('adopts non-medication clinical-list delete and entered-in-error contracts', async () => {
+  it('uses the non-destructive entered-in-error immunization contract', async () => {
     fetchMock
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
-      .mockResolvedValueOnce(
-        jsonResponse({ id: '41', detail: { immunizations: [] } }),
-      )
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse({ id: '41', detail: { immunizations: [] } }))
 
-    await deleteProblem('staff-session', 'PROB-41')
-    await deleteAllergy('staff-session', 'ALG-41')
     await markImmunizationEnteredInError(
       'staff-session',
       41,
       'Duplicate administration record',
     )
-    await deleteImmunization('staff-session', 41)
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      'http://localhost:5001/api/clinical-lists/problems/PROB-41',
-      'http://localhost:5001/api/clinical-lists/allergies/ALG-41',
       'http://localhost:5001/api/clinical-lists/immunizations/41/entered-in-error',
-      'http://localhost:5001/api/clinical-lists/immunizations/41',
     ])
     expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([
-      'DELETE',
-      'DELETE',
       'PUT',
-      'DELETE',
     ])
-    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       headers: { 'X-AvenChart-Session': 'staff-session' },
       body: JSON.stringify({ note: 'Duplicate administration record' }),
     })
