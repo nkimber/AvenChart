@@ -2963,11 +2963,17 @@ appointments.MapPost("/{appointmentId}/occurrences/{occurrenceDate}/reschedule",
         string appointmentId,
         string occurrenceDate,
         AppointmentOccurrenceRescheduleRequest request,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         try
         {
-            var appointment = await repository.RescheduleOccurrenceAsync(appointmentId, occurrenceDate, request, cancellationToken);
+            var appointment = await repository.RescheduleOccurrenceAsync(
+                appointmentId,
+                occurrenceDate,
+                request,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return appointment is null
                 ? Results.BadRequest("Appointment occurrence could not be rescheduled from the supplied date, time, and duration.")
                 : Results.Created($"/api/appointments/{appointment.Id}", appointment);
@@ -2975,6 +2981,14 @@ appointments.MapPost("/{appointmentId}/occurrences/{occurrenceDate}/reschedule",
         catch (AppointmentConcurrencyException)
         {
             return Results.Conflict(new { error = "This appointment series changed since it was loaded. Refresh it before rescheduling an occurrence." });
+        }
+        catch (AppointmentAvailabilityConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                validation = exception.Validation
+            });
         }
         catch (ArgumentException exception)
         {

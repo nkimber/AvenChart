@@ -1438,8 +1438,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         string appointmentId,
         string occurrenceDateText,
         AppointmentOccurrenceRescheduleRequest request,
+        int accessFacilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(accessFacilityId);
+        EnsureRequestedFacilityMatchesAccessContext(request.FacilityId, accessFacilityId);
         if (!DateOnly.TryParse(occurrenceDateText, out var occurrenceDate)
             || !DateOnly.TryParse(request.Date, out var rescheduledDate)
             || !TimeOnly.TryParse(request.StartTime, out var rescheduledStartTime)
@@ -1540,7 +1543,58 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 RecurrenceExdates: recurrenceExdates);
         }
 
-        await EnsurePatientActiveForSchedulingAsync(connection, transaction, source.PatientId, cancellationToken);
+        var rescheduledTitle = NormalizeText(request.Title) ?? source.Title ?? "Appointment";
+        var rescheduledStatus = request.Status is null
+            ? NormalizeText(source.Status) ?? "-"
+            : NormalizeAppointmentStatus(request.Status);
+        if (request.Status is not null)
+        {
+            EnsureValidAppointmentStatusTransition(source.Status, rescheduledStatus);
+        }
+        var rescheduledRoom = request.Room is null ? source.Room : NormalizeText(request.Room);
+        var rescheduledComments = request.Comments is null ? source.Comments : NormalizeText(request.Comments);
+        var effectiveProviderId = request.ProviderId ?? source.ProviderId;
+
+        await EnsurePatientActiveForSchedulingAsync(connection, transaction, source.PatientId, cancellationToken, accessFacilityId);
+        await ValidateActiveSchedulingReferencesAsync(
+            connection,
+            effectiveProviderId,
+            accessFacilityId,
+            request.BillingLocationId,
+            cancellationToken);
+        await EnsureProviderBelongsToFacilityAsync(
+            connection,
+            effectiveProviderId,
+            accessFacilityId,
+            cancellationToken);
+        await AcquireSchedulingConflictLocksAsync(
+            connection,
+            transaction,
+            rescheduledDate,
+            source.Pid,
+            effectiveProviderId,
+            rescheduledRoom,
+            cancellationToken);
+        var availability = await ValidateAvailabilityAsync(
+            new AppointmentAvailabilityValidationRequest(
+                source.PatientId,
+                effectiveProviderId,
+                request.Date,
+                request.StartTime,
+                request.DurationMinutes,
+                accessFacilityId,
+                rescheduledRoom,
+                rootAppointmentId),
+            accessFacilityId,
+            cancellationToken);
+        if (availability is null)
+        {
+            return null;
+        }
+        if (!availability.Available)
+        {
+            throw new AppointmentAvailabilityConflictException(availability);
+        }
 
         var updatedExdates = source.RecurrenceExdates
             .Concat(new[] { occurrenceDate.ToString("yyyy-MM-dd") })
@@ -1566,17 +1620,6 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         }
 
         var rescheduledAppointmentId = $"APPT-MODERN-OCCURRENCE-{Guid.NewGuid():N}";
-        var rescheduledTitle = NormalizeText(request.Title) ?? source.Title ?? "Appointment";
-        var rescheduledStatus = request.Status is null
-            ? NormalizeText(source.Status) ?? "-"
-            : NormalizeAppointmentStatus(request.Status);
-        if (request.Status is not null)
-        {
-            EnsureValidAppointmentStatusTransition(source.Status, rescheduledStatus);
-        }
-        var rescheduledRoom = request.Room is null ? source.Room : NormalizeText(request.Room);
-        var rescheduledComments = request.Comments is null ? source.Comments : NormalizeText(request.Comments);
-
         await using var insertCommand = connection.CreateCommand();
         insertCommand.Transaction = transaction;
         insertCommand.CommandText = """
@@ -1635,9 +1678,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         insertCommand.Parameters.AddWithValue("id", rescheduledAppointmentId);
         insertCommand.Parameters.AddWithValue("patientId", source.PatientId);
         insertCommand.Parameters.AddWithValue("pid", source.Pid);
-        insertCommand.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null ? DBNull.Value : request.ProviderId.Value;
+        insertCommand.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = effectiveProviderId is null ? DBNull.Value : effectiveProviderId.Value;
         insertCommand.Parameters.Add("sourceProviderId", NpgsqlDbType.Integer).Value = source.ProviderId is null ? DBNull.Value : source.ProviderId.Value;
-        insertCommand.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = request.FacilityId is null ? DBNull.Value : request.FacilityId.Value;
+        insertCommand.Parameters.AddWithValue("facilityId", accessFacilityId);
         insertCommand.Parameters.Add("sourceFacilityId", NpgsqlDbType.Integer).Value = source.FacilityId is null ? DBNull.Value : source.FacilityId.Value;
         insertCommand.Parameters.Add("billingLocationId", NpgsqlDbType.Integer).Value = request.BillingLocationId is null ? DBNull.Value : request.BillingLocationId.Value;
         insertCommand.Parameters.Add("sourceBillingLocationId", NpgsqlDbType.Integer).Value = source.BillingLocationId is null ? DBNull.Value : source.BillingLocationId.Value;
