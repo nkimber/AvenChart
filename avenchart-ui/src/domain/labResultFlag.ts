@@ -37,6 +37,7 @@ export function normalizeLabResultFlag(
   }
 
   if (
+    normalized === "c" ||
     normalized === "critical" ||
     normalized === "panic" ||
     normalized === "hh" ||

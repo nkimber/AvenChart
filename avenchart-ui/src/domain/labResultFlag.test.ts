@@ -20,6 +20,7 @@ describe("normalizeLabResultFlag", () => {
     ["H", "high", "High"],
     ["low", "low", "Low"],
     ["A", "abnormal", "Abnormal"],
+    ["C", "critical", "Critical"],
     ["panic", "critical", "Critical"],
     ["HH", "critical", "Critical"],
   ])("maps %s to an accessible %s label", (value, state, label) => {

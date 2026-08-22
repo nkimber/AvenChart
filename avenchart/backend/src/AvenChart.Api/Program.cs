@@ -6291,11 +6291,21 @@ procedures.MapPost("/results", async (
 
 procedures.MapPut("/results/{resultId:int}", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int resultId,
         ProcedureResultUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.UpdateResultAsync(resultId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        var mutation = await repository.UpdateResultAsync(
+            resultId,
+            request,
+            session.Username,
+            cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
     .WithName("UpdateProcedureResult")

@@ -231,7 +231,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             inner join lab_orders lo on lo.id = lr.order_id
             inner join patients p on p.legacy_pid = lo.pid
             left join critical_lab_result_acknowledgements ack on ack.result_id = lres.id
-            where lower(coalesce(lres.abnormal, '')) in ('critical', 'panic', 'hh', 'll')
+            where lower(coalesce(lres.abnormal, '')) in ('c', 'critical', 'panic', 'hh', 'll')
               and coalesce(ack.status, 'open') = 'open'
             order by lres.result_date desc, lres.id desc;
             """;
@@ -260,20 +260,46 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            insert into critical_lab_result_acknowledgements (result_id, status, version, acknowledged_by, acknowledged_at, acknowledgement_reason)
-            select @resultId, 'acknowledged', 2, @actor, @occurredAt, @reason
-            where exists (select 1 from lab_results where id = @resultId and lower(coalesce(abnormal, '')) in ('critical', 'panic', 'hh', 'll'))
-            on conflict (result_id) do update set status = 'acknowledged', version = critical_lab_result_acknowledgements.version + 1, acknowledged_by = excluded.acknowledged_by, acknowledged_at = excluded.acknowledged_at, acknowledgement_reason = excluded.acknowledgement_reason
+            insert into critical_lab_result_acknowledgements (
+              result_id, status, version, result_content_version,
+              acknowledged_by, acknowledged_at, acknowledgement_reason)
+            select
+              result.id,
+              'acknowledged',
+              2,
+              coalesce((
+                select max(version.version_no)
+                from procedure_result_versions version
+                where version.result_id=result.id), 0)+1,
+              @actor,
+              @occurredAt,
+              @reason
+            from lab_results result
+            where result.id=@resultId
+              and lower(coalesce(result.abnormal, '')) in ('c', 'critical', 'panic', 'hh', 'll')
+            on conflict (result_id) do update set
+              status = 'acknowledged',
+              version = critical_lab_result_acknowledgements.version + 1,
+              result_content_version = excluded.result_content_version,
+              acknowledged_by = excluded.acknowledged_by,
+              acknowledged_at = excluded.acknowledged_at,
+              acknowledgement_reason = excluded.acknowledgement_reason
             where critical_lab_result_acknowledgements.status = 'open' and critical_lab_result_acknowledgements.version = @expectedVersion
-            returning version;
+            returning version, result_content_version;
             """;
         var occurredAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
         command.Parameters.AddWithValue("resultId", resultId); command.Parameters.AddWithValue("actor", actor.Trim()); command.Parameters.AddWithValue("reason", request.Reason.Trim()); command.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion); command.Parameters.AddWithValue("occurredAt", occurredAt);
-        var version = await command.ExecuteScalarAsync(cancellationToken);
-        if (version is null) return false;
+        int acknowledgementVersion;
+        int resultContentVersion;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken)) return false;
+            acknowledgementVersion = reader.GetInt32(0);
+            resultContentVersion = reader.GetInt32(1);
+        }
         await using var history = connection.CreateCommand(); history.Transaction = transaction;
-        history.CommandText = "insert into critical_lab_result_acknowledgement_events (result_id, action, previous_status, current_status, actor, reason, expected_version, resulting_version, occurred_at) values (@resultId, 'acknowledged', 'open', 'acknowledged', @actor, @reason, @expectedVersion, @resultingVersion, @occurredAt);";
-        history.Parameters.AddWithValue("resultId", resultId); history.Parameters.AddWithValue("actor", actor.Trim()); history.Parameters.AddWithValue("reason", request.Reason.Trim()); history.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion); history.Parameters.AddWithValue("resultingVersion", Convert.ToInt32(version)); history.Parameters.AddWithValue("occurredAt", occurredAt); await history.ExecuteNonQueryAsync(cancellationToken);
+        history.CommandText = "insert into critical_lab_result_acknowledgement_events (result_id, action, previous_status, current_status, actor, reason, expected_version, resulting_version, result_content_version, occurred_at) values (@resultId, 'acknowledged', 'open', 'acknowledged', @actor, @reason, @expectedVersion, @resultingVersion, @resultContentVersion, @occurredAt);";
+        history.Parameters.AddWithValue("resultId", resultId); history.Parameters.AddWithValue("actor", actor.Trim()); history.Parameters.AddWithValue("reason", request.Reason.Trim()); history.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion); history.Parameters.AddWithValue("resultingVersion", acknowledgementVersion); history.Parameters.AddWithValue("resultContentVersion", resultContentVersion); history.Parameters.AddWithValue("occurredAt", occurredAt); await history.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken); return true;
     }
 
@@ -1656,6 +1682,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     public async Task<ProcedureMutationResponse?> UpdateResultAsync(
         int resultId,
         ProcedureResultUpdateRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         if (resultId <= 0
@@ -1702,6 +1729,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("resultDate", NpgsqlDbType.Timestamp).Value = resultDate;
         command.Parameters.AddWithValue("status", request.Status.Trim());
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await ReopenAcknowledgementAfterResultCorrectionAsync(
+            connection,
+            transaction,
+            result.Id,
+            actor,
+            cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(result.PatientId, cancellationToken);
@@ -2092,6 +2125,56 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             where lr.id = @resultId;
             """;
         command.Parameters.AddWithValue("resultId", resultId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ReopenAcknowledgementAfterResultCorrectionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int resultId,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        const string reason =
+            "The local result content was corrected; the prior acknowledgement requires a new review.";
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            with reopened as (
+              update critical_lab_result_acknowledgements acknowledgement
+              set status='open',
+                  version=acknowledgement.version+1,
+                  result_content_version=coalesce((
+                    select max(version.version_no)
+                    from procedure_result_versions version
+                    where version.result_id=acknowledgement.result_id), 0)+1,
+                  acknowledged_by=null,
+                  acknowledged_at=null,
+                  acknowledgement_reason=null
+              where acknowledgement.result_id=@resultId
+                and acknowledgement.status='acknowledged'
+              returning acknowledgement.version-1 as expected_version,
+                        acknowledgement.version as resulting_version,
+                        acknowledgement.result_content_version
+            )
+            insert into critical_lab_result_acknowledgement_events (
+              result_id, action, previous_status, current_status, actor, reason,
+              expected_version, resulting_version, result_content_version, occurred_at)
+            select @resultId,
+                   'reopened-after-result-correction',
+                   'acknowledged',
+                   'open',
+                   @actor,
+                   @reason,
+                   expected_version,
+                   resulting_version,
+                   result_content_version,
+                   current_timestamp
+            from reopened;
+            """;
+        command.Parameters.AddWithValue("resultId", resultId);
+        command.Parameters.AddWithValue("actor", actor.Trim());
+        command.Parameters.AddWithValue("reason", reason);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
