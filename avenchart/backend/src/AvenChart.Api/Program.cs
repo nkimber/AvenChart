@@ -79,6 +79,22 @@ builder.Services.AddOptions<RuntimeSafetyOptions>()
         "RuntimeSafety:RateLimitQueueLimit must not be negative.")
     .ValidateOnStart();
 
+builder.Services.AddOptions<IdentityProviderOptions>()
+    .BindConfiguration(IdentityProviderOptions.SectionName)
+    .Validate(options => options.IsLocal || options.IsOidc || options.IsTestOidc,
+        "IdentityProvider:Mode must be local, oidc, or test-oidc.")
+    .Validate(options => options.ClockSkewSeconds is >= 0 and <= 300,
+        "IdentityProvider:ClockSkewSeconds must be between 0 and 300.")
+    .Validate(options => options.TestTokenLifetimeMinutes is >= 1 and <= 60,
+        "IdentityProvider:TestTokenLifetimeMinutes must be between 1 and 60.")
+    .Validate(options => !options.IsOidc || (!string.IsNullOrWhiteSpace(options.Authority) && !string.IsNullOrWhiteSpace(options.Audience) && !string.IsNullOrWhiteSpace(options.ProviderId)),
+        "IdentityProvider:Authority, Audience, and ProviderId are required when IdentityProvider:Mode is oidc.")
+    .Validate(options => !options.IsTestOidc || (!string.IsNullOrWhiteSpace(options.TestIssuer) && !string.IsNullOrWhiteSpace(options.TestAudience)),
+        "IdentityProvider:TestIssuer and TestAudience are required when IdentityProvider:Mode is test-oidc.")
+    .Validate(options => !builder.Environment.IsProduction() || !options.IsTestOidc,
+        "IdentityProvider:Mode test-oidc is development-only and cannot run in Production.")
+    .ValidateOnStart();
+
 builder.Services.AddOptions<ReportExecutionOptions>()
     .BindConfiguration(ReportExecutionOptions.SectionName)
     .Validate(
@@ -155,7 +171,19 @@ builder.Services.AddScoped<TherapyGroupRepository>();
 builder.Services.AddScoped<ReferralRepository>();
 builder.Services.AddScoped<AuthorizationRepository>();
 builder.Services.AddScoped<AuthRepository>();
-builder.Services.AddScoped<IStaffIdentityAdapter, LocalDevelopmentStaffIdentityAdapter>();
+builder.Services.AddScoped<LocalDevelopmentStaffIdentityAdapter>();
+builder.Services.AddScoped<OidcStaffIdentityAdapter>();
+builder.Services.AddScoped<TestOidcStaffIdentityAdapter>();
+builder.Services.AddSingleton<TestIdentityProviderService>();
+builder.Services.AddScoped<IStaffIdentityAdapter>(services =>
+{
+    var identityProvider = services.GetRequiredService<IOptions<IdentityProviderOptions>>().Value;
+    return identityProvider.IsOidc
+        ? services.GetRequiredService<OidcStaffIdentityAdapter>()
+        : identityProvider.IsTestOidc
+            ? services.GetRequiredService<TestOidcStaffIdentityAdapter>()
+            : services.GetRequiredService<LocalDevelopmentStaffIdentityAdapter>();
+});
 builder.Services.AddScoped<StaffAccessContextService>();
 builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
@@ -392,10 +420,15 @@ var auth = app.MapGroup("/api/auth").WithTags("Authentication");
 auth.MapPost("/login", async (
         AuthRepository repository,
         StaffAccessContextService accessContextService,
+        IOptions<IdentityProviderOptions> identityProviderOptions,
         AuthLoginRequest request,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
+        if (!identityProviderOptions.Value.IsLocal)
+        {
+            return Results.NotFound();
+        }
         var sourceIp = httpContext.Connection.RemoteIpAddress?.ToString();
         var userAgent = httpContext.Request.Headers.UserAgent.ToString();
         var response = await repository.LoginAsync(request, sourceIp, userAgent, cancellationToken);
@@ -411,6 +444,47 @@ auth.MapPost("/login", async (
         return Results.Ok(response);
     })
     .WithName("Login");
+
+if (app.Environment.IsDevelopment())
+{
+    var testIdentityProvider = app.MapGroup("/api/test-idp").WithTags("Development Test Identity Provider");
+    testIdentityProvider.MapGet("/.well-known/openid-configuration", (
+            IOptions<IdentityProviderOptions> options,
+            HttpContext httpContext) =>
+        {
+            var baseUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}/api/test-idp";
+            return Results.Ok(new
+            {
+                issuer = options.Value.TestIssuer,
+                token_endpoint = $"{baseUrl}/token",
+                jwks_uri = $"{baseUrl}/jwks",
+                response_types_supported = new[] { "token" },
+                grant_types_supported = new[] { "password" },
+                subject_types_supported = new[] { "public" },
+                id_token_signing_alg_values_supported = new[] { "RS256" },
+            });
+        })
+        .WithName("GetDevelopmentTestIdentityProviderConfiguration");
+    testIdentityProvider.MapGet("/jwks", (TestIdentityProviderService provider) => Results.Ok(provider.GetJwks()))
+        .WithName("GetDevelopmentTestIdentityProviderJwks");
+    testIdentityProvider.MapPost("/token", async (
+            TestIdentityProviderTokenRequest request,
+            AuthRepository repository,
+            TestIdentityProviderService provider,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            var login = await repository.LoginAsync(
+                new AuthLoginRequest(request.Username, request.Password),
+                httpContext.Connection.RemoteIpAddress?.ToString(),
+                httpContext.Request.Headers.UserAgent.ToString(),
+                cancellationToken);
+            return login.Authenticated
+                ? Results.Ok(provider.Issue(login.Username, login.DisplayName))
+                : Results.Unauthorized();
+        })
+        .WithName("IssueDevelopmentTestIdentityToken");
+}
 
 auth.MapGet("/session", async (
         AuthRepository repository,
@@ -7229,7 +7303,9 @@ administration.MapGet("/experience-baseline", () =>
     .WithName("GetExperienceBaseline");
 
 administration.MapGet("/identity-provider/readiness", () =>
-    Results.Ok(IdentityProviderCatalog.Build()))
+    Results.Ok(IdentityProviderCatalog.Build(
+        app.Services.GetRequiredService<IOptions<IdentityProviderOptions>>().Value,
+        app.Environment.IsDevelopment())))
     .WithName("GetIdentityProviderReadiness");
 
 administration.MapGet("/configuration-catalog", () => Results.Ok(new ConfigurationCatalogResponse([

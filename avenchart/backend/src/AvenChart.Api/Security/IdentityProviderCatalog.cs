@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using AvenChart.Api.Models;
+using AvenChart.Api.Configuration;
 
 namespace AvenChart.Api.Security;
 
@@ -151,26 +152,67 @@ public static class IdentityProviderCatalog
             BlocksProduction: true),
     ];
 
-    public static IdentityProviderReadinessResponse Build()
+    public static IdentityProviderReadinessResponse Build(IdentityProviderOptions options, bool testIdentityProviderAvailable)
     {
+        var adapter = options.IsOidc
+            ? new IdentityAdapterContractItem(
+                OidcStaffIdentityAdapter.Id,
+                "oidc-discovery-jwks",
+                nameof(IStaffIdentityAdapter),
+                "Authorization: Bearer JWT validated through OIDC discovery and JWKS",
+                options.SubjectClaim,
+                [options.SubjectClaim, "iss", "aud", "exp", "nbf"],
+                ["valid", "expired", "invalid-signature", "invalid-issuer", "invalid-audience", "unknown-local-principal"],
+                ProductionApproved: false,
+                ValidatesIssuer: true,
+                ValidatesAudience: true,
+                ValidatesSignature: true,
+                EnforcesMfa: false,
+                EnforcesDevicePolicy: false,
+                EnforcesFacilityScope: true)
+            : options.IsTestOidc
+                ? new IdentityAdapterContractItem(
+                    TestOidcStaffIdentityAdapter.Id,
+                    "development-test-oidc",
+                    nameof(IStaffIdentityAdapter),
+                    "development-only first-party RS256 test identity provider",
+                    "sub",
+                    ["sub", "iss", "aud", "exp", "nbf"],
+                    ["valid", "expired", "invalid-signature", "invalid-issuer", "invalid-audience", "unknown-local-principal"],
+                    ProductionApproved: false,
+                    ValidatesIssuer: true,
+                    ValidatesAudience: true,
+                    ValidatesSignature: true,
+                    EnforcesMfa: false,
+                    EnforcesDevicePolicy: false,
+                    EnforcesFacilityScope: true)
+                : Adapter;
+        var identityTypes = IdentityTypes.Select(identityType => identityType.IdentityType == "staff"
+            ? identityType with
+            {
+                State = options.IsOidc ? "external-oidc-configured" : options.IsTestOidc ? "development-test-oidc" : identityType.State,
+                ResolutionPath = options.IsOidc ? $"{nameof(IStaffIdentityAdapter)} -> {OidcStaffIdentityAdapter.Id}" : options.IsTestOidc ? $"{nameof(IStaffIdentityAdapter)} -> {TestOidcStaffIdentityAdapter.Id}" : identityType.ResolutionPath,
+                Evidence = options.IsTestOidc && !testIdentityProviderAvailable ? "Test OIDC is configured but its development-only issuer endpoints are unavailable outside Development." : identityType.Evidence,
+            }
+            : identityType).ToArray();
         return new IdentityProviderReadinessResponse(
-            Revision,
-            "local-foundation-owner-gated",
-            Adapter.AdapterId,
-            Adapter.AdapterKind,
-            "Local development identities are not an approved production identity source.",
+            $"{Revision}-oidc-v1",
+            options.IsOidc ? "external-oidc-configured-owner-gated" : options.IsTestOidc ? "development-test-oidc" : "local-foundation-owner-gated",
+            adapter.AdapterId,
+            adapter.AdapterKind,
+            options.IsOidc ? "Configured provider validates bearer tokens; provider tenant, claim mapping, MFA, and production acceptance remain owner-gated." : "Local and first-party test identities are not approved production identity sources.",
             new IdentityProviderReadinessCounts(
-                IdentityTypes.Count,
-                IdentityTypes.Count(identityType => identityType.RoutedThroughAdapter),
-                IdentityTypes.Count(identityType => identityType.ProductionApproved),
-                Adapter.ValidatesSignature ? 1 : 0,
-                Adapter.EnforcesFacilityScope ? 1 : 0,
-                IdentityTypes.Count(identityType =>
+                identityTypes.Length,
+                identityTypes.Count(identityType => identityType.RoutedThroughAdapter),
+                identityTypes.Count(identityType => identityType.ProductionApproved),
+                adapter.ValidatesSignature ? 1 : 0,
+                adapter.EnforcesFacilityScope ? 1 : 0,
+                identityTypes.Count(identityType =>
                     identityType.IdentityType == "emergency"
                     && identityType.State == "enabled"),
                 Gaps.Count(gap => gap.BlocksProduction)),
-            Adapter,
-            IdentityTypes,
+            adapter,
+            identityTypes,
             BoundaryControls,
             Verification,
             Gaps);

@@ -110,6 +110,59 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
         return session?.ToResponse() ?? InactiveSession(sessionId, "Session was not found.");
     }
 
+    /// <summary>
+    /// Resolves an already validated external OIDC subject to the local account
+    /// that owns AvenChart capabilities and facility/purpose grants.  The token
+    /// adapter owns issuer/audience/signature/lifetime checks; this lookup never
+    /// trusts token-supplied role or staff identifiers.
+    /// </summary>
+    public async Task<AuthSessionResponse> ResolveExternalPrincipalAsync(
+        string subject,
+        string sessionSource,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken)
+    {
+        var normalizedSubject = subject?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedSubject) || normalizedSubject.Length > 128 || string.IsNullOrWhiteSpace(sessionSource))
+        {
+            return new AuthSessionResponse(false, null, string.Empty, string.Empty, string.Empty, null, null, null, null, null,
+                "The validated external identity is not mapped to an active AvenChart principal.", sessionSource);
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select account.username,account.display_name,account.role,account.staff_id
+            from auth_accounts account
+            left join staff on staff.id=account.staff_id
+            where lower(account.username)=lower(@subject)
+              and account.active=true
+              and (account.staff_id is null or staff.active=true)
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("subject", normalizedSubject);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new AuthSessionResponse(false, null, string.Empty, string.Empty, string.Empty, null, null, null, null, null,
+                "The validated external identity is not mapped to an active AvenChart principal.", sessionSource);
+        }
+
+        return new AuthSessionResponse(
+            Authenticated: expiresAt > DateTimeOffset.UtcNow,
+            SessionId: null,
+            Username: reader.GetString(0),
+            DisplayName: reader.GetString(1),
+            Role: reader.GetString(2),
+            StaffId: reader.IsDBNull(3) ? null : reader.GetInt32(3),
+            CreatedAt: null,
+            LastSeenAt: DateTimeOffset.UtcNow,
+            ExpiresAt: expiresAt,
+            EndedAt: null,
+            FailureReason: expiresAt > DateTimeOffset.UtcNow ? null : "The external identity token is expired.",
+            SessionSource: sessionSource);
+    }
+
     public async Task<AuthSessionResponse> LogoutAsync(Guid sessionId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
