@@ -7271,7 +7271,8 @@ try {
         note = "Created by the smoke prescription mutation check."
         diagnosis = "Z00.00"
     } | ConvertTo-Json
-    $createdPrescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createPrescriptionBody -TimeoutSec 20
+    $prescriptionMutationHeaders = Get-ClinicianHeaders
+    $createdPrescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions" -Method Post -Headers $prescriptionMutationHeaders -ContentType "application/json" -Body $createPrescriptionBody -TimeoutSec 20
     $clinicalPrescriptionMutationId = $createdPrescription.id
     $createdPrescriptionVisible = $createdPrescription.detail.prescriptions | Where-Object { $_.drug -eq $prescriptionDrug -and $_.dosage -eq "1 tablet daily" -and $_.active -eq 1 } | Select-Object -First 1
 
@@ -7279,9 +7280,15 @@ try {
         endDate = "2026-08-15"
         note = "Deactivated by the smoke prescription mutation check."
     } | ConvertTo-Json
-    $deactivatedPrescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId/deactivate" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $deactivatePrescriptionBody -TimeoutSec 20
+    $deactivatedPrescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId/deactivate" -Method Put -Headers $prescriptionMutationHeaders -ContentType "application/json" -Body $deactivatePrescriptionBody -TimeoutSec 20
     $inactivePrescriptionVisible = $deactivatedPrescription.detail.prescriptions | Where-Object { $_.drug -eq $prescriptionDrug } | Select-Object -First 1
-    $clinicalPrescriptionMutationPassed = $null -ne $createdPrescriptionVisible -and $null -eq $inactivePrescriptionVisible
+    $prescriptionAuditHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId/audit-history" -Method Get -Headers $prescriptionMutationHeaders -TimeoutSec 20
+    $createdPrescriptionAudit = @($prescriptionAuditHistory.events | Where-Object { $_.action -eq "create" -and $_.actor -eq "gold-provider-01" }) | Select-Object -First 1
+    $deactivatedPrescriptionAudit = @($prescriptionAuditHistory.events | Where-Object { $_.action -eq "deactivate" -and $_.actor -eq "gold-provider-01" }) | Select-Object -First 1
+    $clinicalPrescriptionMutationPassed = $null -ne $createdPrescriptionVisible `
+        -and $null -eq $inactivePrescriptionVisible `
+        -and $null -ne $createdPrescriptionAudit `
+        -and $null -ne $deactivatedPrescriptionAudit
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $clinicalPrescriptionMutationId = $null
@@ -7290,6 +7297,9 @@ try {
         createdId = $createdPrescription.id
         createdVisible = $createdPrescriptionVisible
         inactiveVisible = $inactivePrescriptionVisible
+        auditEventCount = $prescriptionAuditHistory.eventCount
+        createdActor = $createdPrescriptionAudit.actor
+        deactivatedActor = $deactivatedPrescriptionAudit.actor
     }
 }
 catch {

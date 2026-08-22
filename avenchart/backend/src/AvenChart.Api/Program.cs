@@ -3305,10 +3305,13 @@ clinicalLists.MapDelete("/allergies/{allergyId}", async (
 
 clinicalLists.MapPost("/prescriptions", async (
         ClinicalListRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         ClinicalPrescriptionCreateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreatePrescriptionAsync(request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.CreatePrescriptionAsync(request, session.Username, cancellationToken);
         return mutation is null
             ? Results.BadRequest("Prescription could not be created from the supplied patient, drug, dose, and start date.")
             : Results.Created($"/api/clinical-lists/prescriptions/{mutation.Id}", mutation);
@@ -3355,22 +3358,28 @@ clinicalLists.MapPut("/prescriptions/{prescriptionId}", async (
 
 clinicalLists.MapPut("/prescriptions/{prescriptionId}/deactivate", async (
         ClinicalListRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string prescriptionId,
         ClinicalPrescriptionDeactivateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.DeactivatePrescriptionAsync(prescriptionId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.DeactivatePrescriptionAsync(prescriptionId, request, session.Username, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
     .WithName("DeactivateClinicalPrescription");
 
 clinicalLists.MapPut("/prescriptions/{prescriptionId}/refill", async (
         ClinicalListRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string prescriptionId,
         ClinicalPrescriptionRefillRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.RefillPrescriptionAsync(prescriptionId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.RefillPrescriptionAsync(prescriptionId, request, session.Username, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
     .WithName("RefillClinicalPrescription");

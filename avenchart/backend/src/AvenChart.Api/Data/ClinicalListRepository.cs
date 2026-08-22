@@ -330,6 +330,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
 
     public async Task<ClinicalListMutationResponse?> CreatePrescriptionAsync(
         ClinicalPrescriptionCreateRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.PatientId)
@@ -349,9 +350,10 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var id = $"RX-MODERN-{Guid.NewGuid():N}";
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             insert into prescriptions
                 (id, patient_id, pid, provider_id, encounter, start_date, date_added, modified_date, end_date, drug, rx_norm_code,
@@ -381,7 +383,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
 
         await InsertPrescriptionAuditEventAsync(
             connection,
-            transaction: null,
+            transaction,
             prescriptionId: id,
             patientId: patient.PatientId,
             pid: patient.LegacyPid,
@@ -393,7 +395,9 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             pharmacyId: null,
             pharmacyName: null,
             failureReason: null,
-            cancellationToken);
+            cancellationToken,
+            actor: username);
+        await transaction.CommitAsync(cancellationToken);
 
         var lists = await GetForPatientAsync(patient.PatientId, cancellationToken);
         return lists is null ? null : new ClinicalListMutationResponse(id, lists);
@@ -621,6 +625,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     public async Task<ClinicalListMutationResponse?> DeactivatePrescriptionAsync(
         string prescriptionId,
         ClinicalPrescriptionDeactivateRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(prescriptionId) || !TryReadDate(request.EndDate, out var endDate))
@@ -629,9 +634,12 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         string? patientId = null;
-        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        int? pid = null;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var command = connection.CreateCommand())
         {
+            command.Transaction = transaction;
             command.CommandText = """
                 update prescriptions
                 set active = 0,
@@ -648,30 +656,32 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             if (await reader.ReadAsync(cancellationToken))
             {
                 patientId = reader.GetString(reader.GetOrdinal("patient_id"));
-                var pid = ReadInt(reader, "pid");
-                await reader.DisposeAsync();
-                await InsertPrescriptionAuditEventAsync(
-                    connection,
-                    transaction: null,
-                    prescriptionId,
-                    patientId,
-                    pid,
-                    "deactivate",
-                    endDate.ToDateTime(TimeOnly.Parse("10:00", CultureInfo.InvariantCulture)),
-                    request.Note,
-                    beforeRefills: null,
-                    afterRefills: null,
-                    pharmacyId: null,
-                    pharmacyName: null,
-                    failureReason: null,
-                    cancellationToken);
+                pid = ReadInt(reader, "pid");
             }
         }
 
-        if (patientId is null)
+        if (patientId is null || pid is null)
         {
             return null;
         }
+
+        await InsertPrescriptionAuditEventAsync(
+            connection,
+            transaction,
+            prescriptionId,
+            patientId,
+            pid.Value,
+            "deactivate",
+            endDate.ToDateTime(TimeOnly.Parse("10:00", CultureInfo.InvariantCulture)),
+            request.Note,
+            beforeRefills: null,
+            afterRefills: null,
+            pharmacyId: null,
+            pharmacyName: null,
+            failureReason: null,
+            cancellationToken,
+            actor: username);
+        await transaction.CommitAsync(cancellationToken);
 
         var lists = await GetForPatientAsync(patientId, cancellationToken);
         return lists is null ? null : new ClinicalListMutationResponse(prescriptionId, lists);
@@ -680,6 +690,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     public async Task<ClinicalListMutationResponse?> RefillPrescriptionAsync(
         string prescriptionId,
         ClinicalPrescriptionRefillRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(prescriptionId)
@@ -690,9 +701,13 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         string? patientId = null;
-        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        int? pid = null;
+        int? afterRefills = null;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var command = connection.CreateCommand())
         {
+            command.Transaction = transaction;
             command.CommandText = """
                 update prescriptions
                 set refills = refills + @additionalRefills,
@@ -709,31 +724,33 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             if (await reader.ReadAsync(cancellationToken))
             {
                 patientId = reader.GetString(reader.GetOrdinal("patient_id"));
-                var pid = ReadInt(reader, "pid");
-                var afterRefills = ReadInt(reader, "refills");
-                await reader.DisposeAsync();
-                await InsertPrescriptionAuditEventAsync(
-                    connection,
-                    transaction: null,
-                    prescriptionId: prescriptionId,
-                    patientId: patientId,
-                    pid: pid,
-                    action: "refill",
-                    occurredAt: refillDate.ToDateTime(TimeOnly.Parse("10:00", CultureInfo.InvariantCulture)),
-                    detail: request.Note,
-                    beforeRefills: afterRefills - request.AdditionalRefills,
-                    afterRefills: afterRefills,
-                    pharmacyId: null,
-                    pharmacyName: null,
-                    failureReason: null,
-                    cancellationToken);
+                pid = ReadInt(reader, "pid");
+                afterRefills = ReadInt(reader, "refills");
             }
         }
 
-        if (patientId is null)
+        if (patientId is null || pid is null || afterRefills is null)
         {
             return null;
         }
+
+        await InsertPrescriptionAuditEventAsync(
+            connection,
+            transaction,
+            prescriptionId: prescriptionId,
+            patientId: patientId,
+            pid: pid.Value,
+            action: "refill",
+            occurredAt: refillDate.ToDateTime(TimeOnly.Parse("10:00", CultureInfo.InvariantCulture)),
+            detail: request.Note,
+            beforeRefills: afterRefills.Value - request.AdditionalRefills,
+            afterRefills: afterRefills.Value,
+            pharmacyId: null,
+            pharmacyName: null,
+            failureReason: null,
+            cancellationToken,
+            actor: username);
+        await transaction.CommitAsync(cancellationToken);
 
         var lists = await GetForPatientAsync(patientId, cancellationToken);
         return lists is null ? null : new ClinicalListMutationResponse(prescriptionId, lists);
