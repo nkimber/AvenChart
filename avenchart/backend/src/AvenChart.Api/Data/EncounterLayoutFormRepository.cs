@@ -31,7 +31,7 @@ public sealed class EncounterLayoutFormRepository(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        if (!await EncounterExistsAsync(connection, encounter, cancellationToken, transaction)) return null;
+        if (!await LockEncounterAsync(connection, encounter, cancellationToken, transaction)) return null;
         if (await IsEncounterLockedAsync(connection, encounter, cancellationToken, transaction))
         {
             throw new EncounterLockConflictException(
@@ -54,6 +54,13 @@ public sealed class EncounterLayoutFormRepository(NpgsqlDataSource dataSource)
             insertValue.CommandText = "insert into encounter_layout_form_values(record_id,field_key,field_label,field_value) values(@record,@field,@label,@value);";
             insertValue.Parameters.AddWithValue("record", recordId); insertValue.Parameters.AddWithValue("field", field.Key); insertValue.Parameters.AddWithValue("label", field.Label); insertValue.Parameters.AddWithValue("value", values[field.Key]); await insertValue.ExecuteNonQueryAsync(cancellationToken);
         }
+        await using (var versionCommand = connection.CreateCommand())
+        {
+            versionCommand.Transaction = transaction;
+            versionCommand.CommandText = "update encounters set row_version = row_version + 1 where encounter=@encounter;";
+            versionCommand.Parameters.AddWithValue("encounter", encounter);
+            await versionCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
         return await GetAsync(encounter, definition.LayoutKey, cancellationToken);
     }
@@ -70,6 +77,16 @@ public sealed class EncounterLayoutFormRepository(NpgsqlDataSource dataSource)
         command.CommandText = "select exists(select 1 from encounter_signatures where encounter=@encounter and is_lock);";
         command.Parameters.AddWithValue("encounter", encounter);
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task<bool> LockEncounterAsync(NpgsqlConnection connection, int encounter, CancellationToken cancellationToken, NpgsqlTransaction transaction)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select encounter from encounters where encounter=@encounter for update;";
+        command.Parameters.AddWithValue("encounter", encounter);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is not null && result is not DBNull;
     }
 
     private static string NormalizeLayoutKey(string key)

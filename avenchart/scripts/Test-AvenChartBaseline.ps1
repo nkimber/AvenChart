@@ -5329,6 +5329,7 @@ try {
             -and $_.signerUsername -eq "admin" `
             -and $_.signedAt -eq "2026-06-18 10:20" `
             -and $_.isLock -eq $false `
+            -and $_.encounterVersion -eq $encounterDetail.rowVersion `
             -and $_.amendment -eq $signatureNote
     } | Select-Object -First 1
 
@@ -5412,6 +5413,23 @@ try {
             -and $_.isLock -eq $true `
             -and $_.amendment -eq $coSignatureNote
     } | Select-Object -First 1
+    $lockedSummaryStatus = 0
+    try {
+        Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/encounters/1000013" `
+            -Method Put `
+            -ContentType "application/json" `
+            -Body (@{
+                reason = $createdCoSignature.detail.reason
+                expectedVersion = $createdCoSignature.detail.rowVersion
+            } | ConvertTo-Json) `
+            -Headers (Get-AdministrationHeaders) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $lockedSummaryStatus = [int]$_.Exception.Response.StatusCode } else { throw }
+    }
 
     foreach ($signatureId in @($smokeEncounterCoSignatureIds)) {
         Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$signatureId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
@@ -5425,11 +5443,12 @@ try {
         $_.amendment -eq $primarySignatureNote -or $_.amendment -eq $coSignatureNote
     }
 
-    $encounterCoSignaturePassed = $null -ne $primarySignatureVisible -and $null -ne $coSignatureVisible -and $null -ne $primaryAmendmentVisible -and $null -ne $coSignatureAmendmentVisible -and @($amendmentHistory).Count -eq 2 -and @($deletedCoSignaturesVisible).Count -eq 0 -and @($deletedAmendmentsVisible).Count -eq 0
+    $encounterCoSignaturePassed = $null -ne $primarySignatureVisible -and $null -ne $coSignatureVisible -and $coSignatureVisible.encounterVersion -eq $createdCoSignature.detail.rowVersion -and $null -ne $primaryAmendmentVisible -and $null -ne $coSignatureAmendmentVisible -and $lockedSummaryStatus -eq 409 -and @($amendmentHistory).Count -eq 2 -and @($deletedCoSignaturesVisible).Count -eq 0 -and @($deletedAmendmentsVisible).Count -eq 0
     Add-Check -Name "encounter co-signature lifecycle" -Result $(if ($encounterCoSignaturePassed) { "passed" } else { "failed" }) -Details @{
         encounter = 1000013
         primarySignature = $primarySignatureVisible
         coSignature = $coSignatureVisible
+        lockedSummaryStatus = $lockedSummaryStatus
         amendmentHistoryCount = @($amendmentHistory).Count
         primaryAmendment = $primaryAmendmentVisible
         coSignatureAmendment = $coSignatureAmendmentVisible

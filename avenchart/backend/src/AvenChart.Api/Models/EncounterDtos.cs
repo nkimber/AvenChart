@@ -82,7 +82,8 @@ public sealed record EncounterSignatureItem(
     bool IsLock,
     string? Amendment,
     string Hash,
-    string SignatureHash);
+    string SignatureHash,
+    long? EncounterVersion);
 
 public sealed record EncounterAmendmentHistoryItem(
     int SignatureId,

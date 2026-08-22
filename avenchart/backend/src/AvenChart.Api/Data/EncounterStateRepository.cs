@@ -34,14 +34,13 @@ public sealed class EncounterStateRepository(
                 "An encounter version is required to update the summary.");
         }
 
-        await EnsureEncounterIsUnlockedAsync(encounter, cancellationToken);
-        var entity = await dbContext.Encounters.SingleOrDefaultAsync(
-            candidate => candidate.EncounterNumber == encounter,
-            cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var entity = await GetEncounterForUpdateAsync(encounter, cancellationToken);
         if (entity is null)
         {
             return null;
         }
+        await EnsureEncounterIsUnlockedAsync(encounter, cancellationToken);
         if (entity.RowVersion != request.ExpectedVersion)
         {
             throw new EncounterStateConflictException(
@@ -87,6 +86,7 @@ public sealed class EncounterStateRepository(
             }
         }
 
+        await transaction.CommitAsync(cancellationToken);
         return await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
     }
 
@@ -100,27 +100,19 @@ public sealed class EncounterStateRepository(
             return null;
         }
 
-        await EnsureEncounterIsUnlockedAsync(encounter, cancellationToken);
-        var encounterIdentity = await dbContext.Encounters
-            .AsNoTracking()
-            .Where(candidate => candidate.EncounterNumber == encounter)
-            .Select(candidate => new
-            {
-                candidate.PatientId,
-                candidate.LegacyPid,
-                candidate.EncounterNumber
-            })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (encounterIdentity is null)
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var encounterEntity = await GetEncounterForUpdateAsync(encounter, cancellationToken);
+        if (encounterEntity is null)
         {
             return null;
         }
+        await EnsureEncounterIsUnlockedAsync(encounter, cancellationToken);
 
         var vital = new VitalEntity
         {
-            PatientId = encounterIdentity.PatientId,
-            LegacyPid = encounterIdentity.LegacyPid,
-            EncounterNumber = encounterIdentity.EncounterNumber,
+            PatientId = encounterEntity.PatientId,
+            LegacyPid = encounterEntity.LegacyPid,
+            EncounterNumber = encounterEntity.EncounterNumber,
             VitalDateTime = DateTime.SpecifyKind(vitalDateTime, DateTimeKind.Unspecified),
             Systolic = request.Systolic,
             Diastolic = request.Diastolic,
@@ -134,7 +126,9 @@ public sealed class EncounterStateRepository(
             Note = NormalizeText(request.Note)
         };
         dbContext.Vitals.Add(vital);
+        encounterEntity.RowVersion++;
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         var detail = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
         return detail is null ? null : new EncounterFormMutationResponse(vital.Id, detail);
     }
@@ -205,6 +199,13 @@ public sealed class EncounterStateRepository(
                 "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
         }
     }
+
+    private Task<EncounterEntity?> GetEncounterForUpdateAsync(
+        int encounter,
+        CancellationToken cancellationToken) =>
+        dbContext.Encounters
+            .FromSqlInterpolated($"select * from encounters where encounter = {encounter} for update")
+            .SingleOrDefaultAsync(cancellationToken);
 
     private async Task<bool> SaveArchiveChangeAsync(CancellationToken cancellationToken)
     {

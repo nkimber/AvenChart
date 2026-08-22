@@ -596,6 +596,14 @@ public sealed class EncounterRepository(
             throw new InvalidOperationException("SOAP note persistence did not return an identifier.");
         }
 
+        await using (var versionCommand = connection.CreateCommand())
+        {
+            versionCommand.Transaction = transaction;
+            versionCommand.CommandText = "update encounters set row_version = row_version + 1 where encounter = @encounter;";
+            versionCommand.Parameters.AddWithValue("encounter", encounter);
+            await versionCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
         var detail = await GetByEncounterAsync(encounter, cancellationToken);
         return detail is null ? null : new EncounterFormMutationResponse(Convert.ToInt32(id), detail);
@@ -615,10 +623,26 @@ public sealed class EncounterRepository(
         var signedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        long encounterVersion;
+        await using (var lockCommand = connection.CreateCommand())
+        {
+            lockCommand.Transaction = transaction;
+            lockCommand.CommandText = "select row_version from encounters where encounter = @encounter for update;";
+            lockCommand.Parameters.AddWithValue("encounter", encounter);
+            var result = await lockCommand.ExecuteScalarAsync(cancellationToken);
+            if (result is null || result is DBNull)
+            {
+                return null;
+            }
+
+            encounterVersion = Convert.ToInt64(result);
+        }
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             with selected_encounter as (
-                select id, encounter, patient_id, pid
+                select id, encounter, patient_id, pid, row_version
                 from encounters
                 where encounter = @encounter
                 limit 1
@@ -649,7 +673,8 @@ public sealed class EncounterRepository(
                 is_lock,
                 amendment,
                 hash,
-                signature_hash
+                signature_hash,
+                encounter_version
             )
             select
                 next_id.id,
@@ -664,7 +689,8 @@ public sealed class EncounterRepository(
                 @isLock,
                 @amendment,
                 @hash,
-                @signatureHash
+                @signatureHash,
+                selected_encounter.row_version
             from selected_encounter
             join selected_user on true
             cross join next_id
@@ -675,7 +701,7 @@ public sealed class EncounterRepository(
         command.Parameters.Add("signedAt", NpgsqlDbType.Timestamp).Value = signedAt;
         command.Parameters.Add("isLock", NpgsqlDbType.Boolean).Value = request.IsLock;
         AddNullableText(command, "amendment", NormalizeText(request.Amendment));
-        var hash = CreateSignatureHash($"{encounter}|form_encounter|{signerUsername}|{signedAt:O}|{request.IsLock}|{request.Amendment}");
+        var hash = CreateSignatureHash($"{encounter}|form_encounter|{encounterVersion}|{signerUsername}|{signedAt:O}|{request.IsLock}|{request.Amendment}");
         command.Parameters.Add("hash", NpgsqlDbType.Text).Value = hash;
         command.Parameters.Add("signatureHash", NpgsqlDbType.Text).Value = CreateSignatureHash($"{hash}|{signerUsername}");
 
@@ -685,6 +711,7 @@ public sealed class EncounterRepository(
             return null;
         }
 
+        await transaction.CommitAsync(cancellationToken);
         var detail = await GetByEncounterAsync(encounter, cancellationToken);
         return detail is null ? null : new EncounterSignatureMutationResponse(Convert.ToInt32(id), detail);
     }
@@ -1087,7 +1114,7 @@ public sealed class EncounterRepository(
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, table_name, signer_user_id, signer_username, signed_at, is_lock, amendment, hash, signature_hash
+            select id, table_name, signer_user_id, signer_username, signed_at, is_lock, amendment, hash, signature_hash, encounter_version
             from encounter_signatures
             where encounter = @encounter
             order by signed_at desc, id desc;
@@ -1107,7 +1134,10 @@ public sealed class EncounterRepository(
                 IsLock: reader.GetBoolean(reader.GetOrdinal("is_lock")),
                 Amendment: ReadNullableString(reader, "amendment"),
                 Hash: reader.GetString(reader.GetOrdinal("hash")),
-                SignatureHash: reader.GetString(reader.GetOrdinal("signature_hash"))));
+                SignatureHash: reader.GetString(reader.GetOrdinal("signature_hash")),
+                EncounterVersion: reader.IsDBNull(reader.GetOrdinal("encounter_version"))
+                    ? null
+                    : reader.GetInt64(reader.GetOrdinal("encounter_version"))));
         }
 
         return signatures;

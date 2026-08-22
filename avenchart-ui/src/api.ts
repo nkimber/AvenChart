@@ -3918,6 +3918,7 @@ export type EncounterSignature = {
   amendment?: string | null
   hash: string
   signatureHash: string
+  encounterVersion?: number | null
 }
 
 export type EncounterAmendmentHistoryItem = {
