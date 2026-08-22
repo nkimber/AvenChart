@@ -7279,35 +7279,6 @@ export async function getSavedReportDefinitions(
 ): Promise<{ definitions: SavedReportDefinition[] }> {
   return clinicianGet(sessionId, '/api/reports/definitions', signal)
 }
-export type ReportFamily = {
-  key: string
-  name: string
-  description: string
-  supportsDateRange: boolean
-}
-export async function getReportFamilies(
-  sessionId: string,
-): Promise<ReportFamily[]> {
-  return clinicianGet(sessionId, '/api/reports/families')
-}
-export async function downloadReportFamilyCsv(
-  sessionId: string,
-  family: string,
-  from?: string,
-  to?: string,
-): Promise<Blob> {
-  const q = new URLSearchParams()
-  if (from) q.set('from', from)
-  if (to) q.set('to', to)
-  const r = await fetch(
-    `${apiBaseUrl}/api/reports/families/${encodeURIComponent(family)}/export?${q}`,
-    {
-      headers: { 'X-AvenChart-Session': sessionId },
-    },
-  )
-  if (!r.ok) throw new Error(`Report export failed with ${r.status}`)
-  return r.blob()
-}
 export async function createSavedReportDefinition(
   sessionId: string,
   body: {

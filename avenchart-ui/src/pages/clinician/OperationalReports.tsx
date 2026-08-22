@@ -4,13 +4,9 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
-  downloadReportFamilyCsv,
   getOperationalReports,
-  getReportFamilies,
   type OperationalReportsResponse,
-  type ReportFamily,
 } from "../../api.ts";
-import { showToast } from "../../components/Toast.tsx";
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
 import GovernedReportDefinitions from "./GovernedReportDefinitions.tsx";
 import GovernedReportExecution from "./GovernedReportExecution.tsx";
@@ -53,10 +49,6 @@ export default function OperationalReports() {
   const [state, setState] = useState<AsyncState<OperationalReportsResponse>>({
     status: "loading",
   });
-  const [families, setFamilies] = useState<ReportFamily[]>([]);
-  const [reportType, setReportType] = useState("operational");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
 
   useEffect(() => {
     getOperationalReports(session.sessionId)
@@ -68,31 +60,6 @@ export default function OperationalReports() {
         }),
       );
   }, [session.sessionId]);
-  useEffect(() => {
-    getReportFamilies(session.sessionId)
-      .then(setFamilies)
-      .catch(() => showToast("Could not load report families.", "error"));
-  }, [session.sessionId]);
-  async function exportFamily() {
-    try {
-      const blob = await downloadReportFamilyCsv(
-        session.sessionId,
-        reportType,
-        fromDate || undefined,
-        toDate || undefined,
-      );
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `avenchart-${reportType}-report.csv`;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      showToast("Report CSV downloaded.", "success");
-    } catch {
-      showToast("Could not export the report CSV.", "error");
-    }
-  }
-
   return (
     <div className="clinician-page">
       <div className="clinician-page-header">
@@ -131,65 +98,6 @@ export default function OperationalReports() {
           const c = data.counts;
           return (
             <>
-              <section className="cl-card">
-                <div className="cl-card-header">
-                  <div>
-                    <h2 className="cl-card-title">
-                      Local family exports
-                    </h2>
-                    <p className="cl-empty-text">
-                      This compatibility path predates governed run evidence.
-                      Use Governed report execution for revision-pinned,
-                      policy-checked preview, history, checksum, and protected
-                      download. This direct export remains local-only legacy
-                      behavior.
-                    </p>
-                  </div>
-                </div>
-                <div className="cl-inline-form">
-                  <label className="cl-admin-field">
-                    <span>Family</span>
-                    <select
-                      className="ne-input"
-                      value={reportType}
-                      onChange={(event) => setReportType(event.target.value)}
-                    >
-                      {families.map((family) => (
-                        <option key={family.key} value={family.key}>
-                          {family.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="cl-admin-field">
-                    <span>From</span>
-                    <input
-                      className="ne-input"
-                      type="date"
-                      value={fromDate}
-                      onChange={(event) => setFromDate(event.target.value)}
-                    />
-                  </label>
-                  <label className="cl-admin-field">
-                    <span>To</span>
-                    <input
-                      className="ne-input"
-                      type="date"
-                      value={toDate}
-                      onChange={(event) => setToDate(event.target.value)}
-                    />
-                  </label>
-                  <div className="cl-inline-form-actions">
-                    <button
-                      className="cl-btn-secondary"
-                      type="button"
-                      onClick={exportFamily}
-                    >
-                      Export CSV
-                    </button>
-                  </div>
-                </div>
-              </section>
               {/* Patients & portal */}
               <section className="cl-card">
                 <div className="cl-card-header">

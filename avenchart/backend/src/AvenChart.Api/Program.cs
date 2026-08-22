@@ -8166,24 +8166,20 @@ reports.MapGet("/controlled-inventory/count-variance/{runId:guid}/export", async
 }).WithName("ExportControlledCountVarianceRun")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "view"));
 
-reports.MapGet("/operational/export", async (
-        ReportRepository repository,
-        CancellationToken cancellationToken) =>
-    {
-        var csv = await repository.GetOperationalReportsCsvAsync(cancellationToken);
-        return Results.File(
-            Encoding.UTF8.GetBytes(csv),
-            contentType: "text/csv",
-            fileDownloadName: "avenchart-operational-report.csv");
-    })
+reports.MapGet("/operational/export", () =>
+        Results.Problem(
+            statusCode: StatusCodes.Status410Gone,
+            title: "Compatibility report export retired",
+            detail: "Use governed report execution to create a scoped, purpose-bound, auditable download."))
     .WithName("ExportOperationalReports");
 
 reports.MapGet("/families", (ReportRepository repository) => Results.Ok(repository.GetFamilies())).WithName("GetReportFamilies");
-reports.MapGet("/families/{family}/export", async (ReportRepository repository, string family, DateOnly? from, DateOnly? to, CancellationToken cancellationToken) =>
-{
-    try { var csv = await repository.GetFamilyCsvAsync(family, from, to, cancellationToken); return Results.File(Encoding.UTF8.GetBytes(csv), "text/csv", $"avenchart-{family}-report.csv"); }
-    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["report"] = [exception.Message] }); }
-}).WithName("ExportReportFamily");
+reports.MapGet("/families/{family}/export", () =>
+    Results.Problem(
+        statusCode: StatusCodes.Status410Gone,
+        title: "Compatibility report export retired",
+        detail: "Use governed report execution to create a scoped, purpose-bound, auditable download."))
+    .WithName("ExportReportFamily");
 
 reports.MapGet("/definition-policy", (ReportDefinitionRepository repository) =>
         Results.Ok(repository.GetPolicy()))

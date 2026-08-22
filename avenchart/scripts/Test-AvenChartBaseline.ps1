@@ -10510,26 +10510,32 @@ try {
         }
     }
 
-    $reportExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/operational/export" -Method Get -Headers (Get-AdministrationHeaders) -UseBasicParsing -TimeoutSec 20
-    $contentType = ($reportExport.Headers["Content-Type"] -join ",")
-    $exportText = [string]$reportExport.Content
-    $sampleLines = $exportText -split "\r?\n" | Select-Object -First 5
+    $administrationReportExportStatus = 0
+    try {
+        $administrationReportExport = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/reports/operational/export" `
+            -Method Get `
+            -Headers (Get-AdministrationHeaders) `
+            -UseBasicParsing `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $administrationReportExportStatus = [int]$administrationReportExport.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $administrationReportExportStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
     $exportPassed = $unauthenticatedReportExportStatus -eq 401 `
         -and $frontDeskReportExportStatus -eq 403 `
-        -and $reportExport.StatusCode -eq 200 `
-        -and $contentType -like "text/csv*" `
-        -and $exportText.Contains("Section,Name,Metric,Value") `
-        -and $exportText.Contains("Counts,Patients,Total,1000") `
-        -and $exportText -match "Counts,Patient Documents,Total,12[0-9]{2}" `
-        -and $exportText.Contains("Provider Activity,gold-provider-02,Encounters,176") `
-        -and $exportText.Contains("Facility Activity,NORTH,Billing Total,148904.00") `
-        -and $exportText.Contains("Clinical Conditions,ICD10:J45.909,Title,""Asthma, uncomplicated""")
-    Add-Check -Name "operational reports csv export" -Result $(if ($exportPassed) { "passed" } else { "failed" }) -Details @{
+        -and $administrationReportExportStatus -eq 410
+    Add-Check -Name "operational reports compatibility export retirement" -Result $(if ($exportPassed) { "passed" } else { "failed" }) -Details @{
         unauthenticatedStatus = $unauthenticatedReportExportStatus
         frontDeskStatus = $frontDeskReportExportStatus
-        statusCode = $reportExport.StatusCode
-        contentType = $contentType
-        sample = $sampleLines
+        administrationStatus = $administrationReportExportStatus
     }
 }
 catch {
@@ -11305,17 +11311,33 @@ catch {
 try {
     $reportHeaders = Get-AdministrationHeaders
     $reportFamilies = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/families" -Method Get -Headers $reportHeaders -TimeoutSec 20
-    $encounterReport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/families/encounters/export?from=2026-01-01&to=2026-12-31" -Method Get -Headers $reportHeaders -UseBasicParsing -TimeoutSec 20
-    $inventoryReport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/families/inventory/export" -Method Get -Headers $reportHeaders -UseBasicParsing -TimeoutSec 20
+    $encounterExportStatus = 0
+    try {
+        $encounterReport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/families/encounters/export?from=2026-01-01&to=2026-12-31" -Method Get -Headers $reportHeaders -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
+        $encounterExportStatus = [int]$encounterReport.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) { $encounterExportStatus = [int]$_.Exception.Response.StatusCode }
+        else { throw }
+    }
+    $inventoryExportStatus = 0
+    try {
+        $inventoryReport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/families/inventory/export" -Method Get -Headers $reportHeaders -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
+        $inventoryExportStatus = [int]$inventoryReport.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) { $inventoryExportStatus = [int]$_.Exception.Response.StatusCode }
+        else { throw }
+    }
     $reportDefinition = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/definitions" -Method Post -Headers $reportHeaders -ContentType "application/json" -Body (@{ name = "Smoke saved report $([Guid]::NewGuid().ToString('N').Substring(0, 8))"; schedule = "weekly"; active = $true; reportType = "encounters" } | ConvertTo-Json) -TimeoutSec 20
     $reportRun = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/definitions/$($reportDefinition.id)/run" -Method Post -Headers $reportHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
     $reportDefinitions = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/definitions" -Method Get -Headers $reportHeaders -TimeoutSec 20
     $persistedReport = $reportDefinitions.definitions | Where-Object { $_.id -eq $reportDefinition.id } | Select-Object -First 1
-    $reportPassed = $reportRun.definitionId -eq $reportDefinition.id -and $reportRun.outputFormat -eq "csv" -and $persistedReport.runCount -eq 1 -and $persistedReport.schedule -eq "weekly" -and $persistedReport.reportType -eq "encounters" -and ($reportFamilies.key -contains "inventory") -and $encounterReport.Content.Contains("Identifier,Subject,Date,Detail") -and $inventoryReport.Content.Contains("Identifier,Subject,Date,Detail")
-    Add-Check -Name "saved operational report definition and family export evidence" -Result $(if ($reportPassed) { "passed" } else { "failed" }) -Details @{ definitionId = $reportDefinition.id; runId = $reportRun.runId; runCount = $persistedReport.runCount; familyCount = @($reportFamilies).Count; encounterStatus = $encounterReport.StatusCode; inventoryStatus = $inventoryReport.StatusCode }
+    $reportPassed = $reportRun.definitionId -eq $reportDefinition.id -and $reportRun.outputFormat -eq "csv" -and $persistedReport.runCount -eq 1 -and $persistedReport.schedule -eq "weekly" -and $persistedReport.reportType -eq "encounters" -and ($reportFamilies.key -contains "inventory") -and $encounterExportStatus -eq 410 -and $inventoryExportStatus -eq 410
+    Add-Check -Name "saved operational report definition and family export retirement" -Result $(if ($reportPassed) { "passed" } else { "failed" }) -Details @{ definitionId = $reportDefinition.id; runId = $reportRun.runId; runCount = $persistedReport.runCount; familyCount = @($reportFamilies).Count; encounterStatus = $encounterExportStatus; inventoryStatus = $inventoryExportStatus }
 }
 catch {
-    Add-Check -Name "saved operational report definition and family export evidence" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "saved operational report definition and family export retirement" -Result "failed" -Details $_.Exception.Message
 }
 
 try {
