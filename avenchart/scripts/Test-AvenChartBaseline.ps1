@@ -2281,7 +2281,26 @@ try {
 
     $mergePreview = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/merge-preview?targetPatientId=$([System.Uri]::EscapeDataString($mergeTargetPubpid))&sourcePatientId=$([System.Uri]::EscapeDataString($mergeSourcePubpid))" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $mergeAudit = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/merge-audits" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ targetPatientId = $mergeTargetPubpid; sourcePatientId = $mergeSourcePubpid; rationale = "Smoke execution and rollback verification" } | ConvertTo-Json -Depth 5) -TimeoutSec 20
-    $mergeExecution = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/merge-executions" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ auditId = $mergeAudit.auditId } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    $staleMergeCoverageBody = $mergeCoverageBody.Clone()
+    $staleMergeCoverageBody.policyNumber = "MRG-STALE$suffix"
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$mergeSourcePubpid/insurance" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body ($staleMergeCoverageBody | ConvertTo-Json -Depth 5) -TimeoutSec 20 | Out-Null
+    $staleMergeExecutionStatus = $null
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/patients/merge-executions" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ auditId = $mergeAudit.auditId } | ConvertTo-Json -Depth 5) -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $staleMergeExecutionStatus = [int]$_.Exception.Response.StatusCode }
+    }
+    if ($staleMergeExecutionStatus -ne 400) {
+        throw "Merge execution did not reject review evidence after its supported-record population changed."
+    }
+    $mergeAudit = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/merge-audits" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ targetPatientId = $mergeTargetPubpid; sourcePatientId = $mergeSourcePubpid; rationale = "Fresh review after supported-record population changed" } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    try {
+        $mergeExecution = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/merge-executions" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ auditId = $mergeAudit.auditId } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    }
+    catch {
+        throw "Fresh merge review did not execute: $(Read-HttpErrorBody -ErrorRecord $_)"
+    }
     $mergeTargetAfterExecution = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$mergeTargetPubpid" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $movedCoverage = @($mergeTargetAfterExecution.insurance) | Where-Object { $_.policyNumber -eq $mergePolicyNumber } | Select-Object -First 1
 
@@ -2319,6 +2338,7 @@ try {
 
     $mergePassed = $mergePreview.previewOnly -eq $true `
         -and $mergeAudit.status -eq "Previewed" `
+        -and $staleMergeExecutionStatus -eq 400 `
         -and $mergeExecution.status -eq "Executed" `
         -and $mergeExecution.movedRecords.tableName -contains "insurance_records" `
         -and $null -ne $movedCoverage `
@@ -2330,6 +2350,7 @@ try {
     Add-Check -Name "patient merge execution and rollback lifecycle" -Result $(if ($mergePassed) { "passed" } else { "failed" }) -Details @{
         auditId = $mergeAudit.auditId
         executionId = $mergeExecution.executionId
+        staleMergeExecutionStatus = $staleMergeExecutionStatus
         executedStatus = $mergeExecution.status
         rollbackStatus = $mergeRollback.status
         movedCoverage = $null -ne $movedCoverage

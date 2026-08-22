@@ -4,6 +4,8 @@
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace AvenChart.Api.Data;
 
@@ -23,6 +25,7 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
         new("lab_orders", "id", true, true),
         new("medications", "id", true, true),
         new("messages", "id", true, true),
+        new("patient_administration_audit_events", "event_id", true, true, "legacy_pid"),
         new("patient_documents", "id", true, true),
         new("patient_employers", "patient_id", true, true),
         new("patient_histories", "patient_id", true, true),
@@ -78,6 +81,8 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
         {
             throw new InvalidOperationException("Merged patient records cannot be used as a merge source or target.");
         }
+
+        await ValidateReviewedStateAsync(connection, transaction, audit, target, source, cancellationToken);
 
         var blockers = await GetBlockersAsync(connection, transaction, source, target, cancellationToken);
         if (blockers.Count > 0)
@@ -154,6 +159,60 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
         await transaction.CommitAsync(cancellationToken);
 
         return ToResponse(executionId, execution.AuditId, "RolledBack", rolledBackAt, username, target, source, restoredRecords);
+    }
+
+    internal static async Task<string> GetRecordFingerprintAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string canonicalId,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        var patient = new PatientIdentity(canonicalId, legacyPid, null, 0);
+        var builder = new StringBuilder();
+        foreach (var table in SupportedTables)
+        {
+            builder.Append(table.Name).Append(':');
+            var recordIds = await GetSourceRecordIdsAsync(connection, transaction, table, patient, cancellationToken);
+            foreach (var recordId in recordIds)
+            {
+                builder.Append(recordId).Append(',');
+            }
+
+            builder.Append(';');
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
+    }
+
+    private static async Task ValidateReviewedStateAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MergeAudit audit,
+        PatientIdentity target,
+        PatientIdentity source,
+        CancellationToken cancellationToken)
+    {
+        if (audit.TargetAdministrationVersion <= 0 || audit.SourceAdministrationVersion <= 0
+            || string.IsNullOrWhiteSpace(audit.TargetRecordFingerprint)
+            || string.IsNullOrWhiteSpace(audit.SourceRecordFingerprint))
+        {
+            throw new InvalidOperationException("The merge review evidence does not bind the reviewed patient state. Refresh the preview and record a new review before executing.");
+        }
+
+        if (audit.TargetAdministrationVersion != target.AdministrationVersion
+            || audit.SourceAdministrationVersion != source.AdministrationVersion)
+        {
+            throw new InvalidOperationException("The patient identity details changed after review. Refresh the merge preview and record a new review before executing.");
+        }
+
+        var targetFingerprint = await GetRecordFingerprintAsync(connection, transaction, target.CanonicalId, target.LegacyPid, cancellationToken);
+        var sourceFingerprint = await GetRecordFingerprintAsync(connection, transaction, source.CanonicalId, source.LegacyPid, cancellationToken);
+        if (!string.Equals(audit.TargetRecordFingerprint, targetFingerprint, StringComparison.Ordinal)
+            || !string.Equals(audit.SourceRecordFingerprint, sourceFingerprint, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The patient record population changed after review. Refresh the merge preview and record a new review before executing.");
+        }
     }
 
     private static async Task<List<string>> GetBlockersAsync(
@@ -239,7 +298,7 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = $"select {QuoteIdentifier(table.PrimaryKey)}::text from {QuoteIdentifier(table.Name)} where {BuildSourcePredicate(table.HasPatientId, table.HasPid)} order by {QuoteIdentifier(table.PrimaryKey)};";
+        command.CommandText = $"select {QuoteIdentifier(table.PrimaryKey)}::text from {QuoteIdentifier(table.Name)} where {BuildSourcePredicate(table)} order by {QuoteIdentifier(table.PrimaryKey)};";
         AddPatientParameters(command, source);
         var ids = new List<string>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -290,7 +349,7 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
 
         if (table.HasPid)
         {
-            assignments.Add("pid = @legacyPid");
+            assignments.Add($"{QuoteIdentifier(table.LegacyPidColumn ?? "pid")} = @legacyPid");
         }
 
         await using var command = connection.CreateCommand();
@@ -336,7 +395,9 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            select audit_id, target_patient_id, source_patient_id, status
+            select audit_id, target_patient_id, source_patient_id, status,
+                   target_administration_version, source_administration_version,
+                   target_record_fingerprint, source_record_fingerprint
             from patient_merge_audit_plans
             where audit_id = @auditId
             for update;
@@ -344,7 +405,9 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("auditId", auditId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
-            ? new MergeAudit(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3))
+            ? new MergeAudit(
+                reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
+                reader.GetInt64(4), reader.GetInt64(5), reader.GetString(6), reader.GetString(7))
             : null;
     }
 
@@ -378,7 +441,7 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            select canonical_id, legacy_pid, merged_into_patient_id
+            select canonical_id, legacy_pid, merged_into_patient_id, administration_version
             from patients
             where lower(canonical_id) = lower(@patientId)
             for update;
@@ -386,7 +449,8 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("patientId", patientId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
-            ? new PatientIdentity(reader.GetString(0), reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetString(2))
+            ? new PatientIdentity(
+                reader.GetString(0), reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetInt64(3))
             : null;
     }
 
@@ -507,6 +571,16 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
                 ? "patient_id = @patientId"
                 : "pid = @legacyPid";
 
+    private static string BuildSourcePredicate(MergeTable table)
+    {
+        var legacyPidColumn = QuoteIdentifier(table.LegacyPidColumn ?? "pid");
+        return table.HasPatientId && table.HasPid
+            ? $"patient_id = @patientId or {legacyPidColumn} = @legacyPid"
+            : table.HasPatientId
+                ? "patient_id = @patientId"
+                : $"{legacyPidColumn} = @legacyPid";
+    }
+
     private static void AddPatientParameters(NpgsqlCommand command, PatientIdentity patient)
     {
         command.Parameters.AddWithValue("patientId", patient.CanonicalId);
@@ -515,8 +589,21 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
 
     private static string QuoteIdentifier(string value) => $"\"{value.Replace("\"", "\"\"")}\"";
 
-    private sealed record MergeTable(string Name, string PrimaryKey, bool HasPatientId, bool HasPid);
-    private sealed record MergeAudit(Guid AuditId, string TargetPatientId, string SourcePatientId, string Status);
+    private sealed record MergeTable(
+        string Name,
+        string PrimaryKey,
+        bool HasPatientId,
+        bool HasPid,
+        string? LegacyPidColumn = null);
+    private sealed record MergeAudit(
+        Guid AuditId,
+        string TargetPatientId,
+        string SourcePatientId,
+        string Status,
+        long TargetAdministrationVersion,
+        long SourceAdministrationVersion,
+        string TargetRecordFingerprint,
+        string SourceRecordFingerprint);
     private sealed record MergeExecution(Guid ExecutionId, Guid AuditId, string TargetPatientId, string SourcePatientId, string Status);
-    private sealed record PatientIdentity(string CanonicalId, int LegacyPid, string? MergedIntoPatientId);
+    private sealed record PatientIdentity(string CanonicalId, int LegacyPid, string? MergedIntoPatientId, long AdministrationVersion);
 }
