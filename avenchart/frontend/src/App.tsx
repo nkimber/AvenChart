@@ -9307,10 +9307,32 @@ function PatientWorkspace({
   }
 
   function updateRegistrationDraft(field: keyof PatientRegistrationInput, value: string) {
-    setRegistrationDraft((current) => ({ ...current, [field]: value }))
+    const affectsDuplicateReview = field === 'firstName'
+      || field === 'lastName'
+      || field === 'dateOfBirth'
+      || field === 'phoneHome'
+      || field === 'phoneCell'
+      || field === 'email'
+    setRegistrationDraft((current) => ({
+      ...current,
+      [field]: value,
+      ...(affectsDuplicateReview
+        ? { duplicateReviewAcknowledged: false, duplicateReviewReason: '' }
+        : {}),
+    }))
     setRegistrationValidationMessages([])
-    setDuplicateSearchStatus('idle')
-    setDuplicateSearchError(null)
+    if (field !== 'duplicateReviewReason') {
+      setDuplicateSearchStatus('idle')
+      setDuplicateSearchError(null)
+    }
+  }
+
+  function updateDuplicateReviewAcknowledgement(acknowledged: boolean) {
+    setRegistrationDraft((current) => ({
+      ...current,
+      duplicateReviewAcknowledged: acknowledged,
+    }))
+    setRegistrationValidationMessages([])
   }
 
   async function handlePatientLogin(event: FormEvent<HTMLFormElement>) {
@@ -9815,7 +9837,15 @@ function PatientWorkspace({
                 <Search size={15} />
                 <span>{duplicateSearchStatus === 'loading' ? 'Checking' : 'Check duplicates'}</span>
               </button>
-              <button className="icon-text-button primary" type="submit" disabled={registrationSaveStatus === 'saving'}>
+              <button
+                className="icon-text-button primary"
+                type="submit"
+                disabled={registrationSaveStatus === 'saving'
+                  || (duplicateSearchStatus === 'ready'
+                    && (duplicateSearch?.totalCandidates ?? 0) > 0
+                    && (!registrationDraft.duplicateReviewAcknowledged
+                      || registrationDraft.duplicateReviewReason.trim().length < 10))}
+              >
                 <Check size={15} />
                 <span>{registrationSaveStatus === 'saving' ? 'Registering' : 'Create chart'}</span>
               </button>
@@ -9852,7 +9882,36 @@ function PatientWorkspace({
                 <div className="status-banner error">{duplicateSearchError ?? 'Duplicate check failed'}</div>
               )}
               {duplicateSearchStatus === 'ready' && (
-                <PatientDuplicateCandidateList candidates={duplicateSearch?.candidates ?? []} />
+                <>
+                  <PatientDuplicateCandidateList candidates={duplicateSearch?.candidates ?? []} />
+                  {(duplicateSearch?.totalCandidates ?? 0) > 0 && (
+                    <div className="registration-duplicate-override">
+                      <p>
+                        Possible duplicate records require a documented review before creating a separate chart.
+                      </p>
+                      <label className="contact-field">
+                        <span>Reason for separate registration</span>
+                        <textarea
+                          value={registrationDraft.duplicateReviewReason}
+                          onChange={(event) => updateRegistrationDraft('duplicateReviewReason', event.target.value)}
+                          aria-label="Reason for registering a separate patient after duplicate review"
+                          minLength={10}
+                          maxLength={500}
+                          required
+                        />
+                      </label>
+                      <label className="checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={registrationDraft.duplicateReviewAcknowledged}
+                          onChange={(event) => updateDuplicateReviewAcknowledgement(event.target.checked)}
+                          required
+                        />
+                        <span>I reviewed the possible duplicate records and am intentionally creating a separate patient chart.</span>
+                      </label>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </form>
@@ -27023,6 +27082,8 @@ function buildRegistrationDraft(): PatientRegistrationInput {
     email: '',
     hipaaAllowSms: 'YES',
     hipaaAllowEmail: 'YES',
+    duplicateReviewAcknowledged: false,
+    duplicateReviewReason: '',
   }
 }
 

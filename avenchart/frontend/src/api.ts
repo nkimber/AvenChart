@@ -428,6 +428,8 @@ export type PatientRegistrationInput = PatientDemographicsUpdate & {
   email: string
   hipaaAllowSms: string
   hipaaAllowEmail: string
+  duplicateReviewAcknowledged: boolean
+  duplicateReviewReason: string
 }
 
 export class PatientRegistrationValidationError extends Error {
