@@ -114,6 +114,7 @@ export default function PortalMessages() {
     useOutletContext<PortalOutletContext>();
   const location = useLocation();
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const activeThreadRequest = useRef<AbortController | null>(null);
 
   const [view, setView] = useState<View>(() =>
     location.state?.compose === true ? "compose" : "list",
@@ -157,6 +158,8 @@ export default function PortalMessages() {
     loadMessages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => () => activeThreadRequest.current?.abort(), []);
 
   useEffect(() => {
     if (threadState.status === "ready") {
@@ -226,6 +229,9 @@ export default function PortalMessages() {
   }
 
   function openThread(msg: PatientPortalMessageItem) {
+    activeThreadRequest.current?.abort();
+    const controller = new AbortController();
+    activeThreadRequest.current = controller;
     setSelectedMessage(msg);
     setReplyBody("");
     setReplyAttachments([]);
@@ -236,8 +242,15 @@ export default function PortalMessages() {
       setReadOptimistic((prev) => new Set([...prev, msg.id]));
       markReadOptimistic(msg.id);
     }
-    getPatientPortalMessageThread(session.sessionId, msg.id)
+    getPatientPortalMessageThread(session.sessionId, msg.id, controller.signal)
       .then((data) => {
+        if (
+          controller.signal.aborted ||
+          activeThreadRequest.current !== controller ||
+          data.messageId !== msg.id
+        )
+          return;
+        activeThreadRequest.current = null;
         setThreadState({ status: "ready", data });
         if (msg.status === "New") {
           markPatientPortalMessageRead(session.sessionId, msg.id)
@@ -248,18 +261,26 @@ export default function PortalMessages() {
             .catch(() => {});
         }
       })
-      .catch((err) =>
+      .catch((err) => {
+        if (
+          controller.signal.aborted ||
+          activeThreadRequest.current !== controller
+        )
+          return;
+        activeThreadRequest.current = null;
         setThreadState({
           status: "error",
           message:
             err instanceof Error
               ? err.message
               : "Could not load this conversation.",
-        }),
-      );
+        });
+      });
   }
 
   function backToList() {
+    activeThreadRequest.current?.abort();
+    activeThreadRequest.current = null;
     setView("list");
     setSelectedMessage(null);
     setThreadState({ status: "idle" });
@@ -476,7 +497,16 @@ export default function PortalMessages() {
             </div>
           )}
           {threadState.status === "error" && (
-            <div className="error-banner">{threadState.message}</div>
+            <div className="error-banner" role="alert">
+              <span>{threadState.message}</span>
+              <button
+                className="cl-btn-secondary"
+                type="button"
+                onClick={() => selectedMessage && openThread(selectedMessage)}
+              >
+                Retry
+              </button>
+            </div>
           )}
           {threadState.status === "ready" && (
             <>
