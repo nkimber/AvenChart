@@ -6,6 +6,7 @@ x-api-build: &api-build
   dockerfile: backend/src/AvenChart.Api/Dockerfile
 
 x-api-database-environment: &api-database-environment
+  ASPNETCORE_ENVIRONMENT: Development
   ConnectionStrings__AvenChart: Host=postgres;Port=5432;Database=${AVENCHART_DATABASE_NAME:-avenchart};Username=avenchart;Password=avenchart_demo
   DatabaseSchema__MigrationsPath: /app/database/migrations
 

@@ -47,6 +47,12 @@ public static class RuntimeSafetyPolicy
             && hosts.All(host => !host.Contains('*', StringComparison.Ordinal));
     }
 
+    public static string? GetSyntheticFinancialMutationBlocker(RuntimeSafetyOptions options) =>
+        options.EnableSyntheticFinancialMutations
+            ? null
+            : "Generated EOB and claim-adjudication amounts are available only in the development fixture. "
+                + "Production financial postings require source remittance facts from an approved integration.";
+
     public static void ConfigureForwardedHeaders(
         ForwardedHeadersOptions options,
         IReadOnlyCollection<IPAddress> trustedProxies,

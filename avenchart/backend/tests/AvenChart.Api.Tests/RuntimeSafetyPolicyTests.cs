@@ -58,6 +58,16 @@ public sealed class RuntimeSafetyPolicyTests
         }));
     }
 
+    [Fact]
+    public void GeneratedFinancialFixturesAreClosedByDefault()
+    {
+        Assert.NotNull(RuntimeSafetyPolicy.GetSyntheticFinancialMutationBlocker(new RuntimeSafetyOptions()));
+        Assert.Null(RuntimeSafetyPolicy.GetSyntheticFinancialMutationBlocker(new RuntimeSafetyOptions
+        {
+            EnableSyntheticFinancialMutations = true
+        }));
+    }
+
     [Theory]
     [InlineData("api.avenchart.example;portal.avenchart.example", true)]
     [InlineData("*", false)]

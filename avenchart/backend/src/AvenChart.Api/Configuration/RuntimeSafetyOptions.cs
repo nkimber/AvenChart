@@ -40,6 +40,12 @@ public sealed class RuntimeSafetyOptions
 
     public string? DataProtectionCertificatePassword { get; init; }
 
+    /// <summary>
+    /// Enables development-only fixtures that generate financial outcomes rather
+    /// than receiving remittance facts from an approved revenue-cycle source.
+    /// </summary>
+    public bool EnableSyntheticFinancialMutations { get; init; }
+
     public int RateLimitPermitLimit { get; init; } = 120;
 
     public int RateLimitWindowSeconds { get; init; } = 60;

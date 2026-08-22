@@ -138,6 +138,9 @@ builder.Services.AddOptions<RuntimeSafetyOptions>()
         options => !builder.Environment.IsProduction()
             || RuntimeSafetyPolicy.HasProductionDataProtectionConfiguration(options),
         "Production requires absolute RuntimeSafety data-protection key-ring, application-name, and certificate-path settings.")
+    .Validate(
+        options => !builder.Environment.IsProduction() || !options.EnableSyntheticFinancialMutations,
+        "RuntimeSafety:EnableSyntheticFinancialMutations cannot be enabled in Production.")
     .ValidateOnStart();
 
 builder.Services.AddOptions<IdentityProviderOptions>()
@@ -366,6 +369,7 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+var configuredRuntimeSafety = app.Services.GetRequiredService<IOptions<RuntimeSafetyOptions>>().Value;
 if (args.Any(argument => string.Equals(argument, "--migrate-only", StringComparison.OrdinalIgnoreCase)))
 {
     try
@@ -388,7 +392,6 @@ if (args.Any(argument => string.Equals(argument, "--migrate-only", StringCompari
     return;
 }
 
-var configuredRuntimeSafety = app.Services.GetRequiredService<IOptions<RuntimeSafetyOptions>>().Value;
 if (configuredRuntimeSafety.TrustedProxyAddresses.Length > 0)
 {
     var forwardedHeaderOptions = new ForwardedHeadersOptions();
@@ -7462,8 +7465,17 @@ billing.MapPost("/claims/{claimId}/clear", async (
 billing.MapPost("/claims/{claimId}/adjudicate", async (
         BillingRepository repository,
         string claimId,
+        IOptions<RuntimeSafetyOptions> runtimeSafety,
         CancellationToken cancellationToken) =>
     {
+        if (RuntimeSafetyPolicy.GetSyntheticFinancialMutationBlocker(runtimeSafety.Value) is { } blocker)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Generated claim adjudication is disabled",
+                detail: blocker);
+        }
+
         var mutation = await repository.AdjudicateClaimAsync(claimId, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
@@ -7549,8 +7561,17 @@ billing.MapPost("/payments/adjustment-reversals", async (
 billing.MapPost("/eob-batches/import", async (
         BillingRepository repository,
         BillingEobBatchImportRequest request,
+        IOptions<RuntimeSafetyOptions> runtimeSafety,
         CancellationToken cancellationToken) =>
     {
+        if (RuntimeSafetyPolicy.GetSyntheticFinancialMutationBlocker(runtimeSafety.Value) is { } blocker)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Generated EOB import is disabled",
+                detail: blocker);
+        }
+
         var mutation = await repository.ImportEobBatchAsync(request, cancellationToken);
         return mutation is null
             ? Results.BadRequest("EOB batch could not be imported for the supplied patient.")
