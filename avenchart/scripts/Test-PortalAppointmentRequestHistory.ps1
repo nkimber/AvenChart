@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $checks = [System.Collections.Generic.List[object]]::new()
 $createdAppointmentIds = [System.Collections.Generic.List[string]]::new()
@@ -86,7 +87,7 @@ try {
     if (-not $portal.authenticated -or -not $admin.authenticated) {
         throw "The required synthetic portal and administrator sessions were not issued."
     }
-    $adminHeaders = @{ "X-AvenChart-Session" = $admin.sessionId }
+    $adminHeaders = New-AvenChartStaffAccessContextHeaders -Login $admin
     $portalHeaders = @{ "X-AvenChart-Patient-Portal-Session" = $portal.sessionId }
     $options = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/appointments/request-options" `

@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 Add-Type -AssemblyName System.Net.Http
 
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -93,7 +94,7 @@ try {
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
         throw "Administration login did not issue an active session."
     }
-    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $login
     $providerLogin = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/auth/login" `
         -Method Post `
@@ -107,9 +108,7 @@ try {
         [string]::IsNullOrWhiteSpace($providerLogin.sessionId)) {
         throw "Provider login did not issue an active session."
     }
-    $providerHeaders = @{
-        "X-AvenChart-Session" = $providerLogin.sessionId
-    }
+    $providerHeaders = New-AvenChartStaffAccessContextHeaders -Login $providerLogin
 
     $unauthenticated = Get-HttpStatus `
         -Uri "$ApiBaseUrl/api/form-engine/patients/MOD-PAT-0001/legacy-snapshots"

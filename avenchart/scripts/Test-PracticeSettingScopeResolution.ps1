@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $checks = [System.Collections.Generic.List[object]]::new()
 $overrideCreated = $false
@@ -27,7 +28,7 @@ function Invoke-Postgres([string]$Sql) {
 try {
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     if (-not $login.authenticated) { throw "The synthetic administrator session was not issued." }
-    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $login
 
     $global = Invoke-ScopedApi "$ApiBaseUrl/api/administration/practice-settings/effective" $headers
     Add-Check "Effective practice settings resolve system values without a facility" (($global.requestedFacilityId -eq $null) -and @($global.settings).Count -eq 3 -and @($global.settings | Where-Object { $_.sourceScope -ne "system" }).Count -eq 0) @{ sources=@($global.settings | ForEach-Object sourceScope) }

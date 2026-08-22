@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $checks = [System.Collections.Generic.List[object]]::new()
 $messageId = $null
@@ -36,7 +37,7 @@ function Invoke-PostgresScalar([string]$Sql) {
 try {
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) { throw "The synthetic administrator session was not issued." }
-    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $login
 
     $created = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages" -Method Post -Headers $headers -ContentType "application/json" -Body (@{ patientId="MOD-PAT-0001"; title=$marker; body="Staff attachment lifecycle verification"; assignedTo="admin" } | ConvertTo-Json)
     $messageId = $created.id

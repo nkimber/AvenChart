@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 
 $solutionRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $artifactsRoot = Join-Path $solutionRoot "artifacts"
@@ -23,7 +24,7 @@ try {
     Add-Check "API readiness" ($health.status -eq "healthy") $health
 
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}' -TimeoutSec 15
-    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $login
     $queueRequest = @{
         eventType = "integration.recovery.test"
         aggregateType = "verification"

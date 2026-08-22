@@ -8,6 +8,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $avenChartUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
 $checks = [System.Collections.Generic.List[object]]::new()
@@ -141,8 +142,8 @@ where encounter not in (select encounter from encounters)
     if (-not $admin.authenticated -or -not $frontDesk.authenticated) {
         throw "Synthetic administrator and front-desk sessions are required."
     }
-    $headers = @{ "X-AvenChart-Session" = $admin.sessionId }
-    $frontDeskHeaders = @{ "X-AvenChart-Session" = $frontDesk.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $admin
+    $frontDeskHeaders = New-AvenChartStaffAccessContextHeaders -Login $frontDesk
 
     $unauthenticatedStatus = Invoke-StatusRequest `
         "$ApiBaseUrl/api/encounters" `

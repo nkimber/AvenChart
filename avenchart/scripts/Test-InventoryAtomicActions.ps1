@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 
 $SolutionRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $ApiProject = Join-Path $SolutionRoot "backend\src\AvenChart.Api"
@@ -142,7 +143,7 @@ try {
     if (-not $Login.authenticated -or [string]::IsNullOrWhiteSpace($Login.sessionId)) {
         throw "The isolated API did not issue an administration session."
     }
-    $Headers = @{ "X-AvenChart-Session" = $Login.sessionId }
+    $Headers = New-AvenChartStaffAccessContextHeaders -Login $Login
 
     $Inventory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Headers $Headers -TimeoutSec 20
     $Vendors = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/vendors" -Headers $Headers -TimeoutSec 20

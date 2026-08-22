@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 
 Add-Type -AssemblyName System.Net.Http
 
@@ -57,7 +58,7 @@ function Get-AdministrationHeaders {
             throw "Administration smoke login did not issue an active session."
         }
 
-        $script:AdministrationHeaders = @{ "X-AvenChart-Session" = $login.sessionId }
+        $script:AdministrationHeaders = New-AvenChartStaffAccessContextHeaders -Login $login -PurposeOfUse "healthcare-operations"
     }
 
     return $script:AdministrationHeaders
@@ -80,7 +81,7 @@ function Get-FrontDeskHeaders {
             throw "Front-desk smoke login did not issue an active session."
         }
 
-        $script:FrontDeskHeaders = @{ "X-AvenChart-Session" = $login.sessionId }
+        $script:FrontDeskHeaders = New-AvenChartStaffAccessContextHeaders -Login $login -PurposeOfUse "treatment"
     }
 
     return $script:FrontDeskHeaders
@@ -103,7 +104,7 @@ function Get-ClinicianHeaders {
             throw "Clinician smoke login did not issue an active session."
         }
 
-        $script:ClinicianHeaders = @{ "X-AvenChart-Session" = $login.sessionId }
+        $script:ClinicianHeaders = New-AvenChartStaffAccessContextHeaders -Login $login -PurposeOfUse "treatment"
     }
 
     return $script:ClinicianHeaders
@@ -126,7 +127,7 @@ function Get-InventoryWitnessHeaders {
             throw "Inventory-witness smoke login did not issue an active session."
         }
 
-        $script:InventoryWitnessHeaders = @{ "X-AvenChart-Session" = $login.sessionId }
+        $script:InventoryWitnessHeaders = New-AvenChartStaffAccessContextHeaders -Login $login -PurposeOfUse "healthcare-operations"
     }
 
     return $script:InventoryWitnessHeaders
@@ -331,7 +332,7 @@ try {
     $session = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/auth/session" `
         -Method Get `
-        -Headers @{ "X-AvenChart-Session" = $login.sessionId } `
+        -Headers (New-AvenChartStaffAccessContextHeaders -Login $login) `
         -TimeoutSec 20
 
     $unauthenticatedAuditStatus = 0
@@ -355,7 +356,7 @@ try {
     $loginAudit = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/auth/login-audit?limit=5" `
         -Method Get `
-        -Headers @{ "X-AvenChart-Session" = $login.sessionId } `
+        -Headers (New-AvenChartStaffAccessContextHeaders -Login $login -PurposeOfUse "healthcare-operations") `
         -TimeoutSec 20
 
     $unauthenticatedAdministrationStatus = 0
@@ -379,13 +380,13 @@ try {
     $administrationDirectory = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/administration/directory" `
         -Method Get `
-        -Headers @{ "X-AvenChart-Session" = $login.sessionId } `
+        -Headers (New-AvenChartStaffAccessContextHeaders -Login $login -PurposeOfUse "healthcare-operations") `
         -TimeoutSec 20
 
     $runtimeDiagnostics = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/administration/runtime-diagnostics" `
         -Method Get `
-        -Headers @{ "X-AvenChart-Session" = $login.sessionId } `
+        -Headers (New-AvenChartStaffAccessContextHeaders -Login $login -PurposeOfUse "healthcare-operations") `
         -TimeoutSec 20
     $runtimeDiagnosticsProperties = @($runtimeDiagnostics.PSObject.Properties.Name)
     $runtimeDiagnosticsAreSafe = @(
@@ -401,12 +402,83 @@ try {
         "rateLimitedResponses"
     ) | ForEach-Object { $runtimeDiagnosticsProperties -contains $_ } | Where-Object { -not $_ }
 
+    $availableAccessContext = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/access-context" `
+        -Method Get `
+        -Headers (New-AvenChartStaffAccessContextHeaders -Login $login) `
+        -TimeoutSec 20
+
+    $missingAccessContextStatus = 0
+    try {
+        Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/administration/directory" `
+            -Method Get `
+            -Headers @{ "X-AvenChart-Session" = $login.sessionId } `
+            -TimeoutSec 20 `
+            -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $missingAccessContextStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $ungrantedFacilityContextStatus = 0
+    try {
+        Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/administration/directory" `
+            -Method Get `
+            -Headers @{
+                "X-AvenChart-Session" = $login.sessionId
+                "X-AvenChart-Facility-Id" = "2147483647"
+                "X-AvenChart-Purpose-Of-Use" = "healthcare-operations"
+            } `
+            -TimeoutSec 20 `
+            -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $ungrantedFacilityContextStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $phiAccessAudit = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/administration/audit/phi?username=admin&limit=20" `
+        -Method Get `
+        -Headers (New-AvenChartStaffAccessContextHeaders -Login $login -PurposeOfUse "healthcare-operations") `
+        -TimeoutSec 20
+    $expectedFacilityId = (New-AvenChartStaffAccessContextHeaders -Login $login -PurposeOfUse "healthcare-operations")["X-AvenChart-Facility-Id"]
+    $contextAuditRecorded = @($phiAccessAudit.events | Where-Object {
+        $_.authorized -eq $true `
+            -and $_.facilityId -eq [int]$expectedFacilityId `
+            -and $_.purposeOfUse -eq "healthcare-operations"
+    }).Count -ge 1
+    $accessContextPassed = $availableAccessContext.defaultFacilityId -gt 0 `
+        -and @($availableAccessContext.facilities | Where-Object { $_.facilityId -eq $availableAccessContext.defaultFacilityId }).Count -eq 1 `
+        -and @($availableAccessContext.purposes) -contains "healthcare-operations" `
+        -and $missingAccessContextStatus -eq 403 `
+        -and $ungrantedFacilityContextStatus -eq 403 `
+        -and $contextAuditRecorded
+    Add-Check -Name "staff facility and purpose access context" -Result $(if ($accessContextPassed) { "passed" } else { "failed" }) -Details @{
+        defaultFacilityId = $availableAccessContext.defaultFacilityId
+        purposes = @($availableAccessContext.purposes)
+        missingContextStatus = $missingAccessContextStatus
+        ungrantedFacilityStatus = $ungrantedFacilityContextStatus
+        contextAuditRecorded = $contextAuditRecorded
+    }
+
     $frontDeskAdministrationStatus = 0
     try {
         $frontDeskAdministration = Invoke-WebRequest `
             -Uri "$ApiBaseUrl/api/administration/directory" `
             -Method Get `
-            -Headers @{ "X-AvenChart-Session" = $frontDeskLogin.sessionId } `
+            -Headers (New-AvenChartStaffAccessContextHeaders -Login $frontDeskLogin -PurposeOfUse "treatment") `
             -TimeoutSec 20 `
             -ErrorAction Stop
         $frontDeskAdministrationStatus = [int]$frontDeskAdministration.StatusCode
@@ -433,7 +505,7 @@ try {
     $sessionAfterLogout = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/auth/session" `
         -Method Get `
-        -Headers @{ "X-AvenChart-Session" = $login.sessionId } `
+        -Headers (New-AvenChartStaffAccessContextHeaders -Login $login) `
         -TimeoutSec 20
 
     $loginPassed = $login.authenticated -eq $true `
@@ -534,16 +606,16 @@ try {
         -TimeoutSec 20
     $authorizationCatalogPassed = $unauthenticatedAuthorizationCatalogStatus -eq 401 `
         -and $frontDeskAuthorizationCatalogStatus -eq 403 `
-        -and $authorizationCatalogPage.revision -eq "local-acl-compatibility-v1" `
-        -and $authorizationCatalogPage.classification -eq "policy-neutral local ACL compatibility registry" `
+        -and $authorizationCatalogPage.revision -eq "local-acl-access-context-v2" `
+        -and $authorizationCatalogPage.classification -eq "locally-enforced ACL and declared access-context registry" `
         -and $authorizationCatalogPage.counts.total -eq 46 `
         -and $authorizationCatalogPage.counts.locallyEnforced -eq 46 `
         -and $authorizationCatalogPage.counts.productionApproved -eq 0 `
-        -and $authorizationCatalogPage.counts.facilityScoped -eq 0 `
+        -and $authorizationCatalogPage.counts.facilityScoped -eq 46 `
         -and $authorizationCatalogPage.total -eq 46 `
         -and $authorizationCatalogPage.returned -eq 8 `
         -and $authorizationCatalogPage.offset -eq 8 `
-        -and @($authorizationCatalogPage.rules | Where-Object { $_.facilityScope -eq "enforced" }).Count -eq 0 `
+        -and @($authorizationCatalogPage.rules | Where-Object { $_.facilityScope -eq "context-enforced" }).Count -eq 8 `
         -and $authorizationCatalogFilter.total -eq 1 `
         -and $authorizationCatalogFilter.rules[0].policyId -eq "acl.admin.acl.write"
     Add-Check -Name "versioned local authorization policy registry" -Result $(if ($authorizationCatalogPassed) { "passed" } else { "failed" }) -Details @{
@@ -681,7 +753,7 @@ try {
 
     $revokedIdentityStatus = 0
     try {
-        Invoke-WebRequest -Uri $identityReadinessUri -Method Get -Headers @{ "X-AvenChart-Session" = $revokedLogin.sessionId } -TimeoutSec 20 -ErrorAction Stop | Out-Null
+        Invoke-WebRequest -Uri $identityReadinessUri -Method Get -Headers (New-AvenChartStaffAccessContextHeaders -Login $revokedLogin) -TimeoutSec 20 -ErrorAction Stop | Out-Null
     }
     catch {
         if ($_.Exception.Response) {
@@ -3382,18 +3454,19 @@ try {
             enforceConflictPolicy = $true
         }
     )
+    $atomicConflictHeaders = Get-AdministrationHeaders
     foreach ($payload in $atomicConflictPayloads) {
         $appointmentAtomicConflictJobs += Start-Job -ScriptBlock {
-            param($baseUrl, $sessionId, $body)
+            param($baseUrl, $headers, $body)
             try {
-                $response = Invoke-WebRequest -Uri "$baseUrl/api/appointments" -Method Post -Headers @{ "X-AvenChart-Session" = $sessionId } -ContentType "application/json" -Body $body -UseBasicParsing -TimeoutSec 30
+                $response = Invoke-WebRequest -Uri "$baseUrl/api/appointments" -Method Post -Headers $headers -ContentType "application/json" -Body $body -UseBasicParsing -TimeoutSec 30
                 [pscustomobject]@{ status = [int]$response.StatusCode; content = $response.Content }
             }
             catch {
                 $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
                 [pscustomobject]@{ status = $status; content = "" }
             }
-        } -ArgumentList $ApiBaseUrl, (Get-AdministrationHeaders)["X-AvenChart-Session"], ($payload | ConvertTo-Json -Depth 5 -Compress)
+        } -ArgumentList $ApiBaseUrl, $atomicConflictHeaders, ($payload | ConvertTo-Json -Depth 5 -Compress)
     }
     $atomicConflictResults = @($appointmentAtomicConflictJobs | Wait-Job | Receive-Job)
     $atomicConflictCreated = @($atomicConflictResults | Where-Object { $_.status -eq 201 })

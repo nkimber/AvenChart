@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 $solutionRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $artifactsRoot = Join-Path $solutionRoot "artifacts"
 $resultPath = Join-Path $artifactsRoot "latest-integration-outbox-lease-recovery.json"
@@ -20,7 +21,7 @@ try {
     $health = Invoke-RestMethod -Uri "$ApiBaseUrl/health/ready" -TimeoutSec 15
     Add-Check "API readiness" ($health.status -eq "healthy") $health
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}' -TimeoutSec 15
-    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $login
     $queueRequest = @{ eventType = "integration.lease.test"; aggregateType = "verification"; aggregateId = (New-Guid).Guid; destination = "local://success"; payload = @{ fixture = "no-phi" }; idempotencyKey = (New-Guid).Guid } | ConvertTo-Json -Depth 5
     $queued = Invoke-RestMethod -Uri "$ApiBaseUrl/api/integrations/outbox" -Method Post -Headers $headers -ContentType "application/json" -Body $queueRequest -TimeoutSec 15
     $query = "update integration_outbox set status='dispatching', attempt_count=1, locked_at=now() - interval '6 minutes', last_attempt_at=now() - interval '6 minutes', updated_at=now() - interval '6 minutes' where event_id='$($queued.eventId)';"

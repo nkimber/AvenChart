@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 Add-Type -AssemblyName System.Net.Http
 
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -69,7 +70,7 @@ try {
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
         throw "Administration login did not issue an active session."
     }
-    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $login
 
     $unauthenticatedHistory = Get-HttpStatus -Uri "$ApiBaseUrl/api/patients/unknown/lifecycle-history" -Method Get
     Add-Check "Lifecycle history is protected" ($unauthenticatedHistory -eq 401) @{ status = $unauthenticatedHistory }

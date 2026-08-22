@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using AvenChart.Api.Models;
+using AvenChart.Api.Security;
 using Microsoft.AspNetCore.Http;
 
 namespace AvenChart.Api.Data;
@@ -15,7 +16,8 @@ public sealed class PhiAuditedResult(
     AuthSessionResponse session,
     string httpMethod,
     string endpointName,
-    string requiredPermission) : IResult
+    string requiredPermission,
+    StaffAccessContext accessContext) : IResult
 {
     public async Task ExecuteAsync(HttpContext httpContext)
     {
@@ -39,5 +41,6 @@ public sealed class PhiAuditedResult(
         requiredPermission,
         authorized: true,
         responseStatus: responseStatus,
-        CancellationToken.None);
+        accessContext: accessContext,
+        cancellationToken: CancellationToken.None);
 }

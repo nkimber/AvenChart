@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 Add-Type -AssemblyName System.Net.Http
 
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -246,21 +247,17 @@ try {
         -Uri "$ApiBaseUrl/api/auth/login" `
         -Method "POST" `
         -Body @{ username = "admin"; password = "pass" }
-    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $login
     $providerLogin = Invoke-Json `
         -Uri "$ApiBaseUrl/api/auth/login" `
         -Method "POST" `
         -Body @{ username = "gold-provider-01"; password = "pass" }
-    $providerHeaders = @{
-        "X-AvenChart-Session" = $providerLogin.sessionId
-    }
+    $providerHeaders = New-AvenChartStaffAccessContextHeaders -Login $providerLogin
     $frontdeskLogin = Invoke-Json `
         -Uri "$ApiBaseUrl/api/auth/login" `
         -Method "POST" `
         -Body @{ username = "gold-frontdesk-01"; password = "pass" }
-    $frontdeskHeaders = @{
-        "X-AvenChart-Session" = $frontdeskLogin.sessionId
-    }
+    $frontdeskHeaders = New-AvenChartStaffAccessContextHeaders -Login $frontdeskLogin
 
     $unauthenticated = Invoke-Api `
         -Uri "$ApiBaseUrl/api/reports/execution-policy"

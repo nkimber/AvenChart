@@ -7,7 +7,7 @@ namespace AvenChart.Api.Security;
 
 public static class AuthorizationPolicyCatalog
 {
-    public const string Revision = "local-acl-compatibility-v1";
+    public const string Revision = "local-acl-access-context-v2";
 
     private sealed record PermissionFamily(
         string Capability,
@@ -116,8 +116,8 @@ public static class AuthorizationPolicyCatalog
         filtered = normalizedGap switch
         {
             "production-approval" => filtered.Where(rule => rule.ApprovalState != "production-approved"),
-            "facility-scope" => filtered.Where(rule => rule.FacilityScope != "enforced"),
-            "patient-scope" => filtered.Where(rule => rule.PatientScope != "enforced"),
+            "facility-scope" => filtered.Where(rule => rule.FacilityScope != "resource-enforced"),
+            "patient-scope" => filtered.Where(rule => rule.PatientScope != "resource-enforced"),
             "purpose" => filtered.Where(rule => rule.PurposeRequirement != "required"),
             "exceptional-access" => filtered.Where(rule => rule.ExceptionalAccess != "owner-decided"),
             _ => filtered,
@@ -127,7 +127,7 @@ public static class AuthorizationPolicyCatalog
         var page = materialized.Skip(offset).Take(limit).ToArray();
         return new AuthorizationPolicyCatalogResponse(
             Revision,
-            "policy-neutral local ACL compatibility registry",
+            "locally-enforced ACL and declared access-context registry",
             "locally-enforced-owner-gated",
             page,
             materialized.Length,
@@ -140,17 +140,17 @@ public static class AuthorizationPolicyCatalog
                 Rules.Count,
                 Rules.Count(rule => rule.PolicyState == "locally-enforced"),
                 Rules.Count(rule => rule.ApprovalState == "production-approved"),
-                Rules.Count(rule => rule.FacilityScope == "enforced"),
-                Rules.Count(rule => rule.PatientScope == "enforced"),
+                Rules.Count(rule => rule.FacilityScope.Contains("enforced", StringComparison.Ordinal)),
+                Rules.Count(rule => rule.PatientScope.Contains("enforced", StringComparison.Ordinal)),
                 Rules.Count(rule => rule.PurposeRequirement == "required"),
                 Rules.Count(rule => rule.ExceptionalAccess == "owner-decided")),
             [
                 "Production policy approval and effective intervals are not selected.",
-                "Organization and facility scope are not enforced by the local ACL matrix.",
-                "Patient/team minimum-necessary scope is not enforced by the local ACL matrix.",
-                "Purpose-of-use conditions are not required by the local ACL matrix.",
+                "A principal's declared facility is validated and audited; resource-level organization and facility filtering is not yet enforced.",
+                "Patient/team minimum-necessary resource filtering is not yet enforced.",
+                "Purpose of use is required and principal-granted; endpoint-specific permissible-use rules still need a governed policy matrix.",
                 "Emergency or exceptional access is not selected or implemented.",
-                "Current allow/deny fixtures prove selected ACL families, not every rule and scope combination.",
+                "Current allow/deny fixtures prove selected ACL and declared-context combinations, not every rule and resource-scope combination.",
             ]);
     }
 
@@ -171,18 +171,17 @@ public static class AuthorizationPolicyCatalog
             "owner-gated",
             "authenticated-staff",
             "single-local-organization",
+            "context-enforced",
             "not-enforced",
-            "not-enforced",
-            "not-required",
+            "required",
             "not-selected",
-            "server-endpoint-filter",
-            "selected-family-fixtures",
+            "server-endpoint-filter+access-context",
+            "access-context-fixtures-pending",
             [
                 "production-approval",
                 "effective-interval",
                 "facility-scope",
                 "patient-team-scope",
-                "purpose-of-use",
                 "exceptional-access-decision",
             ]);
     }

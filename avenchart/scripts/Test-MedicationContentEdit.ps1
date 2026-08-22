@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 $medicationId = $null
 
 try {
@@ -14,7 +15,7 @@ try {
         throw "The synthetic administrator session was not issued."
     }
 
-    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $login
     $created = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications" -Method Post -Headers $headers -ContentType "application/json" -Body '{"patientId":"MOD-PAT-0006","title":"Temporary medication correction proof","dateTime":"2026-07-29","diagnosis":"Z79.899","comments":"Temporary proof fixture"}'
     $medicationId = $created.id
 

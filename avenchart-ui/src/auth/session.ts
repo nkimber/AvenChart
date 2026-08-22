@@ -10,6 +10,17 @@ export type ClinicianSession = {
   displayName: string
   role: string
   staffId?: number | null
+  facilityId?: number | null
+  purposeOfUse?: string
+  facilities?: ClinicianAccessFacility[]
+  purposes?: string[]
+}
+
+export type ClinicianAccessFacility = {
+  facilityId: number
+  code: string
+  name: string
+  isDefault: boolean
 }
 
 export type PortalSession = {
@@ -39,6 +50,11 @@ function clearClinicianEphemeralBrowserData() {
 
 export function saveClinicianSession(session: ClinicianSession) {
   clearClinicianEphemeralBrowserData()
+  sessionStorage.setItem(CLINICIAN_KEY, JSON.stringify(session))
+}
+
+/** Updates the selected facility or purpose without treating it as a new sign-in. */
+export function updateClinicianSession(session: ClinicianSession) {
   sessionStorage.setItem(CLINICIAN_KEY, JSON.stringify(session))
 }
 

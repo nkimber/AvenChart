@@ -33,6 +33,10 @@ export default function ClinicianLogin() {
         displayName: result.displayName,
         role: result.role,
         staffId: result.staffId,
+        facilityId: result.accessContext?.defaultFacilityId ?? null,
+        purposeOfUse: result.accessContext?.defaultPurposeOfUse || 'treatment',
+        facilities: result.accessContext?.facilities ?? [],
+        purposes: result.accessContext?.purposes ?? ['treatment'],
       })
       navigate('/home')
     } catch (err) {

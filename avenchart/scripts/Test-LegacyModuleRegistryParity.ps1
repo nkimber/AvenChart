@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 if ([string]::IsNullOrWhiteSpace($LegacyRoot)) {
@@ -78,7 +79,7 @@ catch {
 try {
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}' -TimeoutSec 20
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) { throw "AvenChart administrator login failed." }
-    $catalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/modules" -Headers @{ "X-AvenChart-Session" = $login.sessionId } -TimeoutSec 20
+    $catalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/modules" -Headers (New-AvenChartStaffAccessContextHeaders -Login $login) -TimeoutSec 20
     $moduleByKey = @{}
     @($catalog.modules) | ForEach-Object { $moduleByKey[$_.key] = $_ }
     $mismatches = @($legacyModules | ForEach-Object {

@@ -34,6 +34,35 @@ export type AuthLoginResponse = {
   sessionId?: string | null
   sessionCreatedAt?: string | null
   sessionExpiresAt?: string | null
+  accessContext?: AuthAccessContextResponse | null
+}
+
+export type AuthAccessFacility = {
+  facilityId: number
+  code: string
+  name: string
+  isDefault: boolean
+}
+
+export type AuthAccessContextResponse = {
+  defaultFacilityId?: number | null
+  defaultPurposeOfUse: string
+  facilities: AuthAccessFacility[]
+  purposes: string[]
+}
+
+export type AuthAccessContextGrantResponse = {
+  username: string
+  facilities: AuthAccessFacility[]
+  purposes: string[]
+  updatedAt: string
+  updatedBy: string
+}
+
+export type AuthAccessContextGrantUpdateInput = {
+  facilityIds: number[]
+  defaultFacilityId: number
+  purposes: string[]
 }
 
 export type AuthSessionResponse = {
@@ -49,6 +78,7 @@ export type AuthSessionResponse = {
   endedAt?: string | null
   failureReason?: string | null
   sessionSource: string
+  accessContext?: AuthAccessContextResponse | null
 }
 
 export type PatientPortalLoginInput = {
@@ -112,6 +142,44 @@ export async function getCurrentSession(
   })
   await requireSuccessfulResponse(response, 'Session check', 'clinician')
   return response.json()
+}
+
+export async function getStaffAccessContext(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<AuthAccessContextResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/auth/access-context`, {
+    headers: { 'X-AvenChart-Session': sessionId },
+    signal,
+  })
+  await requireSuccessfulResponse(response, 'Staff access context', 'clinician')
+  return response.json()
+}
+
+export async function getStaffAccessContextGrant(
+  sessionId: string,
+  username: string,
+  signal?: AbortSignal,
+): Promise<AuthAccessContextGrantResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/access-context-grants/${encodeURIComponent(username)}`,
+    signal,
+  )
+}
+
+export async function updateStaffAccessContextGrant(
+  sessionId: string,
+  username: string,
+  input: AuthAccessContextGrantUpdateInput,
+  signal?: AbortSignal,
+): Promise<AuthAccessContextGrantResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/access-context-grants/${encodeURIComponent(username)}`,
+    input,
+    signal,
+  )
 }
 
 export async function logout(
@@ -9449,6 +9517,9 @@ export type PhiAccessAuditEvent = {
   httpMethod: string
   requestPath: string
   requiredPermission: string
+  facilityId?: number | null
+  facilityCode?: string | null
+  purposeOfUse?: string | null
   authorized: boolean
   responseStatus: number
 }

@@ -16,7 +16,8 @@ public sealed record AuthLoginResponse(
     string? FailureReason,
     Guid? SessionId,
     DateTimeOffset? SessionCreatedAt,
-    DateTimeOffset? SessionExpiresAt);
+    DateTimeOffset? SessionExpiresAt,
+    AuthAccessContextResponse? AccessContext = null);
 
 public sealed record AuthSessionRequest(
     Guid SessionId);
@@ -33,7 +34,36 @@ public sealed record AuthSessionResponse(
     DateTimeOffset? ExpiresAt,
     DateTimeOffset? EndedAt,
     string? FailureReason,
-    string SessionSource);
+    string SessionSource,
+    AuthAccessContextResponse? AccessContext = null);
+
+public sealed record AuthAccessFacilityItem(
+    int FacilityId,
+    string Code,
+    string Name,
+    bool IsDefault);
+
+/// <summary>
+/// The facility and permitted purpose choices available to the authenticated
+/// principal. The client must echo one of each on protected staff requests.
+/// </summary>
+public sealed record AuthAccessContextResponse(
+    int? DefaultFacilityId,
+    string DefaultPurposeOfUse,
+    IReadOnlyList<AuthAccessFacilityItem> Facilities,
+    IReadOnlyList<string> Purposes);
+
+public sealed record AuthAccessContextGrantResponse(
+    string Username,
+    IReadOnlyList<AuthAccessFacilityItem> Facilities,
+    IReadOnlyList<string> Purposes,
+    string UpdatedAt,
+    string UpdatedBy);
+
+public sealed record AuthAccessContextGrantUpdateRequest(
+    IReadOnlyList<int> FacilityIds,
+    int DefaultFacilityId,
+    IReadOnlyList<string> Purposes);
 
 public sealed record AuthAuthorizationFailureResponse(
     bool Authenticated,

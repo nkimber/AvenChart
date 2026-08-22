@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 Add-Type -AssemblyName System.Net.Http
 
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -50,7 +51,7 @@ try {
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" `
         -Body (@{ username = "admin"; password = "pass" } | ConvertTo-Json) -TimeoutSec 20
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) { throw "Administration login did not issue an active session." }
-    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $login
 
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 10)
     $patient = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/" -Method Post -Headers $headers -ContentType "application/json" `

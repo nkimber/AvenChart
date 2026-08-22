@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+function New-AvenChartStaffAccessContextHeaders {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Login,
+        [ValidateSet("treatment", "payment", "healthcare-operations")]
+        [string]$PurposeOfUse
+    )
+
+    if ($Login.authenticated -ne $true -or [string]::IsNullOrWhiteSpace($Login.sessionId)) {
+        throw "An authenticated login with an active session is required."
+    }
+
+    $accessContext = $Login.accessContext
+    if ($null -eq $accessContext) {
+        throw "The login response did not contain the required staff access context."
+    }
+
+    $facilities = @($accessContext.facilities)
+    $facility = @($facilities | Where-Object { $_.isDefault -eq $true } | Select-Object -First 1)
+    if ($facility.Count -eq 0) {
+        $facility = @($facilities | Select-Object -First 1)
+    }
+    if ($facility.Count -ne 1 -or $facility[0].facilityId -le 0) {
+        throw "The login response did not contain an active facility grant."
+    }
+
+    $purposes = @($accessContext.purposes)
+    if ([string]::IsNullOrWhiteSpace($PurposeOfUse)) {
+        $PurposeOfUse = @("healthcare-operations", "payment", "treatment") |
+            Where-Object { $purposes -contains $_ } |
+            Select-Object -First 1
+    }
+    if ([string]::IsNullOrWhiteSpace($PurposeOfUse) -or $purposes -notcontains $PurposeOfUse) {
+        throw "The login response does not grant purpose of use '$PurposeOfUse'."
+    }
+
+    return @{
+        "X-AvenChart-Session" = $Login.sessionId
+        "X-AvenChart-Facility-Id" = [string]$facility[0].facilityId
+        "X-AvenChart-Purpose-Of-Use" = $PurposeOfUse
+    }
+}

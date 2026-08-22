@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'AvenChartStaffAccessContext.ps1')
 
 if ($ApiPort -lt 1024 -or $ApiPort -gt 65535) {
     throw 'ApiPort must be between 1024 and 65535.'
@@ -147,8 +148,9 @@ try {
     $login = Invoke-Api -Method POST -Path '/api/auth/login' `
         -Body '{"username":"admin","password":"pass"}'
     Assert-Status $login 200 'Administrator login'
-    $sessionId = ($login.Content | ConvertFrom-Json).sessionId
-    $sessionHeaders = @{ 'X-AvenChart-Session' = $sessionId }
+    $adminLogin = $login.Content | ConvertFrom-Json
+    $sessionId = $adminLogin.sessionId
+    $sessionHeaders = New-AvenChartStaffAccessContextHeaders -Login $adminLogin
 
     $unlock = Invoke-Api -Method POST `
         -Path '/api/administration/azure-operations/access/unlock' `
@@ -159,10 +161,8 @@ try {
     if (-not $grant.requiresCodeChange) {
         throw 'The bootstrap Operations grant did not require an access-code change.'
     }
-    $protectedHeaders = @{
-        'X-AvenChart-Session' = $sessionId
-        'X-AvenChart-Operations-Access' = $grant.accessToken
-    }
+    $protectedHeaders = @{} + $sessionHeaders
+    $protectedHeaders['X-AvenChart-Operations-Access'] = $grant.accessToken
 
     $blocked = Invoke-Api -Method GET `
         -Path '/api/administration/azure-operations/capabilities' `

@@ -156,6 +156,7 @@ builder.Services.AddScoped<ReferralRepository>();
 builder.Services.AddScoped<AuthorizationRepository>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<IStaffIdentityAdapter, LocalDevelopmentStaffIdentityAdapter>();
+builder.Services.AddScoped<StaffAccessContextService>();
 builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
 builder.Services.AddScoped<PhiAuditRepository>();
@@ -388,6 +389,7 @@ var auth = app.MapGroup("/api/auth").WithTags("Authentication");
 
 auth.MapPost("/login", async (
         AuthRepository repository,
+        StaffAccessContextService accessContextService,
         AuthLoginRequest request,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
@@ -395,6 +397,15 @@ auth.MapPost("/login", async (
         var sourceIp = httpContext.Connection.RemoteIpAddress?.ToString();
         var userAgent = httpContext.Request.Headers.UserAgent.ToString();
         var response = await repository.LoginAsync(request, sourceIp, userAgent, cancellationToken);
+        if (response.Authenticated)
+        {
+            response = response with
+            {
+                AccessContext = await accessContextService.GetAvailableAsync(
+                    response.Username,
+                    cancellationToken)
+            };
+        }
         return Results.Ok(response);
     })
     .WithName("Login");
@@ -410,6 +421,19 @@ auth.MapGet("/session", async (
             cancellationToken));
     })
     .WithName("GetCurrentSession");
+
+auth.MapGet("/access-context", async (
+        AuthRepository repository,
+        StaffAccessContextService accessContextService,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(repository, httpContext, cancellationToken);
+        return !session.Authenticated
+            ? Results.Json(session, statusCode: StatusCodes.Status401Unauthorized)
+            : Results.Ok(await accessContextService.GetAvailableAsync(session.Username, cancellationToken));
+    })
+    .WithName("GetStaffAccessContext");
 
 auth.MapPost("/logout", async (
         AuthRepository repository,
@@ -6893,7 +6917,51 @@ var administration = app.MapGroup("/api/administration").WithTags("Administratio
 RequireAccessPermission(administration, "admin", "acl", "write");
 administration.MapAzureOperationsEndpoints();
 
+administration.MapGet("/access-context-grants/{username}", async (
+        string username,
+        StaffAccessContextService accessContextService,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Ok(await accessContextService.GetPrincipalGrantAsync(username, cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.NotFound(new { error = exception.Message });
+        }
+    })
+    .WithName("GetStaffAccessContextGrant");
+
+administration.MapPut("/access-context-grants/{username}", async (
+        string username,
+        AuthAccessContextGrantUpdateRequest request,
+        StaffAccessContextService accessContextService,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            return Results.Ok(await accessContextService.UpdatePrincipalGrantAsync(
+                username,
+                request,
+                session.Username,
+                cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["accessContextGrant"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("UpdateStaffAccessContextGrant");
+
 var delegatedConfiguration = app.MapGroup("/api/configuration-delegation").WithTags("Configuration delegation");
+delegatedConfiguration.AddEndpointFilter(StaffAccessContextFilter("delegated-configuration"));
 delegatedConfiguration.MapPost("/practice-settings/{key}/change-requests", async (string key, PracticeSettingChangeRequestCreateRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
 {
     var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
@@ -8973,6 +9041,7 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
     {
         var repository = context.HttpContext.RequestServices.GetRequiredService<AuthRepository>();
         var phiAuditRepository = context.HttpContext.RequestServices.GetRequiredService<PhiAuditRepository>();
+        var accessContextService = context.HttpContext.RequestServices.GetRequiredService<StaffAccessContextService>();
         var session = await GetSessionFromHeaderAsync(repository, context.HttpContext, context.HttpContext.RequestAborted);
         if (!session.Authenticated)
         {
@@ -8994,7 +9063,8 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 $"{policy.PolicyId}@{AuthorizationPolicyCatalog.Revision}",
                 authorized: false,
                 responseStatus: StatusCodes.Status403Forbidden,
-                context.HttpContext.RequestAborted);
+                accessContext: null,
+                cancellationToken: context.HttpContext.RequestAborted);
             return Results.Json(new AuthAuthorizationFailureResponse(
                 Authenticated: true,
                 Authorized: false,
@@ -9007,6 +9077,35 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 FailureReason: $"User '{session.Username}' is not authorized for {sectionValue}:{permissionValue} {returnValue}.",
                 SessionSource: session.SessionSource), statusCode: StatusCodes.Status403Forbidden);
         }
+
+        var accessContext = await accessContextService.ResolveAsync(
+            session,
+            context.HttpContext,
+            context.HttpContext.RequestAborted);
+        if (!accessContext.Authorized)
+        {
+            await phiAuditRepository.RecordAccessDecisionAsync(
+                session,
+                context.HttpContext.Request.Method,
+                context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched",
+                $"{policy.PolicyId}@{AuthorizationPolicyCatalog.Revision}",
+                authorized: false,
+                responseStatus: StatusCodes.Status403Forbidden,
+                accessContext: accessContext.Context,
+                cancellationToken: context.HttpContext.RequestAborted);
+            return Results.Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Staff access context is not authorized",
+                detail: accessContext.FailureReason,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "staff_access_context_required",
+                    ["facilityHeader"] = StaffAccessContextService.FacilityHeader,
+                    ["purposeHeader"] = StaffAccessContextService.PurposeHeader
+                });
+        }
+
+        context.HttpContext.Items[StaffAccessContextService.HttpContextItemKey] = accessContext.Context!;
 
         try
         {
@@ -9021,7 +9120,8 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                     session,
                     context.HttpContext.Request.Method,
                     endpointName,
-                    requiredPermission);
+                    requiredPermission,
+                    accessContext.Context!);
             }
 
             context.HttpContext.Response.OnStarting(async () =>
@@ -9033,7 +9133,8 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                     requiredPermission,
                     authorized: true,
                     responseStatus: context.HttpContext.Response.StatusCode,
-                    CancellationToken.None);
+                    accessContext: accessContext.Context,
+                    cancellationToken: CancellationToken.None);
             });
             return result;
         }
@@ -9046,7 +9147,97 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 $"{policy.PolicyId}@{AuthorizationPolicyCatalog.Revision}",
                 authorized: true,
                 responseStatus: StatusCodes.Status500InternalServerError,
-                context.HttpContext.RequestAborted);
+                accessContext: accessContext.Context,
+                cancellationToken: context.HttpContext.RequestAborted);
+            throw;
+        }
+    };
+}
+
+static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> StaffAccessContextFilter(
+    string requiredPermission)
+{
+    return async (context, next) =>
+    {
+        var repository = context.HttpContext.RequestServices.GetRequiredService<AuthRepository>();
+        var phiAuditRepository = context.HttpContext.RequestServices.GetRequiredService<PhiAuditRepository>();
+        var accessContextService = context.HttpContext.RequestServices.GetRequiredService<StaffAccessContextService>();
+        var session = await GetSessionFromHeaderAsync(repository, context.HttpContext, context.HttpContext.RequestAborted);
+        if (!session.Authenticated)
+        {
+            return Results.Json(session, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        var accessContext = await accessContextService.ResolveAsync(
+            session,
+            context.HttpContext,
+            context.HttpContext.RequestAborted);
+        if (!accessContext.Authorized)
+        {
+            await phiAuditRepository.RecordAccessDecisionAsync(
+                session,
+                context.HttpContext.Request.Method,
+                context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched",
+                $"{requiredPermission}@{AuthorizationPolicyCatalog.Revision}",
+                authorized: false,
+                responseStatus: StatusCodes.Status403Forbidden,
+                accessContext: null,
+                cancellationToken: context.HttpContext.RequestAborted);
+            return Results.Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Staff access context is not authorized",
+                detail: accessContext.FailureReason,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "staff_access_context_required",
+                    ["facilityHeader"] = StaffAccessContextService.FacilityHeader,
+                    ["purposeHeader"] = StaffAccessContextService.PurposeHeader
+                });
+        }
+
+        context.HttpContext.Items[StaffAccessContextService.HttpContextItemKey] = accessContext.Context!;
+        try
+        {
+            var result = await next(context);
+            var endpointName = context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched";
+            var qualifiedPermission = $"{requiredPermission}@{AuthorizationPolicyCatalog.Revision}";
+            if (result is IResult httpResult)
+            {
+                return new PhiAuditedResult(
+                    httpResult,
+                    phiAuditRepository,
+                    session,
+                    context.HttpContext.Request.Method,
+                    endpointName,
+                    qualifiedPermission,
+                    accessContext.Context!);
+            }
+
+            context.HttpContext.Response.OnStarting(async () =>
+            {
+                await phiAuditRepository.RecordAccessDecisionAsync(
+                    session,
+                    context.HttpContext.Request.Method,
+                    endpointName,
+                    qualifiedPermission,
+                    authorized: true,
+                    responseStatus: context.HttpContext.Response.StatusCode,
+                    accessContext: accessContext.Context,
+                    cancellationToken: CancellationToken.None);
+            });
+            return result;
+        }
+        catch
+        {
+            await phiAuditRepository.RecordAccessDecisionAsync(
+                session,
+                context.HttpContext.Request.Method,
+                context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched",
+                $"{requiredPermission}@{AuthorizationPolicyCatalog.Revision}",
+                authorized: true,
+                responseStatus: StatusCodes.Status500InternalServerError,
+                accessContext: accessContext.Context,
+                cancellationToken: context.HttpContext.RequestAborted);
             throw;
         }
     };

@@ -42,7 +42,12 @@ import {
   logout,
   SESSION_INVALID_EVENT,
 } from '../../api.ts'
-import { clearClinicianSession, loadClinicianSession, type ClinicianSession } from '../../auth/session.ts'
+import {
+  clearClinicianSession,
+  loadClinicianSession,
+  updateClinicianSession,
+  type ClinicianSession,
+} from '../../auth/session.ts'
 
 export type ClinicianOutletContext = {
   session: ClinicianSession
@@ -84,6 +89,12 @@ const NAV_ITEMS = [
   { path: '/clinician/experience', label: 'Experience baseline', icon: Gauge },
   { path: '/clinician/operations', label: 'Azure operations', icon: CloudCog },
 ] as const
+
+const PURPOSE_LABELS: Record<string, string> = {
+  treatment: 'Treatment',
+  payment: 'Payment',
+  'healthcare-operations': 'Healthcare operations',
+}
 
 type NavigationSurface = 'desktop' | 'mobile'
 
@@ -259,7 +270,7 @@ function initials(name: string) {
 export default function ClinicianShell() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [session] = useState(() => loadClinicianSession())
+  const [session, setSession] = useState(() => loadClinicianSession())
   const [collapsed, setCollapsed] = useState(false)
   const [authState, setAuthState] = useState<'checking' | 'authenticated' | 'unavailable'>('checking')
   const [authRetry, setAuthRetry] = useState(0)
@@ -401,6 +412,12 @@ export default function ClinicianShell() {
 
   if (!session) return null
 
+  function updateAccessContext(update: Pick<ClinicianSession, 'facilityId' | 'purposeOfUse'>) {
+    const nextSession: ClinicianSession = { ...session!, ...update }
+    updateClinicianSession(nextSession)
+    setSession(nextSession)
+  }
+
   async function signOut() {
     if (signingOut) return
     setSigningOut(true)
@@ -499,13 +516,51 @@ export default function ClinicianShell() {
         {notificationPanel}
       </div>
       {!isCollapsed ? (
-        <div className="clinician-sidebar-user">
-          <div className="sidebar-avatar">{initials(session.displayName)}</div>
-          <div className="sidebar-user-info">
-            <p className="sidebar-user-name">{session.displayName}</p>
-            <p className="sidebar-user-role">{session.role}</p>
+        <>
+          <div className="clinician-sidebar-user">
+            <div className="sidebar-avatar">{initials(session.displayName)}</div>
+            <div className="sidebar-user-info">
+              <p className="sidebar-user-name">{session.displayName}</p>
+              <p className="sidebar-user-role">{session.role}</p>
+            </div>
           </div>
-        </div>
+          {(session.facilities?.length || session.purposes?.length) && (
+            <div className="sidebar-access-context" aria-label="Staff access context">
+              {session.facilities && session.facilities.length > 0 && (
+                <label>
+                  <span>Facility</span>
+                  <select
+                    aria-label="Active facility"
+                    value={session.facilityId ?? ''}
+                    onChange={(event) => updateAccessContext({ facilityId: Number(event.target.value) })}
+                  >
+                    {session.facilities.map((facility) => (
+                      <option key={facility.facilityId} value={facility.facilityId}>
+                        {facility.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {session.purposes && session.purposes.length > 0 && (
+                <label>
+                  <span>Purpose</span>
+                  <select
+                    aria-label="Purpose of use"
+                    value={session.purposeOfUse ?? ''}
+                    onChange={(event) => updateAccessContext({ purposeOfUse: event.target.value })}
+                  >
+                    {session.purposes.map((purpose) => (
+                      <option key={purpose} value={purpose}>
+                        {PURPOSE_LABELS[purpose] ?? purpose}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+          )}
+        </>
       ) : (
         <div className="sidebar-avatar sidebar-avatar-collapsed" title={session.displayName}>
           {initials(session.displayName)}

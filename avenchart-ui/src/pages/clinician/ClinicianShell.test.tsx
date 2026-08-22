@@ -168,6 +168,34 @@ describe('ClinicianShell', () => {
     expect(screen.queryByText('Dashboard content')).not.toBeInTheDocument()
   })
 
+  it('lets a multi-facility clinician select the facility and purpose carried by requests', async () => {
+    const user = userEvent.setup()
+    saveClinicianSession({
+      sessionId: 'staff-session',
+      username: 'admin',
+      displayName: 'Avery Clinician',
+      role: 'physician',
+      facilityId: 10,
+      purposeOfUse: 'treatment',
+      facilities: [
+        { facilityId: 10, code: 'MAIN', name: 'Main clinic', isDefault: true },
+        { facilityId: 20, code: 'NORTH', name: 'North clinic', isDefault: false },
+      ],
+      purposes: ['treatment', 'healthcare-operations'],
+    })
+
+    renderShell()
+    await screen.findByText('Dashboard content')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Active facility' }), '20')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Purpose of use' }), 'healthcare-operations')
+
+    expect(loadClinicianSession()).toMatchObject({
+      facilityId: 20,
+      purposeOfUse: 'healthcare-operations',
+    })
+  })
+
   it('ends the server session before clearing local authentication', async () => {
     const user = userEvent.setup()
     window.sessionStorage.setItem(CLINICIAN_ENCOUNTER_TEMPLATE_KEY, '[{"subjective":"private note"}]')

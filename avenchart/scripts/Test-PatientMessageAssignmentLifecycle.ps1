@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $checks = [System.Collections.Generic.List[object]]::new()
 $messageId = $null
@@ -35,7 +36,7 @@ function Invoke-Postgres([string]$Sql) {
 try {
     $login = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) { throw "The synthetic administrator session was not issued." }
-    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $login
 
     $assignees = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/assignees" -Headers $headers
     $hasFrontdesk = @($assignees.assignees | Where-Object { $_.username -eq "gold-frontdesk-01" }).Count -eq 1

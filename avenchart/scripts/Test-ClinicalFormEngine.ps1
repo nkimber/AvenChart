@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 Add-Type -AssemblyName System.Net.Http
 
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -368,8 +369,8 @@ try {
     if (-not $adminLogin.authenticated -or -not $providerLogin.authenticated) {
         throw "Required synthetic staff sessions were not issued."
     }
-    $adminHeaders = @{ "X-AvenChart-Session" = $adminLogin.sessionId }
-    $providerHeaders = @{ "X-AvenChart-Session" = $providerLogin.sessionId }
+    $adminHeaders = New-AvenChartStaffAccessContextHeaders -Login $adminLogin
+    $providerHeaders = New-AvenChartStaffAccessContextHeaders -Login $providerLogin
 
     $policy = Invoke-Json `
         -Uri "$ApiBaseUrl/api/form-engine/policy" `

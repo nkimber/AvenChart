@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $checks = [System.Collections.Generic.List[object]]::new()
 $marker = "TMP-SOAP-VERSION-$(New-Guid)"
@@ -132,7 +133,7 @@ try {
     if (-not $admin.authenticated) {
         throw "The synthetic administrator session was not issued."
     }
-    $headers = @{ "X-AvenChart-Session" = $admin.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $admin
 
     $fixtureText = Invoke-PostgresScalar @"
 select json_build_object(

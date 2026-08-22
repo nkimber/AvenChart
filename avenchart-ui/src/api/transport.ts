@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { loadClinicianSession } from '../auth/session.ts'
+
 export const apiBaseUrl =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5001";
 
@@ -90,6 +92,21 @@ export async function apiFetch(
   const requestController = new AbortController();
   const callerSignal = init.signal;
   const headers = new Headers(init.headers);
+  const staffSessionId = headers.get('X-AvenChart-Session');
+  if (staffSessionId) {
+    const storedSession = loadClinicianSession();
+    if (storedSession?.sessionId === staffSessionId) {
+      if (!headers.has('X-AvenChart-Facility-Id') && storedSession.facilityId) {
+        headers.set('X-AvenChart-Facility-Id', String(storedSession.facilityId));
+      }
+      if (!headers.has('X-AvenChart-Purpose-Of-Use')) {
+        headers.set(
+          'X-AvenChart-Purpose-Of-Use',
+          storedSession.purposeOfUse || 'treatment',
+        );
+      }
+    }
+  }
   const scope: SessionScope | undefined = headers.has(
     "X-AvenChart-Patient-Portal-Session",
   )
@@ -115,6 +132,7 @@ export async function apiFetch(
   try {
     const response = await globalThis.fetch(input, {
       ...init,
+      headers,
       signal: requestController.signal,
     });
     await requireSuccessfulResponse(response, action, scope);

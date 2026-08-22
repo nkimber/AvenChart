@@ -8,6 +8,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 
 if ($ApiPort -lt 1024 -or $ApiPort -gt 65535) {
     throw "ApiPort must be between 1024 and 65535."
@@ -348,7 +349,7 @@ try {
     if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
         throw "Could not establish the isolated API session required for schema-shape error testing."
     }
-    $authenticatedHeaders = @{ "X-AvenChart-Session" = $login.sessionId }
+    $authenticatedHeaders = New-AvenChartStaffAccessContextHeaders -Login $login
 
     $administrationOriginalResponse = Invoke-Http `
         -Method "GET" `

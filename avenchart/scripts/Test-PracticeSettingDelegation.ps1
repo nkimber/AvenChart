@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $checks = [System.Collections.Generic.List[object]]::new()
 $delegationId = $null
@@ -31,8 +32,8 @@ try {
     $admin = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"pass"}'
     $frontdesk = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"gold-frontdesk-01","password":"pass"}'
     if (-not $admin.authenticated -or -not $frontdesk.authenticated) { throw "The required synthetic sessions were not issued." }
-    $adminHeaders = @{ "X-AvenChart-Session" = $admin.sessionId }
-    $delegateHeaders = @{ "X-AvenChart-Session" = $frontdesk.sessionId }
+    $adminHeaders = New-AvenChartStaffAccessContextHeaders -Login $admin
+    $delegateHeaders = New-AvenChartStaffAccessContextHeaders -Login $frontdesk
     $candidate = @{ value="America/Chicago"; reason=$marker; facilityId=10 } | ConvertTo-Json
 
     $beforeGrant = Get-HttpStatus { Invoke-WebRequest -Uri "$ApiBaseUrl/api/configuration-delegation/practice-settings/practice.time-zone/change-requests" -Method Post -Headers $delegateHeaders -ContentType "application/json" -Body $candidate -UseBasicParsing }

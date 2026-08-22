@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 $temporaryResultId = 2090000000 + (Get-Random -Minimum 1 -Maximum 999999)
 $composeArguments = @("compose", "exec", "-T", "postgres", "psql", "-X", "-U", "avenchart", "-d", "avenchart", "-v", "ON_ERROR_STOP=1")
 
@@ -37,7 +38,7 @@ try {
         throw "The synthetic administrator session was not issued."
     }
 
-    $headers = @{ "X-AvenChart-Session" = $login.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $login
     $before = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/critical-result-queue" -Headers $headers
     $openResult = @($before.results | Where-Object { $_.resultId -eq $temporaryResultId })[0]
     if ($null -eq $openResult -or $openResult.acknowledgementVersion -ne 1) {

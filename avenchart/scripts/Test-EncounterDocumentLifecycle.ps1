@@ -9,6 +9,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "AvenChartStaffAccessContext.ps1")
 $solutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $avenChartUiRoot = Resolve-Path (Join-Path $solutionRoot "..\avenchart-ui")
 $checks = [System.Collections.Generic.List[object]]::new()
@@ -88,7 +89,7 @@ try {
     if (-not $admin.authenticated) {
         throw "The synthetic administrator session was not issued."
     }
-    $headers = @{ "X-AvenChart-Session" = $admin.sessionId }
+    $headers = New-AvenChartStaffAccessContextHeaders -Login $admin
 
     $baseline = Get-EncounterDetail
     if ($baseline.patientId -ne $PatientId) {
