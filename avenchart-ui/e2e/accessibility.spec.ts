@@ -109,6 +109,57 @@ async function navigateWithinApplication(page: Page, path: string) {
 }
 
 test.describe("accessibility gate", () => {
+  test("login pages provide a working skip target and focus announced sign-in failures", async ({
+    page,
+  }) => {
+    const cases = [
+      {
+        path: "/login",
+        usernameLabel: "Username",
+        passwordLabel: "Password",
+        endpoint: "**/api/auth/login",
+      },
+      {
+        path: "/portal/login",
+        usernameLabel: "Email or username",
+        passwordLabel: "Password",
+        endpoint: "**/api/patient-portal/login",
+      },
+    ];
+
+    for (const login of cases) {
+      await page.goto(login.path);
+      const skipLink = page.getByRole("link", { name: "Skip to main content" });
+      await skipLink.focus();
+      await expect(skipLink).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(page.locator("#main-content")).toBeFocused();
+
+      await page.route(login.endpoint, async (route) => {
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({
+            authenticated: false,
+            failureReason: "Synthetic sign-in failure.",
+          }),
+        });
+      });
+      await page.getByLabel(login.usernameLabel).fill("accessibility-test");
+      await page.getByLabel(login.passwordLabel).fill("not-a-password");
+      await page.getByRole("button", { name: "Sign in" }).click();
+      const alert = page.getByRole("alert");
+      await expect(alert).toHaveText("Synthetic sign-in failure.");
+      await expect(alert).toBeFocused();
+      const alertId = await alert.getAttribute("id");
+      expect(alertId).toBeTruthy();
+      await expect(page.getByLabel(login.usernameLabel)).toHaveAttribute(
+        "aria-describedby",
+        alertId!,
+      );
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+    }
+  });
+
   test("public entry and login surfaces have no serious WCAG violations", async ({
     page,
   }) => {

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ShieldCheck, Stethoscope } from 'lucide-react'
 import { login } from '../api.ts'
@@ -15,6 +15,12 @@ export default function ClinicianLogin() {
   const [password, setPassword] = useState('pass')
   const [status, setStatus] = useState<'idle' | 'checking' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
+  const errorReference = useRef<HTMLDivElement>(null)
+  const errorId = 'clinician-sign-in-error'
+
+  useEffect(() => {
+    if (error) errorReference.current?.focus()
+  }, [error])
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -46,7 +52,7 @@ export default function ClinicianLogin() {
   }
 
   return (
-    <div className="auth-shell">
+    <main id="main-content" className="auth-shell" tabIndex={-1}>
       <div className="auth-hero">
         <div className="auth-hero-brand">
           <span className="auth-hero-brand-mark" aria-hidden="true">
@@ -78,9 +84,19 @@ export default function ClinicianLogin() {
 
           <div className="hint-banner">Demo credentials are pre-filled: admin / pass.</div>
 
-          {error && <div className="error-banner">{error}</div>}
+          {error && (
+            <div
+              ref={errorReference}
+              id={errorId}
+              className="error-banner"
+              role="alert"
+              tabIndex={-1}
+            >
+              {error}
+            </div>
+          )}
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} aria-busy={status === 'checking'}>
             <div className="field">
               <label className="label" htmlFor="clinician-username">Username</label>
               <input
@@ -92,6 +108,8 @@ export default function ClinicianLogin() {
                 onChange={(event) => setUsername(event.target.value)}
                 autoComplete="username"
                 spellCheck={false}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? errorId : undefined}
               />
             </div>
             <div className="field">
@@ -104,6 +122,8 @@ export default function ClinicianLogin() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete="current-password"
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? errorId : undefined}
               />
             </div>
             <button className="button-primary" type="submit" disabled={status === 'checking'}>
@@ -113,6 +133,6 @@ export default function ClinicianLogin() {
           <LegalAttribution />
         </div>
       </div>
-    </div>
+    </main>
   )
 }
