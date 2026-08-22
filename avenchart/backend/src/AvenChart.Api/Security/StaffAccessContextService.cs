@@ -315,6 +315,39 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
             facilityId,
             cancellationToken);
 
+    public Task<bool> CanAccessClinicalListResourceAsync(
+        string resourceType,
+        string? resourceId,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        var query = resourceType switch
+        {
+            "Allergy" => """
+                select exists(select 1 from allergies item join patients patient on patient.legacy_pid=item.pid where item.id=@resourceId and patient.facility_id=@facility and patient.merged_into_patient_id is null);
+                """,
+            "Problem" => """
+                select exists(select 1 from problems item join patients patient on patient.legacy_pid=item.pid where item.id=@resourceId and patient.facility_id=@facility and patient.merged_into_patient_id is null);
+                """,
+            "Medication" => """
+                select exists(select 1 from medications item join patients patient on patient.legacy_pid=item.pid where item.id=@resourceId and patient.facility_id=@facility and patient.merged_into_patient_id is null);
+                """,
+            "Prescription" => """
+                select exists(select 1 from prescriptions item join patients patient on patient.legacy_pid=item.pid where item.id=@resourceId and patient.facility_id=@facility and patient.merged_into_patient_id is null);
+                """,
+            "Immunization" => """
+                select exists(select 1 from immunizations item join patients patient on patient.legacy_pid=item.pid where item.id=@resourceId::integer and patient.facility_id=@facility and patient.merged_into_patient_id is null);
+                """,
+            "ImmunizationKey" => """
+                select exists(select 1 from immunizations item join patients patient on patient.legacy_pid=item.pid where item.key=@resourceId and patient.facility_id=@facility and patient.merged_into_patient_id is null);
+                """,
+            _ => null,
+        };
+        return query is null
+            ? Task.FromResult(false)
+            : CanAccessPatientResourceAsync(query, resourceId, facilityId, cancellationToken);
+    }
+
     public async Task<AuthAccessContextGrantResponse> GetPrincipalGrantAsync(
         string username,
         CancellationToken cancellationToken)

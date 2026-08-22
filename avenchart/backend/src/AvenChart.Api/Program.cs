@@ -3815,6 +3815,7 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
 
 var clinicalLists = app.MapGroup("/api/clinical-lists").WithTags("Clinical Lists");
 RequireAccessPermission(clinicalLists, "patients", "med", "view");
+clinicalLists.AddEndpointFilter(ClinicalListFacilityScopeFilter());
 
 clinicalLists.MapGet("/medication-vocabulary", async (
         ClinicalListRepository repository,
@@ -3836,6 +3837,7 @@ clinicalLists.MapGet("/pharmacies", async (
 
 clinicalLists.MapGet("/prescription-refill-requests", async (
         ClinicalListRepository repository,
+        HttpContext httpContext,
         string? status,
         string? patient,
         int? limit,
@@ -3847,6 +3849,7 @@ clinicalLists.MapGet("/prescription-refill-requests", async (
             patient,
             limit ?? 100,
             offset ?? 0,
+            RequireStaffAccessContext(httpContext).FacilityId,
             cancellationToken));
     })
     .WithName("GetClinicalPrescriptionRefillQueue");
@@ -3868,6 +3871,7 @@ clinicalLists.MapPost("/allergies", async (
         ClinicalAllergyCreateRequest request,
         CancellationToken cancellationToken) =>
     {
+        if (!await CanAccessSelectedFacilityPatientAsync(httpContext, request.PatientId, cancellationToken)) return Results.NotFound();
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
         var mutation = await repository.CreateAllergyAsync(request, session.Username, cancellationToken);
         return mutation is null
@@ -3883,6 +3887,7 @@ clinicalLists.MapPost("/problems", async (
         ClinicalProblemCreateRequest request,
         CancellationToken cancellationToken) =>
     {
+        if (!await CanAccessSelectedFacilityPatientAsync(httpContext, request.PatientId, cancellationToken)) return Results.NotFound();
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
         var mutation = await repository.CreateProblemAsync(request, session.Username, cancellationToken);
         return mutation is null
@@ -3923,6 +3928,7 @@ clinicalLists.MapPost("/medications", async (
         ClinicalMedicationCreateRequest request,
         CancellationToken cancellationToken) =>
     {
+        if (!await CanAccessSelectedFacilityPatientAsync(httpContext, request.PatientId, cancellationToken)) return Results.NotFound();
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
         var mutation = await repository.CreateMedicationAsync(request, session.Username, cancellationToken);
         return mutation is null
@@ -4053,6 +4059,7 @@ clinicalLists.MapPost("/prescriptions", async (
         ClinicalPrescriptionCreateRequest request,
         CancellationToken cancellationToken) =>
     {
+        if (!await CanAccessSelectedFacilityPatientAsync(httpContext, request.PatientId, cancellationToken)) return Results.NotFound();
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
         var mutation = await repository.CreatePrescriptionAsync(request, session.Username, cancellationToken);
         return mutation is null
@@ -4244,6 +4251,7 @@ clinicalLists.MapPost("/immunizations", async (
         ClinicalImmunizationCreateRequest request,
         CancellationToken cancellationToken) =>
     {
+        if (!await CanAccessSelectedFacilityPatientAsync(httpContext, request.PatientId, cancellationToken)) return Results.NotFound();
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
         var mutation = await repository.CreateImmunizationAsync(request, session.Username, cancellationToken);
         return mutation is null
@@ -10046,6 +10054,16 @@ static StaffAccessContext RequireStaffAccessContext(HttpContext httpContext) =>
         ? accessContext
         : throw new InvalidOperationException("The endpoint requires a resolved staff access context.");
 
+static Task<bool> CanAccessSelectedFacilityPatientAsync(
+    HttpContext httpContext,
+    string? patientId,
+    CancellationToken cancellationToken) =>
+    httpContext.RequestServices.GetRequiredService<StaffAccessContextService>()
+        .CanAccessPatientAsync(
+            patientId,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
+
 static void RequireAccessPermission(
     RouteGroupBuilder group,
     string sectionValue,
@@ -10452,6 +10470,60 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 messageId,
                 accessContext.FacilityId,
                 context.HttpContext.RequestAborted);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        return await next(context);
+    };
+}
+
+static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> ClinicalListFacilityScopeFilter()
+{
+    return async (context, next) =>
+    {
+        var routeValues = context.HttpContext.Request.RouteValues;
+        var accessContext = RequireStaffAccessContext(context.HttpContext);
+        var accessContextService = context.HttpContext.RequestServices
+            .GetRequiredService<StaffAccessContextService>();
+        var cancellationToken = context.HttpContext.RequestAborted;
+
+        if (routeValues.TryGetValue("patientId", out var patientRouteValue))
+        {
+            var patientId = patientRouteValue?.ToString();
+            PhiAuditResourceContext.Set(context.HttpContext, "Patient", patientId);
+            var allowed = await accessContextService.CanAccessPatientAsync(
+                patientId,
+                accessContext.FacilityId,
+                cancellationToken);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        (string? ResourceType, string? ResourceId) clinicalResource = routeValues.TryGetValue("allergyId", out var allergyId) ? ("Allergy", allergyId?.ToString())
+            : routeValues.TryGetValue("problemId", out var problemId) ? ("Problem", problemId?.ToString())
+            : routeValues.TryGetValue("medicationId", out var medicationId) ? ("Medication", medicationId?.ToString())
+            : routeValues.TryGetValue("prescriptionId", out var prescriptionId) ? ("Prescription", prescriptionId?.ToString())
+            : routeValues.TryGetValue("immunizationId", out var immunizationId) ? ("Immunization", immunizationId?.ToString())
+            : routeValues.TryGetValue("immunizationKey", out var immunizationKey) ? ("ImmunizationKey", immunizationKey?.ToString())
+            : (null, null);
+        if (clinicalResource.ResourceType is not null)
+        {
+            PhiAuditResourceContext.Set(context.HttpContext, clinicalResource.ResourceType, clinicalResource.ResourceId);
+            var allowed = await accessContextService.CanAccessClinicalListResourceAsync(
+                clinicalResource.ResourceType,
+                clinicalResource.ResourceId,
+                accessContext.FacilityId,
+                cancellationToken);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        if (routeValues.TryGetValue("messageId", out var messageRouteValue))
+        {
+            var messageId = messageRouteValue?.ToString();
+            PhiAuditResourceContext.Set(context.HttpContext, "Message", messageId);
+            var allowed = await accessContextService.CanAccessMessageAsync(
+                messageId,
+                accessContext.FacilityId,
+                cancellationToken);
             return allowed ? await next(context) : Results.NotFound();
         }
 

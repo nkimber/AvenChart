@@ -101,8 +101,13 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         string? patient,
         int limit,
         int offset,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        if (facilityId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(facilityId));
+        }
         var metadata = await GetMetadataAsync(cancellationToken);
         var normalizedStatus = NormalizeOptionalText(status)?.ToLowerInvariant() ?? "open";
         if (normalizedStatus is not (
@@ -145,6 +150,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                     where m.deleted = 0
                       and m.owner = m.assigned_to
                       and m.portal_relation = 'portal:prescription-refill-request'
+                      and patient_record.facility_id = @facilityId
                       and (
                         @patient is null
                         or patient_record.canonical_id ilike '%' || @patient || '%'
@@ -165,6 +171,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 """;
             countCommand.Parameters.Add("patient", NpgsqlDbType.Text).Value =
                 NullableText(normalizedPatient);
+            countCommand.Parameters.AddWithValue("facilityId", facilityId);
             await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
             await reader.ReadAsync(cancellationToken);
             counts = new PrescriptionRefillQueueCounts(
@@ -221,6 +228,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                     where m.deleted = 0
                       and m.owner = m.assigned_to
                       and m.portal_relation = 'portal:prescription-refill-request'
+                      and patient_record.facility_id = @facilityId
                       and (
                         @patient is null
                         or patient_record.canonical_id ilike '%' || @patient || '%'
@@ -244,6 +252,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 """;
             command.Parameters.Add("patient", NpgsqlDbType.Text).Value =
                 NullableText(normalizedPatient);
+            command.Parameters.AddWithValue("facilityId", facilityId);
             command.Parameters.AddWithValue("status", normalizedStatus);
             command.Parameters.AddWithValue("limit", boundedLimit);
             command.Parameters.AddWithValue("offset", boundedOffset);
