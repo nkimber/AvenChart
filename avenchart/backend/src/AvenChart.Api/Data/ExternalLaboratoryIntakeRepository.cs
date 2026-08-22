@@ -435,10 +435,7 @@ public sealed class ExternalLaboratoryIntakeRepository(
                 update critical_lab_result_acknowledgements
                 set status='open',
                     version=@nextVersion,
-                    result_content_version=coalesce((
-                      select max(version_no)
-                      from procedure_result_versions
-                      where result_id=@resultId), 0)+1,
+                    result_content_version=avenchart_current_procedure_result_content_version(@resultId),
                     acknowledged_by=null,
                     acknowledged_at=null,
                     acknowledgement_reason=null
@@ -490,10 +487,8 @@ public sealed class ExternalLaboratoryIntakeRepository(
               update critical_lab_result_follow_ups follow_up
               set status='open',
                   version=follow_up.version+1,
-                  result_content_version=coalesce((
-                    select max(version_no)
-                    from procedure_result_versions
-                    where result_id=follow_up.result_id), 0)+1,
+                  result_content_version=avenchart_current_procedure_result_content_version(
+                    follow_up.result_id),
                   owner_username=null,
                   due_at=null,
                   accepted_by=null,

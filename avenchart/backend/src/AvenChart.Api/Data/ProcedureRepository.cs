@@ -250,10 +250,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                    ack.acknowledged_by, ack.acknowledged_at,
                    coalesce(follow_up.status, 'open') as follow_up_status,
                    coalesce(follow_up.version, 1) as follow_up_version,
-                   coalesce(follow_up.result_content_version, ack.result_content_version, coalesce((
-                     select max(version.version_no)
-                     from procedure_result_versions version
-                     where version.result_id=lres.id), 0) + 1) as result_content_version,
+                   coalesce(follow_up.result_content_version, ack.result_content_version,
+                            avenchart_current_procedure_result_content_version(lres.id)) as result_content_version,
                    follow_up.owner_username,
                    owner.display_name as owner_display_name,
                    follow_up.due_at,
@@ -2107,13 +2105,14 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var result = await GetResultMutationContextAsync(connection, resultId, facilityId, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var result = await GetResultMutationContextAsync(
+            connection, resultId, facilityId, cancellationToken, transaction, lockForUpdate: true);
         if (result is null)
         {
             return null;
         }
 
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SnapshotCurrentProcedureResultVersionAsync(connection, transaction, result.Id, cancellationToken);
 
         await using var command = connection.CreateCommand();
@@ -2536,11 +2535,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = """
-            select coalesce(max(version_no), 0)::integer + 1
-            from procedure_result_versions
-            where result_id = @resultId;
-            """;
+        command.CommandText = "select avenchart_current_procedure_result_content_version(@resultId);";
         command.Parameters.AddWithValue("resultId", resultId);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
@@ -2637,10 +2632,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
               update critical_lab_result_acknowledgements acknowledgement
               set status='open',
                   version=acknowledgement.version+1,
-                  result_content_version=coalesce((
-                    select max(version.version_no)
-                    from procedure_result_versions version
-                    where version.result_id=acknowledgement.result_id), 0)+1,
+                  result_content_version=avenchart_current_procedure_result_content_version(
+                    acknowledgement.result_id),
                   acknowledged_by=null,
                   acknowledged_at=null,
                   acknowledgement_reason=null
@@ -2682,10 +2675,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
               update critical_lab_result_follow_ups follow_up
               set status='open',
                   version=follow_up.version+1,
-                  result_content_version=coalesce((
-                    select max(version.version_no)
-                    from procedure_result_versions version
-                    where version.result_id=follow_up.result_id), 0)+1,
+                  result_content_version=avenchart_current_procedure_result_content_version(
+                    follow_up.result_id),
                   owner_username=null,
                   due_at=null,
                   accepted_by=null,
@@ -3094,10 +3085,23 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         NpgsqlConnection connection,
         int resultId,
         int facilityId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null,
+        bool lockForUpdate = false)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = """
+        command.Transaction = transaction;
+        command.CommandText = lockForUpdate ? """
+            select lrs.id, lrs.report_id, lo.patient_id, lo.pid
+            from lab_results lrs
+            inner join lab_reports lr on lr.id = lrs.report_id
+            inner join lab_orders lo on lo.id = lr.order_id
+            inner join patients patient on patient.legacy_pid=lo.pid
+            where lrs.id = @id
+              and patient.facility_id=@facilityId
+            limit 1
+            for update of lrs;
+            """ : """
             select lrs.id, lrs.report_id, lo.patient_id, lo.pid
             from lab_results lrs
             inner join lab_reports lr on lr.id = lrs.report_id
@@ -3625,18 +3629,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             }
         }
 
-        int contentVersion;
-        await using (var version = connection.CreateCommand())
-        {
-            version.Transaction = transaction;
-            version.CommandText = """
-                select coalesce(max(version_no), 0) + 1
-                from procedure_result_versions
-                where result_id=@resultId;
-                """;
-            version.Parameters.AddWithValue("resultId", resultId);
-            contentVersion = Convert.ToInt32(await version.ExecuteScalarAsync(cancellationToken));
-        }
+        var contentVersion = await GetProcedureResultCurrentVersionAsync(
+            connection, transaction, resultId, cancellationToken);
 
         await using (var insert = connection.CreateCommand())
         {
