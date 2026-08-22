@@ -3559,15 +3559,12 @@ clinicalLists.MapPut("/prescription-refill-requests/{messageId:int}/decision", a
     })
     .WithName("DecideClinicalPrescriptionRefillRequest");
 
-clinicalLists.MapDelete("/prescriptions/{prescriptionId}", async (
-        ClinicalListRepository repository,
-        string prescriptionId,
-        CancellationToken cancellationToken) =>
-    {
-        var deleted = await repository.DeletePrescriptionAsync(prescriptionId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    })
-    .WithName("DeleteClinicalPrescription");
+clinicalLists.MapDelete("/prescriptions/{prescriptionId}", () =>
+        Results.Conflict(new
+        {
+            error = "Prescriptions and their audit trail are retained as part of the longitudinal record. Use the deactivation workflow with a clinical reason instead."
+        }))
+    .WithName("RejectClinicalPrescriptionDeletion");
 
 clinicalLists.MapPost("/immunizations", async (
         ClinicalListStateRepository repository,

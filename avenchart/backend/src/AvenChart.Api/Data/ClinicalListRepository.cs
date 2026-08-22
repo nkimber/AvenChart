@@ -369,7 +369,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("patientId", patient.PatientId);
         command.Parameters.AddWithValue("pid", patient.LegacyPid);
-        command.Parameters.AddWithValue("providerId", request.ProviderId ?? patient.ProviderId);
+        AddNullableInt(command, "providerId", request.ProviderId ?? patient.ProviderId);
         command.Parameters.Add("startDate", NpgsqlDbType.Date).Value = startDate;
         command.Parameters.AddWithValue("drug", request.Drug.Trim());
         command.Parameters.AddWithValue("rxNormCode", NullableText(request.RxNormCode));
@@ -1138,33 +1138,6 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Detail: lists);
     }
 
-    public async Task<bool> DeletePrescriptionAsync(string prescriptionId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(prescriptionId))
-        {
-            return false;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using (var auditCommand = connection.CreateCommand())
-        {
-            auditCommand.CommandText = """
-                delete from prescription_audit_events
-                where prescription_id = @id;
-                """;
-            auditCommand.Parameters.AddWithValue("id", prescriptionId);
-            await auditCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            delete from prescriptions
-            where id = @id;
-            """;
-        command.Parameters.AddWithValue("id", prescriptionId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-    }
-
     public async Task<ClinicalPrescriptionAuditHistoryResponse?> GetPrescriptionAuditHistoryAsync(
         string prescriptionId,
         CancellationToken cancellationToken)
@@ -1280,7 +1253,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             PatientId: reader.GetString(reader.GetOrdinal("canonical_id")),
             LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
             Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
-            ProviderId: reader.GetInt32(reader.GetOrdinal("provider_id")),
+            ProviderId: ReadNullableInt(reader, "provider_id"),
             FirstName: firstName,
             LastName: lastName,
             DisplayName: string.IsNullOrWhiteSpace(preferredName)
@@ -1328,7 +1301,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             PatientId: reader.GetString(reader.GetOrdinal("canonical_id")),
             LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
             Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
-            ProviderId: reader.GetInt32(reader.GetOrdinal("provider_id")),
+            ProviderId: ReadNullableInt(reader, "provider_id"),
             FirstName: firstName,
             LastName: lastName,
             DisplayName: string.IsNullOrWhiteSpace(preferredName)
@@ -2087,7 +2060,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         string PatientId,
         int LegacyPid,
         string Pubpid,
-        int ProviderId,
+        int? ProviderId,
         string FirstName,
         string LastName,
         string DisplayName);

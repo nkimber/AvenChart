@@ -128,6 +128,35 @@ try {
         latestAction = $deactivatedHistory.events[0].action
         latestActor = $deactivatedHistory.events[0].actor
     }
+
+    $prescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions" -Method Post -Headers $headers `
+        -ContentType "application/json" -Body (@{
+            patientId = $patientId
+            startDate = "2027-01-05"
+            drug = "Clinical audit verification prescription"
+            dosage = "One tablet daily"
+            quantity = "1"
+            refills = 0
+            note = "Initial fixture entry for prescription retention verification."
+            diagnosis = "Z00.00"
+        } | ConvertTo-Json) -TimeoutSec 20
+    $prescriptionId = $prescription.id
+    $deletePrescriptionStatus = Get-HttpStatus `
+        -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$prescriptionId" `
+        -Method Delete -RequestHeaders $headers
+    $prescriptionHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$prescriptionId/audit-history" `
+        -Headers $headers -TimeoutSec 20
+    Add-Check "Prescription deletion is rejected without losing its audit trail" (
+        $deletePrescriptionStatus -eq 409 -and
+        $prescriptionHistory.eventCount -eq 1 -and
+        $prescriptionHistory.events[0].action -eq "create" -and
+        $prescriptionHistory.events[0].actor -eq "admin"
+    ) @{
+        deleteStatus = $deletePrescriptionStatus
+        eventCount = $prescriptionHistory.eventCount
+        action = $prescriptionHistory.events[0].action
+        actor = $prescriptionHistory.events[0].actor
+    }
 }
 catch {
     Add-Check "Unhandled clinical-list audit test error" $false $_.Exception.Message

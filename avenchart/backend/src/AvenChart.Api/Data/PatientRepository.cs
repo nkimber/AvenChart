@@ -1137,6 +1137,18 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 delete from clinical_list_audit_events
                 where patient_id = @canonicalId;
 
+                delete from prescription_refill_request_lifecycle
+                where patient_id = @canonicalId
+                   or pid = (select legacy_pid from patients where canonical_id = @canonicalId);
+
+                delete from prescription_audit_events
+                where patient_id = @canonicalId
+                   or pid = (select legacy_pid from patients where canonical_id = @canonicalId);
+
+                delete from prescriptions
+                where patient_id = @canonicalId
+                   or pid = (select legacy_pid from patients where canonical_id = @canonicalId);
+
                 update clinical_form_instances
                 set predecessor_instance_id = null,
                     successor_instance_id = null
