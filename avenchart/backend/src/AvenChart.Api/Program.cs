@@ -2663,6 +2663,7 @@ patients.MapDelete("/insurance/{insuranceId}", async (
 
 var appointments = app.MapGroup("/api/appointments").WithTags("Appointments");
 RequireAccessPermission(appointments, "patients", "appt", "view");
+appointments.AddEndpointFilter(ClinicalResourceFacilityScopeFilter());
 
 appointments.MapGet("/flow-board", async (FlowBoardRepository repository, string? date, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetAsync(date, cancellationToken)))
@@ -2939,6 +2940,7 @@ appointments.MapDelete("/{appointmentId}", async (
 
 var encounters = app.MapGroup("/api/encounters").WithTags("Encounters");
 RequireAccessPermission(encounters, "encounters", "auth_a", "view");
+encounters.AddEndpointFilter(ClinicalResourceFacilityScopeFilter());
 
 encounters.MapGet("/", async (
         EncounterRepository repository,
@@ -5060,6 +5062,7 @@ records.MapDelete("/{intakeId:guid}/test-fixture", async (
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 RequireAccessPermission(documents, "patients", "docs", "view");
+documents.AddEndpointFilter(ClinicalResourceFacilityScopeFilter());
 
 documents.MapGet("/ocr-queue", async (
         DocumentRepository repository,
@@ -10206,6 +10209,52 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 accessContext.FacilityId,
                 context.HttpContext.RequestAborted);
         return authorized ? await next(context) : Results.NotFound();
+    };
+}
+
+static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> ClinicalResourceFacilityScopeFilter()
+{
+    return async (context, next) =>
+    {
+        var routeValues = context.HttpContext.Request.RouteValues;
+        var accessContext = RequireStaffAccessContext(context.HttpContext);
+        var accessContextService = context.HttpContext.RequestServices
+            .GetRequiredService<StaffAccessContextService>();
+
+        if (routeValues.TryGetValue("documentId", out var documentRouteValue)
+            && int.TryParse(documentRouteValue?.ToString(), out var documentId))
+        {
+            PhiAuditResourceContext.Set(context.HttpContext, "Document", documentId.ToString());
+            var allowed = await accessContextService.CanAccessDocumentAsync(
+                documentId,
+                accessContext.FacilityId,
+                context.HttpContext.RequestAborted);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        if (routeValues.TryGetValue("encounter", out var encounterRouteValue)
+            && int.TryParse(encounterRouteValue?.ToString(), out var encounter))
+        {
+            PhiAuditResourceContext.Set(context.HttpContext, "Encounter", encounter.ToString());
+            var allowed = await accessContextService.CanAccessEncounterAsync(
+                encounter,
+                accessContext.FacilityId,
+                context.HttpContext.RequestAborted);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        if (routeValues.TryGetValue("appointmentId", out var appointmentRouteValue))
+        {
+            var appointmentId = appointmentRouteValue?.ToString();
+            PhiAuditResourceContext.Set(context.HttpContext, "Appointment", appointmentId);
+            var allowed = await accessContextService.CanAccessAppointmentAsync(
+                appointmentId,
+                accessContext.FacilityId,
+                context.HttpContext.RequestAborted);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        return await next(context);
     };
 }
 

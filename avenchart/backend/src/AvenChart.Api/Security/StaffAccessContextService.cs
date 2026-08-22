@@ -143,6 +143,84 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
+    /// <summary>
+    /// Resolves a document through its patient before permitting a direct
+    /// document route. Document identifiers are otherwise globally enumerable
+    /// implementation details and must never be treated as authorization.
+    /// </summary>
+    public Task<bool> CanAccessDocumentAsync(
+        int documentId,
+        int facilityId,
+        CancellationToken cancellationToken) =>
+        CanAccessPatientResourceAsync(
+            """
+            select exists(
+              select 1
+              from patient_documents document
+              join patients patient on patient.canonical_id=document.patient_id
+              where document.id=@resourceId
+                and patient.facility_id=@facility
+                and patient.merged_into_patient_id is null);
+            """,
+            documentId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            facilityId,
+            cancellationToken);
+
+    /// <summary>
+    /// Resolves an encounter through its patient before permitting a direct
+    /// encounter route. This protects notes, forms, signatures, and attached
+    /// records exposed from an encounter identifier.
+    /// </summary>
+    public Task<bool> CanAccessEncounterAsync(
+        int encounter,
+        int facilityId,
+        CancellationToken cancellationToken) =>
+        CanAccessPatientResourceAsync(
+            """
+            select exists(
+              select 1
+              from encounters encounter
+              join patients patient on patient.legacy_pid=encounter.pid
+              where encounter.encounter=@resourceId::integer
+                and patient.facility_id=@facility
+                and patient.merged_into_patient_id is null);
+            """,
+            encounter.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            facilityId,
+            cancellationToken);
+
+    /// <summary>
+    /// Resolves a recurring appointment occurrence to its series root and
+    /// then to the owning patient. A virtual-occurrence suffix cannot widen
+    /// the facility scope of the underlying appointment.
+    /// </summary>
+    public Task<bool> CanAccessAppointmentAsync(
+        string? appointmentId,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        var normalized = appointmentId?.Trim();
+        var separator = normalized?.IndexOf('@', StringComparison.Ordinal) ?? -1;
+        if (separator > 0)
+        {
+            normalized = normalized![..separator];
+        }
+
+        return CanAccessPatientResourceAsync(
+            """
+            select exists(
+              select 1
+              from appointments appointment
+              join patients patient on patient.legacy_pid=appointment.pid
+              where appointment.id=@resourceId
+                and patient.facility_id=@facility
+                and patient.merged_into_patient_id is null);
+            """,
+            normalized,
+            facilityId,
+            cancellationToken);
+    }
+
     public async Task<AuthAccessContextGrantResponse> GetPrincipalGrantAsync(
         string username,
         CancellationToken cancellationToken)
@@ -344,6 +422,27 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
             purposes.FirstOrDefault() ?? string.Empty,
             facilities,
             purposes);
+    }
+
+    private async Task<bool> CanAccessPatientResourceAsync(
+        string commandText,
+        string? resourceId,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(resourceId)
+            || resourceId.Length > 128
+            || facilityId <= 0)
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        command.Parameters.AddWithValue("resourceId", resourceId);
+        command.Parameters.AddWithValue("facility", facilityId);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
     private static async Task EnsureAccountExistsAsync(
