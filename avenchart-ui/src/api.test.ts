@@ -2083,7 +2083,7 @@ describe('authenticated API transport', () => {
       .mockResolvedValueOnce(jsonResponse({ id: 6001, detail }))
       .mockResolvedValueOnce(jsonResponse({ id: 6001, detail }))
       .mockResolvedValueOnce(jsonResponse({ id: 6001, detail }))
-      .mockResolvedValueOnce(jsonResponse({ reportId: 6001, reviewVersion: 4, events: [{ eventId: 9, action: 'signed', previousStatus: 'assigned', currentStatus: 'reviewed', actor: 'admin', expectedVersion: 3, resultingVersion: 4, occurredAt: '2026-07-27 23:45' }] }))
+      .mockResolvedValueOnce(jsonResponse({ reportId: 6001, reviewVersion: 4, events: [{ eventId: 9, action: 'signed', previousStatus: 'assigned', currentStatus: 'reviewed', actor: 'admin', expectedVersion: 3, resultingVersion: 4, contentRevision: 'lab-report-review-content-v1', contentChecksum: '0'.repeat(64), occurredAt: '2026-07-27 23:45' }] }))
       .mockResolvedValueOnce(
         jsonResponse({
           requestedCount: 2,
@@ -2121,7 +2121,12 @@ describe('authenticated API transport', () => {
     })
 
     expect(bulk).toMatchObject({ requestedCount: 2, signedCount: 2 })
-    expect(history.events[0]).toMatchObject({ action: 'signed', resultingVersion: 4 })
+    expect(history.events[0]).toMatchObject({
+      action: 'signed',
+      resultingVersion: 4,
+      contentRevision: 'lab-report-review-content-v1',
+      contentChecksum: '0'.repeat(64),
+    })
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       'http://localhost:5001/api/procedures/reports/6001/review-assignment',
       'http://localhost:5001/api/procedures/reports/6001/sign',

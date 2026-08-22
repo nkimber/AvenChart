@@ -318,7 +318,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             select lr.id as report_id, lr.review_version,
                    event.id as event_id, event.action, event.previous_status, event.current_status,
                    event.assigned_to, event.actor, event.reason, event.expected_version,
-                   event.resulting_version, event.occurred_at
+                   event.resulting_version, event.content_revision, event.content_checksum,
+                   event.occurred_at
             from lab_reports lr
             left join lab_report_review_events event on event.report_id = lr.id
             where lr.id = @reportId
@@ -351,6 +352,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 Reason: ReadNullableString(reader, "reason"),
                 ExpectedVersion: reader.GetInt32(reader.GetOrdinal("expected_version")),
                 ResultingVersion: reader.GetInt32(reader.GetOrdinal("resulting_version")),
+                ContentRevision: ReadNullableString(reader, "content_revision"),
+                ContentChecksum: ReadNullableString(reader, "content_checksum"),
                 OccurredAt: reader.GetDateTime(reader.GetOrdinal("occurred_at")).ToString("yyyy-MM-dd HH:mm")));
         }
         while (await reader.ReadAsync(cancellationToken));
@@ -1209,12 +1212,14 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     public async Task<ProcedureMutationResponse?> UpdateReportAsync(
         int reportId,
         ProcedureReportUpdateRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         if (reportId <= 0
             || request.SpecimenId <= 0
             || string.IsNullOrWhiteSpace(request.ReportStatus)
             || string.IsNullOrWhiteSpace(request.ReviewStatus)
+            || string.IsNullOrWhiteSpace(actor)
             || !TryReadDateTime(request.DateCollected, out var collectedDate)
             || !TryReadDateTime(request.DateReport, out var reportDate))
         {
@@ -1240,6 +1245,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        var contexts = await GetReportReviewContextsAsync(connection, transaction, [report.Id], cancellationToken);
+        if (!contexts.TryGetValue(report.Id, out var reviewContext))
+        {
+            return null;
+        }
+
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -1250,7 +1261,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 specimen_number = @specimenNumber,
                 status = @status,
                 notes = @notes
-            where id = @id;
+            where id = @id
+              and (specimen_id, date_collected, report_date, specimen_number, status, notes)
+                  is distinct from
+                  (@specimenId, @dateCollected, @reportDate, @specimenNumber, @status, @notes);
             """;
         command.Parameters.AddWithValue("id", report.Id);
         command.Parameters.AddWithValue("specimenId", specimen.Id);
@@ -1259,7 +1273,23 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("specimenNumber", specimen.DisplayIdentifier);
         command.Parameters.AddWithValue("status", request.ReportStatus.Trim());
         command.Parameters.AddWithValue("notes", request.Notes?.Trim() ?? string.Empty);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        var contentChanged = await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        if (contentChanged)
+        {
+            var requiresReopen = reviewContext.ReviewStatus is "assigned" or "reviewed" or "denied";
+            await ApplyReviewTransitionAsync(
+                connection,
+                transaction,
+                reviewContext,
+                "received",
+                requiresReopen ? "reopened-after-report-correction" : "content-corrected",
+                null,
+                actor.Trim(),
+                requiresReopen
+                    ? "The local report content was corrected; the prior report review requires a new review."
+                    : "The local report content was corrected before review.",
+                cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(report.PatientId, cancellationToken);
@@ -1735,6 +1765,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             result.Id,
             actor,
             cancellationToken);
+        await ReopenReportReviewAfterResultCorrectionAsync(
+            connection,
+            transaction,
+            result.ReportId,
+            actor,
+            cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(result.PatientId, cancellationToken);
@@ -2143,6 +2179,57 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task ReopenReportReviewAfterResultCorrectionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int reportId,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        const string reason =
+            "The local result content was corrected; the prior report review requires a new review.";
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            with target as (
+              select id, review_status as previous_status, review_version as expected_version
+              from lab_reports
+              where id=@reportId
+                and review_status in ('assigned', 'reviewed', 'denied')
+              for update
+            ), reopened as (
+              update lab_reports report
+              set review_status='received',
+                  reviewed_by=null,
+                  reviewed_at=null,
+                  review_version=target.expected_version+1
+              from target
+              where report.id=target.id
+                and report.review_version=target.expected_version
+              returning report.id, target.previous_status, target.expected_version,
+                        report.review_version as resulting_version
+            )
+            insert into lab_report_review_events (
+              report_id, action, previous_status, current_status, assigned_to, actor,
+              reason, expected_version, resulting_version, occurred_at)
+            select id,
+                   'reopened-after-result-correction',
+                   previous_status,
+                   'received',
+                   null,
+                   @actor,
+                   @reason,
+                   expected_version,
+                   resulting_version,
+                   current_timestamp
+            from reopened;
+            """;
+        command.Parameters.AddWithValue("reportId", reportId);
+        command.Parameters.AddWithValue("actor", actor.Trim());
+        command.Parameters.AddWithValue("reason", reason);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task<IReadOnlyDictionary<int, List<ProcedureResultVersionItem>>> GetProcedureResultVersionHistoryAsync(
         NpgsqlConnection connection,
         IReadOnlyList<int> resultIds,
@@ -2463,7 +2550,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select lrs.id, lo.patient_id, lo.pid
+            select lrs.id, lrs.report_id, lo.patient_id, lo.pid
             from lab_results lrs
             inner join lab_reports lr on lr.id = lrs.report_id
             inner join lab_orders lo on lo.id = lr.order_id
@@ -2480,6 +2567,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         return new ProcedureResultMutationContext(
             Id: reader.GetInt32(reader.GetOrdinal("id")),
+            ReportId: reader.GetInt32(reader.GetOrdinal("report_id")),
             PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
             LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")));
     }
@@ -2985,7 +3073,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         string ReviewStatus,
         int ReviewVersion);
 
-    private sealed record ProcedureResultMutationContext(int Id, string PatientId, int LegacyPid);
+    private sealed record ProcedureResultMutationContext(int Id, int ReportId, string PatientId, int LegacyPid);
 
     private sealed record OrderCatalogImportValues(
         string VendorFormat,

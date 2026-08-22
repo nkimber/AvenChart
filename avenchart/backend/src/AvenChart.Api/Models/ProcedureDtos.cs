@@ -338,6 +338,8 @@ public sealed record ProcedureReportReviewEventItem(
     string? Reason,
     int ExpectedVersion,
     int ResultingVersion,
+    string? ContentRevision,
+    string? ContentChecksum,
     string OccurredAt);
 
 public sealed record ProcedureResultItem(

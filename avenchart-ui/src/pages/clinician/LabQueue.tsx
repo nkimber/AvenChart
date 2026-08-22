@@ -960,6 +960,9 @@ export default function LabQueue() {
                                       <li key={event.eventId}>
                                         {event.action} · {event.previousStatus ?? 'none'} → {event.currentStatus} · {event.actor} · {formatDateTime(event.occurredAt)}
                                         {event.reason ? ` · ${event.reason}` : ''}
+                                        {event.contentChecksum
+                                          ? ` · content evidence ${event.contentRevision ?? 'unknown'} / SHA-256 ${event.contentChecksum}`
+                                          : ' · legacy event: no content-bound review evidence'}
                                       </li>
                                     ))}
                                   </ol>

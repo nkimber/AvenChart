@@ -6103,11 +6103,14 @@ procedures.MapPost("/reports", async (
 
 procedures.MapPut("/reports/{reportId:int}", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int reportId,
         ProcedureReportUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.UpdateReportAsync(reportId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.UpdateReportAsync(reportId, request, session.Username, cancellationToken);
         return mutation is null
             ? Results.BadRequest("Procedure report could not be updated from the supplied report details.")
             : Results.Ok(mutation);

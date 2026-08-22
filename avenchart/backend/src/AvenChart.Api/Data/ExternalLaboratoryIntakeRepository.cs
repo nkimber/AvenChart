@@ -93,13 +93,18 @@ public sealed class ExternalLaboratoryIntakeRepository(
             updated += resultMutation.Updated ? 1 : 0;
         }
 
-        var reportChanged = report.Existing && (updated > 0 || !report.Matches(bundle));
+        var reportChanged = report.Existing && (created > 0 || updated > 0 || !report.Matches(bundle));
         if (report.Existing)
         {
             if (reportChanged)
             {
                 await CorrectReportAsync(connection, transaction, report, bundle, source.SourceId, cancellationToken);
             }
+        }
+        else
+        {
+            await InsertReportReviewEventAsync(connection, transaction, report.ReportId, "external-received", null, "received", null,
+                $"external-laboratory:{source.SourceId}", "Initial external FHIR R4 laboratory report received; clinician review remains required.", 0, 1, cancellationToken);
         }
 
         var newIngestionId = Guid.NewGuid();
@@ -248,8 +253,6 @@ public sealed class ExternalLaboratoryIntakeRepository(
             link.Parameters.AddWithValue("reportId", reportId);
             await link.ExecuteNonQueryAsync(cancellationToken);
         }
-        await InsertReportReviewEventAsync(connection, transaction, reportId, "external-received", null, "received", null,
-            $"external-laboratory:{source.SourceId}", "Initial external FHIR R4 laboratory report received; clinician review remains required.", 0, 1, cancellationToken);
         return new ExternalReportContext(reportId, Existing: false, ToDatabaseTimestamp(bundle.CollectedAt), ToDatabaseTimestamp(bundle.ReportedAt), bundle.ReportStatus, "received", 1, context.SpecimenIdentifier);
     }
 
@@ -332,7 +335,7 @@ public sealed class ExternalLaboratoryIntakeRepository(
             update.Parameters.AddWithValue("resultId", existing.ResultId);
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
-        await ReopenCriticalAcknowledgementAsync(connection, transaction, existing.ResultId, observation.Abnormal, source.SourceId, cancellationToken);
+        await ReopenCriticalAcknowledgementAsync(connection, transaction, existing.ResultId, source.SourceId, cancellationToken);
         return new ResultMutation(Created: false, Updated: true);
     }
 
@@ -405,11 +408,9 @@ public sealed class ExternalLaboratoryIntakeRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int resultId,
-        string? abnormal,
         string sourceId,
         CancellationToken cancellationToken)
     {
-        if (!IsCritical(abnormal)) return;
         string? priorStatus = null;
         var priorVersion = 0;
         await using (var select = connection.CreateCommand())
@@ -432,7 +433,15 @@ public sealed class ExternalLaboratoryIntakeRepository(
             update.Transaction = transaction;
             update.CommandText = """
                 update critical_lab_result_acknowledgements
-                set status='open',version=@nextVersion,acknowledged_by=null,acknowledged_at=null,acknowledgement_reason=null
+                set status='open',
+                    version=@nextVersion,
+                    result_content_version=coalesce((
+                      select max(version_no)
+                      from procedure_result_versions
+                      where result_id=@resultId), 0)+1,
+                    acknowledged_by=null,
+                    acknowledged_at=null,
+                    acknowledgement_reason=null
                 where result_id=@resultId and status='acknowledged' and version=@priorVersion;
                 """;
             update.Parameters.AddWithValue("nextVersion", nextVersion);
@@ -446,8 +455,21 @@ public sealed class ExternalLaboratoryIntakeRepository(
         await using var history = connection.CreateCommand();
         history.Transaction = transaction;
         history.CommandText = """
-            insert into critical_lab_result_acknowledgement_events(result_id,action,previous_status,current_status,actor,reason,expected_version,resulting_version,occurred_at)
-            values(@resultId,'reopened','acknowledged','open',@actor,@reason,@expectedVersion,@resultingVersion,current_timestamp);
+            insert into critical_lab_result_acknowledgement_events(
+              result_id,action,previous_status,current_status,actor,reason,expected_version,
+              resulting_version,result_content_version,occurred_at)
+            select @resultId,
+                   'reopened-after-result-correction',
+                   'acknowledged',
+                   'open',
+                   @actor,
+                   @reason,
+                   @expectedVersion,
+                   @resultingVersion,
+                   acknowledgement.result_content_version,
+                   current_timestamp
+            from critical_lab_result_acknowledgements acknowledgement
+            where acknowledgement.result_id=@resultId;
             """;
         history.Parameters.AddWithValue("resultId", resultId);
         history.Parameters.AddWithValue("actor", $"external-laboratory:{sourceId}");
@@ -542,8 +564,6 @@ public sealed class ExternalLaboratoryIntakeRepository(
 
     private static DateTime ToDatabaseTimestamp(DateTimeOffset value) => DateTime.SpecifyKind(value.UtcDateTime, DateTimeKind.Unspecified);
     private static string? ReadNullable(NpgsqlDataReader reader, int ordinal) => reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
-    private static bool IsCritical(string? abnormal) => abnormal?.Trim().ToLowerInvariant() is "critical" or "panic" or "hh" or "ll";
-
     private sealed record ExternalIngestionRow(Guid IngestionId, byte[] PayloadHash, string Status, string? RejectionReason, int? ReportId, int CreatedResultCount, int UpdatedResultCount);
     private sealed record ExternalClinicalContext(string PatientId, int OrderId, int SpecimenId, int FacilityId, string SpecimenIdentifier);
     private sealed record ExternalReportContext(int ReportId, bool Existing, DateTime CollectedAt, DateTime ReportedAt, string Status, string ReviewStatus, int ReviewVersion, string SpecimenIdentifier)

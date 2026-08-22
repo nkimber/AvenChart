@@ -10425,6 +10425,8 @@ export type ProcedureReportReviewHistoryResponse = {
     reason?: string | null
     expectedVersion: number
     resultingVersion: number
+    contentRevision?: string | null
+    contentChecksum?: string | null
     occurredAt: string
   }>
 }
