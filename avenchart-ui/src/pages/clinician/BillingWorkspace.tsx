@@ -44,6 +44,10 @@ export default function BillingWorkspace() {
   const [batch, setBatch] = useState<StatementBatchResponse | null>(null);
   const [collections, setCollections] =
     useState<CollectionsWorkQueueResponse | null>(null);
+  const [collectionsLoading, setCollectionsLoading] = useState(true);
+  const [collectionsError, setCollectionsError] = useState<string | null>(
+    null,
+  );
   const [batchError, setBatchError] = useState<string | null>(null);
   const [dispatching, setDispatching] = useState(false);
   const [followUpPatientId, setFollowUpPatientId] = useState<string | null>(
@@ -60,9 +64,21 @@ export default function BillingWorkspace() {
     getBillingStatementBatch(session.sessionId, 10)
       .then(setBatch)
       .catch(() => setBatchError("Could not load statement candidates."));
+    setCollectionsLoading(true);
+    setCollectionsError(null);
     getBillingCollectionsWorkQueue(session.sessionId, 10)
-      .then(setCollections)
-      .catch(() => {});
+      .then((response) => {
+        setCollections(response);
+        setFollowUpPatientId(null);
+      })
+      .catch(() => {
+        setCollections(null);
+        setFollowUpPatientId(null);
+        setCollectionsError(
+          "Could not load the collections queue. No follow-up decisions can be made from this view until it is refreshed.",
+        );
+      })
+      .finally(() => setCollectionsLoading(false));
   }
 
   useEffect(() => {
@@ -559,21 +575,50 @@ export default function BillingWorkspace() {
               </p>
             )}
           </section>
-          {collections && (
-            <section
-              className="cl-card"
-              style={{ padding: 0, overflow: "hidden" }}
+          <section
+            className="cl-card"
+            aria-labelledby="collections-queue-heading"
+            style={{ padding: 0, overflow: "hidden" }}
+          >
+            <div
+              className="cl-card-header"
+              style={{ padding: "16px 20px 12px" }}
             >
-              <div
-                className="cl-card-header"
-                style={{ padding: "16px 20px 12px" }}
-              >
-                <h2 className="cl-card-title">Collections queue</h2>
+              <h2 className="cl-card-title" id="collections-queue-heading">
+                Collections queue
+              </h2>
+              {collections && (
                 <span className="cl-badge cl-badge-muted">
                   {collections.highPriorityCount} high priority
                 </span>
+              )}
+            </div>
+            {collectionsLoading ? (
+              <p className="cl-empty-text" role="status">
+                Loading collections queue...
+              </p>
+            ) : collectionsError ? (
+              <div className="error-banner" role="alert">
+                {collectionsError}
+                <div className="cl-inline-actions">
+                  <button
+                    className="cl-btn-secondary cl-btn-sm"
+                    type="button"
+                    onClick={load}
+                  >
+                    Retry collections queue
+                  </button>
+                </div>
               </div>
-              <table className="cl-table">
+            ) : collections ? (
+              <>
+              <div
+                className="table-scroll"
+                tabIndex={0}
+                role="region"
+                aria-label="Collections queue"
+              >
+                <table className="cl-table">
                 <thead>
                   <tr>
                     <th>Patient</th>
@@ -616,7 +661,8 @@ export default function BillingWorkspace() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+                </table>
+              </div>
               {followUpPatientId && (
                 <div className="cl-inline-form" style={{ margin: 16 }}>
                   <label className="cl-admin-field">
@@ -652,8 +698,9 @@ export default function BillingWorkspace() {
                   No accounts need collections follow-up.
                 </p>
               )}
-            </section>
-          )}
+              </>
+            ) : null}
+          </section>
         </>
       )}
     </div>
