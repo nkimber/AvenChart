@@ -27,7 +27,8 @@ public sealed record PatientMessageItem(
     int? UpdatedBy,
     string? UpdatedAt,
     int Deleted,
-    int AssignmentVersion);
+    int AssignmentVersion,
+    int MessageVersion);
 
 public sealed record PatientMessageCreateRequest(
     string PatientId,
@@ -37,11 +38,13 @@ public sealed record PatientMessageCreateRequest(
 
 public sealed record PatientMessageStatusUpdateRequest(
     string Status,
-    string Body);
+    string Body,
+    int ExpectedVersion);
 
 public sealed record PatientMessageContentUpdateRequest(
     string Title,
-    string Body);
+    string Body,
+    int ExpectedVersion);
 
 public sealed record PatientMessageAssignmentUpdateRequest(
     string? AssignedTo,
@@ -55,7 +58,8 @@ public sealed record PatientMessageForwardRequest(
 
 public sealed record PatientMessageCorrectionRequest(
     string Correction,
-    string Reason);
+    string Reason,
+    int ExpectedVersion);
 
 public sealed record PatientMessageCorrectionEvent(
     long EventId,
@@ -67,6 +71,24 @@ public sealed record PatientMessageCorrectionEvent(
 public sealed record PatientMessageCorrectionHistoryResponse(
     string MessageId,
     IReadOnlyList<PatientMessageCorrectionEvent> Events);
+
+public sealed record PatientMessageContentEvent(
+    long EventId,
+    string Action,
+    int PriorVersion,
+    int MessageVersion,
+    string? PriorTitle,
+    string? Title,
+    string? PriorBody,
+    string? Body,
+    string? PriorStatus,
+    string? Status,
+    string Actor,
+    string OccurredAt);
+
+public sealed record PatientMessageContentHistoryResponse(
+    string MessageId,
+    IReadOnlyList<PatientMessageContentEvent> Events);
 
 public sealed record PatientMessageArchiveRequest(string Reason);
 
@@ -103,7 +125,8 @@ public sealed record PatientMessageAssignmentHistoryResponse(
 
 public sealed record PatientMessageReplyRequest(
     string Body,
-    string AssignedTo);
+    string AssignedTo,
+    int ExpectedVersion);
 
 public sealed record PatientMessageMutationResponse(
     string Id,

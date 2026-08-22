@@ -85,6 +85,7 @@ import {
   getPatientDocumentRoutingQueue,
   getPatientDocumentRetentionPolicy,
   getPatientMessages,
+  getPatientMessageVersion,
   getPatientPortalAppointments,
   getPatientPortalAppointmentRequestOptions,
   getAppointmentReminderDispatchHistory,
@@ -2484,9 +2485,11 @@ function App() {
 
     try {
       const sessionId = getActiveAppointmentSessionId()
+      const messageVersion = await getPatientMessageVersion(reminderId, sessionId)
       await updatePatientMessageStatus(reminderId, {
         status: 'Deferred',
         body: `${reason || 'Appointment request'}\n\nDeferred by scheduling staff for follow-up.`,
+        expectedVersion: messageVersion.version,
       }, sessionId)
       setAppointmentWaitlistStatus('ready')
       setAppointmentRefreshKey((current) => current + 1)
@@ -4829,6 +4832,7 @@ function App() {
         body: message.body?.startsWith('Closed from')
           ? message.body
           : 'Closed from the modernized Messages workspace.',
+        expectedVersion: message.messageVersion,
       }, sessionId)
       setPatientMessages(response.detail)
       setMessageStatus('ready')
@@ -24744,21 +24748,32 @@ function MessageItem({
     setBodyDraft(message.body || '')
     setAssigneeDraft(message.assignedTo || '')
     setReplyDraft('')
-  }, [message.title, message.body, message.assignedTo])
+  }, [message.title, message.body, message.assignedTo, message.assignmentVersion, message.messageVersion])
 
   async function handleContentSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    await onUpdateContent(message, { title: titleDraft.trim(), body: bodyDraft.trim() })
+    await onUpdateContent(message, {
+      title: titleDraft.trim(),
+      body: bodyDraft.trim(),
+      expectedVersion: message.messageVersion,
+    })
   }
 
   async function handleAssignSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    await onAssign(message, { assignedTo: assigneeDraft.trim() })
+    await onAssign(message, {
+      assignedTo: assigneeDraft.trim(),
+      expectedVersion: message.assignmentVersion,
+    })
   }
 
   async function handleReplySubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    await onReply(message, { body: replyDraft.trim(), assignedTo: assigneeDraft.trim() || message.assignedTo || 'admin' })
+    await onReply(message, {
+      body: replyDraft.trim(),
+      assignedTo: assigneeDraft.trim() || message.assignedTo || 'admin',
+      expectedVersion: message.messageVersion,
+    })
     setReplyDraft('')
   }
 

@@ -5921,7 +5921,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             UpdatedBy: null,
             UpdatedAt: null,
             Deleted: 0,
-            AssignmentVersion: 0);
+            AssignmentVersion: 0,
+            MessageVersion: 1);
     }
 
     private static async Task<int> GetNextPortalMailboxIdAsync(

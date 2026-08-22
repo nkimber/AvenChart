@@ -1367,6 +1367,8 @@ export type PatientMessageItem = {
   updatedBy?: number | null
   updatedAt?: string | null
   deleted: number
+  assignmentVersion: number
+  messageVersion: number
 }
 
 export type PatientMessagesResponse = {
@@ -1716,20 +1718,24 @@ export type PatientMessageCreateInput = {
 export type PatientMessageStatusUpdateInput = {
   status: string
   body: string
+  expectedVersion: number
 }
 
 export type PatientMessageContentUpdateInput = {
   title: string
   body: string
+  expectedVersion: number
 }
 
 export type PatientMessageAssignmentUpdateInput = {
   assignedTo: string
+  expectedVersion: number
 }
 
 export type PatientMessageReplyInput = {
   body: string
   assignedTo: string
+  expectedVersion: number
 }
 
 export type PatientMessageArchiveInput = {
@@ -1739,6 +1745,11 @@ export type PatientMessageArchiveInput = {
 export type PatientMessageMutationResponse = {
   id: string
   detail: PatientMessagesResponse
+}
+
+export type PatientMessageVersionResponse = {
+  messageId: string
+  version: number
 }
 
 export type ProcedureResultItem = {
@@ -6976,6 +6987,22 @@ export async function updatePatientMessageStatus(
   })
   if (!response.ok) {
     throw new Error(messageApiError('Patient message update', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getPatientMessageVersion(
+  messageId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientMessageVersionResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/version`, {
+    headers: buildAvenChartSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(messageApiError('Patient message version', response.status))
   }
 
   return response.json()

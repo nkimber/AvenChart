@@ -4379,6 +4379,17 @@ messages.MapGet("/{patientId}", async (
     })
     .WithName("GetPatientMessages");
 
+messages.MapGet("/{messageId}/version", async (
+        MessageRepository repository,
+        string messageId,
+        CancellationToken cancellationToken) =>
+    {
+        var version = await repository.GetCurrentMessageVersionAsync(messageId, cancellationToken);
+        return version is null ? Results.NotFound() : Results.Ok(new { messageId, version });
+    })
+    .WithName("GetPatientMessageVersion")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
+
 messages.MapPost("/", async (
         MessageRepository repository,
         PatientMessageCreateRequest request,
@@ -4398,24 +4409,52 @@ messages.MapPost("/", async (
 
 messages.MapPut("/{messageId}/status", async (
         MessageRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string messageId,
         PatientMessageStatusUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.UpdateStatusAsync(messageId, request, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.UpdateStatusAsync(messageId, request, session.Username, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (PatientMessageVersionConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, exception.ExpectedVersion, exception.CurrentVersion });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["message"] = [exception.Message] });
+        }
     })
     .WithName("UpdatePatientMessageStatus")
     .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
 messages.MapPut("/{messageId}/content", async (
         MessageRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string messageId,
         PatientMessageContentUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.UpdateContentAsync(messageId, request, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.UpdateContentAsync(messageId, request, session.Username, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (PatientMessageVersionConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, exception.ExpectedVersion, exception.CurrentVersion });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["message"] = [exception.Message] });
+        }
     })
     .WithName("UpdatePatientMessageContent")
     .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
@@ -4521,6 +4560,12 @@ messages.MapGet("/{messageId}/correction-history", async (MessageRepository repo
     return history is null ? Results.NotFound() : Results.Ok(history);
 }).WithName("GetStaffMessageCorrectionHistory").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
 
+messages.MapGet("/{messageId}/content-history", async (MessageRepository repository, string messageId, CancellationToken cancellationToken) =>
+{
+    var history = await repository.GetContentHistoryAsync(messageId, cancellationToken);
+    return history is null ? Results.NotFound() : Results.Ok(history);
+}).WithName("GetStaffMessageContentHistory").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
+
 messages.MapPost("/{messageId}/correct", async (MessageRepository repository, AuthRepository authRepository, HttpContext httpContext, string messageId, PatientMessageCorrectionRequest request, CancellationToken cancellationToken) =>
 {
     try
@@ -4533,6 +4578,7 @@ messages.MapPost("/{messageId}/correct", async (MessageRepository repository, Au
         var correction = await repository.CorrectAsync(messageId, request, session.Username, cancellationToken);
         return correction is null ? Results.NotFound() : Results.Ok(correction);
     }
+    catch (PatientMessageVersionConflictException exception) { return Results.Conflict(new { error = exception.Message, exception.ExpectedVersion, exception.CurrentVersion }); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 }).WithName("CorrectStaffMessage").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
@@ -4574,12 +4620,26 @@ messages.MapPost("/{messageId}/restore", async (MessageRepository repository, Au
 
 messages.MapPut("/{messageId}/reply", async (
         MessageRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string messageId,
         PatientMessageReplyRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.ReplyAsync(messageId, request, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.ReplyAsync(messageId, request, session.Username, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (PatientMessageVersionConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, exception.ExpectedVersion, exception.CurrentVersion });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["message"] = [exception.Message] });
+        }
     })
     .WithName("ReplyToPatientMessage")
     .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
