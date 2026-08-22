@@ -78,7 +78,8 @@ public sealed class ExternalLaboratoryIntakeRepository(NpgsqlDataSource dataSour
                 Conflict: false, Rejected: true, rejectionReason, null, 0, 0, DateTimeOffset.UtcNow.ToString("O"));
         }
 
-        var report = await GetOrCreateReportAsync(connection, transaction, source, bundle, context!, cancellationToken);
+        var resolvedContext = context!;
+        var report = await GetOrCreateReportAsync(connection, transaction, source, bundle, resolvedContext, cancellationToken);
         var created = 0;
         var updated = 0;
         foreach (var observation in bundle.Observations)
@@ -100,7 +101,7 @@ public sealed class ExternalLaboratoryIntakeRepository(NpgsqlDataSource dataSour
         var newIngestionId = Guid.NewGuid();
         await InsertIngestionAsync(
             connection, transaction, newIngestionId, source.SourceId, messageId, rawPayload, payloadHash,
-            "applied", null, context.PatientId, context.OrderId, context.SpecimenId, report.ReportId,
+            "applied", null, resolvedContext.PatientId, resolvedContext.OrderId, resolvedContext.SpecimenId, report.ReportId,
             created, updated, cancellationToken);
         await InsertIngestionEventAsync(connection, transaction, newIngestionId, "received", "Authenticated FHIR R4 laboratory message received.", cancellationToken);
         await InsertIngestionEventAsync(connection, transaction, newIngestionId, "applied", $"Applied DiagnosticReport/{bundle.ReportId} with {created} created and {updated} corrected result(s).", cancellationToken);
