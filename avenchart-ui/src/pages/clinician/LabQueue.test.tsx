@@ -131,6 +131,44 @@ describe('LabQueue', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('keeps every open critical result reachable from the acknowledgement alert', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getCriticalLabResultQueue).mockResolvedValueOnce({
+      totalOpen: 4,
+      results: [
+        'Alex Morgan',
+        'Casey Jordan',
+        'Dana Smith',
+        'Jamie Lee',
+      ].map((patientDisplayName, index) => ({
+        resultId: index + 1,
+        reportId: index + 100,
+        patientId: `PAT-${index + 1}`,
+        patientDisplayName,
+        text: 'Potassium',
+        result: '6.4',
+        units: 'mmol/L',
+        resultDate: '2026-08-22 09:00',
+        acknowledgementStatus: 'open',
+        acknowledgementVersion: 1,
+      })),
+    })
+
+    renderLabQueue()
+
+    await screen.findByText('Alex Morgan: Potassium 6.4 mmol/L')
+    expect(screen.queryByText('Jamie Lee: Potassium 6.4 mmol/L')).not.toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Show all 4 critical results' }),
+    )
+
+    expect(screen.getByText('Jamie Lee: Potassium 6.4 mmol/L')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Show fewer critical results' }),
+    ).toHaveAttribute('aria-expanded', 'true')
+  })
+
   it('preserves the explicit all status when filters are applied', async () => {
     const user = userEvent.setup()
     renderLabQueue()

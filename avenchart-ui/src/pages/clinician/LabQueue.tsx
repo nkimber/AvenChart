@@ -151,6 +151,7 @@ export default function LabQueue() {
   const [criticalResultsError, setCriticalResultsError] = useState<
     string | null
   >(null)
+  const [showAllCriticalResults, setShowAllCriticalResults] = useState(false)
   const [reviewHistoryByReport, setReviewHistoryByReport] = useState<
     Record<number, ProcedureReportReviewHistoryResponse>
   >({})
@@ -244,6 +245,7 @@ export default function LabQueue() {
     const controller = new AbortController()
     setCriticalResults(null)
     setCriticalResultsError(null)
+    setShowAllCriticalResults(false)
     void loadReportsForCriteria(controller.signal)
     void loadOrdersForCriteria(controller.signal)
     void getCriticalLabResultQueue(session.sessionId, controller.signal)
@@ -495,7 +497,10 @@ export default function LabQueue() {
           {criticalResults.totalOpen === 1 ? 'result requires' : 'results require'}{' '}
           acknowledgement. This records local review only; it does not send an
           external notification.
-          {criticalResults.results.slice(0, 3).map((result) => (
+          {(showAllCriticalResults
+            ? criticalResults.results
+            : criticalResults.results.slice(0, 3)
+          ).map((result) => (
             <div key={result.resultId} className="ne-actions">
               <span>
                 {result.patientDisplayName}: {result.text ?? result.code ?? 'Result'}{' '}
@@ -510,6 +515,18 @@ export default function LabQueue() {
               </button>
             </div>
           ))}
+          {criticalResults.results.length > 3 && (
+            <button
+              className="cl-btn-secondary"
+              type="button"
+              aria-expanded={showAllCriticalResults}
+              onClick={() => setShowAllCriticalResults((value) => !value)}
+            >
+              {showAllCriticalResults
+                ? 'Show fewer critical results'
+                : `Show all ${criticalResults.results.length} critical results`}
+            </button>
+          )}
         </div>
       )}
 
