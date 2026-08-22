@@ -1247,6 +1247,14 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
         $therapyParticipantCount -ne 1) {
         throw "EF-backed therapy-group aggregate returned unexpected state."
     }
+    $postCompletionAttendanceResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/therapy-groups/$($therapyGroup.id)/sessions/$($therapySession.id)/attendance/MOD-PAT-0001" `
+        -Headers $authenticatedHeaders `
+        -Body '{"status":"absent","note":"Completed sessions must not accept new attendance."}'
+    if ([int]$postCompletionAttendanceResponse.StatusCode -ne 400) {
+        throw "Completed therapy-group sessions accepted an attendance mutation."
+    }
     $CompletedScenarios.Add("ef-core-therapy-group-aggregate")
 
     $therapyEncounterResponse = Invoke-Http `

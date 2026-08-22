@@ -262,21 +262,22 @@ public sealed class TherapyGroupRepository(
         }
 
         await EnsureModuleEnabledAsync(cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        _ = await GetScheduledSessionForUpdateAsync(groupId, sessionId, cancellationToken)
+            ?? throw new ArgumentException("Scheduled therapy-group session was not found.");
         var attendance = await dbContext.TherapyGroupSessionAttendance
             .Include(item => item.Patient)
-            .Include(item => item.Session)
             .SingleOrDefaultAsync(
                 item =>
                     item.SessionId == sessionId &&
-                    item.PatientId == patientId &&
-                    item.Session.GroupId == groupId &&
-                    item.Session.Status == "scheduled",
+                    item.PatientId == patientId,
                 cancellationToken)
             ?? throw new ArgumentException("Scheduled session attendance participant was not found.");
         attendance.AttendanceStatus = status;
         attendance.Note = note;
         attendance.RecordedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return ToItem(attendance);
     }
 
@@ -294,12 +295,7 @@ public sealed class TherapyGroupRepository(
 
         await EnsureModuleEnabledAsync(cancellationToken);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        var session = await dbContext.TherapyGroupSessions.SingleOrDefaultAsync(
-            candidate =>
-                candidate.Id == sessionId &&
-                candidate.GroupId == groupId &&
-                candidate.Status == "scheduled",
-            cancellationToken)
+        var session = await GetScheduledSessionForUpdateAsync(groupId, sessionId, cancellationToken)
             ?? throw new ArgumentException("Scheduled therapy-group session was not found.");
         if (status == "completed" && await dbContext.TherapyGroupSessionAttendance.AsNoTracking().AnyAsync(
                 attendance =>
@@ -525,6 +521,21 @@ public sealed class TherapyGroupRepository(
             row.Attendance.Note,
             row.Attendance.RecordedAt?.ToString("O"))).ToList();
     }
+
+    private Task<TherapyGroupSessionEntity?> GetScheduledSessionForUpdateAsync(
+        Guid groupId,
+        Guid sessionId,
+        CancellationToken cancellationToken) =>
+        dbContext.TherapyGroupSessions
+            .FromSqlInterpolated($"""
+                select *
+                from therapy_group_sessions
+                where id = {sessionId}
+                  and group_id = {groupId}
+                  and status = 'scheduled'
+                for update
+                """)
+            .SingleOrDefaultAsync(cancellationToken);
 
     private async Task EnsureModuleEnabledAsync(CancellationToken cancellationToken)
     {
