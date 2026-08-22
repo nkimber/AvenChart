@@ -1186,14 +1186,15 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        if (await IsEncounterLockedAsync(connection, encounter.Encounter, cancellationToken))
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        if (!await LockEncounterAndEnsureUnlockedAsync(connection, transaction, encounter.Encounter, cancellationToken))
         {
-            throw new EncounterLockConflictException(
-                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            return null;
         }
 
         var id = $"BILL-MODERN-{Guid.NewGuid():N}";
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             insert into billing
                 (id, pid, provider_id, encounter, billing_date, code_type, code, code_text,
@@ -1215,6 +1216,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("justify", request.Justify.Trim());
         command.Parameters.AddWithValue("units", request.Units);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         var billing = await GetForPatientAsync(patient.PatientId, cancellationToken);
         return billing is null ? null : new BillingLineMutationResponse(id, billing);
@@ -1288,14 +1290,15 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        if (await IsEncounterLockedAsync(connection, line.Value.Encounter, cancellationToken))
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        if (!await LockEncounterAndEnsureUnlockedAsync(connection, transaction, line.Value.Encounter, cancellationToken))
         {
-            throw new EncounterLockConflictException(
-                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            return null;
         }
 
         await using (var command = connection.CreateCommand())
         {
+            command.Transaction = transaction;
             command.CommandText = """
                 update billing
                 set billed = @billed,
@@ -1312,6 +1315,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 return null;
             }
         }
+        await transaction.CommitAsync(cancellationToken);
 
         var billing = await GetForPatientAsync(line.Value.Pid.ToString(), cancellationToken);
         return billing is null ? null : new BillingLineMutationResponse(billingLineId, billing);
@@ -1337,14 +1341,15 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        if (await IsEncounterLockedAsync(connection, line.Value.Encounter, cancellationToken))
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        if (!await LockEncounterAndEnsureUnlockedAsync(connection, transaction, line.Value.Encounter, cancellationToken))
         {
-            throw new EncounterLockConflictException(
-                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            return null;
         }
 
         await using (var command = connection.CreateCommand())
         {
+            command.Transaction = transaction;
             command.CommandText = """
                 update billing
                 set code_text = @codeText,
@@ -1367,6 +1372,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 return null;
             }
         }
+        await transaction.CommitAsync(cancellationToken);
 
         var billing = await GetForPatientAsync(line.Value.Pid.ToString(), cancellationToken);
         return billing is null ? null : new BillingLineMutationResponse(billingLineId, billing);
@@ -1386,19 +1392,22 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             return false;
         }
 
-        if (await IsEncounterLockedAsync(connection, line.Value.Encounter, cancellationToken))
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        if (!await LockEncounterAndEnsureUnlockedAsync(connection, transaction, line.Value.Encounter, cancellationToken))
         {
-            throw new EncounterLockConflictException(
-                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            return false;
         }
 
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             delete from billing
             where id = @id;
             """;
         command.Parameters.AddWithValue("id", billingLineId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        var deleted = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        await transaction.CommitAsync(cancellationToken);
+        return deleted;
     }
 
     public async Task<BillingClaimMutationResponse?> CreateClaimAsync(
@@ -1434,14 +1443,13 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             {
                 return null;
             }
-            if (await IsEncounterLockedAsync(connection, encounter.Encounter, cancellationToken))
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            if (!await LockEncounterAndEnsureUnlockedAsync(connection, transaction, encounter.Encounter, cancellationToken))
             {
-                throw new EncounterLockConflictException(
-                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+                return null;
             }
 
             legacyPid = patient.LegacyPid;
-            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             version = await NextIntAsync(
                 connection,
                 transaction,
@@ -1825,10 +1833,10 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             {
                 return null;
             }
-            if (await IsEncounterLockedAsync(connection, encounter.Encounter, cancellationToken))
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            if (!await LockEncounterAndEnsureUnlockedAsync(connection, transaction, encounter.Encounter, cancellationToken))
             {
-                throw new EncounterLockConflictException(
-                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+                return null;
             }
 
             legacyPid = patient.LegacyPid;
@@ -1839,7 +1847,6 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             var payerClaimNumber = BuildAdjudicatedPayerClaimNumber(claim);
             var adjudicated = BuildClaimAdjudicationPayload(claim);
 
-            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             sessionId = await NextIntAsync(
                 connection,
                 transaction,
@@ -2011,14 +2018,13 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             {
                 return null;
             }
-            if (await IsEncounterLockedAsync(connection, encounter.Encounter, cancellationToken))
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            if (!await LockEncounterAndEnsureUnlockedAsync(connection, transaction, encounter.Encounter, cancellationToken))
             {
-                throw new EncounterLockConflictException(
-                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+                return null;
             }
 
             legacyPid = patient.LegacyPid;
-            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             sessionId = await NextIntAsync(
                 connection,
                 transaction,
@@ -2333,14 +2339,13 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             {
                 return null;
             }
-            if (await IsEncounterLockedAsync(connection, encounter.Encounter, cancellationToken))
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            if (!await LockEncounterAndEnsureUnlockedAsync(connection, transaction, encounter.Encounter, cancellationToken))
             {
-                throw new EncounterLockConflictException(
-                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+                return null;
             }
 
             legacyPid = patient.LegacyPid;
-            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             var nextSessionId = await NextIntAsync(
                 connection,
                 transaction,
@@ -3027,6 +3032,40 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("encounter", encounter);
         var lockCount = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt64(lockCount ?? 0, CultureInfo.InvariantCulture) > 0;
+    }
+
+    private static async Task<bool> LockEncounterAndEnsureUnlockedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select exists (
+                select 1
+                from encounter_signatures signature
+                where signature.encounter = current_encounter.encounter
+                  and signature.is_lock) as is_locked
+            from encounters current_encounter
+            where current_encounter.encounter = @encounter
+            for update;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return false;
+        }
+
+        if (reader.GetBoolean(reader.GetOrdinal("is_locked")))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+        }
+
+        return true;
     }
 
     private static async Task<(int Pid, int Encounter)?> GetBillingLineContextAsync(

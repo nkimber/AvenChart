@@ -430,6 +430,22 @@ app.UseExceptionHandler(exceptionApp => exceptionApp.Run(async context =>
         return;
     }
 
+    if (exception is PostgresException
+        {
+            SqlState: PostgresErrorCodes.RaiseException,
+            MessageText: "encounter_locked"
+        } databaseLockConflict)
+    {
+        context.Response.StatusCode = StatusCodes.Status409Conflict;
+        await context.Response.WriteAsJsonAsync(new
+        {
+            error = databaseLockConflict.Detail
+                ?? "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.",
+            code = "encounter_locked"
+        });
+        return;
+    }
+
     context.Response.StatusCode = StatusCodes.Status500InternalServerError;
     await context.Response.WriteAsJsonAsync(new { error = "An unexpected server error occurred." });
 }));
