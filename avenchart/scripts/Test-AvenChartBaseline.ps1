@@ -1104,6 +1104,29 @@ catch {
 }
 
 try {
+    $cacheControlledChart = Invoke-WebRequest `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001" `
+        -Method Get `
+        -Headers (Get-AdministrationHeaders) `
+        -UseBasicParsing `
+        -TimeoutSec 20
+    $cacheControl = [string]$cacheControlledChart.Headers["Cache-Control"]
+    $pragma = [string]$cacheControlledChart.Headers["Pragma"]
+    $expires = [string]$cacheControlledChart.Headers["Expires"]
+    $cacheControlPassed = $cacheControl -match "(?i)(^|,)\s*no-store\b" `
+        -and $pragma -match "(?i)no-cache" `
+        -and $expires -eq "0"
+    Add-Check -Name "PHI API cache control" -Result $(if ($cacheControlPassed) { "passed" } else { "failed" }) -Details @{
+        cacheControl = $cacheControl
+        pragma = $pragma
+        expires = $expires
+    }
+}
+catch {
+    Add-Check -Name "PHI API cache control" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $portalAccountChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0004" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $portalAccount = $portalAccountChart.portalAccount
     $portalAccountPassed = $null -ne $portalAccount `

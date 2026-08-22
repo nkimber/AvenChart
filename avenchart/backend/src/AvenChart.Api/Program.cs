@@ -310,6 +310,23 @@ app.Use(async (context, next) =>
 });
 app.Use(async (context, next) =>
 {
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.OnStarting(() =>
+        {
+            // API responses can contain ePHI. Keep them out of browser and intermediary caches,
+            // including error responses and download endpoints that set their own response headers.
+            context.Response.Headers.CacheControl = "no-store, no-cache, max-age=0";
+            context.Response.Headers.Pragma = "no-cache";
+            context.Response.Headers.Expires = "0";
+            return Task.CompletedTask;
+        });
+    }
+
+    await next();
+});
+app.Use(async (context, next) =>
+{
     if (!context.Request.Path.StartsWithSegments("/api"))
     {
         await next(context);
