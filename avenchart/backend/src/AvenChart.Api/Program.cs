@@ -7459,22 +7459,12 @@ billing.MapPut("/lines/{billingLineId}/status", async (
     .WithName("UpdateBillingLineStatus")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
-billing.MapDelete("/lines/{billingLineId}", async (
-        BillingRepository repository,
-        string billingLineId,
-        CancellationToken cancellationToken) =>
-    {
-        try
-        {
-            var deleted = await repository.DeleteLineAsync(billingLineId, cancellationToken);
-            return deleted ? Results.NoContent() : Results.NotFound();
-        }
-        catch (EncounterLockConflictException exception)
-        {
-            return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
-        }
-    })
-    .WithName("DeleteBillingLine")
+billing.MapDelete("/lines/{billingLineId}", (string billingLineId) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status410Gone,
+            title: "Billing-line deletion is not available",
+            detail: "Financial evidence is retained. Use the line-status workflow to deactivate a line instead."))
+    .WithName("RetireBillingLineDeletion")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapPost("/claims", async (
@@ -7575,15 +7565,12 @@ billing.MapPost("/claims/{claimId}/adjudicate", async (
     .WithName("AdjudicateBillingClaim")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
-billing.MapDelete("/claims/{claimId}", async (
-        BillingRepository repository,
-        string claimId,
-        CancellationToken cancellationToken) =>
-    {
-        var deleted = await repository.DeleteClaimAsync(claimId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    })
-    .WithName("DeleteBillingClaimStatus")
+billing.MapDelete("/claims/{claimId}", (string claimId) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status410Gone,
+            title: "Claim deletion is not available",
+            detail: "Financial evidence is retained. Use a governed claim-status transition instead."))
+    .WithName("RetireBillingClaimDeletion")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapPost("/payments/patient-payments", async (
@@ -7699,15 +7686,12 @@ billing.MapPut("/payments/{activityId}/void", async (
     .WithName("VoidBillingPaymentPosting")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
-billing.MapDelete("/payments/{activityId}", async (
-        BillingRepository repository,
-        string activityId,
-        CancellationToken cancellationToken) =>
-    {
-        var deleted = await repository.DeletePaymentAsync(activityId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    })
-    .WithName("DeleteBillingPaymentPosting")
+billing.MapDelete("/payments/{activityId}", (string activityId) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status410Gone,
+            title: "Payment deletion is not available",
+            detail: "Financial evidence is retained. Use the payment void workflow instead."))
+    .WithName("RetireBillingPaymentDeletion")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 var administration = app.MapGroup("/api/administration").WithTags("Administration");
