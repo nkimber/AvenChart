@@ -172,6 +172,26 @@ function New-ReceivedProcedureSpecimen {
     return [int]$created.id
 }
 
+function Test-ProcedureOrderRetention {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$OrderId
+    )
+
+    try {
+        Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/procedures/orders/$OrderId" `
+            -Method Delete `
+            -Headers (Get-AdministrationHeaders) `
+            -UseBasicParsing `
+            -TimeoutSec 20 | Out-Null
+        return $false
+    }
+    catch {
+        return $null -ne $_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 409
+    }
+}
+
 function New-AuthenticatedHttpClient {
     $client = [System.Net.Http.HttpClient]::new()
     $headers = Get-AdministrationHeaders
@@ -6657,18 +6677,22 @@ try {
             -and @($_.reports).Count -eq 0
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureOrderId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $encounterProcedureOrderRetentionRejected = Test-ProcedureOrderRetention -OrderId $smokeEncounterProcedureOrderId
     $smokeEncounterProcedureOrderId = $null
-    $afterDeleteEncounterProcedureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
-    $deletedEncounterProcedureOrderRow = @($afterDeleteEncounterProcedureDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
-        $_.name -eq $procedureOrderName
+    $afterRetentionEncounterProcedureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $retainedEncounterProcedureOrderRow = @($afterRetentionEncounterProcedureDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $createdEncounterProcedureOrder.id -and $_.name -eq $procedureOrderName
     } | Select-Object -First 1
 
-    $encounterProcedureOrderEntryPassed = $null -ne $createdEncounterProcedureOrderRow -and $null -eq $deletedEncounterProcedureOrderRow
+    $encounterProcedureOrderEntryPassed = $null -ne $createdEncounterProcedureOrderRow `
+        -and $encounterProcedureOrderRetentionRejected `
+        -and $null -ne $retainedEncounterProcedureOrderRow
     Add-Check -Name "encounter procedure order entry lifecycle" -Result $(if ($encounterProcedureOrderEntryPassed) { "passed" } else { "failed" }) -Details @{
         createdOrderId = $createdEncounterProcedureOrder.id
         encounter = $refreshedEncounterProcedureDetail.encounter
         order = $createdEncounterProcedureOrderRow
+        retentionRejected = $encounterProcedureOrderRetentionRejected
+        retainedOrder = $retainedEncounterProcedureOrderRow
     }
 }
 catch {
@@ -6766,17 +6790,18 @@ try {
         $null
     }
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureResultOrderId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $encounterProcedureResultOrderRetentionRejected = Test-ProcedureOrderRetention -OrderId $smokeEncounterProcedureResultOrderId
     $smokeEncounterProcedureResultOrderId = $null
-    $afterDeleteEncounterProcedureResultDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
-    $deletedEncounterProcedureResultOrderRow = @($afterDeleteEncounterProcedureResultDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
-        $_.name -eq $procedureResultOrderName
+    $afterRetentionEncounterProcedureResultDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $retainedEncounterProcedureResultOrderRow = @($afterRetentionEncounterProcedureResultDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $createdEncounterProcedureResultOrder.id -and $_.name -eq $procedureResultOrderName
     } | Select-Object -First 1
 
     $encounterProcedureResultEntryPassed = $null -ne $createdEncounterProcedureResultOrderRow `
         -and $null -ne $createdEncounterProcedureResultReportRow `
         -and $null -ne $createdEncounterProcedureResultRow `
-        -and $null -eq $deletedEncounterProcedureResultOrderRow
+        -and $encounterProcedureResultOrderRetentionRejected `
+        -and $null -ne $retainedEncounterProcedureResultOrderRow
     Add-Check -Name "encounter procedure result entry lifecycle" -Result $(if ($encounterProcedureResultEntryPassed) { "passed" } else { "failed" }) -Details @{
         createdOrderId = $createdEncounterProcedureResultOrder.id
         reportId = $createdEncounterProcedureResultReport.id
@@ -6785,6 +6810,8 @@ try {
         order = $createdEncounterProcedureResultOrderRow
         report = $createdEncounterProcedureResultReportRow
         result = $createdEncounterProcedureResultRow
+        retentionRejected = $encounterProcedureResultOrderRetentionRejected
+        retainedOrder = $retainedEncounterProcedureResultOrderRow
     }
 }
 catch {
@@ -6861,6 +6888,19 @@ try {
         status = "corrected"
     } | ConvertTo-Json -Depth 5
     $correctedProcedureResultResponse = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results/$($createdProcedureCorrectionResult.id)" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureCorrectionBody -TimeoutSec 20
+    $procedureCorrectionResultHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results/$($createdProcedureCorrectionResult.id)/history" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $procedureCorrectionProvenanceRecorded = @($procedureCorrectionResultHistory.events | Where-Object {
+        $_.action -eq "created" `
+            -and $_.actor -eq "admin" `
+            -and $null -eq $_.previousContentVersion `
+            -and $_.resultingContentVersion -eq 1
+    }).Count -eq 1 `
+        -and @($procedureCorrectionResultHistory.events | Where-Object {
+            $_.action -eq "corrected" `
+                -and $_.actor -eq "admin" `
+                -and $_.previousContentVersion -eq 1 `
+                -and $_.resultingContentVersion -eq 2
+        }).Count -eq 1
 
     $procedureCorrectionDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $procedureCorrectionOrderRow = @($procedureCorrectionDetail.orders | Where-Object { $null -ne $_ }) | Where-Object {
@@ -6887,18 +6927,20 @@ try {
         $null
     }
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeProcedureResultCorrectionOrderId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $procedureCorrectionOrderRetentionRejected = Test-ProcedureOrderRetention -OrderId $smokeProcedureResultCorrectionOrderId
     $smokeProcedureResultCorrectionOrderId = $null
-    $afterDeleteProcedureCorrectionDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
-    $deletedProcedureCorrectionOrderRow = @($afterDeleteProcedureCorrectionDetail.orders | Where-Object { $null -ne $_ }) | Where-Object {
-        $_.name -eq $procedureCorrectionOrderName
+    $afterRetentionProcedureCorrectionDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $retainedProcedureCorrectionOrderRow = @($afterRetentionProcedureCorrectionDetail.orders | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $createdProcedureCorrectionOrder.id -and $_.name -eq $procedureCorrectionOrderName
     } | Select-Object -First 1
 
     $procedureResultCorrectionPassed = $correctedProcedureResultResponse.id -eq $createdProcedureCorrectionResult.id `
         -and $null -ne $procedureCorrectionOrderRow `
         -and $null -ne $procedureCorrectionReportRow `
         -and $null -ne $procedureCorrectionResultRow `
-        -and $null -eq $deletedProcedureCorrectionOrderRow
+        -and $procedureCorrectionProvenanceRecorded `
+        -and $procedureCorrectionOrderRetentionRejected `
+        -and $null -ne $retainedProcedureCorrectionOrderRow
     Add-Check -Name "procedure result correction lifecycle" -Result $(if ($procedureResultCorrectionPassed) { "passed" } else { "failed" }) -Details @{
         createdOrderId = $createdProcedureCorrectionOrder.id
         reportId = $createdProcedureCorrectionReport.id
@@ -6906,6 +6948,10 @@ try {
         order = $procedureCorrectionOrderRow
         report = $procedureCorrectionReportRow
         result = $procedureCorrectionResultRow
+        resultMutationHistory = $procedureCorrectionResultHistory
+        provenanceRecorded = $procedureCorrectionProvenanceRecorded
+        retentionRejected = $procedureCorrectionOrderRetentionRejected
+        retainedOrder = $retainedProcedureCorrectionOrderRow
     }
 }
 catch {
@@ -9426,6 +9472,31 @@ try {
     } | ConvertTo-Json
     $createdProcedureResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createProcedureResultBody -TimeoutSec 20
     $procedureResultId = $createdProcedureResult.id
+    $procedureOrderMutationHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId/history" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $procedureSpecimenMutationHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/specimens/$procedureSpecimenId/lifecycle-history" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $procedureReportMutationHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports/$procedureReportId/review-history" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $procedureResultMutationHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results/$procedureResultId/history" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $procedureOrderProvenanceRecorded = @($procedureOrderMutationHistory.events | Where-Object {
+        $_.action -eq "created" -and $_.actor -eq "admin"
+    }).Count -eq 1 `
+        -and @($procedureOrderMutationHistory.events | Where-Object {
+            $_.action -eq "content-updated" -and $_.actor -eq "admin"
+        }).Count -eq 1 `
+        -and @($procedureOrderMutationHistory.events | Where-Object {
+            $_.action -eq "status-updated" -and $_.actor -eq "admin"
+        }).Count -eq 1
+    $procedureSpecimenProvenanceRecorded = @($procedureSpecimenMutationHistory.events | Where-Object {
+        $_.action -eq "collect" -and $_.actor -eq "admin"
+    }).Count -eq 1
+    $procedureReportProvenanceRecorded = @($procedureReportMutationHistory.events | Where-Object {
+        $_.action -eq "received" -and $_.actor -eq "admin"
+    }).Count -eq 1
+    $procedureResultProvenanceRecorded = @($procedureResultMutationHistory.events | Where-Object {
+        $_.action -eq "created" `
+            -and $_.actor -eq "admin" `
+            -and $null -eq $_.previousContentVersion `
+            -and $_.resultingContentVersion -eq 1
+    }).Count -eq 1
     $resultOrder = $createdProcedureResult.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId } | Select-Object -First 1
     $resultSpecimen = $resultOrder.specimens | Where-Object {
         $_.id -eq $procedureSpecimenId `
@@ -9508,6 +9579,10 @@ try {
         -and $null -ne $correctedProcedureReportRow `
         -and $null -ne $resultSpecimen `
         -and $null -ne $resultReport `
+        -and $procedureOrderProvenanceRecorded `
+        -and $procedureSpecimenProvenanceRecorded `
+        -and $procedureReportProvenanceRecorded `
+        -and $procedureResultProvenanceRecorded `
         -and $unreceivedSpecimenReportRejected `
         -and $null -ne $queuedProcedureReportBeforeSign `
         -and $null -ne $filteredQueuedProcedureReportBeforeSign `
@@ -9524,7 +9599,8 @@ try {
         -and $null -ne $labFilteredQueuedProcedureReportAfterSign `
         -and $null -eq $queuedProcedureReportStillUnreviewed
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $procedureMutationOrderRetentionRejected = Test-ProcedureOrderRetention -OrderId $procedureOrderMutationId
+    $procedureMutationPassed = $procedureMutationPassed -and $procedureMutationOrderRetentionRejected
     $procedureOrderMutationId = $null
 
     Add-Check -Name "procedure mutation lifecycle" -Result $(if ($procedureMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -9534,6 +9610,14 @@ try {
         completedVisible = $completedProcedureVisible
         specimenId = $procedureSpecimenId
         specimenVisible = $resultSpecimen
+        orderMutationHistory = $procedureOrderMutationHistory
+        specimenMutationHistory = $procedureSpecimenMutationHistory
+        reportMutationHistory = $procedureReportMutationHistory
+        resultMutationHistory = $procedureResultMutationHistory
+        orderProvenanceRecorded = $procedureOrderProvenanceRecorded
+        specimenProvenanceRecorded = $procedureSpecimenProvenanceRecorded
+        reportProvenanceRecorded = $procedureReportProvenanceRecorded
+        resultProvenanceRecorded = $procedureResultProvenanceRecorded
         unreceivedSpecimenReportRejected = $unreceivedSpecimenReportRejected
         reportId = $procedureReportId
         correctedReportVisible = $correctedProcedureReportRow
@@ -9550,6 +9634,7 @@ try {
         providerFilteredQueuedReportAfterSign = $providerFilteredQueuedProcedureReportAfterSign
         labFilteredQueuedReportAfterSign = $labFilteredQueuedProcedureReportAfterSign
         resultVisible = $createdResultVisible
+        retentionRejected = $procedureMutationOrderRetentionRejected
     }
 }
 catch {

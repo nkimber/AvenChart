@@ -442,6 +442,30 @@ public sealed record ProcedureResultVersionItem(
     string ResultDate,
     string? ResultStatus);
 
+public sealed record ProcedureOrderMutationHistoryItem(
+    long EventId,
+    string Action,
+    string Actor,
+    string Detail,
+    string OccurredAt);
+
+public sealed record ProcedureOrderMutationHistoryResponse(
+    int OrderId,
+    IReadOnlyList<ProcedureOrderMutationHistoryItem> Events);
+
+public sealed record ProcedureResultMutationHistoryItem(
+    long EventId,
+    string Action,
+    string Actor,
+    string Detail,
+    int? PreviousContentVersion,
+    int ResultingContentVersion,
+    string OccurredAt);
+
+public sealed record ProcedureResultMutationHistoryResponse(
+    int ResultId,
+    IReadOnlyList<ProcedureResultMutationHistoryItem> Events);
+
 public sealed record ProcedureOrderCreateRequest(
     string PatientId,
     int? ProviderId,

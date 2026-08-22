@@ -6340,14 +6340,17 @@ procedures.MapGet("/{patientId}", async (
 
 procedures.MapPost("/orders", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
         ProcedureOrderCreateRequest request,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         try
         {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
             var mutation = await repository.CreateOrderAsync(
                 request,
+                session.Username,
                 RequireStaffAccessContext(httpContext).FacilityId,
                 cancellationToken);
             return mutation is null
@@ -6362,15 +6365,37 @@ procedures.MapPost("/orders", async (
     .WithName("CreateProcedureOrder")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "addonly"));
 
+procedures.MapGet("/orders/{orderId:int}/history", async (
+        ProcedureRepository repository,
+        HttpContext httpContext,
+        int orderId,
+        CancellationToken cancellationToken) =>
+    (await repository.GetOrderMutationHistoryAsync(
+        orderId,
+        RequireStaffAccessContext(httpContext).FacilityId,
+        cancellationToken)) is { } history
+        ? Results.Ok(history)
+        : Results.NotFound())
+    .WithName("GetProcedureOrderMutationHistory")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "view"));
+
 procedures.MapPut("/orders/{orderId:int}/status", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int orderId,
         ProcedureOrderStatusUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
         try
         {
-            var mutation = await repository.UpdateOrderStatusAsync(orderId, request, cancellationToken);
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.UpdateOrderStatusAsync(
+                orderId,
+                request,
+                session.Username,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return mutation is null ? Results.NotFound() : Results.Ok(mutation);
         }
         catch (EncounterLockConflictException exception)
@@ -6383,13 +6408,21 @@ procedures.MapPut("/orders/{orderId:int}/status", async (
 
 procedures.MapPost("/orders/{orderId:int}/transmit", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int orderId,
         ProcedureOrderTransmitRequest request,
         CancellationToken cancellationToken) =>
     {
         try
         {
-            var mutation = await repository.TransmitOrderAsync(orderId, request, cancellationToken);
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.TransmitOrderAsync(
+                orderId,
+                request,
+                session.Username,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return mutation is null
                 ? Results.BadRequest("Procedure order could not be marked transmitted from the supplied order state.")
                 : Results.Ok(mutation);
@@ -6404,13 +6437,21 @@ procedures.MapPost("/orders/{orderId:int}/transmit", async (
 
 procedures.MapPut("/orders/{orderId:int}", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int orderId,
         ProcedureOrderUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
         try
         {
-            var mutation = await repository.UpdateOrderAsync(orderId, request, cancellationToken);
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.UpdateOrderAsync(
+                orderId,
+                request,
+                session.Username,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return mutation is null
                 ? Results.BadRequest("Procedure order could not be updated from the supplied order details.")
                 : Results.Ok(mutation);
@@ -6425,12 +6466,15 @@ procedures.MapPut("/orders/{orderId:int}", async (
 
 procedures.MapPost("/reports", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
         ProcedureReportCreateRequest request,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
         var mutation = await repository.CreateReportAsync(
             request,
+            session.Username,
             RequireStaffAccessContext(httpContext).FacilityId,
             cancellationToken);
         return mutation is null
@@ -6449,7 +6493,12 @@ procedures.MapPut("/reports/{reportId:int}", async (
         CancellationToken cancellationToken) =>
     {
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var mutation = await repository.UpdateReportAsync(reportId, request, session.Username, cancellationToken);
+        var mutation = await repository.UpdateReportAsync(
+            reportId,
+            request,
+            session.Username,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return mutation is null
             ? Results.BadRequest("Procedure report could not be updated from the supplied report details.")
             : Results.Ok(mutation);
@@ -6468,7 +6517,12 @@ procedures.MapPut("/reports/{reportId:int}/sign", async (
         try
         {
             var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-            var mutation = await repository.SignReportAsync(reportId, request, session.Username, cancellationToken);
+            var mutation = await repository.SignReportAsync(
+                reportId,
+                request,
+                session.Username,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return mutation is null
                 ? Results.BadRequest("Procedure report could not be signed from the supplied review details.")
                 : Results.Ok(mutation);
@@ -6493,7 +6547,12 @@ procedures.MapPut("/reports/{reportId:int}/deny-review", async (
         try
         {
             var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-            var mutation = await repository.DenyReportReviewAsync(reportId, request, session.Username, cancellationToken);
+            var mutation = await repository.DenyReportReviewAsync(
+                reportId,
+                request,
+                session.Username,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return mutation is null
                 ? Results.BadRequest("Procedure report review could not be denied from the supplied details.")
                 : Results.Ok(mutation);
@@ -6518,7 +6577,12 @@ procedures.MapPut("/reports/{reportId:int}/review-assignment", async (
         try
         {
             var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-            var mutation = await repository.AssignReportReviewerAsync(reportId, request, session.Username, cancellationToken);
+            var mutation = await repository.AssignReportReviewerAsync(
+                reportId,
+                request,
+                session.Username,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return mutation is null
                 ? Results.BadRequest("Procedure report reviewer assignment could not be saved from the supplied details.")
                 : Results.Ok(mutation);
@@ -6543,7 +6607,12 @@ procedures.MapPut("/reports/{reportId:int}/reopen-review", async (
         try
         {
             var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-            var mutation = await repository.ReopenReportReviewAsync(reportId, request, session.Username, cancellationToken);
+            var mutation = await repository.ReopenReportReviewAsync(
+                reportId,
+                request,
+                session.Username,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return mutation is null
                 ? Results.BadRequest("Procedure report review could not be reopened.")
                 : Results.Ok(mutation);
@@ -6587,12 +6656,15 @@ procedures.MapPut("/reports/bulk-sign", async (
 
 procedures.MapPost("/specimens", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
         ProcedureSpecimenCreateRequest request,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
         var mutation = await repository.CreateSpecimenAsync(
             request,
+            session.Username,
             RequireStaffAccessContext(httpContext).FacilityId,
             cancellationToken);
         return mutation is null
@@ -6611,7 +6683,12 @@ procedures.MapPut("/specimens/{specimenId:int}/lifecycle", async (
         CancellationToken cancellationToken) =>
     {
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var mutation = await repository.TransitionSpecimenLifecycleAsync(specimenId, request, session.Username, cancellationToken);
+        var mutation = await repository.TransitionSpecimenLifecycleAsync(
+            specimenId,
+            request,
+            session.Username,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return mutation is null
             ? Results.Conflict(new { error = "The specimen lifecycle transition is no longer valid at the supplied version." })
             : Results.Ok(mutation);
@@ -6621,9 +6698,13 @@ procedures.MapPut("/specimens/{specimenId:int}/lifecycle", async (
 
 procedures.MapGet("/specimens/{specimenId:int}/lifecycle-history", async (
         ProcedureRepository repository,
+        HttpContext httpContext,
         int specimenId,
         CancellationToken cancellationToken) =>
-    (await repository.GetSpecimenLifecycleHistoryAsync(specimenId, cancellationToken)) is { } history
+    (await repository.GetSpecimenLifecycleHistoryAsync(
+        specimenId,
+        RequireStaffAccessContext(httpContext).FacilityId,
+        cancellationToken)) is { } history
         ? Results.Ok(history)
         : Results.NotFound())
     .WithName("GetProcedureSpecimenLifecycleHistory")
@@ -6631,12 +6712,15 @@ procedures.MapGet("/specimens/{specimenId:int}/lifecycle-history", async (
 
 procedures.MapPost("/results", async (
         ProcedureRepository repository,
+        AuthRepository authRepository,
         ProcedureResultCreateRequest request,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
         var mutation = await repository.CreateResultAsync(
             request,
+            session.Username,
             RequireStaffAccessContext(httpContext).FacilityId,
             cancellationToken);
         return mutation is null
@@ -6645,6 +6729,20 @@ procedures.MapPost("/results", async (
     })
     .WithName("CreateProcedureResult")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "addonly"));
+
+procedures.MapGet("/results/{resultId:int}/history", async (
+        ProcedureRepository repository,
+        HttpContext httpContext,
+        int resultId,
+        CancellationToken cancellationToken) =>
+    (await repository.GetResultMutationHistoryAsync(
+        resultId,
+        RequireStaffAccessContext(httpContext).FacilityId,
+        cancellationToken)) is { } history
+        ? Results.Ok(history)
+        : Results.NotFound())
+    .WithName("GetProcedureResultMutationHistory")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "view"));
 
 procedures.MapPut("/results/{resultId:int}", async (
         ProcedureRepository repository,

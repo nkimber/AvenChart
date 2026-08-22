@@ -1065,11 +1065,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     public async Task<ProcedureMutationResponse?> CreateOrderAsync(
         ProcedureOrderCreateRequest request,
+        string actor,
         int facilityId,
         CancellationToken cancellationToken)
     {
         EnsureFacilityId(facilityId);
-        if (string.IsNullOrWhiteSpace(request.PatientId)
+        if (string.IsNullOrWhiteSpace(actor)
+            || string.IsNullOrWhiteSpace(request.PatientId)
             || string.IsNullOrWhiteSpace(request.Priority)
             || string.IsNullOrWhiteSpace(request.Status)
             || string.IsNullOrWhiteSpace(request.ProcedureCode)
@@ -1129,6 +1131,14 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("instructions", request.Instructions?.Trim() ?? string.Empty);
         command.Parameters.AddWithValue("status", request.Status.Trim());
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await InsertProcedureOrderEventAsync(
+            connection,
+            transaction,
+            id,
+            "created",
+            actor,
+            "Local procedure order entered.",
+            cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(patient.PatientId, cancellationToken);
@@ -1138,9 +1148,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     public async Task<ProcedureMutationResponse?> UpdateOrderStatusAsync(
         int orderId,
         ProcedureOrderStatusUpdateRequest request,
+        string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
-        if (orderId <= 0 || string.IsNullOrWhiteSpace(request.Status))
+        EnsureFacilityId(facilityId);
+        if (orderId <= 0 || string.IsNullOrWhiteSpace(request.Status) || string.IsNullOrWhiteSpace(actor))
         {
             return null;
         }
@@ -1149,7 +1162,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
         {
-            var order = await GetOrderMutationContextAsync(connection, orderId, cancellationToken);
+            var order = await GetOrderMutationContextAsync(connection, orderId, cancellationToken, facilityId);
             if (order is null || !await LockEncounterAndEnsureUnlockedAsync(connection, transaction, order.Encounter, cancellationToken))
             {
                 return null;
@@ -1171,6 +1184,15 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 return null;
             }
 
+            await InsertProcedureOrderEventAsync(
+                connection,
+                transaction,
+                orderId,
+                "status-updated",
+                actor,
+                $"Order status changed from {order.Status} to {request.Status.Trim()}.",
+                cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
         }
 
@@ -1181,9 +1203,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     public async Task<ProcedureMutationResponse?> TransmitOrderAsync(
         int orderId,
         ProcedureOrderTransmitRequest request,
+        string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
-        if (orderId <= 0)
+        EnsureFacilityId(facilityId);
+        if (orderId <= 0 || string.IsNullOrWhiteSpace(actor))
         {
             return null;
         }
@@ -1203,7 +1228,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
         {
-            var order = await GetOrderMutationContextAsync(connection, orderId, cancellationToken);
+            var order = await GetOrderMutationContextAsync(connection, orderId, cancellationToken, facilityId);
             if (order is null || !await LockEncounterAndEnsureUnlockedAsync(connection, transaction, order.Encounter, cancellationToken))
             {
                 return null;
@@ -1231,6 +1256,15 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 return null;
             }
 
+            await InsertProcedureOrderEventAsync(
+                connection,
+                transaction,
+                orderId,
+                "transmitted",
+                actor,
+                "Procedure order marked transmitted.",
+                cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
         }
 
@@ -1241,9 +1275,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     public async Task<ProcedureMutationResponse?> UpdateOrderAsync(
         int orderId,
         ProcedureOrderUpdateRequest request,
+        string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         if (orderId <= 0
+            || string.IsNullOrWhiteSpace(actor)
             || string.IsNullOrWhiteSpace(request.Priority)
             || string.IsNullOrWhiteSpace(request.Status)
             || string.IsNullOrWhiteSpace(request.ProcedureCode)
@@ -1259,7 +1297,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
         {
-            var order = await GetOrderMutationContextAsync(connection, orderId, cancellationToken);
+            var order = await GetOrderMutationContextAsync(connection, orderId, cancellationToken, facilityId);
             if (order is null || !await LockEncounterAndEnsureUnlockedAsync(connection, transaction, order.Encounter, cancellationToken))
             {
                 return null;
@@ -1300,6 +1338,15 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             {
                 return null;
             }
+
+            await InsertProcedureOrderEventAsync(
+                connection,
+                transaction,
+                orderId,
+                "content-updated",
+                actor,
+                "Procedure order content updated before transmission or reporting.",
+                cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
         }
@@ -1348,11 +1395,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     public async Task<ProcedureMutationResponse?> CreateReportAsync(
         ProcedureReportCreateRequest request,
+        string actor,
         int facilityId,
         CancellationToken cancellationToken)
     {
         EnsureFacilityId(facilityId);
-        if (request.OrderId <= 0
+        if (string.IsNullOrWhiteSpace(actor)
+            || request.OrderId <= 0
             || request.SpecimenId <= 0
             || string.IsNullOrWhiteSpace(request.ReportStatus)
             || string.IsNullOrWhiteSpace(request.ReviewStatus)
@@ -1399,6 +1448,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("status", request.ReportStatus.Trim());
         command.Parameters.AddWithValue("notes", request.Notes?.Trim() ?? string.Empty);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await InsertLabReportCreationEventAsync(
+            connection,
+            transaction,
+            id,
+            actor,
+            cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(order.PatientId, cancellationToken);
@@ -1409,8 +1464,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         int reportId,
         ProcedureReportUpdateRequest request,
         string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         if (reportId <= 0
             || request.SpecimenId <= 0
             || string.IsNullOrWhiteSpace(request.ReportStatus)
@@ -1423,7 +1480,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var report = await GetReportMutationContextAsync(connection, reportId, cancellationToken);
+        var report = await GetReportMutationContextAsync(connection, reportId, cancellationToken, facilityId);
         if (report is null)
         {
             return null;
@@ -1441,7 +1498,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        var contexts = await GetReportReviewContextsAsync(connection, transaction, [report.Id], cancellationToken);
+        var contexts = await GetReportReviewContextsAsync(connection, transaction, [report.Id], cancellationToken, facilityId);
         if (!contexts.TryGetValue(report.Id, out var reviewContext))
         {
             return null;
@@ -1496,6 +1553,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         int reportId,
         ProcedureReportSignRequest request,
         string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
         if (reportId <= 0
@@ -1515,6 +1573,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             actor.Trim(),
             request.Reason.Trim(),
             ["received", "assigned"],
+            facilityId,
             cancellationToken);
     }
 
@@ -1522,6 +1581,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         int reportId,
         ProcedureReportReviewAssignmentRequest request,
         string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
         if (reportId <= 0
@@ -1542,6 +1602,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             actor.Trim(),
             request.Reason.Trim(),
             ["received", "assigned"],
+            facilityId,
             cancellationToken);
     }
 
@@ -1549,6 +1610,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         int reportId,
         ProcedureReportReviewDecisionRequest request,
         string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
         if (reportId <= 0
@@ -1568,6 +1630,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             actor.Trim(),
             request.Reason.Trim(),
             ["reviewed", "denied"],
+            facilityId,
             cancellationToken);
     }
 
@@ -1575,6 +1638,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         int reportId,
         ProcedureReportReviewDecisionRequest request,
         string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
         if (reportId <= 0
@@ -1594,6 +1658,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             actor.Trim(),
             request.Reason.Trim(),
             ["received", "assigned"],
+            facilityId,
             cancellationToken);
     }
 
@@ -1671,11 +1736,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     public async Task<ProcedureMutationResponse?> CreateSpecimenAsync(
         ProcedureSpecimenCreateRequest request,
+        string actor,
         int facilityId,
         CancellationToken cancellationToken)
     {
         EnsureFacilityId(facilityId);
-        if (request.OrderId <= 0
+        if (string.IsNullOrWhiteSpace(actor)
+            || request.OrderId <= 0
             || (string.IsNullOrWhiteSpace(request.SpecimenIdentifier) && string.IsNullOrWhiteSpace(request.AccessionIdentifier))
             || !TryReadDateTime(request.CollectedDate, out var collectedDate)
             || request.VolumeValue < 0)
@@ -1729,9 +1796,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             history.CommandText = """
                 insert into procedure_specimen_events
                     (specimen_id, action, previous_status, current_status, actor, reason, expected_version, resulting_version, occurred_at)
-                values (@specimenId, 'collect', null, 'collected', 'local-user', 'Local specimen collected.', 0, 1, @occurredAt);
+                values (@specimenId, 'collect', null, 'collected', @actor, 'Local specimen collected.', 0, 1, @occurredAt);
                 """;
             history.Parameters.AddWithValue("specimenId", id);
+            history.Parameters.AddWithValue("actor", actor.Trim());
             history.Parameters.Add("occurredAt", NpgsqlDbType.Timestamp).Value = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             await history.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -1745,8 +1813,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         int specimenId,
         ProcedureSpecimenLifecycleTransitionRequest request,
         string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         var targetStatus = NormalizeText(request.Status)?.ToLowerInvariant();
         if (specimenId <= 0 || request.ExpectedVersion <= 0 || !HasBoundedReason(request.Reason)
             || string.IsNullOrWhiteSpace(actor)
@@ -1768,9 +1838,11 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 inner join lab_orders orders on orders.id = specimen.order_id
                 inner join patients p on p.legacy_pid = orders.pid
                 where specimen.id = @specimenId
+                  and p.facility_id = @facilityId
                 for update;
                 """;
             context.Parameters.AddWithValue("specimenId", specimenId);
+            context.Parameters.AddWithValue("facilityId", facilityId);
             await using var reader = await context.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken)) return null;
             patientId = reader.GetString(0);
@@ -1828,8 +1900,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     public async Task<ProcedureSpecimenLifecycleHistoryResponse?> GetSpecimenLifecycleHistoryAsync(
         int specimenId,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         if (specimenId <= 0) return null;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -1838,11 +1912,15 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                    event.id as event_id, event.action, event.previous_status, event.current_status,
                    event.actor, event.reason, event.expected_version, event.resulting_version, event.occurred_at
             from lab_specimens specimen
+            inner join lab_orders orders on orders.id = specimen.order_id
+            inner join patients patient on patient.legacy_pid = orders.pid
             left join procedure_specimen_events event on event.specimen_id = specimen.id
             where specimen.id = @specimenId
+              and patient.facility_id = @facilityId
             order by event.occurred_at desc nulls last, event.id desc nulls last;
             """;
         command.Parameters.AddWithValue("specimenId", specimenId);
+        command.Parameters.AddWithValue("facilityId", facilityId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
         var lifecycleVersion = reader.GetInt32(reader.GetOrdinal("specimen_version"));
@@ -1865,13 +1943,98 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return new ProcedureSpecimenLifecycleHistoryResponse(specimenId, lifecycleVersion, events);
     }
 
-    public async Task<ProcedureMutationResponse?> CreateResultAsync(
-        ProcedureResultCreateRequest request,
+    public async Task<ProcedureOrderMutationHistoryResponse?> GetOrderMutationHistoryAsync(
+        int orderId,
         int facilityId,
         CancellationToken cancellationToken)
     {
         EnsureFacilityId(facilityId);
-        if (request.ReportId <= 0
+        if (orderId <= 0)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (await GetOrderMutationContextAsync(connection, orderId, cancellationToken, facilityId) is null)
+        {
+            return null;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, action, actor, detail, occurred_at
+            from procedure_order_events
+            where order_id = @orderId
+            order by occurred_at desc, id desc;
+            """;
+        command.Parameters.AddWithValue("orderId", orderId);
+        var events = new List<ProcedureOrderMutationHistoryItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            events.Add(new ProcedureOrderMutationHistoryItem(
+                reader.GetInt64(reader.GetOrdinal("id")),
+                reader.GetString(reader.GetOrdinal("action")),
+                reader.GetString(reader.GetOrdinal("actor")),
+                reader.GetString(reader.GetOrdinal("detail")),
+                reader.GetDateTime(reader.GetOrdinal("occurred_at")).ToString("O")));
+        }
+        return new ProcedureOrderMutationHistoryResponse(orderId, events);
+    }
+
+    public async Task<ProcedureResultMutationHistoryResponse?> GetResultMutationHistoryAsync(
+        int resultId,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        EnsureFacilityId(facilityId);
+        if (resultId <= 0)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (await GetResultMutationContextAsync(connection, resultId, facilityId, cancellationToken) is null)
+        {
+            return null;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, action, actor, detail, previous_content_version,
+                   resulting_content_version, occurred_at
+            from procedure_result_events
+            where result_id = @resultId
+            order by occurred_at desc, id desc;
+            """;
+        command.Parameters.AddWithValue("resultId", resultId);
+        var events = new List<ProcedureResultMutationHistoryItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            events.Add(new ProcedureResultMutationHistoryItem(
+                reader.GetInt64(reader.GetOrdinal("id")),
+                reader.GetString(reader.GetOrdinal("action")),
+                reader.GetString(reader.GetOrdinal("actor")),
+                reader.GetString(reader.GetOrdinal("detail")),
+                reader.IsDBNull(reader.GetOrdinal("previous_content_version"))
+                    ? null
+                    : reader.GetInt32(reader.GetOrdinal("previous_content_version")),
+                reader.GetInt32(reader.GetOrdinal("resulting_content_version")),
+                reader.GetDateTime(reader.GetOrdinal("occurred_at")).ToString("O")));
+        }
+        return new ProcedureResultMutationHistoryResponse(resultId, events);
+    }
+
+    public async Task<ProcedureMutationResponse?> CreateResultAsync(
+        ProcedureResultCreateRequest request,
+        string actor,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        EnsureFacilityId(facilityId);
+        if (string.IsNullOrWhiteSpace(actor)
+            || request.ReportId <= 0
             || string.IsNullOrWhiteSpace(request.ResultCode)
             || string.IsNullOrWhiteSpace(request.ResultText)
             || string.IsNullOrWhiteSpace(request.Result)
@@ -1888,8 +2051,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        var id = await GetNextIntIdAsync(connection, "lab_results", "id", cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var id = await GetNextIntIdAsync(connection, "lab_results", "id", transaction, cancellationToken);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             insert into lab_results
                 (id, report_id, code, text, units, result, range, abnormal, result_date, result_status)
@@ -1907,6 +2072,17 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("resultDate", NpgsqlDbType.Timestamp).Value = resultDate;
         command.Parameters.AddWithValue("status", request.Status.Trim());
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await InsertProcedureResultEventAsync(
+            connection,
+            transaction,
+            id,
+            "created",
+            actor,
+            "Local laboratory result entered.",
+            null,
+            1,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(report.PatientId, cancellationToken);
         return detail is null ? null : new ProcedureMutationResponse(id, detail);
@@ -1975,6 +2151,21 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             transaction,
             result.ReportId,
             actor,
+            cancellationToken);
+        var currentResultVersion = await GetProcedureResultCurrentVersionAsync(
+            connection,
+            transaction,
+            result.Id,
+            cancellationToken);
+        await InsertProcedureResultEventAsync(
+            connection,
+            transaction,
+            result.Id,
+            "corrected",
+            actor,
+            "Local laboratory result content corrected.",
+            currentResultVersion - 1,
+            currentResultVersion,
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -2337,6 +2528,99 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task<int> GetProcedureResultCurrentVersionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int resultId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select coalesce(max(version_no), 0)::integer + 1
+            from procedure_result_versions
+            where result_id = @resultId;
+            """;
+        command.Parameters.AddWithValue("resultId", resultId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task InsertProcedureOrderEventAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int orderId,
+        string action,
+        string actor,
+        string detail,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into procedure_order_events(order_id, action, actor, detail, occurred_at)
+            values (@orderId, @action, @actor, @detail, current_timestamp);
+            """;
+        command.Parameters.AddWithValue("orderId", orderId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("actor", actor.Trim());
+        command.Parameters.AddWithValue("detail", detail);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertLabReportCreationEventAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int reportId,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into lab_report_review_events(
+              report_id, action, previous_status, current_status, assigned_to, actor,
+              reason, expected_version, resulting_version, occurred_at)
+            values (
+              @reportId, 'received', null, 'received', null, @actor,
+              'Local report received.', 0, 1, current_timestamp);
+            """;
+        command.Parameters.AddWithValue("reportId", reportId);
+        command.Parameters.AddWithValue("actor", actor.Trim());
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertProcedureResultEventAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int resultId,
+        string action,
+        string actor,
+        string detail,
+        int? previousContentVersion,
+        int resultingContentVersion,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into procedure_result_events(
+              result_id, action, actor, detail, previous_content_version,
+              resulting_content_version, occurred_at)
+            values (
+              @resultId, @action, @actor, @detail, @previousContentVersion,
+              @resultingContentVersion, current_timestamp);
+            """;
+        command.Parameters.AddWithValue("resultId", resultId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("actor", actor.Trim());
+        command.Parameters.AddWithValue("detail", detail);
+        command.Parameters.Add("previousContentVersion", NpgsqlDbType.Integer).Value = previousContentVersion is null
+            ? DBNull.Value
+            : previousContentVersion.Value;
+        command.Parameters.AddWithValue("resultingContentVersion", resultingContentVersion);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task ReopenAcknowledgementAfterResultCorrectionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -2546,11 +2830,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         string actor,
         string reason,
         IReadOnlyCollection<string> allowedStatuses,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var contexts = await GetReportReviewContextsAsync(connection, transaction, [reportId], cancellationToken);
+        var contexts = await GetReportReviewContextsAsync(connection, transaction, [reportId], cancellationToken, facilityId);
         if (!contexts.TryGetValue(reportId, out var context))
         {
             return null;
@@ -2716,7 +3002,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select lab_order.id, lab_order.patient_id, lab_order.pid, lab_order.encounter
+            select lab_order.id, lab_order.patient_id, lab_order.pid, lab_order.encounter, lab_order.order_status
             from lab_orders lab_order
             inner join patients patient on patient.legacy_pid = lab_order.pid
             where lab_order.id = @id
@@ -2736,7 +3022,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             Id: reader.GetInt32(reader.GetOrdinal("id")),
             PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
             LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
-            Encounter: reader.GetInt32(reader.GetOrdinal("encounter")));
+            Encounter: reader.GetInt32(reader.GetOrdinal("encounter")),
+            Status: reader.GetString(reader.GetOrdinal("order_status")));
     }
 
     private static async Task<ProcedureReportMutationContext?> GetReportMutationContextAsync(
@@ -3709,7 +3996,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     private sealed record ProcedureEncounterMutationContext(int Encounter, int? ProviderId);
 
-    private sealed record ProcedureOrderMutationContext(int Id, string PatientId, int LegacyPid, int Encounter);
+    private sealed record ProcedureOrderMutationContext(int Id, string PatientId, int LegacyPid, int Encounter, string Status);
 
     private sealed record ProcedureReportMutationContext(int Id, int OrderId, string PatientId, int LegacyPid);
 
