@@ -113,6 +113,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.canonical_id,
                 p.legacy_pid,
                 p.pubpid,
+                p.administration_version,
                 p.first_name,
                 p.last_name,
                 p.preferred_name,
@@ -253,6 +254,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
                 LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
                 Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                AdministrationVersion: reader.GetInt64(reader.GetOrdinal("administration_version")),
                 DisplayName: BuildDisplayName(reader),
                 FirstName: reader.GetString(reader.GetOrdinal("first_name")),
                 LastName: reader.GetString(reader.GetOrdinal("last_name")),
@@ -1142,75 +1144,25 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return true;
     }
 
-    public async Task<PatientChartSummary?> UpdateContactAsync(
+    public async Task<PatientChartSummary?> UpdateAdministrationAsync(
         string patientId,
-        PatientContactUpdateRequest request,
+        PatientAdministrationUpdateRequest request,
         string username,
         CancellationToken cancellationToken)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var prior = await ReadPatientAdministrationSnapshotAsync(
-            connection,
-            transaction,
-            patientId,
-            cancellationToken);
-        if (prior is null)
+        if (request.ExpectedVersion <= 0)
         {
-            await transaction.RollbackAsync(cancellationToken);
-            return null;
+            throw new ArgumentException("An administration version is required.");
         }
 
-        var after = BuildContactAuditValues(request);
-        if (ChangedFields(prior.ContactValues, after).Count > 0)
+        if (request.Contact is null || request.Demographics is null)
         {
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = """
-                update patients
-                set
-                    phone = @phoneHome,
-                    phone_home = @phoneHome,
-                    phone_cell = @phoneCell,
-                    email = @email,
-                    hipaa_allow_sms = @hipaaAllowSms,
-                    hipaa_allow_email = @hipaaAllowEmail
-                where canonical_id = @patientId;
-                """;
-            command.Parameters.AddWithValue("patientId", prior.Patient.CanonicalId);
-            command.Parameters.Add("phoneHome", NpgsqlDbType.Text).Value = ToDatabaseValue(after["phoneHome"]);
-            command.Parameters.Add("phoneCell", NpgsqlDbType.Text).Value = ToDatabaseValue(after["phoneCell"]);
-            command.Parameters.Add("email", NpgsqlDbType.Text).Value = ToDatabaseValue(after["email"]);
-            command.Parameters.Add("hipaaAllowSms", NpgsqlDbType.Text).Value = ToDatabaseValue(after["hipaaAllowSms"]);
-            command.Parameters.Add("hipaaAllowEmail", NpgsqlDbType.Text).Value = ToDatabaseValue(after["hipaaAllowEmail"]);
-            await command.ExecuteNonQueryAsync(cancellationToken);
-
-            await InsertPatientAdministrationAuditAsync(
-                connection,
-                transaction,
-                prior.Patient,
-                area: "contact",
-                action: "updated",
-                entityId: null,
-                prior.ContactValues,
-                after,
-                username,
-                cancellationToken);
+            throw new ArgumentException("Contact and demographics are both required for an administration update.");
         }
 
-        await transaction.CommitAsync(cancellationToken);
-        return await GetChartSummaryAsync(prior.Patient.CanonicalId, cancellationToken);
-    }
-
-    public async Task<PatientChartSummary?> UpdateDemographicsAsync(
-        string patientId,
-        PatientDemographicsUpdateRequest request,
-        string username,
-        CancellationToken cancellationToken)
-    {
-        if (!TryNormalizeDemographics(request, out var normalized))
+        if (!TryNormalizeDemographics(request.Demographics, out var normalizedDemographics))
         {
-            return null;
+            throw new ArgumentException("Patient demographics could not be updated from the supplied details.");
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -1226,8 +1178,19 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        var after = BuildDemographicsAuditValues(normalized);
-        if (ChangedFields(prior.DemographicValues, after).Count > 0)
+        if (prior.AdministrationVersion != request.ExpectedVersion)
+        {
+            throw new PatientAdministrationVersionConflictException(
+                request.ExpectedVersion,
+                prior.AdministrationVersion);
+        }
+
+        var contactAfter = BuildContactAuditValues(request.Contact);
+        var demographicsAfter = BuildDemographicsAuditValues(normalizedDemographics);
+        var contactChanged = ChangedFields(prior.ContactValues, contactAfter).Count > 0;
+        var demographicsChanged = ChangedFields(prior.DemographicValues, demographicsAfter).Count > 0;
+
+        if (contactChanged || demographicsChanged)
         {
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
@@ -1251,24 +1214,62 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                     family_size = @familySize,
                     monthly_income = @monthlyIncome,
                     homeless = @homeless,
-                    financial_review_date = @financialReviewDate
-                where canonical_id = @patientId;
+                    financial_review_date = @financialReviewDate,
+                    phone = @phoneHome,
+                    phone_home = @phoneHome,
+                    phone_cell = @phoneCell,
+                    email = @email,
+                    hipaa_allow_sms = @hipaaAllowSms,
+                    hipaa_allow_email = @hipaaAllowEmail,
+                    administration_version = administration_version + 1
+                where canonical_id = @patientId
+                  and administration_version = @expectedVersion;
                 """;
             command.Parameters.AddWithValue("patientId", prior.Patient.CanonicalId);
-            AddDemographicsParameters(command, normalized);
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            command.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion);
+            AddDemographicsParameters(command, normalizedDemographics);
+            command.Parameters.Add("phoneHome", NpgsqlDbType.Text).Value = ToDatabaseValue(contactAfter["phoneHome"]);
+            command.Parameters.Add("phoneCell", NpgsqlDbType.Text).Value = ToDatabaseValue(contactAfter["phoneCell"]);
+            command.Parameters.Add("email", NpgsqlDbType.Text).Value = ToDatabaseValue(contactAfter["email"]);
+            command.Parameters.Add("hipaaAllowSms", NpgsqlDbType.Text).Value = ToDatabaseValue(contactAfter["hipaaAllowSms"]);
+            command.Parameters.Add("hipaaAllowEmail", NpgsqlDbType.Text).Value = ToDatabaseValue(contactAfter["hipaaAllowEmail"]);
+            var rowsUpdated = await command.ExecuteNonQueryAsync(cancellationToken);
+            if (rowsUpdated != 1)
+            {
+                throw new PatientAdministrationVersionConflictException(
+                    request.ExpectedVersion,
+                    prior.AdministrationVersion);
+            }
 
-            await InsertPatientAdministrationAuditAsync(
-                connection,
-                transaction,
-                prior.Patient,
-                area: "demographics",
-                action: "updated",
-                entityId: null,
-                prior.DemographicValues,
-                after,
-                username,
-                cancellationToken);
+            if (contactChanged)
+            {
+                await InsertPatientAdministrationAuditAsync(
+                    connection,
+                    transaction,
+                    prior.Patient,
+                    area: "contact",
+                    action: "updated",
+                    entityId: null,
+                    prior.ContactValues,
+                    contactAfter,
+                    username,
+                    cancellationToken);
+            }
+
+            if (demographicsChanged)
+            {
+                await InsertPatientAdministrationAuditAsync(
+                    connection,
+                    transaction,
+                    prior.Patient,
+                    area: "demographics",
+                    action: "updated",
+                    entityId: null,
+                    prior.DemographicValues,
+                    demographicsAfter,
+                    username,
+                    cancellationToken);
+            }
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -2555,6 +2556,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             select
                 canonical_id,
                 legacy_pid,
+                administration_version,
                 first_name,
                 last_name,
                 preferred_name,
@@ -2625,7 +2627,11 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             ["hipaaAllowSms"] = ReadNullableString(reader, "hipaa_allow_sms")?.ToUpperInvariant(),
             ["hipaaAllowEmail"] = ReadNullableString(reader, "hipaa_allow_email")?.ToUpperInvariant()
         };
-        return new PatientAdministrationSnapshot(patient, demographics, contact);
+        return new PatientAdministrationSnapshot(
+            patient,
+            reader.GetInt64(reader.GetOrdinal("administration_version")),
+            demographics,
+            contact);
     }
 
     private static async Task<InsuranceAuditSnapshot?> ReadInsuranceAuditSnapshotAsync(
@@ -4034,6 +4040,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
     private sealed record PatientAdministrationSnapshot(
         PatientIdentity Patient,
+        long AdministrationVersion,
         IReadOnlyDictionary<string, string?> DemographicValues,
         IReadOnlyDictionary<string, string?> ContactValues);
 

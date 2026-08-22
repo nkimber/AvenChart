@@ -654,6 +654,7 @@ create table patients (
   merged_at timestamptz,
   merged_by text,
   registration_date date not null,
+  administration_version bigint not null default 1,
   deceased_date date,
   deceased_reason text
 );

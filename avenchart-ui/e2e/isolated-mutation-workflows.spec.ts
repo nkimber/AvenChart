@@ -625,6 +625,7 @@ test.describe("isolated mutation workflows", () => {
     const patient = (await patientResponse.json()) as {
       firstName: string;
       lastName: string;
+      administrationVersion: number;
       preferredName?: string | null;
       sex?: string | null;
       dateOfBirth: string;
@@ -634,6 +635,7 @@ test.describe("isolated mutation workflows", () => {
       postalCode?: string | null;
       email?: string | null;
       phone?: string | null;
+      phoneHome?: string | null;
       phoneCell?: string | null;
       hipaaAllowSms?: string | null;
       hipaaAllowEmail?: string | null;
@@ -649,7 +651,7 @@ test.describe("isolated mutation workflows", () => {
       insurance: Array<{ id: string; policyNumber?: string | null }>;
     };
     const originalContact = {
-      phoneHome: patient.phone ?? "",
+      phoneHome: patient.phoneHome ?? patient.phone ?? "",
       phoneCell: patient.phoneCell ?? "",
       email: patient.email ?? "",
       hipaaAllowSms: patient.hipaaAllowSms ?? "NO",
@@ -703,23 +705,50 @@ test.describe("isolated mutation workflows", () => {
     let insuranceId: string | null = null;
 
     try {
-      const contactUpdate = await page.request.put(
-        `${apiBaseUrl}/api/patients/MOD-PAT-0004/contact`,
-        { headers, data: changedContact },
+      const administrationUpdate = await page.request.put(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/administration`,
+        {
+          headers,
+          data: {
+            contact: changedContact,
+            demographics: changedDemographics,
+            expectedVersion: patient.administrationVersion,
+          },
+        },
       );
-      expect(contactUpdate.ok()).toBeTruthy();
+      expect(administrationUpdate.ok()).toBeTruthy();
+      const afterAdministration = (await administrationUpdate.json()) as {
+        administrationVersion: number;
+      };
+      expect(afterAdministration.administrationVersion).toBe(
+        patient.administrationVersion + 1,
+      );
 
-      const noOpContactUpdate = await page.request.put(
-        `${apiBaseUrl}/api/patients/MOD-PAT-0004/contact`,
-        { headers, data: changedContact },
+      const staleAdministrationUpdate = await page.request.put(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/administration`,
+        {
+          headers,
+          data: {
+            contact: changedContact,
+            demographics: changedDemographics,
+            expectedVersion: patient.administrationVersion,
+          },
+        },
       );
-      expect(noOpContactUpdate.ok()).toBeTruthy();
+      expect(staleAdministrationUpdate.status()).toBe(409);
 
-      const demographicsUpdate = await page.request.put(
-        `${apiBaseUrl}/api/patients/MOD-PAT-0004/demographics`,
-        { headers, data: changedDemographics },
+      const noOpAdministrationUpdate = await page.request.put(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/administration`,
+        {
+          headers,
+          data: {
+            contact: changedContact,
+            demographics: changedDemographics,
+            expectedVersion: afterAdministration.administrationVersion,
+          },
+        },
       );
-      expect(demographicsUpdate.ok()).toBeTruthy();
+      expect(noOpAdministrationUpdate.ok()).toBeTruthy();
 
       const insuranceCreate = await page.request.post(
         `${apiBaseUrl}/api/patients/MOD-PAT-0004/insurance`,
@@ -854,16 +883,26 @@ test.describe("isolated mutation workflows", () => {
           { headers },
         );
       }
-      const restoreContact = await page.request.put(
-        `${apiBaseUrl}/api/patients/MOD-PAT-0004/contact`,
-        { headers, data: originalContact },
+      const currentPatientResponse = await page.request.get(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004`,
+        { headers },
       );
-      expect(restoreContact.ok()).toBeTruthy();
-      const restoreDemographics = await page.request.put(
-        `${apiBaseUrl}/api/patients/MOD-PAT-0004/demographics`,
-        { headers, data: originalDemographics },
+      expect(currentPatientResponse.ok()).toBeTruthy();
+      const currentPatient = (await currentPatientResponse.json()) as {
+        administrationVersion: number;
+      };
+      const restoreAdministration = await page.request.put(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/administration`,
+        {
+          headers,
+          data: {
+            contact: originalContact,
+            demographics: originalDemographics,
+            expectedVersion: currentPatient.administrationVersion,
+          },
+        },
       );
-      expect(restoreDemographics.ok()).toBeTruthy();
+      expect(restoreAdministration.ok()).toBeTruthy();
 
       const restoredHistoryResponse = await page.request.get(
         `${apiBaseUrl}/api/patients/MOD-PAT-0004/administration-history`,
@@ -968,6 +1007,10 @@ test.describe("isolated mutation workflows", () => {
           /I reviewed these records and intend to register a separate patient/,
         )
         .check();
+      await expect(separatePatientButton).toBeDisabled();
+      await duplicateCheck
+        .getByLabel("Reason for separate registration *")
+        .fill("This synthetic fixture intentionally verifies separate registration after duplicate review.");
       await expect(separatePatientButton).toBeEnabled();
       await separatePatientButton.click();
       created = true;

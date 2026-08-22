@@ -350,6 +350,92 @@ try {
     }
     $authenticatedHeaders = @{ "X-AvenChart-Session" = $login.sessionId }
 
+    $administrationOriginalResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/patients/MOD-PAT-0010" `
+        -Headers $authenticatedHeaders
+    if ([int]$administrationOriginalResponse.StatusCode -ne 200) {
+        throw "Could not load the patient administration aggregate for concurrency verification."
+    }
+    $administrationOriginal = (Get-HttpResponseContent -Response $administrationOriginalResponse) | ConvertFrom-Json
+    $administrationMarker = "resilience-administration-$([Guid]::NewGuid().ToString('N'))"
+    $originalContact = @{
+        phoneHome = $administrationOriginal.phoneHome
+        phoneCell = $administrationOriginal.phoneCell
+        email = $administrationOriginal.email
+        hipaaAllowSms = $administrationOriginal.hipaaAllowSms
+        hipaaAllowEmail = $administrationOriginal.hipaaAllowEmail
+    }
+    $originalDemographics = @{
+        firstName = $administrationOriginal.firstName
+        lastName = $administrationOriginal.lastName
+        preferredName = $administrationOriginal.preferredName
+        sex = $administrationOriginal.sex
+        dateOfBirth = $administrationOriginal.dateOfBirth
+        street = $administrationOriginal.street
+        city = $administrationOriginal.city
+        state = $administrationOriginal.state
+        postalCode = $administrationOriginal.postalCode
+        maritalStatus = $administrationOriginal.maritalStatus
+        occupation = $administrationOriginal.occupation
+        race = $administrationOriginal.race
+        ethnicity = $administrationOriginal.ethnicity
+        interpreter = $administrationOriginal.interpreter
+        familySize = $administrationOriginal.familySize
+        monthlyIncome = $administrationOriginal.monthlyIncome
+        homeless = $administrationOriginal.homeless
+        financialReviewDate = $administrationOriginal.financialReviewDate
+    }
+    $changedContact = $originalContact.Clone()
+    $changedContact.email = "$administrationMarker@example.test"
+    $changedDemographics = $originalDemographics.Clone()
+    $changedDemographics.occupation = $administrationMarker
+    $administrationUpdateBody = @{
+        contact = $changedContact
+        demographics = $changedDemographics
+        expectedVersion = $administrationOriginal.administrationVersion
+    } | ConvertTo-Json -Depth 5
+    $administrationUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/patients/MOD-PAT-0010/administration" `
+        -Headers $authenticatedHeaders `
+        -Body $administrationUpdateBody
+    if ([int]$administrationUpdateResponse.StatusCode -ne 200) {
+        throw "Atomic patient administration update returned HTTP $($administrationUpdateResponse.StatusCode)."
+    }
+    $administrationUpdated = (Get-HttpResponseContent -Response $administrationUpdateResponse) | ConvertFrom-Json
+    if ($administrationUpdated.administrationVersion -ne ($administrationOriginal.administrationVersion + 1) -or
+        $administrationUpdated.email -ne $changedContact.email -or
+        $administrationUpdated.occupation -ne $changedDemographics.occupation) {
+        throw "Atomic patient administration update did not return the expected versioned aggregate."
+    }
+    $staleAdministrationResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/patients/MOD-PAT-0010/administration" `
+        -Headers $authenticatedHeaders `
+        -Body $administrationUpdateBody
+    $legacyContactResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/patients/MOD-PAT-0010/contact" `
+        -Headers $authenticatedHeaders `
+        -Body ($changedContact | ConvertTo-Json)
+    if ([int]$staleAdministrationResponse.StatusCode -ne 409 -or [int]$legacyContactResponse.StatusCode -ne 410) {
+        throw "Patient administration concurrency or legacy endpoint retirement was not enforced."
+    }
+    $administrationRestoreResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/patients/MOD-PAT-0010/administration" `
+        -Headers $authenticatedHeaders `
+        -Body (@{
+            contact = $originalContact
+            demographics = $originalDemographics
+            expectedVersion = $administrationUpdated.administrationVersion
+        } | ConvertTo-Json -Depth 5)
+    if ([int]$administrationRestoreResponse.StatusCode -ne 200) {
+        throw "Patient administration aggregate cleanup returned HTTP $($administrationRestoreResponse.StatusCode)."
+    }
+    $CompletedScenarios.Add("patient-administration-aggregate-concurrency")
+
     Invoke-DatabaseScalar -Sql "delete from avenchart_integer_counters where counter_key = 'test.atomic-integer-allocation';" | Out-Null
     $postgresContainerId = (docker compose ps -q postgres).Trim()
     if ([string]::IsNullOrWhiteSpace($postgresContainerId)) {

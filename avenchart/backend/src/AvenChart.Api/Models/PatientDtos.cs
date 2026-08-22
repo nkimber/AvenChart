@@ -40,6 +40,7 @@ public sealed record PatientChartSummary(
     string CanonicalId,
     int LegacyPid,
     string Pubpid,
+    long AdministrationVersion,
     string DisplayName,
     string FirstName,
     string LastName,
@@ -351,6 +352,21 @@ public sealed record PatientDemographicsUpdateRequest(
     string? MonthlyIncome,
     string? Homeless,
     string? FinancialReviewDate);
+
+public sealed record PatientAdministrationUpdateRequest(
+    PatientContactUpdateRequest? Contact,
+    PatientDemographicsUpdateRequest? Demographics,
+    long ExpectedVersion);
+
+public sealed class PatientAdministrationVersionConflictException(
+    long expectedVersion,
+    long currentVersion)
+    : InvalidOperationException(
+        $"The patient administration record changed after it was loaded. Expected version {expectedVersion}; current version is {currentVersion}.")
+{
+    public long ExpectedVersion { get; } = expectedVersion;
+    public long CurrentVersion { get; } = currentVersion;
+}
 
 public sealed record PatientDeceasedStatusUpdateRequest(
     string? DeceasedDate,

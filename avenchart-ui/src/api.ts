@@ -1339,6 +1339,7 @@ export type PatientChartSummary = {
   canonicalId: string
   legacyPid: number
   pubpid: string
+  administrationVersion: number
   displayName: string
   firstName: string
   lastName: string
@@ -1352,6 +1353,7 @@ export type PatientChartSummary = {
   postalCode?: string | null
   email?: string | null
   phone?: string | null
+  phoneHome?: string | null
   phoneCell?: string | null
   hipaaAllowSms?: string | null
   hipaaAllowEmail?: string | null
@@ -10370,29 +10372,21 @@ export type PatientDemographicsUpdate = {
   financialReviewDate: string
 }
 
-export async function updatePatientContact(
-  sessionId: string,
-  patientId: string,
-  body: PatientContactUpdate,
-  signal?: AbortSignal,
-): Promise<PatientChartSummary> {
-  return clinicianPut(
-    sessionId,
-    `/api/patients/${encodeURIComponent(patientId)}/contact`,
-    body,
-    signal,
-  )
+export type PatientAdministrationUpdate = {
+  contact: PatientContactUpdate
+  demographics: PatientDemographicsUpdate
+  expectedVersion: number
 }
 
-export async function updatePatientDemographics(
+export async function updatePatientAdministration(
   sessionId: string,
   patientId: string,
-  body: PatientDemographicsUpdate,
+  body: PatientAdministrationUpdate,
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   return clinicianPut(
     sessionId,
-    `/api/patients/${encodeURIComponent(patientId)}/demographics`,
+    `/api/patients/${encodeURIComponent(patientId)}/administration`,
     body,
     signal,
   )

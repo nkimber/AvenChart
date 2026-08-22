@@ -145,6 +145,7 @@ import {
   transitionInventoryReplenishmentPolicyChangeRequest,
   transitionPracticeSettingChangeRequest,
   updatePatientCareTeam,
+  updatePatientAdministration,
   updateMedication,
   updatePatientAuthorizationAssignment,
   updatePatientAuthorizationStatus,
@@ -2317,6 +2318,40 @@ describe('authenticated API transport', () => {
         method: 'POST',
         headers: { 'X-AvenChart-Session': 'staff-session', 'content-type': 'application/json' },
         body: JSON.stringify(registration),
+      }),
+    )
+  })
+
+  it('uses one version-checked request for patient contact and demographics', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        canonicalId: 'MOD-PAT-0004',
+        administrationVersion: 8,
+      }),
+    )
+    const administration = {
+      contact: {
+        phoneHome: '555-0100',
+        phoneCell: '555-0101',
+        email: 'patient@example.test',
+        hipaaAllowSms: 'YES',
+        hipaaAllowEmail: 'NO',
+      },
+      demographics: {
+        firstName: 'Taylor', lastName: 'Patient', preferredName: '', sex: 'Female', dateOfBirth: '1988-02-03',
+        street: '1 Main Street', city: 'Boston', state: 'MA', postalCode: '02110', maritalStatus: 'single', occupation: '', race: '', ethnicity: '', interpreter: '', familySize: '', monthlyIncome: '', homeless: 'NO', financialReviewDate: '',
+      },
+      expectedVersion: 7,
+    }
+
+    await updatePatientAdministration('staff-session', 'MOD-PAT-0004', administration)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/patients/MOD-PAT-0004/administration',
+      expect.objectContaining({
+        method: 'PUT',
+        headers: { 'X-AvenChart-Session': 'staff-session', 'content-type': 'application/json' },
+        body: JSON.stringify(administration),
       }),
     )
   })

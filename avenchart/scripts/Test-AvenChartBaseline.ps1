@@ -1437,6 +1437,13 @@ try {
         homeless = $demographicsOriginal.homeless
         financialReviewDate = $demographicsOriginal.financialReviewDate
     }
+    $originalContactBody = @{
+        phoneHome = $demographicsOriginal.phoneHome
+        phoneCell = $demographicsOriginal.phoneCell
+        email = $demographicsOriginal.email
+        hipaaAllowSms = $demographicsOriginal.hipaaAllowSms
+        hipaaAllowEmail = $demographicsOriginal.hipaaAllowEmail
+    }
     $demographicsBody = @{
         firstName = "Morgan"
         lastName = "Parity"
@@ -1458,12 +1465,17 @@ try {
         financialReviewDate = "2026-02-15"
     }
 
+    $administrationBody = @{
+        contact = $originalContactBody
+        demographics = $demographicsBody
+        expectedVersion = $demographicsOriginal.administrationVersion
+    }
     $updatedDemographics = Invoke-RestMethod `
-        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/demographics" `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/administration" `
         -Method Put `
         -Headers (Get-AdministrationHeaders) `
         -ContentType "application/json" `
-        -Body ($demographicsBody | ConvertTo-Json -Depth 5) `
+        -Body ($administrationBody | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20
 
     $demographicsMutationPassed = $updatedDemographics.displayName -like "Parity, Morgan*" `
@@ -1484,14 +1496,35 @@ try {
         -and $updatedDemographics.familySize -eq $demographicsBody.familySize `
         -and $updatedDemographics.monthlyIncome -eq $demographicsBody.monthlyIncome `
         -and $updatedDemographics.homeless -eq $demographicsBody.homeless `
-        -and $updatedDemographics.financialReviewDate -eq $demographicsBody.financialReviewDate
+        -and $updatedDemographics.financialReviewDate -eq $demographicsBody.financialReviewDate `
+        -and $updatedDemographics.administrationVersion -eq ($demographicsOriginal.administrationVersion + 1)
 
+    $staleAdministrationStatus = $null
+    try {
+        Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/administration" `
+            -Method Put `
+            -Headers (Get-AdministrationHeaders) `
+            -ContentType "application/json" `
+            -Body ($administrationBody | ConvertTo-Json -Depth 5) `
+            -UseBasicParsing `
+            -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $staleAdministrationStatus = [int]$_.Exception.Response.StatusCode }
+    }
+
+    $restoreAdministrationBody = @{
+        contact = $originalContactBody
+        demographics = $originalDemographicsBody
+        expectedVersion = $updatedDemographics.administrationVersion
+    }
     $restoredDemographics = Invoke-RestMethod `
-        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/demographics" `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/administration" `
         -Method Put `
         -Headers (Get-AdministrationHeaders) `
         -ContentType "application/json" `
-        -Body ($originalDemographicsBody | ConvertTo-Json -Depth 5) `
+        -Body ($restoreAdministrationBody | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20
     $demographicsOriginal = $null
 
@@ -1504,11 +1537,13 @@ try {
         -and $restoredDemographics.familySize -eq $originalDemographicsBody.familySize `
         -and $restoredDemographics.monthlyIncome -eq $originalDemographicsBody.monthlyIncome `
         -and $restoredDemographics.homeless -eq $originalDemographicsBody.homeless `
-        -and $restoredDemographics.financialReviewDate -eq $originalDemographicsBody.financialReviewDate
+        -and $restoredDemographics.financialReviewDate -eq $originalDemographicsBody.financialReviewDate `
+        -and $staleAdministrationStatus -eq 409
 
     Add-Check -Name "patient demographics mutation lifecycle" -Result $(if ($demographicsMutationPassed -and $demographicsRestorePassed) { "passed" } else { "failed" }) -Details @{
         updatedDisplayName = $updatedDemographics.displayName
         updatedAddress = "$($updatedDemographics.street), $($updatedDemographics.city) $($updatedDemographics.state) $($updatedDemographics.postalCode)"
+        staleAdministrationStatus = $staleAdministrationStatus
         restoredDisplayName = $restoredDemographics.displayName
     }
 }
@@ -1538,12 +1573,24 @@ finally {
                 homeless = $demographicsOriginal.homeless
                 financialReviewDate = $demographicsOriginal.financialReviewDate
             }
+            $currentAdministration = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+            $restoreAdministrationBody = @{
+                contact = @{
+                    phoneHome = $currentAdministration.phoneHome
+                    phoneCell = $currentAdministration.phoneCell
+                    email = $currentAdministration.email
+                    hipaaAllowSms = $currentAdministration.hipaaAllowSms
+                    hipaaAllowEmail = $currentAdministration.hipaaAllowEmail
+                }
+                demographics = $originalDemographicsBody
+                expectedVersion = $currentAdministration.administrationVersion
+            }
             Invoke-RestMethod `
-                -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/demographics" `
+                -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/administration" `
                 -Method Put `
                 -Headers (Get-AdministrationHeaders) `
                 -ContentType "application/json" `
-                -Body ($originalDemographicsBody | ConvertTo-Json -Depth 5) `
+                -Body ($restoreAdministrationBody | ConvertTo-Json -Depth 5) `
                 -TimeoutSec 20 | Out-Null
         }
         catch {

@@ -21,6 +21,7 @@ function patient(canonicalId: string, displayName: string): PatientChartSummary 
     canonicalId,
     legacyPid: 1,
     pubpid: canonicalId,
+    administrationVersion: 1,
     displayName,
     firstName: displayName.split(' ')[0],
     lastName: displayName.split(' ')[1],

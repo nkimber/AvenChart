@@ -17,6 +17,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import {
+  ApiRequestError,
   createPatientMergeAuditPlan,
   createPatientInsurance,
   createPatientRecordRequest,
@@ -34,8 +35,7 @@ import {
   transitionPatientLifecycle,
   updatePatientDeceasedStatus,
   updatePatientCareTeam,
-  updatePatientContact,
-  updatePatientDemographics,
+  updatePatientAdministration,
   updatePatientEmployer,
   updatePatientGuardianContact,
   updatePatientInsurance,
@@ -574,17 +574,60 @@ export default function PatientSummary() {
     e.preventDefault();
     setSaving(true);
     try {
-      await updatePatientContact(session.sessionId, patientId, contactForm);
-      await updatePatientDemographics(session.sessionId, patientId, demoForm);
+      await updatePatientAdministration(session.sessionId, patientId, {
+        contact: contactForm,
+        demographics: demoForm,
+        expectedVersion: patient.administrationVersion,
+      });
       showToast("Demographics saved.", "success");
       setEditDemoOpen(false);
       setAdministrationHistoryRetry((current) => current + 1);
       reload();
-    } catch {
-      showToast("Could not save demographics.", "error");
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 409) {
+        setEditDemoOpen(false);
+        reload();
+        showToast(
+          "This chart was changed by another user. Your changes were not saved; review the refreshed record.",
+          "error",
+        );
+      } else {
+        showToast("Could not save demographics.", "error");
+      }
     } finally {
       setSaving(false);
     }
+  }
+
+  function openDemographicsEditor() {
+    setContactForm({
+      phoneHome: patient.phoneHome ?? patient.phone ?? "",
+      phoneCell: patient.phoneCell ?? "",
+      email: patient.email ?? "",
+      hipaaAllowSms: patient.hipaaAllowSms ?? "NO",
+      hipaaAllowEmail: patient.hipaaAllowEmail ?? "NO",
+    });
+    setDemoForm({
+      firstName: patient.firstName,
+      lastName: patient.lastName,
+      preferredName: patient.preferredName ?? "",
+      sex: patient.sex ?? "",
+      dateOfBirth: patient.dateOfBirth,
+      street: patient.street ?? "",
+      city: patient.city ?? "",
+      state: patient.state ?? "",
+      postalCode: patient.postalCode ?? "",
+      maritalStatus: patient.maritalStatus ?? "",
+      occupation: patient.occupation ?? "",
+      race: patient.race ?? "",
+      ethnicity: patient.ethnicity ?? "",
+      interpreter: patient.interpreter ?? "",
+      familySize: patient.familySize ?? "",
+      monthlyIncome: patient.monthlyIncome ?? "",
+      homeless: patient.homeless ?? "NO",
+      financialReviewDate: patient.financialReviewDate ?? "",
+    });
+    setEditDemoOpen(true);
   }
 
   async function handleSaveInsurance(e: React.FormEvent) {
@@ -1532,7 +1575,10 @@ export default function PatientSummary() {
             <button
               className="cl-link"
               type="button"
-              onClick={() => setEditDemoOpen((o) => !o)}
+              onClick={() => {
+                if (editDemoOpen) setEditDemoOpen(false);
+                else openDemographicsEditor();
+              }}
             >
               {editDemoOpen ? "Cancel" : "Edit"}
             </button>

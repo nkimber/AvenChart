@@ -1750,44 +1750,59 @@ patients.MapGet("/{patientId}/print/{output}", async (string patientId, string o
     catch (KeyNotFoundException) { return Results.NotFound(); }
 }).WithName("GetPatientPrintableOutput").AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"));
 
-patients.MapPut("/{patientId}/contact", async (
+patients.MapPut("/{patientId}/administration", async (
         PatientRepository repository,
         AuthRepository authRepository,
         HttpContext httpContext,
         string patientId,
-        PatientContactUpdateRequest request,
+        PatientAdministrationUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var patient = await repository.UpdateContactAsync(
-            patientId,
-            request,
-            session.Username,
-            cancellationToken);
-        return patient is null ? Results.NotFound() : Results.Ok(patient);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var patient = await repository.UpdateAdministrationAsync(
+                patientId,
+                request,
+                session.Username,
+                cancellationToken);
+            return patient is null ? Results.NotFound() : Results.Ok(patient);
+        }
+        catch (PatientAdministrationVersionConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                expectedVersion = exception.ExpectedVersion,
+                currentVersion = exception.CurrentVersion,
+                current = await repository.GetChartSummaryAsync(patientId, cancellationToken)
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["administration"] = [exception.Message]
+            });
+        }
     })
-    .WithName("UpdatePatientContact")
+    .WithName("UpdatePatientAdministration")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
-patients.MapPut("/{patientId}/demographics", async (
-        PatientRepository repository,
-        AuthRepository authRepository,
-        HttpContext httpContext,
-        string patientId,
-        PatientDemographicsUpdateRequest request,
-        CancellationToken cancellationToken) =>
-    {
-        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var patient = await repository.UpdateDemographicsAsync(
-            patientId,
-            request,
-            session.Username,
-            cancellationToken);
-        return patient is null
-            ? Results.BadRequest("Patient demographics could not be updated from the supplied patient and demographic details.")
-            : Results.Ok(patient);
-    })
-    .WithName("UpdatePatientDemographics")
+patients.MapPut("/{patientId}/contact", (string patientId) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status410Gone,
+            title: "Patient contact update is retired",
+            detail: "Use the atomic patient administration update endpoint with the current administration version."))
+    .WithName("RetirePatientContactUpdate")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
+patients.MapPut("/{patientId}/demographics", (string patientId) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status410Gone,
+            title: "Patient demographics update is retired",
+            detail: "Use the atomic patient administration update endpoint with the current administration version."))
+    .WithName("RetirePatientDemographicsUpdate")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
 patients.MapPut("/{patientId}/deceased-status", async (
