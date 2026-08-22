@@ -330,6 +330,22 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
 
     private async Task<InventoryControlledCustodyMovementResponse> CreateControlledCustodyMovementAsync(InventoryControlledCustodyMovementRequest request, string username, ControlledAttestationUse? suppliedAttestation, CancellationToken cancellationToken)
     {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var response = await CreateControlledCustodyMovementInTransactionAsync(
+            request, username, suppliedAttestation, connection, transaction, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return response;
+    }
+
+    private static async Task<InventoryControlledCustodyMovementResponse> CreateControlledCustodyMovementInTransactionAsync(
+        InventoryControlledCustodyMovementRequest request,
+        string username,
+        ControlledAttestationUse? suppliedAttestation,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
         ValidateCustodyMovementRequest(request, username);
         var action = request.Action.Trim().ToLowerInvariant();
 
@@ -342,8 +358,6 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var occurredAt = DateTimeOffset.UtcNow;
         var eventId = Guid.NewGuid();
         var expiration = ParseOptionalDate(request.ExpirationDate, "Lot expiration must be an ISO date.");
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var duplicate = connection.CreateCommand())
         {
             duplicate.Transaction = transaction;
@@ -452,7 +466,6 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         if (counterpartyLot is not null)
             await InsertTransactionAsync(connection, transaction, Guid.NewGuid(), counterpartyLot.LotId, eventId, "controlled_transfer", request.Quantity, reason, username, occurredAt, cancellationToken);
 
-        await transaction.CommitAsync(cancellationToken);
         var custodyEvent = new InventoryControlledCustodyEvent(eventId, action, primaryLot.LotId, counterpartyLot?.LotId, primaryLot.Item.ItemId, primaryLot.Item.ItemCode,
             primaryLot.Item.ScheduleCode, request.Quantity, quantityDelta, sourceLocation?.LocationId, destinationLocation?.LocationId, request.PatientId?.Trim(), request.Encounter,
             reason!, request.RelatedEventId, sourceBefore, sourceAfter, destinationBefore, destinationAfter, username, occurredAt.ToString("O", CultureInfo.InvariantCulture),
@@ -551,10 +564,93 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
     public async Task<InventoryControlledCustodyMovementResponse> CorrectControlledCountDiscrepancyAsync(Guid discrepancyId, InventoryControlledDiscrepancyCorrectionRequest request, string username, CancellationToken cancellationToken)
     {
         ValidateControlledDiscrepancyCorrectionRequest(discrepancyId, request, username);
-        var notes=NormalizeOptional(request.Notes);var key=NormalizeOptional(request.IdempotencyKey);
-        int lotId;decimal variance;Guid locationId,relatedEventId;await using(var connection=await dataSource.OpenConnectionAsync(cancellationToken)){await using var command=connection.CreateCommand();command.CommandText="select l.lot_id,c.variance_quantity,l.controlled_location_id,(select e.event_id from inventory_controlled_custody_events e where e.lot_id=l.lot_id or e.counterparty_lot_id=l.lot_id order by e.occurred_at desc,e.event_id desc limit 1) from inventory_controlled_count_discrepancies d join inventory_controlled_count_lines c on c.line_id=d.line_id join inventory_lots l on l.lot_id=c.lot_id where d.discrepancy_id=@id and d.status='investigating' and d.correction_event_id is null;";command.Parameters.AddWithValue("id",discrepancyId);await using var reader=await command.ExecuteReaderAsync(cancellationToken);if(!await reader.ReadAsync(cancellationToken))throw new ArgumentException("The controlled discrepancy was not found or is not ready for correction.");lotId=reader.GetInt32(0);variance=reader.GetDecimal(1);if(reader.IsDBNull(2)||reader.IsDBNull(3))throw new ArgumentException("The controlled discrepancy has no eligible custody lot/event.");locationId=reader.GetGuid(2);relatedEventId=reader.GetGuid(3);}
-        var direction=variance>0?"increase":"decrease";var movement=await CreateControlledCustodyMovementAsync(new("correction",lotId,null,null,null,null,Math.Abs(variance),direction=="decrease"?locationId:null,direction=="increase"?locationId:null,null,null,$"Count discrepancy {discrepancyId}: {notes}",relatedEventId,direction,key,null),username,request.AttestationId is { } attestationId ? new ControlledAttestationUse(attestationId,"discrepancy_correction",discrepancyId,CreateDiscrepancyCorrectionDigest(discrepancyId,request)) : null,cancellationToken);
-        await using(var connection=await dataSource.OpenConnectionAsync(cancellationToken)){await using var command=connection.CreateCommand();command.CommandText="update inventory_controlled_count_discrepancies set status='corrected',correction_event_id=@event where discrepancy_id=@id and status='investigating' and correction_event_id is null;";command.Parameters.AddWithValue("event",movement.Event.EventId);command.Parameters.AddWithValue("id",discrepancyId);if(await command.ExecuteNonQueryAsync(cancellationToken)!=1)throw new ArgumentException("The correction posted but the discrepancy was concurrently changed; review the custody event before retrying.");}
+        var notes = NormalizeOptional(request.Notes);
+        var key = NormalizeOptional(request.IdempotencyKey);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        int lotId;
+        decimal variance;
+        Guid locationId;
+        Guid relatedEventId;
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                select lot.lot_id,
+                       line.variance_quantity,
+                       lot.controlled_location_id,
+                       (
+                         select event.event_id
+                         from inventory_controlled_custody_events event
+                         where event.lot_id=lot.lot_id or event.counterparty_lot_id=lot.lot_id
+                         order by event.occurred_at desc, event.event_id desc
+                         limit 1)
+                from inventory_controlled_count_discrepancies discrepancy
+                inner join inventory_controlled_count_lines line on line.line_id=discrepancy.line_id
+                inner join inventory_lots lot on lot.lot_id=line.lot_id
+                where discrepancy.discrepancy_id=@id
+                  and discrepancy.status='investigating'
+                  and discrepancy.correction_event_id is null
+                for update of discrepancy, line, lot;
+                """;
+            command.Parameters.AddWithValue("id", discrepancyId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+                throw new ArgumentException("The controlled discrepancy was not found or is not ready for correction.");
+            lotId = reader.GetInt32(0);
+            variance = reader.GetDecimal(1);
+            if (reader.IsDBNull(2) || reader.IsDBNull(3))
+                throw new ArgumentException("The controlled discrepancy has no eligible custody lot/event.");
+            locationId = reader.GetGuid(2);
+            relatedEventId = reader.GetGuid(3);
+        }
+
+        var direction = variance > 0 ? "increase" : "decrease";
+        var movementRequest = new InventoryControlledCustodyMovementRequest(
+            "correction",
+            lotId,
+            null,
+            null,
+            null,
+            null,
+            Math.Abs(variance),
+            direction == "decrease" ? locationId : null,
+            direction == "increase" ? locationId : null,
+            null,
+            null,
+            $"Count discrepancy {discrepancyId}: {notes}",
+            relatedEventId,
+            direction,
+            key,
+            null);
+        var attestation = request.AttestationId is { } attestationId
+            ? new ControlledAttestationUse(
+                attestationId,
+                "discrepancy_correction",
+                discrepancyId,
+                CreateDiscrepancyCorrectionDigest(discrepancyId, request))
+            : null;
+        var movement = await CreateControlledCustodyMovementInTransactionAsync(
+            movementRequest, username, attestation, connection, transaction, cancellationToken);
+
+        await using (var correction = connection.CreateCommand())
+        {
+            correction.Transaction = transaction;
+            correction.CommandText = """
+                update inventory_controlled_count_discrepancies
+                set status='corrected', correction_event_id=@eventId
+                where discrepancy_id=@discrepancyId
+                  and status='investigating'
+                  and correction_event_id is null;
+                """;
+            correction.Parameters.AddWithValue("eventId", movement.Event.EventId);
+            correction.Parameters.AddWithValue("discrepancyId", discrepancyId);
+            if (await correction.ExecuteNonQueryAsync(cancellationToken) != 1)
+                throw new InvalidOperationException("The locked controlled discrepancy could not be marked corrected.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
         return movement;
     }
 

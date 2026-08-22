@@ -11740,7 +11740,35 @@ try {
     $pendingCorrectionAttestations = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancy-correction-attestations/pending" -Method Get -Headers $custodyWitnessHeaders -TimeoutSec 20
     $approvedCorrectionAttestation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancy-correction-attestations/$($controlledCorrectionAttestation.attestationId)/approve" -Method Post -Headers $custodyWitnessHeaders -ContentType "application/json" -Body '{}' -TimeoutSec 20
     $controlledCorrectionInput.attestationId = $controlledCorrectionAttestation.attestationId
-    $controlledCountCorrection = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body ($controlledCorrectionInput | ConvertTo-Json) -TimeoutSec 20
+    $controlledCorrectionUri = "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections"
+    $controlledCorrectionPayload = $controlledCorrectionInput | ConvertTo-Json
+    $controlledCorrectionRequest = {
+        param($Uri, $Headers, $Payload)
+        try {
+            $response = Invoke-WebRequest -Uri $Uri -Method Post -Headers $Headers -ContentType "application/json" -Body $Payload -UseBasicParsing -TimeoutSec 20
+            [pscustomobject]@{ succeeded = $true; statusCode = [int]$response.StatusCode; body = $response.Content }
+        }
+        catch {
+            $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+            [pscustomobject]@{ succeeded = $false; statusCode = $statusCode; body = $null }
+        }
+    }
+    $controlledCorrectionJobs = @(1..2 | ForEach-Object {
+        Start-Job -ScriptBlock $controlledCorrectionRequest -ArgumentList $controlledCorrectionUri, $custodyHeaders, $controlledCorrectionPayload
+    })
+    $controlledCorrectionAttempts = @($controlledCorrectionJobs | Wait-Job | Receive-Job)
+    $controlledCorrectionJobs | Remove-Job -Force
+    $successfulControlledCorrectionAttempts = @($controlledCorrectionAttempts | Where-Object { $_.succeeded })
+    $rejectedControlledCorrectionAttempts = @($controlledCorrectionAttempts | Where-Object { -not $_.succeeded })
+    if ($successfulControlledCorrectionAttempts.Count -ne 1) {
+        throw "Exactly one concurrent controlled discrepancy correction must succeed."
+    }
+    $controlledCountCorrection = $successfulControlledCorrectionAttempts[0].body | ConvertFrom-Json
+    $controlledCorrectionConcurrencyPassed = $successfulControlledCorrectionAttempts.Count -eq 1 `
+        -and $successfulControlledCorrectionAttempts[0].statusCode -eq 201 `
+        -and $rejectedControlledCorrectionAttempts.Count -eq 1 `
+        -and $rejectedControlledCorrectionAttempts[0].statusCode -eq 400
+    $controlledCorrectionBindingCount = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_controlled_count_discrepancies d join inventory_controlled_custody_events e on e.event_id=d.correction_event_id where d.discrepancy_id='$($controlledCountSubmitted.lines[0].discrepancyId)' and d.correction_event_id='$($controlledCountCorrection.event.eventId)' and e.action='correction' and e.lot_id=$($receipt.lot.lotId);"
     $controlledCountClosed = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/close" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke discrepancy closure" } | ConvertTo-Json) -TimeoutSec 20
     $controlledAsOfReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/as-of" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ asOfDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
     $controlledAsOfExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/controlled-inventory/as-of/$($controlledAsOfReport.run.runId)/export" -Method Get -Headers $custodyHeaders -UseBasicParsing -TimeoutSec 20
@@ -11790,6 +11818,8 @@ try {
         -and $controlledCountCorrection.event.action -eq "correction" `
         -and $controlledCountCorrection.event.attestationId -eq $controlledCorrectionAttestation.attestationId `
         -and $controlledCountCorrection.lot.quantityOnHand -eq 6 `
+        -and $controlledCorrectionConcurrencyPassed `
+        -and $controlledCorrectionBindingCount.Trim() -eq "1" `
         -and $controlledCountClosed.lines[0].discrepancyStatus -eq "closed" `
         -and $controlledCountSummaryAfterResolution.movementLockActive -eq $false `
         -and $controlledCountSummaryAfterResolution.openDiscrepancyCount -eq 0 `
@@ -11831,7 +11861,7 @@ try {
         -and $countLockRejected `
         -and $countResubmitRejected `
         -and $countCorrectionRetryRejected
-    Add-Check -Name "inventory controlled-substance perpetual custody movements" -Result $(if ($custodyPassed) { "passed" } else { "failed" }) -Details @{ lotId = $receipt.lot.lotId; destinationLotId = $transfer.counterpartyLot.lotId; sourceQuantity = $controlledCountCorrection.lot.quantityOnHand; destinationQuantity = $transfer.counterpartyLot.quantityOnHand; actions = $custodyActions; witness = $receipt.event.witnessUsername; countSessionId = $controlledCount.sessionId; countStatus = $controlledCountSubmitted.status; discrepancyStatus = $controlledCountAfterCorrection.lines[0].discrepancyStatus }
+    Add-Check -Name "inventory controlled-substance perpetual custody movements" -Result $(if ($custodyPassed) { "passed" } else { "failed" }) -Details @{ lotId = $receipt.lot.lotId; destinationLotId = $transfer.counterpartyLot.lotId; sourceQuantity = $controlledCountCorrection.lot.quantityOnHand; destinationQuantity = $transfer.counterpartyLot.quantityOnHand; actions = $custodyActions; witness = $receipt.event.witnessUsername; countSessionId = $controlledCount.sessionId; countStatus = $controlledCountSubmitted.status; discrepancyStatus = $controlledCountAfterCorrection.lines[0].discrepancyStatus; concurrentCorrectionSuccesses = $successfulControlledCorrectionAttempts.Count; concurrentCorrectionRejections = $rejectedControlledCorrectionAttempts.Count; correctionBindingCount = $controlledCorrectionBindingCount.Trim() }
 }
 catch {
     Add-Check -Name "inventory controlled-substance perpetual custody movements" -Result "failed" -Details $_.Exception.Message
