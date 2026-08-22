@@ -5785,15 +5785,12 @@ documents.MapPut("/{documentId:int}/sign", async (
     .WithName("SignPatientDocument")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
-documents.MapDelete("/{documentId:int}", async (
-        DocumentRepository repository,
-        int documentId,
-        CancellationToken cancellationToken) =>
-    {
-        var deleted = await repository.DeleteAsync(documentId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    })
-    .WithName("DeletePatientDocument")
+documents.MapDelete("/{documentId:int}", (int documentId) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status410Gone,
+            title: "Document deletion is not available",
+            detail: "Patient documents are retained. Use the reasoned archive workflow instead."))
+    .WithName("RetirePatientDocumentDeletion")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs_rm", "write"));
 
 var procedures = app.MapGroup("/api/procedures").WithTags("Procedures");
