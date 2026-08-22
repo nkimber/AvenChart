@@ -775,6 +775,7 @@ export type EncounterVitals = {
 }
 
 export type EncounterSoapNote = {
+  version: number
   subjective?: string | null
   objective?: string | null
   assessment?: string | null
@@ -955,6 +956,7 @@ export type EncounterVitalsCreateInput = {
 
 export type EncounterSoapNoteCreateInput = {
   dateTime: string
+  expectedVersion: number
   subjective?: string | null
   objective?: string | null
   assessment?: string | null

@@ -469,7 +469,12 @@ public sealed class EncounterRepository(
             throw new ArgumentException("At least one SOAP section is required.");
         }
 
-        if (request.ExpectedVersion is < 0)
+        if (request.ExpectedVersion is null)
+        {
+            throw new ArgumentException("Expected version is required when saving a SOAP note.");
+        }
+
+        if (request.ExpectedVersion < 0)
         {
             throw new ArgumentException("Expected version cannot be negative.");
         }
@@ -547,10 +552,10 @@ public sealed class EncounterRepository(
                 true);
         }
 
-        if (request.ExpectedVersion is { } expectedVersion && expectedVersion != currentVersion)
+        if (request.ExpectedVersion.Value != currentVersion)
         {
             throw new EncounterSoapNoteConflictException(
-                $"SOAP note version {currentVersion} is current; the submitted draft was based on version {expectedVersion}.",
+                $"SOAP note version {currentVersion} is current; the submitted draft was based on version {request.ExpectedVersion.Value}.",
                 currentVersion,
                 false);
         }

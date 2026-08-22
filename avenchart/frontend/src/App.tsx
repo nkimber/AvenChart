@@ -13385,6 +13385,7 @@ function EncounterWorkspace({
     try {
       await onCreateSoapNote(encounterDetail, {
         dateTime: soapDateTime,
+        expectedVersion: encounterDetail.soapNote?.version ?? 0,
         subjective: soapSubjective,
         objective: soapObjective,
         assessment: soapAssessment,
