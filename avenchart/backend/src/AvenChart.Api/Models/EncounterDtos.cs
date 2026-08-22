@@ -83,7 +83,9 @@ public sealed record EncounterSignatureItem(
     string? Amendment,
     string Hash,
     string SignatureHash,
-    long? EncounterVersion);
+    long? EncounterVersion,
+    string? ContentRevision,
+    string? ContentChecksum);
 
 public sealed record EncounterAmendmentHistoryItem(
     int SignatureId,

@@ -4,6 +4,7 @@
 using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -15,6 +16,7 @@ public sealed class EncounterRepository(
     DocumentRepository documentRepository)
 {
     private const int MaximumSearchLimit = 100;
+    private const string SignatureContentRevision = "encounter-signature-content-v1";
 
     public async Task<EncounterSearchResponse> SearchAsync(
         string? patientId,
@@ -656,6 +658,11 @@ public sealed class EncounterRepository(
 
             encounterVersion = Convert.ToInt64(result);
         }
+        var contentSnapshot = await CaptureSignatureContentSnapshotAsync(
+            connection,
+            transaction,
+            encounter,
+            cancellationToken);
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -692,7 +699,10 @@ public sealed class EncounterRepository(
                 amendment,
                 hash,
                 signature_hash,
-                encounter_version
+                encounter_version,
+                content_revision,
+                content_checksum,
+                content_manifest
             )
             select
                 next_id.id,
@@ -708,7 +718,10 @@ public sealed class EncounterRepository(
                 @amendment,
                 @hash,
                 @signatureHash,
-                selected_encounter.row_version
+                selected_encounter.row_version,
+                @contentRevision,
+                @contentChecksum,
+                @contentManifest
             from selected_encounter
             join selected_user on true
             cross join next_id
@@ -719,9 +732,12 @@ public sealed class EncounterRepository(
         command.Parameters.Add("signedAt", NpgsqlDbType.Timestamp).Value = signedAt;
         command.Parameters.Add("isLock", NpgsqlDbType.Boolean).Value = request.IsLock;
         AddNullableText(command, "amendment", NormalizeText(request.Amendment));
-        var hash = CreateSignatureHash($"{encounter}|form_encounter|{encounterVersion}|{signerUsername}|{signedAt:O}|{request.IsLock}|{request.Amendment}");
+        var hash = CreateSignatureHash($"{encounter}|form_encounter|{encounterVersion}|{signerUsername}|{signedAt:O}|{request.IsLock}|{request.Amendment}|{contentSnapshot.Revision}|{contentSnapshot.Checksum}");
         command.Parameters.Add("hash", NpgsqlDbType.Text).Value = hash;
         command.Parameters.Add("signatureHash", NpgsqlDbType.Text).Value = CreateSignatureHash($"{hash}|{signerUsername}");
+        command.Parameters.Add("contentRevision", NpgsqlDbType.Text).Value = contentSnapshot.Revision;
+        command.Parameters.Add("contentChecksum", NpgsqlDbType.Text).Value = contentSnapshot.Checksum;
+        command.Parameters.Add("contentManifest", NpgsqlDbType.Jsonb).Value = contentSnapshot.Manifest;
 
         var id = await command.ExecuteScalarAsync(cancellationToken);
         if (id is null || id is DBNull)
@@ -1132,7 +1148,8 @@ public sealed class EncounterRepository(
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, table_name, signer_user_id, signer_username, signed_at, is_lock, amendment, hash, signature_hash, encounter_version
+            select id, table_name, signer_user_id, signer_username, signed_at, is_lock, amendment, hash, signature_hash, encounter_version,
+                   content_revision, content_checksum
             from encounter_signatures
             where encounter = @encounter
             order by signed_at desc, id desc;
@@ -1155,7 +1172,9 @@ public sealed class EncounterRepository(
                 SignatureHash: reader.GetString(reader.GetOrdinal("signature_hash")),
                 EncounterVersion: reader.IsDBNull(reader.GetOrdinal("encounter_version"))
                     ? null
-                    : reader.GetInt64(reader.GetOrdinal("encounter_version"))));
+                    : reader.GetInt64(reader.GetOrdinal("encounter_version")),
+                ContentRevision: ReadNullableString(reader, "content_revision"),
+                ContentChecksum: ReadNullableString(reader, "content_checksum")));
         }
 
         return signatures;
@@ -1175,6 +1194,236 @@ public sealed class EncounterRepository(
                 Hash: signature.Hash,
                 SignatureHash: signature.SignatureHash))
             .ToList();
+    }
+
+    private static async Task<SignatureContentSnapshot> CaptureSignatureContentSnapshotAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select jsonb_build_object(
+              'revision', @revision,
+              'encounter', jsonb_build_object(
+                'id', encounter_row.id,
+                'encounter', encounter_row.encounter,
+                'patientId', encounter_row.patient_id,
+                'legacyPid', encounter_row.pid,
+                'rowVersion', encounter_row.row_version,
+                'date', encounter_row.encounter_date,
+                'dateTime', encounter_row.encounter_datetime,
+                'providerId', encounter_row.provider_id,
+                'facilityId', encounter_row.facility_id,
+                'billingFacilityId', encounter_row.billing_facility_id,
+                'reason', encounter_row.reason,
+                'diagnosisCode', encounter_row.diagnosis_code,
+                'diagnosisText', encounter_row.diagnosis_text,
+                'categoryId', encounter_row.category_id,
+                'sensitivity', encounter_row.sensitivity,
+                'referralSource', encounter_row.referral_source,
+                'externalId', encounter_row.external_id,
+                'posCode', encounter_row.pos_code,
+                'billingNote', encounter_row.billing_note,
+                'sourceAppointmentId', encounter_row.source_appointment_id),
+              'vitals', coalesce((
+                select jsonb_agg(jsonb_build_object(
+                  'id', vital.id,
+                  'dateTime', vital.vital_datetime,
+                  'systolic', vital.bps,
+                  'diastolic', vital.bpd,
+                  'weight', vital.weight,
+                  'height', vital.height,
+                  'temperature', vital.temperature,
+                  'pulse', vital.pulse,
+                  'respiration', vital.respiration,
+                  'bmi', vital.bmi,
+                  'oxygenSaturation', vital.oxygen_saturation,
+                  'note', vital.note)
+                  order by vital.id)
+                from vitals vital
+                where vital.pid=encounter_row.pid and vital.encounter=encounter_row.encounter), '[]'::jsonb),
+              'soapNotes', coalesce((
+                select jsonb_agg(jsonb_build_object(
+                  'id', note.id,
+                  'version', note.version,
+                  'supersedesNoteId', note.supersedes_note_id,
+                  'dateTime', note.note_datetime,
+                  'savedAt', note.saved_at,
+                  'savedBy', note.saved_by,
+                  'evidenceSource', note.evidence_source,
+                  'subjective', note.subjective,
+                  'objective', note.objective,
+                  'assessment', note.assessment,
+                  'plan', note.plan)
+                  order by note.version, note.id)
+                from clinical_notes note
+                where note.pid=encounter_row.pid and note.encounter=encounter_row.encounter), '[]'::jsonb),
+              'layoutForms', coalesce((
+                select jsonb_agg(jsonb_build_object(
+                  'recordId', form.record_id,
+                  'layoutKey', form.layout_key,
+                  'revision', form.revision,
+                  'savedAt', form.saved_at,
+                  'savedBy', form.saved_by,
+                  'values', coalesce((
+                    select jsonb_object_agg(value.field_key, value.field_value order by value.field_key)
+                    from encounter_layout_form_values value
+                    where value.record_id=form.record_id), '{}'::jsonb))
+                  order by form.layout_key, form.revision, form.record_id)
+                from encounter_layout_form_records form
+                where form.encounter=encounter_row.encounter), '[]'::jsonb),
+              'clinicalAlertAcknowledgements', coalesce((
+                select jsonb_agg(jsonb_build_object(
+                  'ruleKey', acknowledgement.rule_key,
+                  'acknowledgedAt', acknowledgement.acknowledged_at,
+                  'acknowledgedBy', acknowledgement.acknowledged_by,
+                  'reopenedAt', acknowledgement.reopened_at,
+                  'reopenedBy', acknowledgement.reopened_by)
+                  order by acknowledgement.rule_key)
+                from encounter_clinical_alert_acknowledgments acknowledgement
+                where acknowledgement.encounter=encounter_row.encounter), '[]'::jsonb),
+              'laboratoryOrders', coalesce((
+                select jsonb_agg(jsonb_build_object(
+                  'id', laboratory_order.id,
+                  'orderDate', laboratory_order.order_date,
+                  'providerId', laboratory_order.provider_id,
+                  'labId', laboratory_order.lab_id,
+                  'priority', laboratory_order.order_priority,
+                  'code', laboratory_order.code,
+                  'name', laboratory_order.name,
+                  'procedureType', laboratory_order.procedure_type,
+                  'diagnosis', laboratory_order.diagnosis,
+                  'instructions', laboratory_order.instructions,
+                  'status', laboratory_order.order_status,
+                  'dateTransmitted', laboratory_order.date_transmitted,
+                  'reports', coalesce((
+                    select jsonb_agg(jsonb_build_object(
+                      'id', report.id,
+                      'specimenId', report.specimen_id,
+                      'dateCollected', report.date_collected,
+                      'reportDate', report.report_date,
+                      'specimenNumber', report.specimen_number,
+                      'status', report.status,
+                      'reviewStatus', report.review_status,
+                      'reviewedBy', report.reviewed_by,
+                      'reviewedAt', report.reviewed_at,
+                      'reviewVersion', report.review_version,
+                      'notes', report.notes,
+                      'results', coalesce((
+                        select jsonb_agg(jsonb_build_object(
+                          'id', result.id,
+                          'contentVersion', coalesce((
+                            select max(version.version_no)
+                            from procedure_result_versions version
+                            where version.result_id=result.id), 0) + 1,
+                          'code', result.code,
+                          'text', result.text,
+                          'units', result.units,
+                          'result', result.result,
+                          'range', result.range,
+                          'abnormal', result.abnormal,
+                          'resultDate', result.result_date,
+                          'status', result.result_status)
+                          order by result.id)
+                        from lab_results result
+                        where result.report_id=report.id), '[]'::jsonb))
+                      order by report.report_date, report.id)
+                    from lab_reports report
+                    where report.order_id=laboratory_order.id), '[]'::jsonb))
+                  order by laboratory_order.order_date, laboratory_order.id)
+                from lab_orders laboratory_order
+                where laboratory_order.pid=encounter_row.pid
+                  and laboratory_order.encounter=encounter_row.encounter), '[]'::jsonb),
+              'encounterDocuments', coalesce((
+                select jsonb_agg(jsonb_build_object(
+                  'id', document.id,
+                  'documentKey', document.document_key,
+                  'currentVersion', coalesce((
+                    select max(version.version_no)
+                    from patient_document_versions version
+                    where version.document_id=document.id), 0) + 1,
+                  'categoryId', document.category_id,
+                  'categoryName', document.category_name,
+                  'name', document.name,
+                  'date', document.doc_date,
+                  'uploadedAt', document.uploaded_at,
+                  'mimetype', document.mimetype,
+                  'fileName', document.file_name,
+                  'sizeBytes', document.size_bytes,
+                  'pages', document.pages,
+                  'storageMethod', document.storage_method,
+                  'url', document.url,
+                  'contentHash', document.hash,
+                  'documentationOf', document.documentation_of,
+                  'notes', document.notes,
+                  'reviewStatus', document.review_status,
+                  'reviewedBy', document.reviewed_by,
+                  'reviewedAt', document.reviewed_at,
+                  'deleted', document.deleted)
+                  order by document.id)
+                from patient_documents document
+                where document.pid=encounter_row.pid
+                  and document.encounter=encounter_row.encounter), '[]'::jsonb),
+              'billingLines', coalesce((
+                select jsonb_agg(jsonb_build_object(
+                  'id', line.id,
+                  'date', line.billing_date,
+                  'providerId', line.provider_id,
+                  'codeType', line.code_type,
+                  'code', line.code,
+                  'modifier', line.modifier,
+                  'codeText', line.code_text,
+                  'fee', line.fee,
+                  'justify', line.justify,
+                  'units', line.units,
+                  'billed', line.billed,
+                  'activity', line.activity)
+                  order by line.id)
+                from billing line
+                where line.pid=encounter_row.pid and line.encounter=encounter_row.encounter), '[]'::jsonb),
+              'claims', coalesce((
+                select jsonb_agg(jsonb_build_object(
+                  'id', claim.id,
+                  'version', claim.version,
+                  'payerId', claim.payer_id,
+                  'payerName', claim.payer_name,
+                  'payerType', claim.payer_type,
+                  'status', claim.status,
+                  'billProcess', claim.bill_process,
+                  'billTime', claim.bill_time,
+                  'processTime', claim.process_time,
+                  'processFile', claim.process_file,
+                  'target', claim.target,
+                  'submittedClaim', claim.submitted_claim)
+                  order by claim.version, claim.id)
+                from claims claim
+                where claim.pid=encounter_row.pid and claim.encounter=encounter_row.encounter), '[]'::jsonb)
+            )::text
+            from encounters encounter_row
+            where encounter_row.encounter=@encounter;
+            """;
+        command.Parameters.AddWithValue("revision", SignatureContentRevision);
+        command.Parameters.AddWithValue("encounter", encounter);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        if (result is null || result is DBNull)
+        {
+            throw new InvalidOperationException("The encounter content could not be captured for signature.");
+        }
+
+        var manifest = result switch
+        {
+            string text => text,
+            JsonDocument document => document.RootElement.GetRawText(),
+            _ => result.ToString() ?? throw new InvalidOperationException(
+                "The encounter signature content snapshot was not JSON.")
+        };
+        return new SignatureContentSnapshot(
+            SignatureContentRevision,
+            manifest,
+            CreateSignatureHash(manifest));
     }
 
     private static async Task<IReadOnlyList<ProcedureReportRow>> GetProcedureReportsForOrdersAsync(
@@ -2011,6 +2260,11 @@ public sealed class EncounterRepository(
     private sealed record ProcedureSpecimenRow(int OrderId, ProcedureSpecimenItem Specimen);
 
     private sealed record ProcedureReportRow(int Id, int OrderId, ProcedureReportItem Report);
+
+    private sealed record SignatureContentSnapshot(
+        string Revision,
+        string Manifest,
+        string Checksum);
 
     private sealed record ProcedureResultRow(int ReportId, ProcedureResultItem Result);
 

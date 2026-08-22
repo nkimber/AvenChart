@@ -2161,6 +2161,16 @@ function EncounterSignatures({
             </span>
           </div>
           <p className="cl-empty-text">{signature.signedAt}</p>
+          {signature.contentChecksum ? (
+            <p className="cl-empty-text">
+              Attested content: {signature.contentRevision ?? "unknown revision"}{" "}
+              / <code>{signature.contentChecksum}</code>
+            </p>
+          ) : (
+            <p className="warning-banner">
+              This legacy signature predates content-bound attestation evidence.
+            </p>
+          )}
           {signature.amendment && (
             <p className="cl-soap-text">Amendment: {signature.amendment}</p>
           )}
