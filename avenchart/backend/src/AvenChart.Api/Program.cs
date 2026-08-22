@@ -3225,10 +3225,13 @@ clinicalLists.MapGet("/{patientId}", async (
 
 clinicalLists.MapPost("/allergies", async (
         ClinicalListStateRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         ClinicalAllergyCreateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateAllergyAsync(request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.CreateAllergyAsync(request, session.Username, cancellationToken);
         return mutation is null
             ? Results.BadRequest("Allergy could not be created from the supplied patient, title, and date.")
             : Results.Created($"/api/clinical-lists/allergies/{mutation.Id}", mutation);
@@ -3237,10 +3240,13 @@ clinicalLists.MapPost("/allergies", async (
 
 clinicalLists.MapPost("/problems", async (
         ClinicalListStateRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         ClinicalProblemCreateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateProblemAsync(request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.CreateProblemAsync(request, session.Username, cancellationToken);
         return mutation is null
             ? Results.BadRequest("Problem could not be created from the supplied patient, title, and date.")
             : Results.Created($"/api/clinical-lists/problems/{mutation.Id}", mutation);
@@ -3249,11 +3255,18 @@ clinicalLists.MapPost("/problems", async (
 
 clinicalLists.MapPut("/problems/{problemId}/deactivate", async (
         ClinicalListStateRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string problemId,
         ClinicalListDeactivateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.DeactivateProblemAsync(problemId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.Comments) || request.Comments.Trim().Length > 500)
+        {
+            return Results.BadRequest(new { error = "A non-empty clinical reason of at most 500 characters is required." });
+        }
+        var mutation = await repository.DeactivateProblemAsync(problemId, request, session.Username, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
     .WithName("DeactivateClinicalProblem");
@@ -3350,13 +3363,30 @@ clinicalLists.MapGet("/medications/{medicationId}/lifecycle-history", async (
     })
     .WithName("GetClinicalMedicationLifecycleHistory");
 
+clinicalLists.MapGet("/allergies/{allergyId}/audit-history", async (
+        ClinicalListStateRepository repository,
+        string allergyId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetAuditHistoryAsync("allergy", allergyId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetClinicalAllergyAuditHistory");
+
 clinicalLists.MapPut("/allergies/{allergyId}/deactivate", async (
         ClinicalListStateRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string allergyId,
         ClinicalListDeactivateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.DeactivateAllergyAsync(allergyId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.Comments) || request.Comments.Trim().Length > 500)
+        {
+            return Results.BadRequest(new { error = "A non-empty clinical reason of at most 500 characters is required." });
+        }
+        var mutation = await repository.DeactivateAllergyAsync(allergyId, request, session.Username, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
     .WithName("DeactivateClinicalAllergy");
@@ -3367,6 +3397,16 @@ clinicalLists.MapDelete("/allergies/{allergyId}", () =>
             error = "Clinical allergies are retained as part of the longitudinal record. Use the deactivation workflow with a clinical reason instead."
         }))
     .WithName("RejectClinicalAllergyDeletion");
+
+clinicalLists.MapGet("/problems/{problemId}/audit-history", async (
+        ClinicalListStateRepository repository,
+        string problemId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetAuditHistoryAsync("problem", problemId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetClinicalProblemAuditHistory");
 
 clinicalLists.MapPost("/prescriptions", async (
         ClinicalListRepository repository,
@@ -3531,10 +3571,13 @@ clinicalLists.MapDelete("/prescriptions/{prescriptionId}", async (
 
 clinicalLists.MapPost("/immunizations", async (
         ClinicalListStateRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         ClinicalImmunizationCreateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateImmunizationAsync(request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.CreateImmunizationAsync(request, session.Username, cancellationToken);
         return mutation is null
             ? Results.BadRequest("Immunization could not be created from the supplied patient, vaccine, and administered date.")
             : Results.Created($"/api/clinical-lists/immunizations/{mutation.Id}", mutation);
@@ -3543,11 +3586,18 @@ clinicalLists.MapPost("/immunizations", async (
 
 clinicalLists.MapPut("/immunizations/{immunizationId:int}/entered-in-error", async (
         ClinicalListStateRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int immunizationId,
         ClinicalImmunizationErrorRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.MarkImmunizationEnteredInErrorAsync(immunizationId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.Note) || request.Note.Trim().Length > 500)
+        {
+            return Results.BadRequest(new { error = "A non-empty clinical reason of at most 500 characters is required." });
+        }
+        var mutation = await repository.MarkImmunizationEnteredInErrorAsync(immunizationId, request, session.Username, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
     .WithName("MarkClinicalImmunizationEnteredInError");
@@ -3558,6 +3608,16 @@ clinicalLists.MapDelete("/immunizations/{immunizationId:int}", () =>
             error = "Immunization records are retained as part of the longitudinal record. Mark an incorrect record entered in error with a clinical reason instead."
         }))
     .WithName("RejectClinicalImmunizationDeletion");
+
+clinicalLists.MapGet("/immunizations/{immunizationKey}/audit-history", async (
+        ClinicalListStateRepository repository,
+        string immunizationKey,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetAuditHistoryAsync("immunization", immunizationKey, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetClinicalImmunizationAuditHistory");
 
 var messages = app.MapGroup("/api/messages").WithTags("Messages");
 RequireAccessPermission(messages, "patients", "notes", "view");

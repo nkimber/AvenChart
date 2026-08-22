@@ -1134,6 +1134,9 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 delete from patient_deceased_status_events
                 where patient_id = @canonicalId;
 
+                delete from clinical_list_audit_events
+                where patient_id = @canonicalId;
+
                 update clinical_form_instances
                 set predecessor_instance_id = null,
                     successor_instance_id = null

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Globalization;
+using System.Text.Json;
 using AvenChart.Api.Models;
 using AvenChart.Api.Persistence;
 using AvenChart.Api.Persistence.Entities;
@@ -20,11 +21,13 @@ public sealed class ClinicalListStateRepository(
 {
     public async Task<ClinicalListMutationResponse?> CreateAllergyAsync(
         ClinicalAllergyCreateRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.PatientId)
             || string.IsNullOrWhiteSpace(request.Title)
-            || !TryReadDate(request.DateTime, out var allergyDate))
+            || !TryReadDate(request.DateTime, out var allergyDate)
+            || !HasBoundedText(actor, 120))
         {
             return null;
         }
@@ -50,6 +53,14 @@ public sealed class ClinicalListStateRepository(
             ListOptionId = NormalizeText(request.ListOptionId)
         };
         dbContext.Allergies.Add(allergy);
+        dbContext.ClinicalListAuditEvents.Add(CreateClinicalListAuditEvent(
+            "allergy",
+            allergy.Id,
+            patient.CanonicalId,
+            "created",
+            actor,
+            request.Comments,
+            allergy));
         if (!await SaveNewClinicalContentAsync(cancellationToken))
         {
             return null;
@@ -60,9 +71,12 @@ public sealed class ClinicalListStateRepository(
     public async Task<ClinicalListMutationResponse?> DeactivateAllergyAsync(
         string allergyId,
         ClinicalListDeactivateRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(allergyId))
+        if (string.IsNullOrWhiteSpace(allergyId)
+            || !HasBoundedText(request.Comments, 500)
+            || !HasBoundedText(actor, 120))
         {
             return null;
         }
@@ -78,17 +92,27 @@ public sealed class ClinicalListStateRepository(
         allergy.Activity = 0;
         allergy.EndDate = DateOnly.FromDateTime(DateTime.UtcNow);
         allergy.Comments = NormalizeText(request.Comments);
+        dbContext.ClinicalListAuditEvents.Add(CreateClinicalListAuditEvent(
+            "allergy",
+            allergy.Id,
+            allergy.PatientId,
+            "deactivated",
+            actor,
+            request.Comments,
+            allergy));
         await dbContext.SaveChangesAsync(cancellationToken);
         return await BuildMutationAsync(allergy.Id, allergy.PatientId, cancellationToken);
     }
 
     public async Task<ClinicalListMutationResponse?> CreateProblemAsync(
         ClinicalProblemCreateRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.PatientId)
             || string.IsNullOrWhiteSpace(request.Title)
-            || !TryReadDate(request.DateTime, out var problemDate))
+            || !TryReadDate(request.DateTime, out var problemDate)
+            || !HasBoundedText(actor, 120))
         {
             return null;
         }
@@ -112,6 +136,14 @@ public sealed class ClinicalListStateRepository(
             Activity = 1
         };
         dbContext.Problems.Add(problem);
+        dbContext.ClinicalListAuditEvents.Add(CreateClinicalListAuditEvent(
+            "problem",
+            problem.Id,
+            patient.CanonicalId,
+            "created",
+            actor,
+            request.Comments,
+            problem));
         if (!await SaveNewClinicalContentAsync(cancellationToken))
         {
             return null;
@@ -122,9 +154,12 @@ public sealed class ClinicalListStateRepository(
     public async Task<ClinicalListMutationResponse?> DeactivateProblemAsync(
         string problemId,
         ClinicalListDeactivateRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(problemId))
+        if (string.IsNullOrWhiteSpace(problemId)
+            || !HasBoundedText(request.Comments, 500)
+            || !HasBoundedText(actor, 120))
         {
             return null;
         }
@@ -140,6 +175,14 @@ public sealed class ClinicalListStateRepository(
         problem.Activity = 0;
         problem.EndDate = DateOnly.FromDateTime(DateTime.UtcNow);
         problem.Comments = NormalizeText(request.Comments);
+        dbContext.ClinicalListAuditEvents.Add(CreateClinicalListAuditEvent(
+            "problem",
+            problem.Id,
+            problem.PatientId,
+            "deactivated",
+            actor,
+            request.Comments,
+            problem));
         await dbContext.SaveChangesAsync(cancellationToken);
         return await BuildMutationAsync(problem.Id, problem.PatientId, cancellationToken);
     }
@@ -352,6 +395,7 @@ public sealed class ClinicalListStateRepository(
 
     public async Task<ClinicalListMutationResponse?> CreateImmunizationAsync(
         ClinicalImmunizationCreateRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.PatientId)
@@ -359,7 +403,8 @@ public sealed class ClinicalListStateRepository(
             || !TryReadDateTime(request.AdministeredAt, out var administeredAt)
             || !TryReadOptionalDate(request.EducationDate, out var educationDate)
             || !TryReadOptionalDate(request.VisDate, out var visDate)
-            || !TryReadOptionalDate(request.ExpirationDate, out var expirationDate))
+            || !TryReadOptionalDate(request.ExpirationDate, out var expirationDate)
+            || !HasBoundedText(actor, 120))
         {
             return null;
         }
@@ -397,6 +442,14 @@ public sealed class ClinicalListStateRepository(
             AddedErroneously = 0
         };
         dbContext.Immunizations.Add(immunization);
+        dbContext.ClinicalListAuditEvents.Add(CreateClinicalListAuditEvent(
+            "immunization",
+            immunization.Key,
+            patient.CanonicalId,
+            "created",
+            actor,
+            request.Note,
+            immunization));
         if (!await SaveNewClinicalContentAsync(cancellationToken))
         {
             return null;
@@ -410,8 +463,14 @@ public sealed class ClinicalListStateRepository(
     public async Task<ClinicalListMutationResponse?> MarkImmunizationEnteredInErrorAsync(
         int immunizationId,
         ClinicalImmunizationErrorRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
+        if (!HasBoundedText(request.Note, 500) || !HasBoundedText(actor, 120))
+        {
+            return null;
+        }
+
         var immunization = await dbContext.Immunizations.SingleOrDefaultAsync(
             candidate => candidate.Id == immunizationId,
             cancellationToken);
@@ -422,11 +481,77 @@ public sealed class ClinicalListStateRepository(
 
         immunization.AddedErroneously = 1;
         immunization.Note = NormalizeText(request.Note);
+        dbContext.ClinicalListAuditEvents.Add(CreateClinicalListAuditEvent(
+            "immunization",
+            immunization.Key,
+            immunization.PatientId,
+            "entered-in-error",
+            actor,
+            request.Note,
+            immunization));
         await dbContext.SaveChangesAsync(cancellationToken);
         return await BuildMutationAsync(
             immunization.Id.ToString(CultureInfo.InvariantCulture),
             immunization.PatientId,
             cancellationToken);
+    }
+
+    public async Task<ClinicalListAuditHistoryResponse?> GetAuditHistoryAsync(
+        string resourceType,
+        string resourceId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(resourceId))
+        {
+            return null;
+        }
+
+        var normalizedResourceType = resourceType.Trim().ToLowerInvariant();
+        var normalizedResourceId = resourceId.Trim();
+        var patientId = normalizedResourceType switch
+        {
+            "allergy" => await dbContext.Allergies
+                .AsNoTracking()
+                .Where(item => item.Id == normalizedResourceId && item.Type == "allergy")
+                .Select(item => item.PatientId)
+                .SingleOrDefaultAsync(cancellationToken),
+            "problem" => await dbContext.Problems
+                .AsNoTracking()
+                .Where(item => item.Id == normalizedResourceId && item.Type == "medical_problem")
+                .Select(item => item.PatientId)
+                .SingleOrDefaultAsync(cancellationToken),
+            "immunization" => await dbContext.Immunizations
+                .AsNoTracking()
+                .Where(item => item.Key == normalizedResourceId)
+                .Select(item => item.PatientId)
+                .SingleOrDefaultAsync(cancellationToken),
+            _ => null
+        };
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var events = await dbContext.ClinicalListAuditEvents
+            .AsNoTracking()
+            .Where(item => item.ResourceType == normalizedResourceType && item.ResourceId == normalizedResourceId)
+            .OrderByDescending(item => item.OccurredAt)
+            .ThenByDescending(item => item.EventId)
+            .Select(item => new ClinicalListAuditEventItem(
+                item.EventId,
+                item.Action,
+                item.Actor,
+                item.Reason,
+                item.StateJson,
+                item.OccurredAt.ToString("O", CultureInfo.InvariantCulture)))
+            .ToListAsync(cancellationToken);
+
+        return new ClinicalListAuditHistoryResponse(
+            normalizedResourceType,
+            normalizedResourceId,
+            patientId,
+            events.Count,
+            events);
     }
 
     private async Task<ClinicalMedicationLifecycleMutationResult> MutateMedicationAsync(
@@ -538,6 +663,27 @@ public sealed class ClinicalListStateRepository(
             ExpectedVersion = expectedVersion,
             ResultingVersion = resultingVersion,
             OccurredAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+        };
+
+    private static ClinicalListAuditEventEntity CreateClinicalListAuditEvent(
+        string resourceType,
+        string resourceId,
+        string patientId,
+        string action,
+        string actor,
+        string? reason,
+        object state) =>
+        new()
+        {
+            EventId = Guid.NewGuid(),
+            ResourceType = resourceType,
+            ResourceId = resourceId,
+            PatientId = patientId,
+            Action = action,
+            Actor = actor.Trim(),
+            Reason = NormalizeText(reason),
+            StateJson = JsonSerializer.Serialize(state),
+            OccurredAt = DateTimeOffset.UtcNow
         };
 
     private static ClinicalMedicationLifecycleMutationResult InvalidMedicationMutation() =>

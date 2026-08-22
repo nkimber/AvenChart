@@ -31,6 +31,8 @@ public sealed class AvenChartDbContext(DbContextOptions<AvenChartDbContext> opti
 
     public DbSet<ChartTrackerLocationEntity> ChartTrackerLocations => Set<ChartTrackerLocationEntity>();
 
+    public DbSet<ClinicalListAuditEventEntity> ClinicalListAuditEvents => Set<ClinicalListAuditEventEntity>();
+
     public DbSet<ClinicalWorkflowEventEntity> ClinicalWorkflowEvents => Set<ClinicalWorkflowEventEntity>();
 
     public DbSet<DocumentTemplateBinaryVersionEntity> DocumentTemplateBinaryVersions => Set<DocumentTemplateBinaryVersionEntity>();

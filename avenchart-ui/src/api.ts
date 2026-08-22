@@ -9975,6 +9975,23 @@ export type ClinicalListMutationResponse = {
   detail: ClinicalListsResponse
 }
 
+export type ClinicalListAuditEvent = {
+  eventId: string
+  action: 'created' | 'deactivated' | 'entered-in-error'
+  actor: string
+  reason?: string | null
+  stateJson: string
+  occurredAt: string
+}
+
+export type ClinicalListAuditHistoryResponse = {
+  resourceType: 'allergy' | 'problem' | 'immunization'
+  resourceId: string
+  patientId: string
+  eventCount: number
+  events: ClinicalListAuditEvent[]
+}
+
 export type CreateProblemInput = {
   patientId: string
   title: string
@@ -10001,6 +10018,18 @@ export async function deactivateProblem(
     sessionId,
     `/api/clinical-lists/problems/${problemId}/deactivate`,
     { comments },
+    signal,
+  )
+}
+
+export function getProblemAuditHistory(
+  sessionId: string,
+  problemId: string,
+  signal?: AbortSignal,
+): Promise<ClinicalListAuditHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/clinical-lists/problems/${encodeURIComponent(problemId)}/audit-history`,
     signal,
   )
 }
@@ -10033,6 +10062,18 @@ export async function deactivateAllergy(
     sessionId,
     `/api/clinical-lists/allergies/${allergyId}/deactivate`,
     { comments },
+    signal,
+  )
+}
+
+export function getAllergyAuditHistory(
+  sessionId: string,
+  allergyId: string,
+  signal?: AbortSignal,
+): Promise<ClinicalListAuditHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/clinical-lists/allergies/${encodeURIComponent(allergyId)}/audit-history`,
     signal,
   )
 }
@@ -10752,6 +10793,18 @@ export async function markImmunizationEnteredInError(
     sessionId,
     `/api/clinical-lists/immunizations/${immunizationId}/entered-in-error`,
     { note },
+    signal,
+  )
+}
+
+export function getImmunizationAuditHistory(
+  sessionId: string,
+  immunizationKey: string,
+  signal?: AbortSignal,
+): Promise<ClinicalListAuditHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/clinical-lists/immunizations/${encodeURIComponent(immunizationKey)}/audit-history`,
     signal,
   )
 }

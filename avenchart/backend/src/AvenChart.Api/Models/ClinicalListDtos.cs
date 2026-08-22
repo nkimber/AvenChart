@@ -80,6 +80,21 @@ public sealed record ClinicalListMutationResponse(
     string Id,
     ClinicalListsResponse Detail);
 
+public sealed record ClinicalListAuditHistoryResponse(
+    string ResourceType,
+    string ResourceId,
+    string PatientId,
+    int EventCount,
+    IReadOnlyList<ClinicalListAuditEventItem> Events);
+
+public sealed record ClinicalListAuditEventItem(
+    Guid EventId,
+    string Action,
+    string Actor,
+    string? Reason,
+    string StateJson,
+    string OccurredAt);
+
 public enum ClinicalPrescriptionUpdateStatus
 {
     Updated,

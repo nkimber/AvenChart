@@ -8,8 +8,10 @@ import {
   getClinicalLists,
   createProblem,
   deactivateProblem,
+  getProblemAuditHistory,
   createAllergy,
   deactivateAllergy,
+  getAllergyAuditHistory,
   createMedication,
   deactivateMedication,
   restoreMedication,
@@ -17,7 +19,9 @@ import {
   createImmunization,
   createPrescription,
   markImmunizationEnteredInError,
+  getImmunizationAuditHistory,
   searchClinicalMedicationVocabulary,
+  type ClinicalListAuditHistoryResponse,
   type ClinicalListsResponse,
   type MedicationVocabularyItem,
 } from "../../api.ts";
@@ -65,6 +69,13 @@ type LifecycleTarget = {
   expectedVersion?: number;
 };
 
+type ClinicalAuditResourceType = "problem" | "allergy" | "immunization";
+
+type ClinicalAuditHistoryState =
+  | { status: "loading" }
+  | { status: "ready"; data: ClinicalListAuditHistoryResponse }
+  | { status: "error"; message: string };
+
 export default function PatientChart() {
   const { session, patientId } = useOutletContext<PatientOutletContext>();
   const [state, setState] = useState<AsyncState<ClinicalListsResponse>>({
@@ -75,6 +86,9 @@ export default function PatientChart() {
   const [lifecycleTarget, setLifecycleTarget] =
     useState<LifecycleTarget | null>(null);
   const [lifecycleReason, setLifecycleReason] = useState("");
+  const [auditHistories, setAuditHistories] = useState<
+    Record<string, ClinicalAuditHistoryState>
+  >({});
 
   // Add-problem form state
   const [newProbTitle, setNewProbTitle] = useState("");
@@ -131,8 +145,101 @@ export default function PatientChart() {
   }
 
   useEffect(() => {
+    setAuditHistories({});
     load();
   }, [patientId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function auditHistoryKey(type: ClinicalAuditResourceType, id: string) {
+    return `${type}:${id}`;
+  }
+
+  async function toggleAuditHistory(
+    type: ClinicalAuditResourceType,
+    id: string,
+  ) {
+    const key = auditHistoryKey(type, id);
+    if (auditHistories[key]) {
+      setAuditHistories((current) => {
+        const remaining = { ...current };
+        delete remaining[key];
+        return remaining;
+      });
+      return;
+    }
+
+    setAuditHistories((current) => ({
+      ...current,
+      [key]: { status: "loading" },
+    }));
+    try {
+      const history = await (type === "problem"
+        ? getProblemAuditHistory(session.sessionId, id)
+        : type === "allergy"
+          ? getAllergyAuditHistory(session.sessionId, id)
+          : getImmunizationAuditHistory(session.sessionId, id));
+      setAuditHistories((current) => ({
+        ...current,
+        [key]: { status: "ready", data: history },
+      }));
+    } catch (error) {
+      setAuditHistories((current) => ({
+        ...current,
+        [key]: {
+          status: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not load the clinical audit trail.",
+        },
+      }));
+    }
+  }
+
+  function renderAuditHistory(type: ClinicalAuditResourceType, id: string) {
+    const history = auditHistories[auditHistoryKey(type, id)];
+    if (!history) return null;
+    if (history.status === "loading") {
+      return <p className="cl-clinical-meta">Loading audit trail…</p>;
+    }
+    if (history.status === "error") {
+      return <p className="error-banner">{history.message}</p>;
+    }
+    if (history.data.events.length === 0) {
+      return (
+        <p className="cl-clinical-meta">
+          No modern audit events are available for this legacy record.
+        </p>
+      );
+    }
+
+    return (
+      <div className="cl-lifecycle-confirmation" aria-label="Clinical audit trail">
+        <p>
+          {history.data.eventCount} immutable audit event
+          {history.data.eventCount === 1 ? "" : "s"}
+        </p>
+        <ul className="cl-clinical-list">
+          {history.data.events.map((event) => (
+            <li key={event.eventId} className="cl-clinical-row">
+              <div className="cl-clinical-body">
+                <p className="cl-clinical-title">
+                  {event.action} by {event.actor}
+                </p>
+                <p className="cl-clinical-meta">
+                  {new Date(event.occurredAt).toLocaleString()}
+                  {event.reason ? ` · ${event.reason}` : ""}
+                </p>
+                <details>
+                  <summary>Recorded clinical state</summary>
+                  <pre className="cl-clinical-meta">{event.stateJson}</pre>
+                </details>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
 
   async function handleAddProblem(e: React.FormEvent) {
     e.preventDefault();
@@ -668,28 +775,41 @@ export default function PatientChart() {
                       <p className="cl-clinical-meta">{p.comments}</p>
                     )}
                   </div>
-                  {p.activity === 1 && (
-                    <div className="cl-lifecycle-actions">
-                      <button
+                  <div className="cl-lifecycle-actions">
+                    <button
                       className="cl-clinical-action"
                       type="button"
-                      aria-label={`Deactivate ${p.title}`}
+                      aria-label={`Show audit trail for ${p.title}`}
+                      aria-expanded={Boolean(
+                        auditHistories[auditHistoryKey("problem", p.id)],
+                      )}
                       disabled={working}
-                      onClick={() =>
-                        beginLifecycleAction({
-                          type: "problem",
-                          action: "deactivate",
-                          id: p.id,
-                          title: p.title,
-                        })
-                      }
+                      onClick={() => void toggleAuditHistory("problem", p.id)}
                     >
-                      <X size={12} />
-                      Deactivate
+                      Audit trail
                     </button>
-                    </div>
-                  )}
+                    {p.activity === 1 && (
+                      <button
+                        className="cl-clinical-action"
+                        type="button"
+                        aria-label={`Deactivate ${p.title}`}
+                        disabled={working}
+                        onClick={() =>
+                          beginLifecycleAction({
+                            type: "problem",
+                            action: "deactivate",
+                            id: p.id,
+                            title: p.title,
+                          })
+                        }
+                      >
+                        <X size={12} />
+                        Deactivate
+                      </button>
+                    )}
+                  </div>
                   {renderLifecycleConfirmation("problem", p.id)}
+                  {renderAuditHistory("problem", p.id)}
                 </li>
               ))}
             </ul>
@@ -824,28 +944,41 @@ export default function PatientChart() {
                       <p className="cl-clinical-meta">{a.comments}</p>
                     )}
                   </div>
-                  {a.activity === 1 && (
-                    <div className="cl-lifecycle-actions">
-                      <button
+                  <div className="cl-lifecycle-actions">
+                    <button
                       className="cl-clinical-action"
                       type="button"
-                      aria-label={`Deactivate ${a.title}`}
+                      aria-label={`Show audit trail for ${a.title}`}
+                      aria-expanded={Boolean(
+                        auditHistories[auditHistoryKey("allergy", a.id)],
+                      )}
                       disabled={working}
-                      onClick={() =>
-                        beginLifecycleAction({
-                          type: "allergy",
-                          action: "deactivate",
-                          id: a.id,
-                          title: a.title,
-                        })
-                      }
+                      onClick={() => void toggleAuditHistory("allergy", a.id)}
                     >
-                      <X size={12} />
-                      Deactivate
+                      Audit trail
                     </button>
-                    </div>
-                  )}
+                    {a.activity === 1 && (
+                      <button
+                        className="cl-clinical-action"
+                        type="button"
+                        aria-label={`Deactivate ${a.title}`}
+                        disabled={working}
+                        onClick={() =>
+                          beginLifecycleAction({
+                            type: "allergy",
+                            action: "deactivate",
+                            id: a.id,
+                            title: a.title,
+                          })
+                        }
+                      >
+                        <X size={12} />
+                        Deactivate
+                      </button>
+                    )}
+                  </div>
                   {renderLifecycleConfirmation("allergy", a.id)}
+                  {renderAuditHistory("allergy", a.id)}
                 </li>
               ))}
             </ul>
@@ -1479,31 +1612,46 @@ export default function PatientChart() {
                       <p className="cl-clinical-meta">{imm.note}</p>
                     )}
                   </div>
-                  {!imm.enteredInError && (
-                    <div className="cl-lifecycle-actions">
-                      <button
+                  <div className="cl-lifecycle-actions">
+                    <button
                       className="cl-clinical-action"
                       type="button"
-                      aria-label={`Mark ${imm.vaccine} entered in error`}
+                      aria-label={`Show audit trail for ${imm.vaccine}`}
+                      aria-expanded={Boolean(
+                        auditHistories[auditHistoryKey("immunization", imm.key)],
+                      )}
                       disabled={working}
                       onClick={() =>
-                        beginLifecycleAction({
-                          type: "immunization",
-                          action: "entered-in-error",
-                          id: String(imm.id),
-                          title: imm.vaccine,
-                        })
+                        void toggleAuditHistory("immunization", imm.key)
                       }
                     >
-                      <X size={12} />
-                      Entered in error
+                      Audit trail
                     </button>
-                    </div>
-                  )}
+                    {!imm.enteredInError && (
+                      <button
+                        className="cl-clinical-action"
+                        type="button"
+                        aria-label={`Mark ${imm.vaccine} entered in error`}
+                        disabled={working}
+                        onClick={() =>
+                          beginLifecycleAction({
+                            type: "immunization",
+                            action: "entered-in-error",
+                            id: String(imm.id),
+                            title: imm.vaccine,
+                          })
+                        }
+                      >
+                        <X size={12} />
+                        Entered in error
+                      </button>
+                    )}
+                  </div>
                   {renderLifecycleConfirmation(
                     "immunization",
                     String(imm.id),
                   )}
+                  {renderAuditHistory("immunization", imm.key)}
                 </li>
               ))}
             </ul>
