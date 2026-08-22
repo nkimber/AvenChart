@@ -78,18 +78,6 @@ public sealed class ClinicalListStateRepository(
         return await BuildMutationAsync(allergy.Id, allergy.PatientId, cancellationToken);
     }
 
-    public async Task<bool> DeleteAllergyAsync(string allergyId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(allergyId))
-        {
-            return false;
-        }
-
-        return await dbContext.Allergies
-            .Where(allergy => allergy.Id == allergyId && allergy.Type == "allergy")
-            .ExecuteDeleteAsync(cancellationToken) > 0;
-    }
-
     public async Task<ClinicalListMutationResponse?> CreateProblemAsync(
         ClinicalProblemCreateRequest request,
         CancellationToken cancellationToken)
@@ -147,18 +135,6 @@ public sealed class ClinicalListStateRepository(
         problem.Comments = NormalizeText(request.Comments);
         await dbContext.SaveChangesAsync(cancellationToken);
         return await BuildMutationAsync(problem.Id, problem.PatientId, cancellationToken);
-    }
-
-    public async Task<bool> DeleteProblemAsync(string problemId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(problemId))
-        {
-            return false;
-        }
-
-        return await dbContext.Problems
-            .Where(problem => problem.Id == problemId && problem.Type == "medical_problem")
-            .ExecuteDeleteAsync(cancellationToken) > 0;
     }
 
     public async Task<ClinicalListMutationResponse?> CreateMedicationAsync(
@@ -439,11 +415,6 @@ public sealed class ClinicalListStateRepository(
             immunization.PatientId,
             cancellationToken);
     }
-
-    public async Task<bool> DeleteImmunizationAsync(int immunizationId, CancellationToken cancellationToken) =>
-        await dbContext.Immunizations
-            .Where(immunization => immunization.Id == immunizationId)
-            .ExecuteDeleteAsync(cancellationToken) > 0;
 
     private async Task<ClinicalMedicationLifecycleMutationResult> MutateMedicationAsync(
         string medicationId,

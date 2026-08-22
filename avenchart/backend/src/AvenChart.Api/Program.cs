@@ -3187,15 +3187,12 @@ clinicalLists.MapPut("/problems/{problemId}/deactivate", async (
     })
     .WithName("DeactivateClinicalProblem");
 
-clinicalLists.MapDelete("/problems/{problemId}", async (
-        ClinicalListStateRepository repository,
-        string problemId,
-        CancellationToken cancellationToken) =>
-    {
-        var deleted = await repository.DeleteProblemAsync(problemId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    })
-    .WithName("DeleteClinicalProblem");
+clinicalLists.MapDelete("/problems/{problemId}", () =>
+        Results.Conflict(new
+        {
+            error = "Clinical problems are retained as part of the longitudinal record. Use the deactivation workflow with a clinical reason instead."
+        }))
+    .WithName("RejectClinicalProblemDeletion");
 
 clinicalLists.MapPost("/medications", async (
         ClinicalListStateRepository repository,
@@ -3293,15 +3290,12 @@ clinicalLists.MapPut("/allergies/{allergyId}/deactivate", async (
     })
     .WithName("DeactivateClinicalAllergy");
 
-clinicalLists.MapDelete("/allergies/{allergyId}", async (
-        ClinicalListStateRepository repository,
-        string allergyId,
-        CancellationToken cancellationToken) =>
-    {
-        var deleted = await repository.DeleteAllergyAsync(allergyId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    })
-    .WithName("DeleteClinicalAllergy");
+clinicalLists.MapDelete("/allergies/{allergyId}", () =>
+        Results.Conflict(new
+        {
+            error = "Clinical allergies are retained as part of the longitudinal record. Use the deactivation workflow with a clinical reason instead."
+        }))
+    .WithName("RejectClinicalAllergyDeletion");
 
 clinicalLists.MapPost("/prescriptions", async (
         ClinicalListRepository repository,
@@ -3487,15 +3481,12 @@ clinicalLists.MapPut("/immunizations/{immunizationId:int}/entered-in-error", asy
     })
     .WithName("MarkClinicalImmunizationEnteredInError");
 
-clinicalLists.MapDelete("/immunizations/{immunizationId:int}", async (
-        ClinicalListStateRepository repository,
-        int immunizationId,
-        CancellationToken cancellationToken) =>
-    {
-        var deleted = await repository.DeleteImmunizationAsync(immunizationId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    })
-    .WithName("DeleteClinicalImmunization");
+clinicalLists.MapDelete("/immunizations/{immunizationId:int}", () =>
+        Results.Conflict(new
+        {
+            error = "Immunization records are retained as part of the longitudinal record. Mark an incorrect record entered in error with a clinical reason instead."
+        }))
+    .WithName("RejectClinicalImmunizationDeletion");
 
 var messages = app.MapGroup("/api/messages").WithTags("Messages");
 RequireAccessPermission(messages, "patients", "notes", "view");

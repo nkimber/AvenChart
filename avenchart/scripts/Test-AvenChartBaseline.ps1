@@ -7145,28 +7145,30 @@ try {
     } | ConvertTo-Json
     $deactivatedAllergy = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId/deactivate" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $deactivateBody -TimeoutSec 20
     $inactiveVisible = $deactivatedAllergy.detail.allergies | Where-Object { $_.title -eq $allergyTitle } | Select-Object -First 1
-    $clinicalAllergyMutationPassed = $null -ne $createdVisible -and $null -eq $inactiveVisible
+    $permanentDeleteRejected = $false
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        $permanentDeleteRejected = $_.Exception.Response.StatusCode.value__ -eq 409
+    }
+    $clinicalAllergyMutationPassed = $null -ne $createdVisible `
+        -and $null -ne $inactiveVisible `
+        -and $inactiveVisible.activity -eq 0 `
+        -and $inactiveVisible.comments -eq "Deactivated by the smoke clinical-list mutation check." `
+        -and $permanentDeleteRejected
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $clinicalAllergyMutationId = $null
 
     Add-Check -Name "clinical allergy mutation lifecycle" -Result $(if ($clinicalAllergyMutationPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdAllergy.id
         createdVisible = $createdVisible
         inactiveVisible = $inactiveVisible
+        permanentDeleteRejected = $permanentDeleteRejected
     }
 }
 catch {
     Add-Check -Name "clinical allergy mutation lifecycle" -Result "failed" -Details $_.Exception.Message
-}
-finally {
-    if ($null -ne $clinicalAllergyMutationId) {
-        try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
-        }
-        catch {
-        }
-    }
 }
 
 $clinicalProblemMutationId = $null
@@ -7188,9 +7190,11 @@ try {
     } | ConvertTo-Json
     $deactivatedProblem = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId/deactivate" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $deactivateProblemBody -TimeoutSec 20
     $inactiveProblemVisible = $deactivatedProblem.detail.problems | Where-Object { $_.title -eq $problemTitle } | Select-Object -First 1
-    $clinicalProblemMutationPassed = $null -ne $createdProblemVisible -and $null -eq $inactiveProblemVisible
+    $clinicalProblemMutationPassed = $null -ne $createdProblemVisible `
+        -and $null -ne $inactiveProblemVisible `
+        -and $inactiveProblemVisible.activity -eq 0 `
+        -and $inactiveProblemVisible.comments -eq "Deactivated by the smoke problem-list mutation check."
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $clinicalProblemMutationId = $null
 
     Add-Check -Name "clinical problem mutation lifecycle" -Result $(if ($clinicalProblemMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -7201,15 +7205,6 @@ try {
 }
 catch {
     Add-Check -Name "clinical problem mutation lifecycle" -Result "failed" -Details $_.Exception.Message
-}
-finally {
-    if ($null -ne $clinicalProblemMutationId) {
-        try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
-        }
-        catch {
-        }
-    }
 }
 
 $clinicalMedicationMutationId = $null
@@ -7349,28 +7344,30 @@ try {
     } | ConvertTo-Json
     $enteredInErrorImmunization = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId/entered-in-error" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $enteredInErrorBody -TimeoutSec 20
     $enteredInErrorVisible = $enteredInErrorImmunization.detail.immunizations | Where-Object { $_.lotNumber -eq $immunizationLot } | Select-Object -First 1
-    $clinicalImmunizationMutationPassed = $null -ne $createdImmunizationVisible -and $null -eq $enteredInErrorVisible
+    $permanentDeleteRejected = $false
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        $permanentDeleteRejected = $_.Exception.Response.StatusCode.value__ -eq 409
+    }
+    $clinicalImmunizationMutationPassed = $null -ne $createdImmunizationVisible `
+        -and $null -ne $enteredInErrorVisible `
+        -and $enteredInErrorVisible.enteredInError `
+        -and $enteredInErrorVisible.note -eq "Marked entered in error by the smoke immunization mutation check." `
+        -and $permanentDeleteRejected
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $clinicalImmunizationMutationId = $null
 
     Add-Check -Name "clinical immunization mutation lifecycle" -Result $(if ($clinicalImmunizationMutationPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdImmunization.id
         createdVisible = $createdImmunizationVisible
         enteredInErrorVisible = $enteredInErrorVisible
+        permanentDeleteRejected = $permanentDeleteRejected
     }
 }
 catch {
     Add-Check -Name "clinical immunization mutation lifecycle" -Result "failed" -Details $_.Exception.Message
-}
-finally {
-    if ($null -ne $clinicalImmunizationMutationId) {
-        try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
-        }
-        catch {
-        }
-    }
 }
 
 try {
