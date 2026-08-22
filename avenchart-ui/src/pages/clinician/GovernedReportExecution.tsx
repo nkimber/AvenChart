@@ -20,6 +20,7 @@ import {
   type GovernedReportRunDetail,
   type GovernedReportRunList,
 } from "../../api/reportDefinitions.ts";
+import { ApiRequestError } from "../../api/transport.ts";
 import { showToast } from "../../components/Toast.tsx";
 import GovernedReportOperations from "./GovernedReportOperations.tsx";
 
@@ -77,6 +78,7 @@ export default function GovernedReportExecution({
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  const [pollFailure, setPollFailure] = useState("");
 
   const selectedDetail =
     detail?.definitionId === definitionId ? detail : null;
@@ -227,6 +229,7 @@ export default function GovernedReportExecution({
     setDetail(null);
     setRuns(EMPTY_RUNS);
     setError("");
+    setPollFailure("");
     refreshDefinition(definitionId, runPage, controller.signal).catch((cause) => {
       if (controller.signal.aborted) return;
       setError(
@@ -248,6 +251,7 @@ export default function GovernedReportExecution({
     const controller = new AbortController();
     const pollDelay = Math.max(100, policy?.pollIntervalMilliseconds ?? 250);
     let timeoutId: number | undefined;
+    let consecutiveFailures = 0;
 
     async function poll() {
       while (!controller.signal.aborted) {
@@ -268,6 +272,8 @@ export default function GovernedReportExecution({
             ),
           ]);
           if (controller.signal.aborted) return;
+          consecutiveFailures = 0;
+          setPollFailure("");
           setSelectedRun(updatedRun);
           setRuns(updatedRuns);
           if (
@@ -284,12 +290,24 @@ export default function GovernedReportExecution({
           }
         } catch (cause) {
           if (controller.signal.aborted) return;
-          setError(
+          consecutiveFailures += 1;
+          const message =
             cause instanceof Error
               ? cause.message
-              : "Could not refresh queued report evidence.",
+              : "Could not refresh queued report evidence.";
+          setPollFailure(
+            `${message} Automatic refresh will retry; check the current run evidence before taking a lifecycle action.`,
           );
-          return;
+          // A transient network or server failure must not silently freeze the
+          // displayed lifecycle state. Bound the retry delay to avoid a busy
+          // loop while retaining the normal automatic refresh behavior.
+          const retryDelay = Math.min(
+            pollDelay * 2 ** Math.min(consecutiveFailures, 4),
+            5_000,
+          );
+          await new Promise<void>((resolve) => {
+            timeoutId = window.setTimeout(resolve, retryDelay);
+          });
         }
       }
     }
@@ -375,12 +393,37 @@ export default function GovernedReportExecution({
     setWorking(true);
     setError("");
     setLifecycleReason("");
+    setPollFailure("");
     try {
       setSelectedRun(await getGovernedReportRun(sessionId, runId));
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Could not load run evidence.",
       );
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function refreshSelectedRunEvidence() {
+    if (!selectedRun) return;
+    setWorking(true);
+    setError("");
+    try {
+      const [updatedRun, updatedRuns] = await Promise.all([
+        getGovernedReportRun(sessionId, selectedRun.run.runId),
+        getGovernedReportRuns(sessionId, definitionId, runPage, 10),
+      ]);
+      setSelectedRun(updatedRun);
+      setRuns(updatedRuns);
+      setPollFailure("");
+      showToast("Current governed report evidence refreshed.", "success");
+    } catch (cause) {
+      const message =
+        cause instanceof Error
+          ? cause.message
+          : "Could not refresh current governed report evidence.";
+      setPollFailure(message);
     } finally {
       setWorking(false);
     }
@@ -416,6 +459,25 @@ export default function GovernedReportExecution({
           : "Retry accepted into the durable queue.",
       );
     } catch (cause) {
+      if (cause instanceof ApiRequestError && cause.status === 409) {
+        try {
+          const [currentRun, currentRuns] = await Promise.all([
+            getGovernedReportRun(sessionId, selectedRun.run.runId),
+            getGovernedReportRuns(sessionId, definitionId, runPage, 10),
+          ]);
+          setSelectedRun(currentRun);
+          setRuns(currentRuns);
+          setLifecycleReason("");
+          setPollFailure("");
+          setError(
+            "This report changed after it was opened. The current lifecycle evidence was reloaded; review it before trying again.",
+          );
+          return;
+        } catch {
+          // Preserve the original conflict message when the recovery read is
+          // unavailable; the user can use the in-place refresh control.
+        }
+      }
       setError(
         cause instanceof Error
           ? cause.message
@@ -909,6 +971,38 @@ export default function GovernedReportExecution({
               {selectedRun.run.failureMessage && (
                 <div className="error-banner">
                   {selectedRun.run.failureMessage}
+                </div>
+              )}
+              {(selectedRun.run.status === "queued" ||
+                selectedRun.run.status === "running") && (
+                <div className="warning-banner" role="status">
+                  <strong>Automatic refresh is active.</strong> The current
+                  run evidence is polled while this run is queued or running.
+                  <div className="cl-inline-actions">
+                    <button
+                      className="cl-btn-secondary cl-btn-sm"
+                      type="button"
+                      onClick={() => void refreshSelectedRunEvidence()}
+                      disabled={working}
+                    >
+                      Refresh current evidence
+                    </button>
+                  </div>
+                </div>
+              )}
+              {pollFailure && (
+                <div className="warning-banner" role="alert">
+                  <strong>Run evidence may be stale.</strong> {pollFailure}
+                  <div className="cl-inline-actions">
+                    <button
+                      className="cl-btn-secondary cl-btn-sm"
+                      type="button"
+                      onClick={() => void refreshSelectedRunEvidence()}
+                      disabled={working}
+                    >
+                      Retry refresh now
+                    </button>
+                  </div>
                 </div>
               )}
               {selectedRun.run.cancelRequestedAt && (
