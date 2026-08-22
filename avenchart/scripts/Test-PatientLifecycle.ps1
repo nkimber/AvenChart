@@ -88,6 +88,30 @@ try {
         } | ConvertTo-Json) -TimeoutSec 20
     $patientId = $patient.canonicalId
 
+    $activePrescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions" -Method Post `
+        -Headers $headers -ContentType "application/json" -Body (@{
+            patientId = $patientId
+            startDate = "2027-01-05"
+            drug = "Lifecycle continuation verification prescription"
+            dosage = "One tablet daily"
+            quantity = "1"
+            refills = 0
+            note = "Created before retirement to verify continuation controls."
+            diagnosis = "Z00.00"
+        } | ConvertTo-Json) -TimeoutSec 20
+    $activePrescriptionId = $activePrescription.id
+    $activePrescriptionItem = $activePrescription.detail.prescriptions |
+        Where-Object { $_.id -eq $activePrescriptionId } | Select-Object -First 1
+    if ($null -eq $activePrescriptionItem) {
+        throw "The active lifecycle verification prescription was not returned after creation."
+    }
+    $pharmacyDirectory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/pharmacies" `
+        -Headers $headers -TimeoutSec 20
+    $routePharmacy = @($pharmacyDirectory.pharmacies) | Select-Object -First 1
+    if ($null -eq $routePharmacy) {
+        throw "The lifecycle verification fixture requires an available pharmacy."
+    }
+
     $missingReasonStatus = Get-HttpStatus -Uri "$ApiBaseUrl/api/patients/$patientId/lifecycle/retire" `
         -Method Post -RequestHeaders $headers -Body @{ reason = "" }
     $retired = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$patientId/lifecycle/retire" -Method Post `
@@ -147,6 +171,47 @@ try {
         allergyStatus = $retiredAllergyStatus
         medicationStatus = $retiredMedicationStatus
         prescriptionStatus = $retiredPrescriptionStatus
+    }
+
+    $retiredPrescriptionRefillStatus = Get-HttpStatus `
+        -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$activePrescriptionId/refill" `
+        -Method Put -RequestHeaders $headers -Body @{
+            refillDate = "2027-01-06"
+            additionalRefills = 1
+            note = "Must not continue after retirement."
+        }
+    $retiredPrescriptionUpdateStatus = Get-HttpStatus `
+        -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$activePrescriptionId" `
+        -Method Put -RequestHeaders $headers -Body @{
+            expectedVersion = $activePrescriptionItem.version
+            startDate = "2027-01-05"
+            dosage = "Two tablets daily"
+            quantity = "1"
+            doseAmount = $null
+            doseUnit = $null
+            frequency = $null
+            durationDays = $null
+            route = "oral"
+            refills = 0
+            diagnosis = "Z00.00"
+            note = "Must not continue after retirement."
+            editReason = "Verification that retirement blocks prescription continuation."
+        }
+    $retiredPrescriptionRouteStatus = Get-HttpStatus `
+        -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$activePrescriptionId/route-pharmacy" `
+        -Method Put -RequestHeaders $headers -Body @{
+            pharmacyId = $routePharmacy.id
+            sentAt = "2027-01-06T10:00:00"
+            note = "Must not route after retirement."
+        }
+    Add-Check "Retirement blocks prescription continuation" (
+        $retiredPrescriptionRefillStatus -eq 409 -and
+        $retiredPrescriptionUpdateStatus -eq 409 -and
+        $retiredPrescriptionRouteStatus -eq 409
+    ) @{
+        refillStatus = $retiredPrescriptionRefillStatus
+        updateStatus = $retiredPrescriptionUpdateStatus
+        routeStatus = $retiredPrescriptionRouteStatus
     }
 
     $reactivated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$patientId/lifecycle/reactivate" -Method Post `

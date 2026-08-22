@@ -3450,6 +3450,11 @@ clinicalLists.MapPut("/prescriptions/{prescriptionId}", async (
                     error = "Prescription changes require a current version, valid structured fields, at least one change, and an edit reason."
                 }),
             ClinicalPrescriptionUpdateStatus.NotFound => Results.NotFound(),
+            ClinicalPrescriptionUpdateStatus.PatientInactive =>
+                Results.Conflict(new
+                {
+                    error = "Prescription continuation is not permitted for a merged, retired, or deceased patient."
+                }),
             ClinicalPrescriptionUpdateStatus.Conflict =>
                 Results.Conflict(new
                 {
@@ -3484,19 +3489,40 @@ clinicalLists.MapPut("/prescriptions/{prescriptionId}/refill", async (
         CancellationToken cancellationToken) =>
     {
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var mutation = await repository.RefillPrescriptionAsync(prescriptionId, request, session.Username, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var mutation = await repository.RefillPrescriptionAsync(prescriptionId, request, session.Username, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (PrescriptionContinuationBlockedException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
     })
     .WithName("RefillClinicalPrescription");
 
 clinicalLists.MapPut("/prescriptions/{prescriptionId}/route-pharmacy", async (
         ClinicalListRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string prescriptionId,
         ClinicalPrescriptionPharmacyRouteRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.RoutePrescriptionToPharmacyAsync(prescriptionId, request, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        try
+        {
+            var mutation = await repository.RoutePrescriptionToPharmacyAsync(
+                prescriptionId,
+                request,
+                session.Username,
+                cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (PrescriptionContinuationBlockedException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
     })
     .WithName("RouteClinicalPrescriptionToPharmacy");
 
@@ -3522,12 +3548,19 @@ clinicalLists.MapPut("/prescription-refill-requests/{messageId:int}/approve", as
             authRepository,
             httpContext,
             cancellationToken);
-        var mutation = await repository.ApprovePrescriptionRefillRequestAsync(
-            messageId,
-            request,
-            session.Username,
-            cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var mutation = await repository.ApprovePrescriptionRefillRequestAsync(
+                messageId,
+                request,
+                session.Username,
+                cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (PrescriptionContinuationBlockedException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
     })
     .WithName("ApproveClinicalPrescriptionRefillRequest");
 

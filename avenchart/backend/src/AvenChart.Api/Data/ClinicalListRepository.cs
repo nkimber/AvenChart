@@ -516,6 +516,22 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Mutation: null);
         }
 
+        try
+        {
+            await EnsurePatientCanReceivePrescriptionContinuationAsync(
+                connection,
+                transaction,
+                current.PatientId,
+                cancellationToken);
+        }
+        catch (PrescriptionContinuationBlockedException)
+        {
+            return new ClinicalPrescriptionUpdateResult(
+                ClinicalPrescriptionUpdateStatus.PatientInactive,
+                CurrentVersion: null,
+                Mutation: null);
+        }
+
         var changes = new List<string>();
         if (!string.Equals(current.StartDate, startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), StringComparison.Ordinal))
         {
@@ -709,6 +725,20 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         int? afterRefills = null;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var continuationAnchor = await LockActivePrescriptionForContinuationAsync(
+            connection,
+            transaction,
+            prescriptionId,
+            cancellationToken);
+        if (continuationAnchor is null)
+        {
+            return null;
+        }
+        await EnsurePatientCanReceivePrescriptionContinuationAsync(
+            connection,
+            transaction,
+            continuationAnchor.PatientId,
+            cancellationToken);
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
@@ -787,6 +817,25 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         {
             return null;
         }
+
+        var continuationAnchor = await LockActivePrescriptionForContinuationAsync(
+            connection,
+            transaction,
+            refillRequest.PrescriptionId,
+            cancellationToken);
+        if (continuationAnchor is null
+            || !string.Equals(
+                continuationAnchor.PatientId,
+                refillRequest.PatientId,
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+        await EnsurePatientCanReceivePrescriptionContinuationAsync(
+            connection,
+            transaction,
+            continuationAnchor.PatientId,
+            cancellationToken);
 
         string? patientId;
         await using (var updatePrescription = connection.CreateCommand())
@@ -989,6 +1038,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     public async Task<ClinicalPrescriptionPharmacyRouteResponse?> RoutePrescriptionToPharmacyAsync(
         string prescriptionId,
         ClinicalPrescriptionPharmacyRouteRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(prescriptionId)
@@ -1020,7 +1070,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 join pharmacies ph on ph.id = @pharmacyId
                 where pr.id = @id
                   and pr.active = 1
-                limit 1;
+                limit 1
+                for update of pr;
                 """;
             command.Parameters.AddWithValue("id", prescriptionId);
             command.Parameters.Add("pharmacyId", NpgsqlDbType.Integer).Value = request.PharmacyId;
@@ -1043,6 +1094,12 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 PharmacyNcpdp: ReadNullableInt(reader, "ncpdp"));
         }
 
+        await EnsurePatientCanReceivePrescriptionContinuationAsync(
+            connection,
+            transaction,
+            anchor.PatientId,
+            cancellationToken);
+
         var controlledSubstance = GetControlledSubstanceInfo(anchor.Drug, anchor.RxNormCode);
         if (controlledSubstance.ReviewRequired)
         {
@@ -1060,7 +1117,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 anchor.PharmacyId,
                 anchor.PharmacyName,
                 controlledSubstance.Reason,
-                cancellationToken);
+                cancellationToken,
+                actor: username);
             await transaction.CommitAsync(cancellationToken);
             var detail = await GetForPatientAsync(anchor.PatientId, cancellationToken);
             return detail is null
@@ -1124,7 +1182,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             anchor.PharmacyId,
             anchor.PharmacyName,
             failureReason: null,
-            cancellationToken);
+            cancellationToken,
+            actor: username);
 
         await transaction.CommitAsync(cancellationToken);
 
@@ -1262,9 +1321,10 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     }
 
     /// <summary>
-    /// New clinical content is only valid on the current, active patient record.
-    /// The row lock serializes this decision with retirement, death correction,
-    /// and merge execution; historical reads deliberately use <see cref="GetPatientAsync"/>.
+    /// New clinical content and prescription continuations are only valid on the
+    /// current, active patient record. The row lock serializes this decision with
+    /// retirement, death correction, and merge execution; historical reads
+    /// deliberately use <see cref="GetPatientAsync"/>.
     /// </summary>
     private static async Task<ClinicalListPatient?> GetActivePatientForNewClinicalContentAsync(
         NpgsqlConnection connection,
@@ -1307,6 +1367,52 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             DisplayName: string.IsNullOrWhiteSpace(preferredName)
                 ? $"{lastName}, {firstName}"
                 : $"{lastName}, {firstName} ({preferredName})");
+    }
+
+    /// <summary>
+    /// Continuations such as a refill, changed order, or pharmacy route must
+    /// hold the same active-patient decision as new clinical content. A
+    /// deactivation is deliberately not a continuation and remains available
+    /// to close an existing record after a lifecycle transition.
+    /// </summary>
+    private static async Task EnsurePatientCanReceivePrescriptionContinuationAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        if (await GetActivePatientForNewClinicalContentAsync(
+                connection,
+                transaction,
+                patientId,
+                cancellationToken) is null)
+        {
+            throw new PrescriptionContinuationBlockedException();
+        }
+    }
+
+    private static async Task<PrescriptionContinuationAnchor?> LockActivePrescriptionForContinuationAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string prescriptionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select patient_id, pid
+            from prescriptions
+            where id = @id
+              and active = 1
+            for update;
+            """;
+        command.Parameters.AddWithValue("id", prescriptionId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new PrescriptionContinuationAnchor(
+                reader.GetString(reader.GetOrdinal("patient_id")))
+            : null;
     }
 
     private static async Task<IReadOnlyList<ProblemListItem>> GetProblemsAsync(
@@ -2084,6 +2190,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         string PharmacyName,
         int? PharmacyNcpdp);
 
+    private sealed record PrescriptionContinuationAnchor(string PatientId);
+
     private sealed record PrescriptionEditSnapshot(
         string PatientId,
         int Pid,
@@ -2105,4 +2213,12 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         string? Schedule,
         bool ReviewRequired,
         string? Reason);
+}
+
+public sealed class PrescriptionContinuationBlockedException : Exception
+{
+    public PrescriptionContinuationBlockedException()
+        : base("Prescription continuation is not permitted for a merged, retired, or deceased patient.")
+    {
+    }
 }

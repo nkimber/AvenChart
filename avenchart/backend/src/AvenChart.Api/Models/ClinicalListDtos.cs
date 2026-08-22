@@ -100,6 +100,7 @@ public enum ClinicalPrescriptionUpdateStatus
     Updated,
     Invalid,
     NotFound,
+    PatientInactive,
     Conflict
 }
 
