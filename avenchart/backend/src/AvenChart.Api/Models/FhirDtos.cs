@@ -43,8 +43,8 @@ public sealed record FhirPatientResource(
     IReadOnlyList<FhirHumanName> Name,
     string? Gender,
     string BirthDate,
-    IReadOnlyList<FhirContactPoint> Telecom,
-    IReadOnlyList<FhirAddress> Address);
+    IReadOnlyList<FhirContactPoint>? Telecom,
+    IReadOnlyList<FhirAddress>? Address);
 
 public sealed record FhirIdentifier(string System, string Value);
 public sealed record FhirHumanName(string Use, string Family, IReadOnlyList<string> Given);
@@ -56,7 +56,7 @@ public sealed record FhirSearchBundle(
     string Type,
     int Total,
     IReadOnlyList<FhirBundleLink> Link,
-    IReadOnlyList<FhirSearchEntry> Entry);
+    IReadOnlyList<FhirSearchEntry>? Entry);
 
 public sealed record FhirSearchEntry(string FullUrl, FhirPatientResource Resource);
 public sealed record FhirBundleLink(string Relation, string Url);
@@ -76,7 +76,7 @@ public sealed record FhirEncounterBundle(
     string Type,
     int Total,
     IReadOnlyList<FhirBundleLink> Link,
-    IReadOnlyList<FhirEncounterSearchEntry> Entry);
+    IReadOnlyList<FhirEncounterSearchEntry>? Entry);
 public sealed record FhirEncounterSearchEntry(string FullUrl, FhirEncounterResource Resource);
 
 public sealed record FhirObservationResource(
@@ -89,10 +89,10 @@ public sealed record FhirObservationResource(
     string EffectiveDateTime,
     FhirQuantity? ValueQuantity,
     string? ValueString,
-    IReadOnlyList<FhirObservationReferenceRange> ReferenceRange,
-    IReadOnlyList<FhirCodeableConcept> Interpretation);
+    IReadOnlyList<FhirObservationReferenceRange>? ReferenceRange,
+    IReadOnlyList<FhirCodeableConcept>? Interpretation);
 
-public sealed record FhirCodeableConcept(IReadOnlyList<FhirCoding> Coding, string? Text);
+public sealed record FhirCodeableConcept(IReadOnlyList<FhirCoding>? Coding, string? Text);
 public sealed record FhirCoding(string System, string Code, string? Display);
 public sealed record FhirQuantity(decimal Value, string? Unit);
 public sealed record FhirObservationReferenceRange(string? Text);
@@ -101,7 +101,7 @@ public sealed record FhirObservationBundle(
     string Type,
     int Total,
     IReadOnlyList<FhirBundleLink> Link,
-    IReadOnlyList<FhirObservationSearchEntry> Entry);
+    IReadOnlyList<FhirObservationSearchEntry>? Entry);
 public sealed record FhirObservationSearchEntry(string FullUrl, FhirObservationResource Resource);
 
 public sealed record FhirOperationOutcome(string ResourceType, IReadOnlyList<FhirOperationOutcomeIssue> Issue);

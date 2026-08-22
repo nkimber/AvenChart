@@ -39,28 +39,52 @@ public sealed class FhirR4ValidationService
     /// <exception cref="FhirR4ValidationException">The payload is not valid FHIR R4 JSON or violates a core profile.</exception>
     public void ValidateExternalLaboratoryBundle(JsonElement payload)
     {
-        Bundle bundle;
-        try
+        var resource = DeserializeResource(payload);
+        if (resource is not Bundle bundle)
         {
-            bundle = FhirJsonDeserializer.STRICT.Deserialize<Bundle>(payload.GetRawText());
-        }
-        catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException or JsonException)
-        {
-            throw new FhirR4ValidationException("The payload is not valid FHIR R4 JSON.", exception);
+            throw new FhirR4ValidationException("The payload must be a FHIR R4 Bundle resource.");
         }
 
         ValidateCoreProfile(bundle, "Bundle");
         foreach (var entry in bundle.Entry ?? [])
         {
-            switch (entry.Resource)
+            if (entry.Resource is { } entryResource)
             {
-                case DiagnosticReport diagnosticReport:
-                    ValidateCoreProfile(diagnosticReport, "DiagnosticReport");
-                    break;
-                case Observation observation:
-                    ValidateCoreProfile(observation, "Observation");
-                    break;
+                ValidateCoreProfile(entryResource, entryResource.TypeName);
             }
+        }
+    }
+
+    /// <summary>
+    /// Validates one FHIR R4 resource against its core profile.  It supports
+    /// contract tests for AvenChart's outbound FHIR resources without coupling
+    /// HTTP endpoint code to the validation implementation.
+    /// </summary>
+    public void ValidateCoreResource(JsonElement payload)
+    {
+        var resource = DeserializeResource(payload);
+        ValidateCoreProfile(resource, resource.TypeName);
+        if (resource is Bundle bundle)
+        {
+            foreach (var entry in bundle.Entry ?? [])
+            {
+                if (entry.Resource is { } entryResource)
+                {
+                    ValidateCoreProfile(entryResource, entryResource.TypeName);
+                }
+            }
+        }
+    }
+
+    private static Resource DeserializeResource(JsonElement payload)
+    {
+        try
+        {
+            return FhirJsonDeserializer.STRICT.DeserializeResource(payload.GetRawText());
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException or JsonException)
+        {
+            throw new FhirR4ValidationException("The payload is not valid FHIR R4 JSON.", exception);
         }
     }
 

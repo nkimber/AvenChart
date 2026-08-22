@@ -54,7 +54,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             "searchset",
             total,
             BuildSearchLinks(fhirBaseUrl, "Patient", [("name", normalizedName), ("identifier", normalizedIdentifier)], searchPage, total),
-            entries);
+            entries.Count == 0 ? null : entries);
     }
 
     public async Task<FhirEncounterResource?> GetEncounterAsync(int encounterId, CancellationToken cancellationToken)
@@ -97,7 +97,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             "searchset",
             total,
             BuildSearchLinks(fhirBaseUrl, "Encounter", [("subject", normalizedSubject)], searchPage, total),
-            entries);
+            entries.Count == 0 ? null : entries);
     }
 
     public async Task<FhirObservationResource?> GetObservationAsync(int observationId, CancellationToken cancellationToken)
@@ -152,7 +152,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             "searchset",
             total,
             BuildSearchLinks(fhirBaseUrl, "Observation", [("subject", normalizedSubject)], searchPage, total),
-            entries);
+            entries.Count == 0 ? null : entries);
     }
 
     public async Task<FhirObservationBundle> SearchSdohObservationsAsync(
@@ -213,7 +213,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
                 [new FhirCodeableConcept([new FhirCoding("http://terminology.hl7.org/CodeSystem/observation-category", "social-history", "Social History")], "Social History")],
                 new FhirCodeableConcept([new FhirCoding("urn:avenchart:sdoh-domain", domain, ToSdohDomainDisplay(domain))], ToSdohDomainDisplay(domain)),
                 new FhirReference($"Patient/{patientId}"), $"{effectiveDate}T00:00:00", null, status,
-                string.IsNullOrWhiteSpace(notes) ? [] : [new FhirObservationReferenceRange(notes)], []);
+                string.IsNullOrWhiteSpace(notes) ? null : [new FhirObservationReferenceRange(notes)], null);
             entries.Add(new FhirObservationSearchEntry(BuildResourceUrl(fhirBaseUrl, "Observation", observation.Id), observation));
         }
         return new FhirObservationBundle(
@@ -221,7 +221,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             "searchset",
             total,
             BuildSearchLinks(fhirBaseUrl, "Observation/sdoh", [("subject", normalizedSubject)], searchPage, total),
-            entries);
+            entries.Count == 0 ? null : entries);
     }
 
     private const string SearchPredicate = """
@@ -352,8 +352,8 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             [new FhirHumanName("official", reader.GetString(3), given)],
             ToFhirGender(ReadNullableString(reader, 5)),
             reader.GetFieldValue<DateOnly>(6).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            telecom,
-            address);
+            telecom.Count == 0 ? null : telecom,
+            address.Count == 0 ? null : address);
     }
 
     private static FhirEncounterResource ReadEncounter(NpgsqlDataReader reader)
@@ -366,7 +366,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             new FhirCoding("http://terminology.hl7.org/CodeSystem/v3-ActCode", "AMB", "ambulatory"),
             new FhirReference($"Patient/{reader.GetString(1)}"),
             new FhirPeriod(reader.GetFieldValue<DateOnly>(2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
-            string.IsNullOrWhiteSpace(reason) ? null : [new FhirCodeableConcept([], reason)]);
+            string.IsNullOrWhiteSpace(reason) ? null : [new FhirCodeableConcept(null, reason)]);
     }
 
     private static FhirObservationResource ReadObservation(NpgsqlDataReader reader)
@@ -380,11 +380,11 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             : null;
         var referenceRange = ReadNullableString(reader, 7);
         var abnormal = ReadNullableString(reader, 8);
-        IReadOnlyList<FhirCoding> coding = string.IsNullOrWhiteSpace(code)
-            ? []
+        IReadOnlyList<FhirCoding>? coding = string.IsNullOrWhiteSpace(code)
+            ? null
             : [new FhirCoding("urn:avenchart:procedure-result", code, text)];
-        IReadOnlyList<FhirCodeableConcept> interpretation = string.IsNullOrWhiteSpace(abnormal)
-            ? []
+        IReadOnlyList<FhirCodeableConcept>? interpretation = string.IsNullOrWhiteSpace(abnormal)
+            ? null
             : [new FhirCodeableConcept([new FhirCoding("urn:avenchart:abnormal-flag", abnormal, abnormal)], abnormal)];
         return new FhirObservationResource(
             "Observation",
@@ -396,7 +396,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             reader.GetDateTime(9).ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
             valueQuantity,
             valueQuantity is null ? result : null,
-            string.IsNullOrWhiteSpace(referenceRange) ? [] : [new FhirObservationReferenceRange(referenceRange)],
+            string.IsNullOrWhiteSpace(referenceRange) ? null : [new FhirObservationReferenceRange(referenceRange)],
             interpretation);
     }
 
