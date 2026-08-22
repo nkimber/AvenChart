@@ -18,4 +18,5 @@ public sealed class RecallEntity
     public string? ClosureReason { get; set; }
     public PatientEntity Patient { get; set; } = null!;
     public ICollection<RecallActivityEntity> Activities { get; } = new List<RecallActivityEntity>();
+    public ICollection<RecallLifecycleEventEntity> LifecycleEvents { get; } = new List<RecallLifecycleEventEntity>();
 }

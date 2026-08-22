@@ -13,4 +13,5 @@ public sealed class RecallLifecycleEventEntity
     public required string Actor { get; set; }
     public string? Reason { get; set; }
     public DateTimeOffset OccurredAt { get; set; }
+    public RecallEntity Recall { get; set; } = null!;
 }

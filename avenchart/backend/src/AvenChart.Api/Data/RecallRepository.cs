@@ -59,10 +59,9 @@ public sealed class RecallRepository(AvenChartDbContext dbContext)
             Status = "active"
         };
         dbContext.Recalls.Add(recall);
-        dbContext.RecallLifecycleEvents.Add(new RecallLifecycleEventEntity
+        recall.LifecycleEvents.Add(new RecallLifecycleEventEntity
         {
             EventId = Guid.NewGuid(),
-            RecallId = recall.Id,
             Status = "active",
             EventType = "created",
             Actor = actor

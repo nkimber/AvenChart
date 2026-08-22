@@ -35,5 +35,9 @@ public sealed class RecallConfiguration : IEntityTypeConfiguration<RecallEntity>
             .WithOne(activity => activity.Recall)
             .HasForeignKey(activity => activity.RecallId)
             .OnDelete(DeleteBehavior.Cascade);
+        entity.HasMany(recall => recall.LifecycleEvents)
+            .WithOne(lifecycleEvent => lifecycleEvent.Recall)
+            .HasForeignKey(lifecycleEvent => lifecycleEvent.RecallId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
