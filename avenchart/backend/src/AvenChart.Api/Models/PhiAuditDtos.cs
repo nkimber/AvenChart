@@ -10,6 +10,8 @@ public sealed record PhiAccessAuditEventItem(
     string HttpMethod,
     string EndpointName,
     string RequiredPermission,
+    string? ResourceType,
+    string? ResourceId,
     int? FacilityId,
     string? FacilityCode,
     string? PurposeOfUse,

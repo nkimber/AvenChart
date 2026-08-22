@@ -1418,6 +1418,7 @@ fhir.MapGet("/metadata", (HttpContext httpContext) =>
 
 fhir.MapGet("/Patient/{id}", async (FhirRepository repository, HttpContext httpContext, string id, CancellationToken cancellationToken) =>
     {
+        PhiAuditResourceContext.Set(httpContext, "Patient", id);
         var patient = await repository.GetPatientAsync(
             id,
             RequireStaffAccessContext(httpContext).FacilityId,
@@ -1439,6 +1440,7 @@ fhir.MapGet("/Patient", async (FhirRepository repository, HttpContext httpContex
 
 fhir.MapGet("/Encounter/{id:int}", async (FhirRepository repository, HttpContext httpContext, int id, CancellationToken cancellationToken) =>
     {
+        PhiAuditResourceContext.Set(httpContext, "Encounter", id.ToString(CultureInfo.InvariantCulture));
         var encounter = await repository.GetEncounterAsync(
             id,
             RequireStaffAccessContext(httpContext).FacilityId,
@@ -1459,6 +1461,7 @@ fhir.MapGet("/Encounter", async (FhirRepository repository, HttpContext httpCont
 
 fhir.MapGet("/Observation/{id:int}", async (FhirRepository repository, HttpContext httpContext, int id, CancellationToken cancellationToken) =>
     {
+        PhiAuditResourceContext.Set(httpContext, "Observation", id.ToString(CultureInfo.InvariantCulture));
         var observation = await repository.GetObservationAsync(
             id,
             RequireStaffAccessContext(httpContext).FacilityId,
@@ -10164,6 +10167,11 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
         {
             return await next(context);
         }
+
+        PhiAuditResourceContext.Set(
+            context.HttpContext,
+            string.IsNullOrWhiteSpace(patientIdentifier) ? "Insurance" : "Patient",
+            patientIdentifier ?? insuranceId);
 
         var accessContext = RequireStaffAccessContext(context.HttpContext);
         var accessContextService = context.HttpContext.RequestServices

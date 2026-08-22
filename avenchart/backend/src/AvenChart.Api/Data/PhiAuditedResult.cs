@@ -27,14 +27,14 @@ public sealed class PhiAuditedResult(
         }
         catch
         {
-            await RecordAsync(StatusCodes.Status500InternalServerError);
+            await RecordAsync(StatusCodes.Status500InternalServerError, httpContext);
             throw;
         }
 
-        await RecordAsync(httpContext.Response.StatusCode);
+        await RecordAsync(httpContext.Response.StatusCode, httpContext);
     }
 
-    private Task RecordAsync(int responseStatus) => auditRepository.RecordAccessDecisionAsync(
+    private Task RecordAsync(int responseStatus, HttpContext httpContext) => auditRepository.RecordAccessDecisionAsync(
         session,
         httpMethod,
         endpointName,
@@ -42,5 +42,6 @@ public sealed class PhiAuditedResult(
         authorized: true,
         responseStatus: responseStatus,
         accessContext: accessContext,
-        cancellationToken: CancellationToken.None);
+        cancellationToken: CancellationToken.None,
+        resource: PhiAuditResourceContext.Get(httpContext));
 }
