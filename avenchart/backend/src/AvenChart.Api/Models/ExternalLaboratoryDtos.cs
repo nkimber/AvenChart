@@ -23,3 +23,17 @@ public sealed record ExternalLaboratorySourceItem(
 public sealed record ExternalLaboratorySourceAuthentication(
     string SourceId,
     string DisplayName);
+
+public sealed record ExternalLaboratoryIntakeReceipt(
+    Guid IngestionId,
+    string SourceId,
+    string SourceMessageId,
+    string Status,
+    bool Duplicate,
+    bool Conflict,
+    bool Rejected,
+    string? Reason,
+    int? ReportId,
+    int CreatedResultCount,
+    int UpdatedResultCount,
+    string ProcessedAt);

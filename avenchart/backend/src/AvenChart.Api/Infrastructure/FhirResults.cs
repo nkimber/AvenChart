@@ -40,4 +40,13 @@ public static class FhirResults
             SerializerOptions,
             statusCode: StatusCodes.Status406NotAcceptable,
             contentType: ContentType);
+
+    public static IResult Error(int statusCode, string code, string diagnostics) =>
+        Results.Json(
+            new FhirOperationOutcome(
+                "OperationOutcome",
+                [new FhirOperationOutcomeIssue("error", code, diagnostics)]),
+            SerializerOptions,
+            statusCode: statusCode,
+            contentType: ContentType);
 }

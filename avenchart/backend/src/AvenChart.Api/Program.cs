@@ -160,6 +160,7 @@ builder.Services.AddScoped<StaffAccessContextService>();
 builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
 builder.Services.AddScoped<ExternalLaboratorySourceRepository>();
+builder.Services.AddScoped<ExternalLaboratoryIntakeRepository>();
 builder.Services.AddScoped<PhiAuditRepository>();
 builder.Services.AddScoped<PatientMergeAuditRepository>();
 builder.Services.AddScoped<PatientMergeExecutionRepository>();
@@ -1010,6 +1011,64 @@ fhir.MapGet("/Observation", async (FhirRepository repository, HttpContext httpCo
 fhir.MapGet("/Observation/sdoh", async (FhirRepository repository, HttpContext httpContext, string? subject, int? _count, int? page, CancellationToken cancellationToken) =>
     FhirResults.Ok(await repository.SearchSdohObservationsAsync(subject, _count, page, BuildFhirBaseUrl(httpContext), cancellationToken)))
     .WithName("SearchFhirSdohObservations");
+
+// This is intentionally separate from the staff integration group: an external
+// laboratory authenticates as a governed service source, never by presenting a
+// reusable staff session or access-context header.
+var externalLaboratory = app.MapGroup("/api/external-laboratory-results").WithTags("External Laboratory FHIR R4");
+externalLaboratory.MapPost("/fhir-r4", async (
+        HttpContext httpContext,
+        JsonElement payload,
+        ExternalLaboratorySourceRepository sourceRepository,
+        ExternalLaboratoryIntakeRepository intakeRepository,
+        CancellationToken cancellationToken) =>
+    {
+        if (!IsExternalLaboratoryFhirContentType(httpContext.Request.ContentType))
+        {
+            return FhirResults.Error(StatusCodes.Status415UnsupportedMediaType, "not-supported",
+                "The external laboratory endpoint accepts application/fhir+json or application/json only.");
+        }
+
+        var source = await sourceRepository.AuthenticateAsync(
+            httpContext.Request.Headers["X-AvenChart-Lab-Source"].ToString(),
+            httpContext.Request.Headers["X-AvenChart-Lab-Api-Key"].ToString(),
+            cancellationToken);
+        if (source is null)
+        {
+            return FhirResults.Error(StatusCodes.Status401Unauthorized, "security",
+                "A valid active external laboratory source credential is required.");
+        }
+
+        try
+        {
+            var receipt = await intakeRepository.ReceiveAsync(
+                source,
+                httpContext.Request.Headers["X-AvenChart-Lab-Message-Id"].ToString(),
+                payload,
+                cancellationToken);
+            if (receipt.Conflict)
+            {
+                return FhirResults.Error(StatusCodes.Status409Conflict, "conflict", receipt.Reason ?? "The source message conflicts with existing provenance.");
+            }
+            if (receipt.Rejected)
+            {
+                return FhirResults.Error(StatusCodes.Status422UnprocessableEntity, "processing", receipt.Reason ?? "The laboratory message could not be reconciled.");
+            }
+            return Results.Json(
+                receipt,
+                statusCode: receipt.Duplicate ? StatusCodes.Status200OK : StatusCodes.Status201Created,
+                contentType: "application/json");
+        }
+        catch (ExternalLaboratoryFhirValidationException exception)
+        {
+            return FhirResults.Error(StatusCodes.Status400BadRequest, exception.Code, exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            return FhirResults.Error(StatusCodes.Status400BadRequest, "invalid", exception.Message);
+        }
+    })
+    .WithName("ReceiveExternalLaboratoryFhirR4Result");
 
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
 RequireAccessPermission(patients, "patients", "demo", "view");
@@ -9420,6 +9479,14 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
 
 static string BuildFhirBaseUrl(HttpContext httpContext) =>
     $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}/api/fhir/R4";
+
+static bool IsExternalLaboratoryFhirContentType(string? contentType)
+{
+    if (string.IsNullOrWhiteSpace(contentType)) return false;
+    var mediaType = contentType.Split(';', 2, StringSplitOptions.TrimEntries)[0];
+    return string.Equals(mediaType, "application/fhir+json", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase);
+}
 
 static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
     AuthRepository repository,
