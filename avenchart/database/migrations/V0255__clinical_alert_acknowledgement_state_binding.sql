@@ -9,7 +9,7 @@ create table if not exists patient_allergy_review_states (
 );
 
 insert into patient_allergy_review_states(pid,state_version,updated_at)
-select distinct pid,1,now()
+select distinct legacy_pid,1,now()
 from patients
 on conflict(pid) do nothing;
 
@@ -19,7 +19,7 @@ language plpgsql
 as $$
 begin
   insert into patient_allergy_review_states(pid,state_version,updated_at)
-  values(new.pid,1,now())
+  values(new.legacy_pid,1,now())
   on conflict(pid) do nothing;
   return new;
 end;

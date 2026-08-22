@@ -68,6 +68,14 @@ select
   fixture.raw_values,
   encode(sha256(convert_to(fixture.raw_values::text, 'utf8')), 'hex')
 from fixture
+where exists (
+  select 1
+  from dataset_metadata metadata
+  join patients patient on patient.canonical_id = 'MOD-PAT-0001'
+  join encounters encounter on encounter.encounter = 1000013
+    and encounter.pid = patient.legacy_pid
+  where metadata.dataset_id = 'avenchart-shared-synthetic-v1'
+)
 on conflict (
   source_system,
   source_schema,

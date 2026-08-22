@@ -59,7 +59,7 @@ public sealed class DatabaseSchemaMigrator(
             {
                 if (ledger.TryGetValue(migration.Id, out var checksum))
                 {
-                    if (!string.Equals(checksum, migration.ChecksumSha256, StringComparison.OrdinalIgnoreCase))
+                    if (!catalog.IsAcceptedLedgerChecksum(migration, checksum))
                     {
                         throw new InvalidOperationException(
                             $"Migration drift detected for '{migration.Id}'. The applied checksum does not match the packaged SQL file.");
@@ -122,7 +122,7 @@ public sealed class DatabaseSchemaMigrator(
         foreach (var migration in catalog.Migrations)
         {
             if (ledger.TryGetValue(migration.Id, out var checksum)
-                && !string.Equals(checksum, migration.ChecksumSha256, StringComparison.OrdinalIgnoreCase))
+                && !catalog.IsAcceptedLedgerChecksum(migration, checksum))
             {
                 throw new InvalidOperationException(
                     $"Migration drift detected for '{migration.Id}'. The applied checksum does not match the packaged SQL file.");

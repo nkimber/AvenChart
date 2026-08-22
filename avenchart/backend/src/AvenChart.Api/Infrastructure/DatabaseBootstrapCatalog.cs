@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Npgsql;
 
 namespace AvenChart.Api.Infrastructure;
@@ -15,6 +16,10 @@ namespace AvenChart.Api.Infrastructure;
 /// </summary>
 public sealed class DatabaseBootstrapCatalog
 {
+    private static readonly Regex ForbiddenBootstrapStatementPattern = new(
+        @"^\s*(?:copy\b|drop\s+(?:table|sequence)\b)",
+        RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
     private static readonly string[] RequiredTables =
     [
         "dataset_metadata",
@@ -53,9 +58,7 @@ public sealed class DatabaseBootstrapCatalog
         {
             Error = $"The packaged base schema at '{Path}' is empty.";
         }
-        else if (Sql.Contains("copy ", StringComparison.OrdinalIgnoreCase) ||
-                 Sql.Contains("drop table", StringComparison.OrdinalIgnoreCase) ||
-                 Sql.Contains("drop sequence", StringComparison.OrdinalIgnoreCase))
+        else if (ForbiddenBootstrapStatementPattern.IsMatch(Sql))
         {
             Error = $"The packaged base schema at '{Path}' contains fixture or destructive reset SQL.";
         }

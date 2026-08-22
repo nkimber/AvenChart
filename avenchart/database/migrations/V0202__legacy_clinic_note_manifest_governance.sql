@@ -92,13 +92,19 @@ insert into access_group_permissions (
   permission_name,
   return_value
 )
-values (
+select
   'clin',
   'admin',
   'forms',
   'Forms Administration',
   'write'
-)
+where exists (select 1 from access_groups where value = 'clin')
+  and exists (
+    select 1
+    from access_permissions
+    where section_value = 'admin'
+      and value = 'forms'
+  )
 on conflict (
   group_value,
   section_value,

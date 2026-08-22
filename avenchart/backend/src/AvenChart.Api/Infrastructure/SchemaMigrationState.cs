@@ -108,7 +108,7 @@ public sealed class SchemaMigrationState(
                 .ToArray();
             var checksumMismatches = catalog.Migrations
                 .Where(migration => applied.TryGetValue(migration.Id, out var checksum)
-                    && !string.Equals(migration.ChecksumSha256, checksum, StringComparison.OrdinalIgnoreCase))
+                    && !catalog.IsAcceptedLedgerChecksum(migration, checksum))
                 .Select(migration => migration.Id)
                 .ToArray();
 

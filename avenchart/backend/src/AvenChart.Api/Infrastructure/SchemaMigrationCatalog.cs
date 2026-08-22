@@ -8,6 +8,20 @@ namespace AvenChart.Api.Infrastructure;
 
 public sealed partial class SchemaMigrationCatalog
 {
+    // These legacy-display migrations originally inserted synthetic fixtures
+    // or a dependent permission unconditionally. Their corrected source is
+    // safe for an empty or production database, while these exact hashes
+    // remain accepted for ledgers written before the correction. No other
+    // migration drift is tolerated.
+    private static readonly IReadOnlyDictionary<string, string> AcceptedHistoricalChecksums =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["V0200__legacy_clinic_note_display_adapter"] = "7307b31b53c0217cfc70b812ad69f5cfc3ae7ab9f8ca15d14b6d8ce7d1cd4f4d",
+            ["V0202__legacy_clinic_note_manifest_governance"] = "f238d1e23acc6e1366bc7b0aa85990776412ba47cef70e7530f0db5f8367fe9e",
+            ["V0203__legacy_clinical_instructions_display_adapter"] = "17c5adf055ab1b59642351e0be22e10f85cfd0e131b27a765693522d0c0f7dd7",
+            ["V0204__legacy_soap_display_adapter"] = "91794a8fe0d27bedf56b349e883a3a204d3a79494f88b6016bc5453be11cdc39",
+        };
+
     public SchemaMigrationCatalog(IConfiguration configuration)
     {
         MigrationsPath = ResolveMigrationsPath(configuration["DatabaseSchema:MigrationsPath"]);
@@ -22,6 +36,11 @@ public sealed partial class SchemaMigrationCatalog
     public string? Error { get; }
 
     public IReadOnlyDictionary<string, SchemaMigrationDefinition> ById { get; }
+
+    public bool IsAcceptedLedgerChecksum(SchemaMigrationDefinition migration, string checksum) =>
+        string.Equals(migration.ChecksumSha256, checksum, StringComparison.OrdinalIgnoreCase)
+        || (AcceptedHistoricalChecksums.TryGetValue(migration.Id, out var historicalChecksum)
+            && string.Equals(historicalChecksum, checksum, StringComparison.OrdinalIgnoreCase));
 
     private static (IReadOnlyList<SchemaMigrationDefinition> Migrations, string? Error) LoadMigrations(
         string migrationsPath)

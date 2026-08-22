@@ -389,11 +389,45 @@ select json_build_object(
         throw "Could not establish the isolated API session required for schema-shape error testing."
     }
     $authenticatedHeaders = New-AvenChartStaffAccessContextHeaders -Login $login
+    $administratorGrantResponse = Invoke-Http `
+        -Method "GET" `
+        -Path "/api/administration/access-context-grants/admin" `
+        -Headers $authenticatedHeaders
+    if ([int]$administratorGrantResponse.StatusCode -ne 200) {
+        throw "Could not read the isolated administrator access-context grant."
+    }
+    $administratorGrant = (Get-HttpResponseContent -Response $administratorGrantResponse) | ConvertFrom-Json
+    $administratorFacilityIds = @($administratorGrant.facilities | ForEach-Object { [int]$_.facilityId } | Sort-Object -Unique)
+    $administratorDefaultFacility = @($administratorGrant.facilities | Where-Object { $_.isDefault -eq $true } | Select-Object -First 1)
+    if ($administratorDefaultFacility.Count -ne 1) {
+        throw "The isolated administrator access-context grant has no default facility."
+    }
+    if ($administratorFacilityIds -notcontains 11 -or [int]$administratorDefaultFacility[0].facilityId -ne 11) {
+        $expandedGrantResponse = Invoke-Http `
+            -Method "PUT" `
+            -Path "/api/administration/access-context-grants/admin" `
+            -Headers $authenticatedHeaders `
+            -Body (@{
+                facilityIds = @($administratorFacilityIds + 11 | Sort-Object -Unique)
+                defaultFacilityId = 11
+                purposes = @($administratorGrant.purposes)
+            } | ConvertTo-Json -Depth 5)
+        if ([int]$expandedGrantResponse.StatusCode -ne 200) {
+            throw "Could not grant the isolated administrator access to facility 11."
+        }
+        $login = (Invoke-Http -Method "POST" -Path "/api/auth/login" -Body '{"username":"admin","password":"pass"}').Content | ConvertFrom-Json
+        if (-not $login.authenticated -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
+            throw "Could not refresh the isolated administrator session after its facility grant changed."
+        }
+        $authenticatedHeaders = New-AvenChartStaffAccessContextHeaders -Login $login
+    }
+    $facility11Headers = $authenticatedHeaders.Clone()
+    $facility11Headers["X-AvenChart-Facility-Id"] = "11"
 
     $administrationOriginalResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/patients/MOD-PAT-0010" `
-        -Headers $authenticatedHeaders
+        -Headers $facility11Headers
     if ([int]$administrationOriginalResponse.StatusCode -ne 200) {
         throw "Could not load the patient administration aggregate for concurrency verification."
     }
@@ -438,7 +472,7 @@ select json_build_object(
     $administrationUpdateResponse = Invoke-Http `
         -Method "PUT" `
         -Path "/api/patients/MOD-PAT-0010/administration" `
-        -Headers $authenticatedHeaders `
+        -Headers $facility11Headers `
         -Body $administrationUpdateBody
     if ([int]$administrationUpdateResponse.StatusCode -ne 200) {
         throw "Atomic patient administration update returned HTTP $($administrationUpdateResponse.StatusCode)."
@@ -452,12 +486,12 @@ select json_build_object(
     $staleAdministrationResponse = Invoke-Http `
         -Method "PUT" `
         -Path "/api/patients/MOD-PAT-0010/administration" `
-        -Headers $authenticatedHeaders `
+        -Headers $facility11Headers `
         -Body $administrationUpdateBody
     $legacyContactResponse = Invoke-Http `
         -Method "PUT" `
         -Path "/api/patients/MOD-PAT-0010/contact" `
-        -Headers $authenticatedHeaders `
+        -Headers $facility11Headers `
         -Body ($changedContact | ConvertTo-Json)
     if ([int]$staleAdministrationResponse.StatusCode -ne 409 -or [int]$legacyContactResponse.StatusCode -ne 410) {
         throw "Patient administration concurrency or legacy endpoint retirement was not enforced."
@@ -465,7 +499,7 @@ select json_build_object(
     $administrationRestoreResponse = Invoke-Http `
         -Method "PUT" `
         -Path "/api/patients/MOD-PAT-0010/administration" `
-        -Headers $authenticatedHeaders `
+        -Headers $facility11Headers `
         -Body (@{
             contact = $originalContact
             demographics = $originalDemographics
@@ -931,7 +965,7 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
         -Method "POST" `
         -Path "/api/encounters/" `
         -Headers $authenticatedHeaders `
-        -Body '{"patientId":"MOD-PAT-0001","providerId":101,"dateTime":"2026-08-20T10:00:00","reason":"EF encounter-state regression","facilityId":10,"billingFacilityId":10,"sensitivity":"normal","referralSource":"migration-resilience","externalId":"EF-ENC-STATE","posCode":11,"billingNote":"Initial EF state","sourceAppointmentId":null}'
+        -Body '{"patientId":"MOD-PAT-0001","providerId":102,"dateTime":"2026-08-20T10:00:00","reason":"EF encounter-state regression","facilityId":11,"billingFacilityId":11,"sensitivity":"normal","referralSource":"migration-resilience","externalId":"EF-ENC-STATE","posCode":11,"billingNote":"Initial EF state","sourceAppointmentId":null}'
     if ([int]$encounterCreateResponse.StatusCode -ne 201) {
         throw "Encounter creation for the EF state slice returned HTTP $($encounterCreateResponse.StatusCode). Body: $(Get-HttpResponseContent -Response $encounterCreateResponse)"
     }
@@ -1263,7 +1297,7 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
     $recordRequestCreateResponse = Invoke-Http `
         -Method "POST" `
         -Path "/api/patients/MOD-PAT-0010/record-requests" `
-        -Headers $authenticatedHeaders `
+        -Headers $facility11Headers `
         -Body '{}'
     if ([int]$recordRequestCreateResponse.StatusCode -ne 201) {
         throw "EF-backed patient record-request creation returned HTTP $($recordRequestCreateResponse.StatusCode)."
@@ -1272,7 +1306,7 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
     $duplicateRecordRequestResponse = Invoke-Http `
         -Method "POST" `
         -Path "/api/patients/MOD-PAT-0010/record-requests" `
-        -Headers $authenticatedHeaders `
+        -Headers $facility11Headers `
         -Body '{}'
     if ([int]$duplicateRecordRequestResponse.StatusCode -ne 400) {
         throw "The EF-backed open record-request uniqueness rule was not enforced."
@@ -1280,12 +1314,12 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
     $recordRequestCompleteResponse = Invoke-Http `
         -Method "POST" `
         -Path "/api/patients/MOD-PAT-0010/record-requests/$($recordRequest.requestId)/complete" `
-        -Headers $authenticatedHeaders `
+        -Headers $facility11Headers `
         -Body '{}'
     $recordRequestHistoryResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/patients/MOD-PAT-0010/record-requests" `
-        -Headers $authenticatedHeaders
+        -Headers $facility11Headers
     if ([int]$recordRequestCompleteResponse.StatusCode -ne 200 -or [int]$recordRequestHistoryResponse.StatusCode -ne 200) {
         throw "EF-backed patient record-request completion or history failed."
     }
@@ -1317,7 +1351,7 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
     $sdohCreateResponse = Invoke-Http `
         -Method "POST" `
         -Path "/api/patients/MOD-PAT-0010/sdoh-assessments" `
-        -Headers $authenticatedHeaders `
+        -Headers $facility11Headers `
         -Body $sdohCreateBody
     if ([int]$sdohCreateResponse.StatusCode -ne 201) {
         throw "EF-backed SDOH creation returned HTTP $($sdohCreateResponse.StatusCode). Body: $(Get-HttpResponseContent -Response $sdohCreateResponse)"
@@ -1341,12 +1375,12 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
     $sdohUpdateResponse = Invoke-Http `
         -Method "PUT" `
         -Path "/api/patients/MOD-PAT-0010/sdoh-assessments/$($sdohCreate.assessmentId)" `
-        -Headers $authenticatedHeaders `
+        -Headers $facility11Headers `
         -Body $sdohUpdateBody
     $sdohHistoryResponse = Invoke-Http `
         -Method "GET" `
         -Path "/api/patients/MOD-PAT-0010/sdoh-assessments" `
-        -Headers $authenticatedHeaders
+        -Headers $facility11Headers
     if ([int]$sdohUpdateResponse.StatusCode -ne 200 -or [int]$sdohHistoryResponse.StatusCode -ne 200) {
         throw "EF-backed SDOH update or history failed."
     }
