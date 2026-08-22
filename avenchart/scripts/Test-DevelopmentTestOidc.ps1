@@ -49,6 +49,9 @@ try {
     if (-not $session.authenticated) {
         throw 'The API did not accept the test OIDC bearer token. Start it with IdentityProvider__Mode=test-oidc in Development.'
     }
+    $mappings = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/external-identity-mappings?providerId=test-oidc" -Headers $bearerHeaders -TimeoutSec 20
+    $mapping = @($mappings | Where-Object { $_.providerId -eq 'test-oidc' -and $_.externalSubject -eq 'admin' -and $_.username -eq 'admin' -and $_.active } | Select-Object -First 1)
+    Add-Check "Test OIDC token resolves through an explicit active provider-subject mapping" ($mapping.Count -eq 1) @{ mappingId = if ($mapping.Count -eq 1) { $mapping[0].mappingId } else { $null } }
     $access = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/access-context" -Headers $bearerHeaders -TimeoutSec 20
     $facility = @($access.facilities | Where-Object { $_.isDefault } | Select-Object -First 1)
     if ($facility.Count -ne 1 -or @($access.purposes).Count -eq 0) { throw 'The mapped test OIDC principal has no usable facility/purpose context.' }

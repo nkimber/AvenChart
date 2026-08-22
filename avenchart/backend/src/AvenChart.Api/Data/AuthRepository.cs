@@ -111,19 +111,24 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
     }
 
     /// <summary>
-    /// Resolves an already validated external OIDC subject to the local account
-    /// that owns AvenChart capabilities and facility/purpose grants.  The token
-    /// adapter owns issuer/audience/signature/lifetime checks; this lookup never
-    /// trusts token-supplied role or staff identifiers.
+    /// Resolves an already validated provider-scoped OIDC subject through an
+    /// administrator-governed mapping to the local account that owns AvenChart
+    /// capabilities and facility/purpose grants. The token adapter owns
+    /// issuer/audience/signature/lifetime checks; this lookup never trusts
+    /// token-supplied role or staff identifiers.
     /// </summary>
     public async Task<AuthSessionResponse> ResolveExternalPrincipalAsync(
+        string providerId,
         string subject,
         string sessionSource,
         DateTimeOffset expiresAt,
         CancellationToken cancellationToken)
     {
+        var normalizedProviderId = providerId?.Trim().ToLowerInvariant();
         var normalizedSubject = subject?.Trim();
-        if (string.IsNullOrWhiteSpace(normalizedSubject) || normalizedSubject.Length > 128 || string.IsNullOrWhiteSpace(sessionSource))
+        if (string.IsNullOrWhiteSpace(normalizedProviderId) || normalizedProviderId.Length > 80 ||
+            string.IsNullOrWhiteSpace(normalizedSubject) || normalizedSubject.Length > 512 ||
+            normalizedSubject != subject || normalizedSubject.Any(char.IsControl) || string.IsNullOrWhiteSpace(sessionSource))
         {
             return new AuthSessionResponse(false, null, string.Empty, string.Empty, string.Empty, null, null, null, null, null,
                 "The validated external identity is not mapped to an active AvenChart principal.", sessionSource);
@@ -133,13 +138,17 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select account.username,account.display_name,account.role,account.staff_id
-            from auth_accounts account
+            from auth_external_identity_mappings mapping
+            join auth_accounts account on account.username=mapping.username
             left join staff on staff.id=account.staff_id
-            where lower(account.username)=lower(@subject)
+            where mapping.provider_id=@providerId
+              and mapping.external_subject=@subject
+              and mapping.active=true
               and account.active=true
               and (account.staff_id is null or staff.active=true)
             limit 1;
             """;
+        command.Parameters.AddWithValue("providerId", normalizedProviderId);
         command.Parameters.AddWithValue("subject", normalizedSubject);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

@@ -49,7 +49,13 @@ public sealed class OidcStaffIdentityAdapter(
                 ClockSkew = TimeSpan.FromSeconds(_options.ClockSkewSeconds),
             });
             if (!validation.IsValid || validation.ClaimsIdentity is null) return OidcIdentityAdapterHelpers.MissingSession("The bearer token is invalid.");
-            return await OidcIdentityAdapterHelpers.ResolveValidatedIdentityAsync(authRepository, validation.ClaimsIdentity, _options.SubjectClaim, $"oidc:{_options.ProviderId}", cancellationToken);
+            return await OidcIdentityAdapterHelpers.ResolveValidatedIdentityAsync(
+                authRepository,
+                validation.ClaimsIdentity,
+                _options.SubjectClaim,
+                _options.ProviderId,
+                $"oidc:{_options.ProviderId}",
+                cancellationToken);
         }
         catch (Exception exception) when (exception is SecurityTokenException or InvalidOperationException or IOException)
         {
@@ -102,7 +108,13 @@ public sealed class TestOidcStaffIdentityAdapter(
                 ClockSkew = TimeSpan.FromSeconds(_options.ClockSkewSeconds),
             });
             if (!validation.IsValid || validation.ClaimsIdentity is null) return OidcIdentityAdapterHelpers.MissingSession("The bearer token is invalid.");
-            return await OidcIdentityAdapterHelpers.ResolveValidatedIdentityAsync(authRepository, validation.ClaimsIdentity, "sub", "test-oidc", cancellationToken);
+            return await OidcIdentityAdapterHelpers.ResolveValidatedIdentityAsync(
+                authRepository,
+                validation.ClaimsIdentity,
+                "sub",
+                "test-oidc",
+                "test-oidc",
+                cancellationToken);
         }
         catch (SecurityTokenException)
         {
@@ -178,12 +190,18 @@ internal static class OidcIdentityAdapterHelpers
         return value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) && value.Length > 7 ? value[7..].Trim() : null;
     }
 
-    public static async Task<AuthSessionResponse> ResolveValidatedIdentityAsync(AuthRepository repository, ClaimsIdentity identity, string subjectClaim, string source, CancellationToken cancellationToken)
+    public static async Task<AuthSessionResponse> ResolveValidatedIdentityAsync(
+        AuthRepository repository,
+        ClaimsIdentity identity,
+        string subjectClaim,
+        string providerId,
+        string source,
+        CancellationToken cancellationToken)
     {
         var subject = identity.FindFirst(subjectClaim)?.Value;
         var expires = identity.FindFirst(JwtRegisteredClaimNames.Exp)?.Value;
         if (string.IsNullOrWhiteSpace(subject) || !long.TryParse(expires, out var seconds)) return MissingSession("The bearer token does not include a valid subject and expiry.");
-        return await repository.ResolveExternalPrincipalAsync(subject, source, DateTimeOffset.FromUnixTimeSeconds(seconds), cancellationToken);
+        return await repository.ResolveExternalPrincipalAsync(providerId, subject, source, DateTimeOffset.FromUnixTimeSeconds(seconds), cancellationToken);
     }
 
     public static AuthSessionResponse MissingSession(string reason) => new(false, null, string.Empty, string.Empty, string.Empty, null, null, null, null, null, reason, "external-oidc");

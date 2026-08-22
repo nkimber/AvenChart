@@ -171,6 +171,7 @@ builder.Services.AddScoped<TherapyGroupRepository>();
 builder.Services.AddScoped<ReferralRepository>();
 builder.Services.AddScoped<AuthorizationRepository>();
 builder.Services.AddScoped<AuthRepository>();
+builder.Services.AddScoped<ExternalIdentityMappingRepository>();
 builder.Services.AddScoped<LocalDevelopmentStaffIdentityAdapter>();
 builder.Services.AddScoped<OidcStaffIdentityAdapter>();
 builder.Services.AddScoped<TestOidcStaffIdentityAdapter>();
@@ -7276,6 +7277,78 @@ administration.MapPut("/access-context-grants/{username}", async (
         }
     })
     .WithName("UpdateStaffAccessContextGrant");
+
+administration.MapGet("/external-identity-mappings", async (
+        string? providerId,
+        ExternalIdentityMappingRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Ok(await repository.GetMappingsAsync(providerId, cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["providerId"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("ListExternalIdentityMappings");
+
+administration.MapPost("/external-identity-mappings", async (
+        ExternalIdentityMappingCreateRequest request,
+        ExternalIdentityMappingRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mapping = await repository.CreateAsync(request, session.Username, cancellationToken);
+            return Results.Created($"/api/administration/external-identity-mappings/{mapping.MappingId}", mapping);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = [exception.Message]
+            });
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            return Results.Conflict(new { error = "An active mapping already exists for this provider subject or local account." });
+        }
+    })
+    .WithName("CreateExternalIdentityMapping");
+
+administration.MapPost("/external-identity-mappings/{mappingId:guid}/deactivate", async (
+        Guid mappingId,
+        ExternalIdentityMappingDeactivateRequest request,
+        ExternalIdentityMappingRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mapping = await repository.DeactivateAsync(mappingId, request, session.Username, cancellationToken);
+            return mapping is null
+                ? Results.Conflict(new { error = "The mapping does not exist or is already deactivated." })
+                : Results.Ok(mapping);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("DeactivateExternalIdentityMapping");
 
 var delegatedConfiguration = app.MapGroup("/api/configuration-delegation").WithTags("Configuration delegation");
 delegatedConfiguration.AddEndpointFilter(StaffAccessContextFilter("delegated-configuration"));

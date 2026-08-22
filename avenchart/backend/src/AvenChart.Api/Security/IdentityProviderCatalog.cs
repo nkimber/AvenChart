@@ -8,7 +8,7 @@ namespace AvenChart.Api.Security;
 
 public static class IdentityProviderCatalog
 {
-    public const string Revision = "local-identity-adapter-v1";
+    public const string Revision = "external-subject-mapping-v1";
 
     private static readonly IdentityAdapterContractItem Adapter = new(
         LocalDevelopmentStaffIdentityAdapter.Id,
@@ -128,9 +128,9 @@ public static class IdentityProviderCatalog
             BlocksProduction: true),
         new(
             "claim-and-capability-mapping",
-            "Approve external-subject, role, capability, organization, facility, team, and patient-scope mapping.",
+            "Approve provider tenant, assurance, organization, facility, team, and patient-scope mapping. Provider-scoped subject-to-local-principal mappings are governed in AvenChart; local roles and resource grants remain server-owned.",
             "Security, clinical, and product owners",
-            "local username-to-ACL compatibility only",
+            "implemented-owner-policy-gated",
             BlocksProduction: true),
         new(
             "portal-and-service-adapters",
@@ -196,11 +196,11 @@ public static class IdentityProviderCatalog
             }
             : identityType).ToArray();
         return new IdentityProviderReadinessResponse(
-            $"{Revision}-oidc-v1",
+            Revision,
             options.IsOidc ? "external-oidc-configured-owner-gated" : options.IsTestOidc ? "development-test-oidc" : "local-foundation-owner-gated",
             adapter.AdapterId,
             adapter.AdapterKind,
-            options.IsOidc ? "Configured provider validates bearer tokens; provider tenant, claim mapping, MFA, and production acceptance remain owner-gated." : "Local and first-party test identities are not approved production identity sources.",
+            options.IsOidc ? "Configured provider validates bearer tokens and resolves only administrator-governed provider-subject mappings; provider tenant, MFA, and production acceptance remain owner-gated." : "Local and first-party test identities are not approved production identity sources.",
             new IdentityProviderReadinessCounts(
                 identityTypes.Length,
                 identityTypes.Count(identityType => identityType.RoutedThroughAdapter),
