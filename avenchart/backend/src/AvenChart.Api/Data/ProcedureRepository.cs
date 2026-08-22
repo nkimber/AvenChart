@@ -1135,6 +1135,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     instructions = @instructions,
                     order_status = @status
                 where id = @id
+                  and date_transmitted is null
+                  and not exists (
+                      select 1
+                      from lab_reports report
+                      where report.order_id = lab_orders.id
+                  )
                 returning patient_id;
                 """;
             command.Parameters.AddWithValue("id", orderId);
