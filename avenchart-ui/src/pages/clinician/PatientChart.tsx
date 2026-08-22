@@ -1132,8 +1132,9 @@ export default function PatientChart() {
                     {selectedRx.controlledSubstanceSchedule && (
                       <span className="rx-warning">
                         <AlertTriangle size={14} /> Schedule{" "}
-                        {selectedRx.controlledSubstanceSchedule}: governed
-                        authorization is not implemented
+                        {selectedRx.controlledSubstanceSchedule}: electronic
+                        pharmacy routing is blocked until an EPCS review
+                        workflow is configured
                       </span>
                     )}
                   </div>

@@ -6,6 +6,7 @@ using AvenChart.Api.Models;
 using AvenChart.Api.Persistence;
 using AvenChart.Api.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AvenChart.Api.Data;
 
@@ -49,7 +50,10 @@ public sealed class ClinicalListStateRepository(
             ListOptionId = NormalizeText(request.ListOptionId)
         };
         dbContext.Allergies.Add(allergy);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        if (!await SaveNewClinicalContentAsync(cancellationToken))
+        {
+            return null;
+        }
         return await BuildMutationAsync(allergy.Id, patient.CanonicalId, cancellationToken);
     }
 
@@ -108,7 +112,10 @@ public sealed class ClinicalListStateRepository(
             Activity = 1
         };
         dbContext.Problems.Add(problem);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        if (!await SaveNewClinicalContentAsync(cancellationToken))
+        {
+            return null;
+        }
         return await BuildMutationAsync(problem.Id, patient.CanonicalId, cancellationToken);
     }
 
@@ -180,7 +187,10 @@ public sealed class ClinicalListStateRepository(
             null,
             0,
             1));
-        await dbContext.SaveChangesAsync(cancellationToken);
+        if (!await SaveNewClinicalContentAsync(cancellationToken))
+        {
+            return null;
+        }
         return await BuildMutationAsync(medication.Id, patient.CanonicalId, cancellationToken);
     }
 
@@ -387,7 +397,10 @@ public sealed class ClinicalListStateRepository(
             AddedErroneously = 0
         };
         dbContext.Immunizations.Add(immunization);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        if (!await SaveNewClinicalContentAsync(cancellationToken))
+        {
+            return null;
+        }
         return await BuildMutationAsync(
             immunization.Id.ToString(CultureInfo.InvariantCulture),
             patient.CanonicalId,
@@ -470,9 +483,12 @@ public sealed class ClinicalListStateRepository(
         return await dbContext.Patients
             .AsNoTracking()
             .SingleOrDefaultAsync(
-                patient => EF.Functions.ILike(patient.CanonicalId, normalized)
+                patient => (EF.Functions.ILike(patient.CanonicalId, normalized)
                     || EF.Functions.ILike(patient.PublicId, normalized)
-                    || (isLegacyPid && patient.LegacyPid == legacyPid),
+                    || (isLegacyPid && patient.LegacyPid == legacyPid))
+                    && patient.MergedIntoPatientId == null
+                    && patient.LifecycleStatus == "active"
+                    && patient.DeceasedDate == null,
                 cancellationToken);
     }
 
@@ -483,6 +499,23 @@ public sealed class ClinicalListStateRepository(
     {
         var lists = await clinicalListRepository.GetForPatientAsync(patientId, cancellationToken);
         return lists is null ? null : new ClinicalListMutationResponse(id, lists);
+    }
+
+    private async Task<bool> SaveNewClinicalContentAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException
+            {
+                SqlState: PostgresErrorCodes.ForeignKeyViolation or PostgresErrorCodes.CheckViolation
+            })
+        {
+            dbContext.ChangeTracker.Clear();
+            return false;
+        }
     }
 
     private static MedicationLifecycleEventEntity CreateMedicationEvent(

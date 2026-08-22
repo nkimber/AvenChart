@@ -14,4 +14,6 @@ public sealed class PatientEntity
     public DateOnly DateOfBirth { get; set; }
     public int? ProviderId { get; set; }
     public string? MergedIntoPatientId { get; set; }
+    public string LifecycleStatus { get; set; } = "active";
+    public DateOnly? DeceasedDate { get; set; }
 }

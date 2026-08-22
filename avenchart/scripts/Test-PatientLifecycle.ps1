@@ -112,6 +112,43 @@ try {
         -RequestHeaders $headers -Body $appointmentRequest
     Add-Check "Retirement blocks scheduling" ($retiredSchedulingStatus -eq 400) @{ status = $retiredSchedulingStatus }
 
+    $retiredAllergyStatus = Get-HttpStatus -Uri "$ApiBaseUrl/api/clinical-lists/allergies" -Method Post `
+        -RequestHeaders $headers -Body @{
+            patientId = $patientId
+            title = "Lifecycle test allergy"
+            dateTime = "2027-01-05"
+            comments = "Must not write after retirement."
+            reaction = "Test only"
+            severity = "low"
+        }
+    $retiredMedicationStatus = Get-HttpStatus -Uri "$ApiBaseUrl/api/clinical-lists/medications" -Method Post `
+        -RequestHeaders $headers -Body @{
+            patientId = $patientId
+            title = "Lifecycle test medication"
+            dateTime = "2027-01-05"
+            comments = "Must not write after retirement."
+        }
+    $retiredPrescriptionStatus = Get-HttpStatus -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions" -Method Post `
+        -RequestHeaders $headers -Body @{
+            patientId = $patientId
+            startDate = "2027-01-05"
+            drug = "Lifecycle test prescription"
+            dosage = "One tablet daily"
+            quantity = "1"
+            refills = 0
+            note = "Must not write after retirement."
+            diagnosis = "Z00.00"
+        }
+    Add-Check "Retirement blocks new clinical-list content" (
+        $retiredAllergyStatus -eq 400 -and
+        $retiredMedicationStatus -eq 400 -and
+        $retiredPrescriptionStatus -eq 400
+    ) @{
+        allergyStatus = $retiredAllergyStatus
+        medicationStatus = $retiredMedicationStatus
+        prescriptionStatus = $retiredPrescriptionStatus
+    }
+
     $reactivated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$patientId/lifecycle/reactivate" -Method Post `
         -Headers $headers -ContentType "application/json" `
         -Body (@{ reason = "Focused lifecycle fixture reactivation." } | ConvertTo-Json) -TimeoutSec 20

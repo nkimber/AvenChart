@@ -22,5 +22,7 @@ public sealed class PatientConfiguration : IEntityTypeConfiguration<PatientEntit
         entity.Property(patient => patient.DateOfBirth).HasColumnName("date_of_birth");
         entity.Property(patient => patient.ProviderId).HasColumnName("provider_id");
         entity.Property(patient => patient.MergedIntoPatientId).HasColumnName("merged_into_patient_id");
+        entity.Property(patient => patient.LifecycleStatus).HasColumnName("lifecycle_status").IsRequired();
+        entity.Property(patient => patient.DeceasedDate).HasColumnName("deceased_date");
     }
 }

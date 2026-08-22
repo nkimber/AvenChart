@@ -344,13 +344,17 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var patient = await GetActivePatientForNewClinicalContentAsync(
+            connection,
+            transaction,
+            request.PatientId,
+            cancellationToken);
         if (patient is null)
         {
             return null;
         }
 
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var id = $"RX-MODERN-{Guid.NewGuid():N}";
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -1272,6 +1276,54 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         var lastName = reader.GetString(reader.GetOrdinal("last_name"));
         var preferredName = ReadNullableString(reader, "preferred_name");
 
+        return new ClinicalListPatient(
+            PatientId: reader.GetString(reader.GetOrdinal("canonical_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+            Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+            ProviderId: reader.GetInt32(reader.GetOrdinal("provider_id")),
+            FirstName: firstName,
+            LastName: lastName,
+            DisplayName: string.IsNullOrWhiteSpace(preferredName)
+                ? $"{lastName}, {firstName}"
+                : $"{lastName}, {firstName} ({preferredName})");
+    }
+
+    /// <summary>
+    /// New clinical content is only valid on the current, active patient record.
+    /// The row lock serializes this decision with retirement, death correction,
+    /// and merge execution; historical reads deliberately use <see cref="GetPatientAsync"/>.
+    /// </summary>
+    private static async Task<ClinicalListPatient?> GetActivePatientForNewClinicalContentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select canonical_id, legacy_pid, pubpid, first_name, last_name, preferred_name, provider_id
+            from patients
+            where (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
+              and merged_into_patient_id is null
+              and coalesce(lower(lifecycle_status), 'active') = 'active'
+              and deceased_date is null
+            limit 1
+            for update;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var firstName = reader.GetString(reader.GetOrdinal("first_name"));
+        var lastName = reader.GetString(reader.GetOrdinal("last_name"));
+        var preferredName = ReadNullableString(reader, "preferred_name");
         return new ClinicalListPatient(
             PatientId: reader.GetString(reader.GetOrdinal("canonical_id")),
             LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
