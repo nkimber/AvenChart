@@ -44,6 +44,7 @@ builder.Services.AddHealthChecks()
     .AddCheck<SchemaMigrationReadinessHealthCheck>("schemaMigrations", tags: ["ready"]);
 builder.Services.AddSingleton<IIntegrationTransport, LocalDeterministicIntegrationTransport>();
 builder.Services.AddSingleton<RuntimeDiagnostics>();
+builder.Services.AddScoped<FhirR4ValidationService>();
 builder.Services.AddHttpClient("azure-deployment-health", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(20);
@@ -1446,7 +1447,9 @@ externalLaboratory.MapPost("/fhir-r4", async (
             return FhirResults.Error(StatusCodes.Status400BadRequest, "invalid", exception.Message);
         }
     })
-    .WithName("ReceiveExternalLaboratoryFhirR4Result");
+    .WithName("ReceiveExternalLaboratoryFhirR4Result")
+    .WithSummary("Receives a validated FHIR R4 external laboratory result bundle")
+    .WithDescription("Requires an authenticated laboratory source and validates FHIR R4 Bundle, DiagnosticReport, and Observation core profiles before applying AvenChart's facility-scoped clinical intake contract.");
 
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
 RequireAccessPermission(patients, "patients", "demo", "view");

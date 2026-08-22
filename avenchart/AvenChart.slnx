@@ -6,4 +6,7 @@
   <Folder Name="/backend/src/">
     <Project Path="backend/src/AvenChart.Api/AvenChart.Api.csproj" />
   </Folder>
+  <Folder Name="/backend/tests/">
+    <Project Path="backend/tests/AvenChart.Api.Tests/AvenChart.Api.Tests.csproj" />
+  </Folder>
 </Solution>

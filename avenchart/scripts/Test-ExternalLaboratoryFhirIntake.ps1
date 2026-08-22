@@ -85,13 +85,14 @@ function New-FhirBundle([string]$ReportId, [string]$ObservationId, [string]$Mess
                 resourceType = "DiagnosticReport"
                 id = $ReportId
                 status = $ObservationStatus
+                code = @{ coding = @(@{ system = "http://loinc.org"; code = "58410-2"; display = "Complete blood count" }) }
                 subject = @{ reference = "Patient/$PatientId" }
                 basedOn = @(@{ reference = "ServiceRequest/$script:orderId" })
                 specimen = @(@{ reference = "Specimen/$script:specimenId" })
                 effectiveDateTime = $now
                 issued = $now
                 result = @(@{ reference = "Observation/$ObservationId" })
-            } }
+            }; fullUrl = "https://synthetic-laboratory.example/fhir/DiagnosticReport/$ReportId" }
             @{ resource = @{
                 resourceType = "Observation"
                 id = $ObservationId
@@ -102,7 +103,7 @@ function New-FhirBundle([string]$ReportId, [string]$ObservationId, [string]$Mess
                 valueQuantity = @{ value = $MessageValue; unit = "g/dL" }
                 referenceRange = @(@{ text = "12-16" })
                 interpretation = @(@{ coding = @(@{ system = "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation"; code = "HH" }) })
-            } }
+            }; fullUrl = "https://synthetic-laboratory.example/fhir/Observation/$ObservationId" }
         )
     }
 }
@@ -167,6 +168,20 @@ try {
     $reportId = "synthetic-report-$marker"
     $observationId = "synthetic-observation-$marker"
     $initialBundle = New-FhirBundle $reportId $observationId "16.4"
+
+    $invalidValidationHeaders = @{}
+    foreach ($entry in $externalHeaders.GetEnumerator()) { $invalidValidationHeaders[$entry.Key] = $entry.Value }
+    $invalidValidationHeaders["X-AvenChart-Lab-Message-Id"] = "synthetic-invalid-core-$marker"
+    $invalidValidationBundle = New-FhirBundle "synthetic-invalid-report-$marker" "synthetic-invalid-observation-$marker" "16.4"
+    $invalidValidationBundle.entry[1].resource.dataAbsentReason = @{ text = "A result value is also present." }
+    $invalidValidation = Invoke-HttpStatus "$ApiBaseUrl/api/external-laboratory-results/fhir-r4" "Post" $invalidValidationBundle $invalidValidationHeaders "application/fhir+json"
+    $invalidValidationOutcome = $invalidValidation.body | ConvertFrom-Json
+    Add-Check "FHIR R4 core profile rejects an Observation with both a value and dataAbsentReason" (
+        $invalidValidation.status -eq 400 -and
+        $invalidValidationOutcome.resourceType -eq "OperationOutcome" -and
+        @($invalidValidationOutcome.issue | Where-Object { $_.code -eq "invalid" }).Count -eq 1
+    ) @{ status = $invalidValidation.status; outcome = $invalidValidationOutcome }
+
     $initial = Invoke-HttpStatus "$ApiBaseUrl/api/external-laboratory-results/fhir-r4" "Post" $initialBundle $externalHeaders "application/fhir+json"
     $initialReceipt = $initial.body | ConvertFrom-Json
     Add-Check "Authenticated FHIR laboratory intake applies a new result" ($initial.status -eq 201 -and -not $initialReceipt.duplicate -and $initialReceipt.createdResultCount -eq 1 -and $initialReceipt.updatedResultCount -eq 0) @{ status = $initial.status; receipt = $initialReceipt }

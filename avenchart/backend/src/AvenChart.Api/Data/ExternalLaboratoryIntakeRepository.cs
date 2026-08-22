@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using AvenChart.Api.Infrastructure;
 using AvenChart.Api.Models;
 using Npgsql;
 using NpgsqlTypes;
@@ -18,7 +19,9 @@ namespace AvenChart.Api.Data;
 /// never claim a result was applied when its patient, order, specimen, report,
 /// result links, and history were not committed together.
 /// </summary>
-public sealed class ExternalLaboratoryIntakeRepository(NpgsqlDataSource dataSource)
+public sealed class ExternalLaboratoryIntakeRepository(
+    NpgsqlDataSource dataSource,
+    FhirR4ValidationService fhirValidationService)
 {
     public async Task<ExternalLaboratoryIntakeReceipt> ReceiveAsync(
         ExternalLaboratorySourceAuthentication source,
@@ -27,6 +30,7 @@ public sealed class ExternalLaboratoryIntakeRepository(NpgsqlDataSource dataSour
         CancellationToken cancellationToken)
     {
         var messageId = NormalizeMessageId(sourceMessageId);
+        fhirValidationService.ValidateExternalLaboratoryBundle(payload);
         var bundle = ExternalLaboratoryFhirBundle.Parse(payload);
         var rawPayload = payload.GetRawText();
         var payloadHash = SHA256.HashData(Encoding.UTF8.GetBytes(rawPayload));
