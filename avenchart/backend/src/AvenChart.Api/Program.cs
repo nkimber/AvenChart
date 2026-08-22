@@ -173,6 +173,7 @@ builder.Services.AddScoped<ReferralRepository>();
 builder.Services.AddScoped<AuthorizationRepository>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<ExternalIdentityMappingRepository>();
+builder.Services.AddScoped<PatientPortalExternalIdentityMappingRepository>();
 builder.Services.AddScoped<LocalDevelopmentStaffIdentityAdapter>();
 builder.Services.AddScoped<OidcStaffIdentityAdapter>();
 builder.Services.AddScoped<TestOidcStaffIdentityAdapter>();
@@ -185,6 +186,18 @@ builder.Services.AddScoped<IStaffIdentityAdapter>(services =>
         : identityProvider.IsTestOidc
             ? services.GetRequiredService<TestOidcStaffIdentityAdapter>()
             : services.GetRequiredService<LocalDevelopmentStaffIdentityAdapter>();
+});
+builder.Services.AddScoped<LocalPatientPortalIdentityAdapter>();
+builder.Services.AddScoped<OidcPatientPortalIdentityAdapter>();
+builder.Services.AddScoped<TestOidcPatientPortalIdentityAdapter>();
+builder.Services.AddScoped<IPatientPortalIdentityAdapter>(services =>
+{
+    var identityProvider = services.GetRequiredService<IOptions<IdentityProviderOptions>>().Value;
+    return identityProvider.IsOidc
+        ? services.GetRequiredService<OidcPatientPortalIdentityAdapter>()
+        : identityProvider.IsTestOidc
+            ? services.GetRequiredService<TestOidcPatientPortalIdentityAdapter>()
+            : services.GetRequiredService<LocalPatientPortalIdentityAdapter>();
 });
 builder.Services.AddScoped<StaffAccessContextService>();
 builder.Services.AddScoped<PatientPortalRepository>();
@@ -376,6 +389,29 @@ app.Use(async (context, next) =>
 
     await next(context);
 });
+app.Use(async (context, next) =>
+{
+    // Keep all portal routes bound to the established server-side session
+    // contract. In external-identity modes, a validated bearer is exchanged
+    // for a token-bounded derived session; a legacy header is never honored.
+    var isPortalRequest = context.Request.Path.StartsWithSegments("/api/patient-portal");
+    var isPortalLogin = string.Equals(context.Request.Path.Value, "/api/patient-portal/login", StringComparison.OrdinalIgnoreCase);
+    if (isPortalRequest && !isPortalLogin)
+    {
+        var adapter = context.RequestServices.GetRequiredService<IPatientPortalIdentityAdapter>();
+        var sessionId = await adapter.ResolveSessionIdAsync(context, context.RequestAborted);
+        if (sessionId is { } resolvedSessionId)
+        {
+            context.Request.Headers[PatientPortalIdentityAdapterHelpers.SessionHeader] = resolvedSessionId.ToString("D");
+        }
+        else
+        {
+            context.Request.Headers.Remove(PatientPortalIdentityAdapterHelpers.SessionHeader);
+        }
+    }
+
+    await next(context);
+});
 app.UseRateLimiter();
 app.Use(async (context, next) =>
 {
@@ -558,9 +594,14 @@ var patientPortal = app.MapGroup("/api/patient-portal").WithTags("Patient Portal
 
 patientPortal.MapPost("/login", async (
         PatientPortalRepository repository,
+        IOptions<IdentityProviderOptions> identityProviderOptions,
         PatientPortalLoginRequest request,
         CancellationToken cancellationToken) =>
     {
+        if (!identityProviderOptions.Value.IsLocal)
+        {
+            return Results.NotFound();
+        }
         var response = await repository.LoginAsync(request, cancellationToken);
         return Results.Ok(response);
     })
@@ -7350,6 +7391,78 @@ administration.MapPost("/external-identity-mappings/{mappingId:guid}/deactivate"
         }
     })
     .WithName("DeactivateExternalIdentityMapping");
+
+administration.MapGet("/patient-portal-external-identity-mappings", async (
+        string? providerId,
+        PatientPortalExternalIdentityMappingRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Ok(await repository.GetMappingsAsync(providerId, cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["providerId"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("ListPatientPortalExternalIdentityMappings");
+
+administration.MapPost("/patient-portal-external-identity-mappings", async (
+        PatientPortalExternalIdentityMappingCreateRequest request,
+        PatientPortalExternalIdentityMappingRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mapping = await repository.CreateAsync(request, session.Username, cancellationToken);
+            return Results.Created($"/api/administration/patient-portal-external-identity-mappings/{mapping.MappingId}", mapping);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = [exception.Message]
+            });
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            return Results.Conflict(new { error = "An active portal mapping already exists for this provider subject or patient." });
+        }
+    })
+    .WithName("CreatePatientPortalExternalIdentityMapping");
+
+administration.MapPost("/patient-portal-external-identity-mappings/{mappingId:guid}/deactivate", async (
+        Guid mappingId,
+        PatientPortalExternalIdentityMappingDeactivateRequest request,
+        PatientPortalExternalIdentityMappingRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mapping = await repository.DeactivateAsync(mappingId, request, session.Username, cancellationToken);
+            return mapping is null
+                ? Results.Conflict(new { error = "The portal mapping does not exist or is already deactivated." })
+                : Results.Ok(mapping);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("DeactivatePatientPortalExternalIdentityMapping");
 
 var delegatedConfiguration = app.MapGroup("/api/configuration-delegation").WithTags("Configuration delegation");
 delegatedConfiguration.AddEndpointFilter(StaffAccessContextFilter("delegated-configuration"));

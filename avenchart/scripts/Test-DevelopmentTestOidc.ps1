@@ -52,6 +52,26 @@ try {
     $mappings = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/external-identity-mappings?providerId=test-oidc" -Headers $bearerHeaders -TimeoutSec 20
     $mapping = @($mappings | Where-Object { $_.providerId -eq 'test-oidc' -and $_.externalSubject -eq 'admin' -and $_.username -eq 'admin' -and $_.active } | Select-Object -First 1)
     Add-Check "Test OIDC token resolves through an explicit active provider-subject mapping" ($mapping.Count -eq 1) @{ mappingId = if ($mapping.Count -eq 1) { $mapping[0].mappingId } else { $null } }
+    $portalMappings = @(Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/patient-portal-external-identity-mappings?providerId=test-oidc" -Headers $bearerHeaders -TimeoutSec 20)
+    $portalMapping = @($portalMappings | Where-Object { $_.providerId -eq 'test-oidc' -and $_.externalSubject -eq 'admin' -and $_.active } | Select-Object -First 1)
+    if ($portalMapping.Count -eq 0) {
+        $portalMapping = @(
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/patient-portal-external-identity-mappings" -Method Post -Headers $bearerHeaders -ContentType 'application/json' `
+                -Body (@{ providerId = 'test-oidc'; externalSubject = 'admin'; patientId = 'MOD-PAT-0001' } | ConvertTo-Json) -TimeoutSec 20)
+    }
+    $portalSession = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patient-portal/session" -Headers $bearerHeaders -TimeoutSec 20
+    Add-Check "Test OIDC token resolves to the governed patient portal mapping" (
+        $portalMapping.Count -eq 1 -and
+        $portalSession.authenticated -and
+        $portalSession.canonicalId -eq $portalMapping[0].patientId -and
+        $portalSession.sessionSource -eq 'oidc:test-oidc'
+    ) @{ mappingId = $portalMapping[0].mappingId; patientId = $portalSession.canonicalId; source = $portalSession.sessionSource }
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/patient-portal/session" -Method Delete -Headers $bearerHeaders -TimeoutSec 20 | Out-Null
+    $loggedOutPortalSession = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patient-portal/session" -Headers $bearerHeaders -TimeoutSec 20
+    Add-Check "Portal logout prevents the same bearer from recreating its derived session" (-not $loggedOutPortalSession.authenticated) @{ authenticatedAfterLogout = $loggedOutPortalSession.authenticated }
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/patient-portal-external-identity-mappings/$($portalMapping[0].mappingId)/deactivate" -Method Post -Headers $bearerHeaders -ContentType 'application/json' `
+        -Body (@{ reason = 'Synthetic development test OIDC portal mapping cleanup.' } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
+    $revokedPortalSession = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patient-portal/session" -Headers $bearerHeaders -TimeoutSec 20
     $access = Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/access-context" -Headers $bearerHeaders -TimeoutSec 20
     $facility = @($access.facilities | Where-Object { $_.isDefault } | Select-Object -First 1)
     if ($facility.Count -ne 1 -or @($access.purposes).Count -eq 0) { throw 'The mapped test OIDC principal has no usable facility/purpose context.' }
@@ -65,7 +85,13 @@ try {
 
     $invalidStatus = Get-HttpStatus "$ApiBaseUrl/api/auth/session" 'Get' @{ Authorization = 'Bearer not-a-jwt' }
     $localLoginStatus = Get-HttpStatus "$ApiBaseUrl/api/auth/login" 'Post' @{} @{ username = 'admin'; password = 'pass' }
-    Add-Check "Invalid bearer and disabled local-login boundary fail closed" ($invalidStatus -eq 401 -and $localLoginStatus -eq 404) @{ invalidBearer = $invalidStatus; localLogin = $localLoginStatus }
+    $localPortalLoginStatus = Get-HttpStatus "$ApiBaseUrl/api/patient-portal/login" 'Post' @{} @{ username = 'mod-pat-0001@example.test'; password = 'pass' }
+    Add-Check "Revoked portal mapping, invalid bearer, and disabled local-login boundaries fail closed" (
+        -not $revokedPortalSession.authenticated -and
+        $invalidStatus -eq 401 -and
+        $localLoginStatus -eq 404 -and
+        $localPortalLoginStatus -eq 404
+    ) @{ revokedPortalAuthenticated = $revokedPortalSession.authenticated; invalidBearer = $invalidStatus; localLogin = $localLoginStatus; localPortalLogin = $localPortalLoginStatus }
 }
 catch {
     Add-Check "Unhandled development test OIDC verification error" $false $_.Exception.Message

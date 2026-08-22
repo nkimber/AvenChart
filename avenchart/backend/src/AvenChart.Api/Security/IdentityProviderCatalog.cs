@@ -39,12 +39,12 @@ public static class IdentityProviderCatalog
             ProductionApproved: false),
         new(
             "portal",
-            "local-direct-session",
-            "patient-portal repository and X-AvenChart-Patient-Portal-Session",
+            "local-adapter-active",
+            $"{nameof(IPatientPortalIdentityAdapter)} -> {nameof(LocalPatientPortalIdentityAdapter)}",
             "issued, active, expired, disabled-account, and logout-ended local sessions",
             "session is constrained to its canonical patient record",
-            "portal routes remain coupled to the local repository and are not provider-adapter ready",
-            RoutedThroughAdapter: false,
+            "portal routes resolve through a provider-neutral adapter before their server-owned session binding",
+            RoutedThroughAdapter: true,
             ProductionApproved: false),
         new(
             "service",
@@ -134,9 +134,9 @@ public static class IdentityProviderCatalog
             BlocksProduction: true),
         new(
             "portal-and-service-adapters",
-            "Move portal identities and any service identities behind approved adapter contracts.",
+            "Approve the portal-provider configuration and move any service identities behind an approved adapter contract.",
             "Security and integration owners",
-            "not-implemented",
+            "portal adapter implemented; service adapter not implemented",
             BlocksProduction: true),
         new(
             "emergency-identity-decision",
@@ -187,14 +187,22 @@ public static class IdentityProviderCatalog
                     EnforcesDevicePolicy: false,
                     EnforcesFacilityScope: true)
                 : Adapter;
-        var identityTypes = IdentityTypes.Select(identityType => identityType.IdentityType == "staff"
-            ? identityType with
+        var identityTypes = IdentityTypes.Select(identityType => identityType.IdentityType switch
+        {
+            "staff" => identityType with
             {
                 State = options.IsOidc ? "external-oidc-configured" : options.IsTestOidc ? "development-test-oidc" : identityType.State,
                 ResolutionPath = options.IsOidc ? $"{nameof(IStaffIdentityAdapter)} -> {OidcStaffIdentityAdapter.Id}" : options.IsTestOidc ? $"{nameof(IStaffIdentityAdapter)} -> {TestOidcStaffIdentityAdapter.Id}" : identityType.ResolutionPath,
                 Evidence = options.IsTestOidc && !testIdentityProviderAvailable ? "Test OIDC is configured but its development-only issuer endpoints are unavailable outside Development." : identityType.Evidence,
-            }
-            : identityType).ToArray();
+            },
+            "portal" => identityType with
+            {
+                State = options.IsOidc ? "external-oidc-configured" : options.IsTestOidc ? "development-test-oidc" : identityType.State,
+                ResolutionPath = options.IsOidc ? $"{nameof(IPatientPortalIdentityAdapter)} -> {nameof(OidcPatientPortalIdentityAdapter)}" : options.IsTestOidc ? $"{nameof(IPatientPortalIdentityAdapter)} -> {nameof(TestOidcPatientPortalIdentityAdapter)}" : identityType.ResolutionPath,
+                Evidence = options.IsOidc ? "Validated bearer subjects resolve only through active provider-to-patient mappings and token-bounded server sessions." : options.IsTestOidc && !testIdentityProviderAvailable ? "Test OIDC is configured but its development-only issuer endpoints are unavailable outside Development." : identityType.Evidence,
+            },
+            _ => identityType
+        }).ToArray();
         return new IdentityProviderReadinessResponse(
             Revision,
             options.IsOidc ? "external-oidc-configured-owner-gated" : options.IsTestOidc ? "development-test-oidc" : "local-foundation-owner-gated",

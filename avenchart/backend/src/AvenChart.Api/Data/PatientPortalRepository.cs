@@ -159,6 +159,122 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: SessionSource);
     }
 
+    /// <summary>
+    /// Resolves a signature-, issuer-, audience-, and lifetime-validated OIDC
+    /// subject through an explicit portal mapping. The browser never supplies a
+    /// patient identifier. Only the SHA-256 fingerprint of the bearer is held
+    /// in the derived, token-bounded portal session so logout can prevent that
+    /// same bearer from silently creating a replacement session.
+    /// </summary>
+    public async Task<Guid?> ResolveExternalSessionAsync(
+        string providerId,
+        string externalSubject,
+        DateTimeOffset expiresAt,
+        byte[] tokenFingerprint,
+        CancellationToken cancellationToken)
+    {
+        var normalizedProviderId = providerId?.Trim().ToLowerInvariant();
+        var normalizedSubject = externalSubject?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedProviderId) || normalizedProviderId.Length > 80 ||
+            string.IsNullOrWhiteSpace(normalizedSubject) || normalizedSubject.Length > 512 ||
+            normalizedSubject != externalSubject || normalizedSubject.Any(char.IsControl) ||
+            tokenFingerprint is null || tokenFingerprint.Length != 32 || expiresAt <= DateTimeOffset.UtcNow)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        Guid mappingId;
+        PatientPortalAccountRow account;
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                  mapping.mapping_id,
+                  p.canonical_id,
+                  p.legacy_pid,
+                  p.pubpid,
+                  p.first_name,
+                  p.last_name,
+                  p.portal_enabled,
+                  ppa.portal_username,
+                  ppa.portal_login_username,
+                  ppa.password_salt,
+                  ppa.password_hash,
+                  ppa.password_status,
+                  ppa.one_time_token
+                from patient_portal_external_identity_mappings mapping
+                join patients p on p.canonical_id=mapping.patient_id
+                join patient_portal_accounts ppa on ppa.patient_id=p.canonical_id
+                where mapping.provider_id=@providerId
+                  and mapping.external_subject=@externalSubject
+                  and mapping.active=true
+                  and p.portal_enabled=true
+                  and nullif(btrim(ppa.portal_username),'') is not null
+                  and nullif(btrim(ppa.portal_login_username),'') is not null
+                limit 1;
+                """;
+            command.Parameters.AddWithValue("providerId", normalizedProviderId);
+            command.Parameters.AddWithValue("externalSubject", normalizedSubject);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            mappingId = reader.GetGuid(reader.GetOrdinal("mapping_id"));
+            account = ReadPortalAccount(reader);
+        }
+
+        await using (var ended = connection.CreateCommand())
+        {
+            ended.CommandText = """
+                select exists(
+                  select 1
+                  from patient_portal_sessions
+                  where external_identity_mapping_id=@mappingId
+                    and external_token_fingerprint=@tokenFingerprint
+                    and ended_at is not null);
+                """;
+            ended.Parameters.AddWithValue("mappingId", mappingId);
+            ended.Parameters.AddWithValue("tokenFingerprint", tokenFingerprint);
+            if (await ended.ExecuteScalarAsync(cancellationToken) is true)
+            {
+                return null;
+            }
+        }
+
+        await using (var existing = connection.CreateCommand())
+        {
+            existing.CommandText = """
+                select id
+                from patient_portal_sessions
+                where external_identity_mapping_id=@mappingId
+                  and external_token_fingerprint=@tokenFingerprint
+                  and ended_at is null
+                  and expires_at > now()
+                order by created_at desc
+                limit 1;
+                """;
+            existing.Parameters.AddWithValue("mappingId", mappingId);
+            existing.Parameters.AddWithValue("tokenFingerprint", tokenFingerprint);
+            if (await existing.ExecuteScalarAsync(cancellationToken) is Guid existingSessionId)
+            {
+                return existingSessionId;
+            }
+        }
+
+        var session = await CreateSessionAsync(
+            connection,
+            account,
+            cancellationToken,
+            expiresAt,
+            $"oidc:{normalizedProviderId}",
+            mappingId,
+            tokenFingerprint);
+        return session.SessionId;
+    }
+
     public async Task<PatientPortalSessionResponse> GetCurrentSessionAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -174,6 +290,15 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
               and patient.portal_enabled = true
               and session.ended_at is null
               and session.expires_at > now()
+              and (
+                session.external_identity_mapping_id is null
+                or exists (
+                  select 1
+                  from patient_portal_external_identity_mappings mapping
+                  where mapping.mapping_id=session.external_identity_mapping_id
+                    and mapping.active=true
+                )
+              )
             returning session.id, session.patient_id, session.pid, session.portal_username, session.portal_login_username,
                       session.created_at, session.last_seen_at, session.expires_at, session.ended_at, session.session_source;
             """;
@@ -6461,15 +6586,22 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private static async Task<PatientPortalSessionRow> CreateSessionAsync(
         NpgsqlConnection connection,
         PatientPortalAccountRow account,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTimeOffset? explicitExpiresAt = null,
+        string? sessionSource = null,
+        Guid? externalIdentityMappingId = null,
+        byte[]? externalTokenFingerprint = null)
     {
+        var expiresAt = explicitExpiresAt ?? DateTimeOffset.UtcNow.AddHours(8);
         var sessionId = Guid.NewGuid();
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into patient_portal_sessions
-              (id, patient_id, pid, portal_username, portal_login_username, created_at, last_seen_at, expires_at, session_source)
+              (id, patient_id, pid, portal_username, portal_login_username, created_at, last_seen_at, expires_at, session_source,
+               external_identity_mapping_id, external_token_fingerprint)
             values
-              (@id, @patient_id, @pid, @portal_username, @portal_login_username, now(), now(), now() + interval '8 hours', @session_source)
+              (@id, @patient_id, @pid, @portal_username, @portal_login_username, now(), now(), @expires_at, @session_source,
+               @external_identity_mapping_id, @external_token_fingerprint)
             returning id, created_at, expires_at;
             """;
         command.Parameters.AddWithValue("id", sessionId);
@@ -6477,7 +6609,10 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("pid", account.LegacyPid);
         command.Parameters.AddWithValue("portal_username", account.PortalUsername);
         command.Parameters.AddWithValue("portal_login_username", account.PortalLoginUsername);
-        command.Parameters.AddWithValue("session_source", SessionSource);
+        command.Parameters.AddWithValue("expires_at", expiresAt);
+        command.Parameters.AddWithValue("session_source", sessionSource ?? SessionSource);
+        command.Parameters.AddWithValue("external_identity_mapping_id", (object?)externalIdentityMappingId ?? DBNull.Value);
+        command.Parameters.AddWithValue("external_token_fingerprint", (object?)externalTokenFingerprint ?? DBNull.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

@@ -25,3 +25,27 @@ public sealed record ExternalIdentityMappingCreateRequest(
     string Username);
 
 public sealed record ExternalIdentityMappingDeactivateRequest(string Reason);
+
+/// <summary>
+/// Administrator-visible binding between a provider-scoped OIDC subject and a
+/// single server-owned patient-portal identity. The subject cannot select a
+/// patient through a request parameter.
+/// </summary>
+public sealed record PatientPortalExternalIdentityMappingItem(
+    Guid MappingId,
+    string ProviderId,
+    string ExternalSubject,
+    string PatientId,
+    bool Active,
+    string CreatedAt,
+    string CreatedBy,
+    string? DeactivatedAt,
+    string? DeactivatedBy,
+    string? DeactivationReason);
+
+public sealed record PatientPortalExternalIdentityMappingCreateRequest(
+    string ProviderId,
+    string ExternalSubject,
+    string PatientId);
+
+public sealed record PatientPortalExternalIdentityMappingDeactivateRequest(string Reason);
