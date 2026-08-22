@@ -13,6 +13,7 @@ export type ApiProblemDetails = {
   detail?: string;
   error?: string;
   status?: number;
+  targetPatientId?: string;
   errors?: Record<string, string[]>;
   traceId?: string;
 };

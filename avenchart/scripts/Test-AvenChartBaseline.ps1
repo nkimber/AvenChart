@@ -2284,6 +2284,35 @@ try {
     $mergeExecution = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/merge-executions" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ auditId = $mergeAudit.auditId } | ConvertTo-Json -Depth 5) -TimeoutSec 20
     $mergeTargetAfterExecution = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$mergeTargetPubpid" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $movedCoverage = @($mergeTargetAfterExecution.insurance) | Where-Object { $_.policyNumber -eq $mergePolicyNumber } | Select-Object -First 1
+
+    $mergedSourceChartStatus = $null
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/patients/$mergeSourcePubpid" -Headers (Get-AdministrationHeaders) -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $mergedSourceChartStatus = [int]$_.Exception.Response.StatusCode }
+    }
+    $mergedSourceEncounterStatus = $null
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/encounters" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{
+            patientId = $mergeSourcePubpid
+            providerId = $null
+            dateTime = "2026-06-18T09:00:00"
+            reason = "Merged-source mutation guard smoke check"
+            facilityId = $null
+            billingFacilityId = $null
+            sensitivity = $null
+            referralSource = $null
+            externalId = $null
+            posCode = $null
+            billingNote = $null
+            sourceAppointmentId = $null
+        } | ConvertTo-Json -Depth 5) -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $mergedSourceEncounterStatus = [int]$_.Exception.Response.StatusCode }
+    }
+
     $mergeRollback = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/merge-executions/rollback" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ executionId = $mergeExecution.executionId } | ConvertTo-Json -Depth 5) -TimeoutSec 20
     $mergeSourceAfterRollback = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$mergeSourcePubpid" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $restoredCoverage = @($mergeSourceAfterRollback.insurance) | Where-Object { $_.policyNumber -eq $mergePolicyNumber } | Select-Object -First 1
@@ -2293,6 +2322,8 @@ try {
         -and $mergeExecution.status -eq "Executed" `
         -and $mergeExecution.movedRecords.tableName -contains "insurance_records" `
         -and $null -ne $movedCoverage `
+        -and $mergedSourceChartStatus -eq 410 `
+        -and $mergedSourceEncounterStatus -eq 400 `
         -and $mergeRollback.status -eq "RolledBack" `
         -and $null -ne $restoredCoverage
 
@@ -2302,6 +2333,8 @@ try {
         executedStatus = $mergeExecution.status
         rollbackStatus = $mergeRollback.status
         movedCoverage = $null -ne $movedCoverage
+        mergedSourceChartStatus = $mergedSourceChartStatus
+        mergedSourceEncounterStatus = $mergedSourceEncounterStatus
         restoredCoverage = $null -ne $restoredCoverage
     }
 }

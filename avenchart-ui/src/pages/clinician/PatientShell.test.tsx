@@ -5,7 +5,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getPatientChartSummary, type PatientChartSummary } from '../../api.ts'
+import { ApiRequestError, getPatientChartSummary, type PatientChartSummary } from '../../api.ts'
 import PatientShell from './PatientShell.tsx'
 
 vi.mock('../../api.ts', async (importOriginal) => {
@@ -58,9 +58,9 @@ function ClinicianTestOutlet() {
   )
 }
 
-function renderPatientShell() {
+function renderPatientShell(initialPath = '/clinician/patients/patient-a/summary') {
   return render(
-    <MemoryRouter initialEntries={['/clinician/patients/patient-a/summary']}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
         <Route path="/clinician" element={<ClinicianTestOutlet />}>
           <Route path="patients/:patientId" element={<PatientShell />}>
@@ -114,5 +114,27 @@ describe('PatientShell', () => {
     resolveA(patient('patient-a', 'Alpha Patient'))
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Alpha Patient' })).not.toBeInTheDocument())
     expect(screen.getByRole('heading', { name: 'Beta Patient' })).toBeInTheDocument()
+  })
+
+  it('redirects a merged chart link to its surviving patient chart', async () => {
+    vi.mocked(getPatientChartSummary).mockImplementation((_sessionId, patientId) => {
+      if (patientId === 'merged-patient') {
+        return Promise.reject(new ApiRequestError(
+          'This chart is no longer independently available.',
+          410,
+          { targetPatientId: 'surviving-patient' },
+        ))
+      }
+      return Promise.resolve(patient('surviving-patient', 'Surviving Patient'))
+    })
+
+    renderPatientShell('/clinician/patients/merged-patient/summary')
+
+    expect(await screen.findByRole('heading', { name: 'Surviving Patient' })).toBeInTheDocument()
+    expect(getPatientChartSummary).toHaveBeenCalledWith(
+      'staff-session',
+      'surviving-patient',
+      expect.any(AbortSignal),
+    )
   })
 })

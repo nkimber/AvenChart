@@ -235,8 +235,9 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 order by e.encounter_date desc, e.encounter desc
                 limit 1
             ) latest_enc on true
-            where lower(p.canonical_id) = lower(@canonicalId)
-               or lower(p.pubpid) = lower(@canonicalId);
+            where (lower(p.canonical_id) = lower(@canonicalId)
+                   or lower(p.pubpid) = lower(@canonicalId))
+              and p.merged_into_patient_id is null;
             """;
         command.Parameters.AddWithValue("canonicalId", canonicalId);
         command.Parameters.AddWithValue("baseDate", metadata.BaseDate);
@@ -339,6 +340,25 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             5,
             cancellationToken);
         return summary with { CareTeam = careTeam, Insurance = insurance, History = history, DuplicateCandidates = duplicateCandidates };
+    }
+
+    public async Task<string?> GetMergedIntoPatientIdAsync(
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select merged_into_patient_id
+            from patients
+            where (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
+              and merged_into_patient_id is not null
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        return (string?)await command.ExecuteScalarAsync(cancellationToken);
     }
 
     public async Task<PatientProviderAssignmentOptionsResponse> GetProviderAssignmentOptionsAsync(
@@ -1294,9 +1314,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         patientCommand.CommandText = """
             select canonical_id, legacy_pid, deceased_date, deceased_reason
             from patients
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
+            where (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
+              and merged_into_patient_id is null
             limit 1
             for update;
             """;
@@ -1395,9 +1416,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         patientCommand.CommandText = """
             select canonical_id, legacy_pid, deceased_date, deceased_reason
             from patients
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
+            where (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
+              and merged_into_patient_id is null
             limit 1;
             """;
         patientCommand.Parameters.AddWithValue("patientId", patientId);
@@ -1461,9 +1483,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         patientCommand.CommandText = """
             select canonical_id, legacy_pid, lifecycle_status, retired_at, retired_by, retirement_reason
             from patients
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
+            where (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
+              and merged_into_patient_id is null
             limit 1;
             """;
         patientCommand.Parameters.AddWithValue("patientId", patientId);
@@ -1551,9 +1574,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         patientCommand.CommandText = """
             select canonical_id, legacy_pid, lifecycle_status, deceased_date, merged_into_patient_id
             from patients
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
+            where (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
+              and merged_into_patient_id is null
             limit 1
             for update;
             """;
@@ -1643,9 +1667,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             with matched_patient as (
                 select canonical_id
                 from patients
-                where lower(canonical_id) = lower(@patientId)
-                   or lower(pubpid) = lower(@patientId)
-                   or legacy_pid::text = @patientId
+                where (lower(canonical_id) = lower(@patientId)
+                       or lower(pubpid) = lower(@patientId)
+                       or legacy_pid::text = @patientId)
+                  and merged_into_patient_id is null
                 limit 1
             )
             update patient_portal_accounts
@@ -1679,9 +1704,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             with matched_patient as (
                 select canonical_id
                 from patients
-                where lower(canonical_id) = lower(@patientId)
-                   or lower(pubpid) = lower(@patientId)
-                   or legacy_pid::text = @patientId
+                where (lower(canonical_id) = lower(@patientId)
+                       or lower(pubpid) = lower(@patientId)
+                       or legacy_pid::text = @patientId)
+                  and merged_into_patient_id is null
                 limit 1
             ), updated_patient as (
                 update patients
@@ -1728,9 +1754,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 guardian_postal_code = @guardianPostalCode,
                 guardian_country = @guardianCountry,
                 guardian_work_phone = @guardianWorkPhone
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
+            where (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
+              and merged_into_patient_id is null
             returning canonical_id;
             """;
         command.Parameters.AddWithValue("patientId", patientId);
@@ -1762,9 +1789,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             with matched_patient as (
                 select canonical_id, legacy_pid
                 from patients
-                where lower(canonical_id) = lower(@patientId)
-                   or lower(pubpid) = lower(@patientId)
-                   or legacy_pid::text = @patientId
+                where (lower(canonical_id) = lower(@patientId)
+                       or lower(pubpid) = lower(@patientId)
+                       or legacy_pid::text = @patientId)
+                  and merged_into_patient_id is null
                 limit 1
             ),
             upserted as (
@@ -1844,9 +1872,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 from patients p
                 left join staff s on s.id = p.provider_id
                 left join facilities f on f.id = s.facility_id
-                where lower(p.canonical_id) = lower(@patientId)
-                   or lower(p.pubpid) = lower(@patientId)
-                   or p.legacy_pid::text = @patientId
+                where (lower(p.canonical_id) = lower(@patientId)
+                       or lower(p.pubpid) = lower(@patientId)
+                       or p.legacy_pid::text = @patientId)
+                  and p.merged_into_patient_id is null
                 limit 1
                 for update of p;
                 """;
@@ -2004,9 +2033,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 from patients p
                 left join staff s on s.id = p.provider_id
                 left join facilities f on f.id = s.facility_id
-                where lower(p.canonical_id) = lower(@patientId)
-                   or lower(p.pubpid) = lower(@patientId)
-                   or p.legacy_pid::text = @patientId
+                where (lower(p.canonical_id) = lower(@patientId)
+                       or lower(p.pubpid) = lower(@patientId)
+                       or p.legacy_pid::text = @patientId)
+                  and p.merged_into_patient_id is null
                 limit 1;
                 """;
             command.Parameters.AddWithValue("patientId", patientId);
@@ -2581,9 +2611,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 hipaa_allow_sms,
                 hipaa_allow_email
             from patients
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
+            where (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
+              and merged_into_patient_id is null
             limit 1
             for update;
             """;
@@ -2671,8 +2702,11 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 subscriber_employer_state,
                 subscriber_employer_postal_code,
                 subscriber_employer_country
-            from insurance_records
-            where id = @insuranceId
+            from insurance_records insurance
+            join patients patient
+              on patient.canonical_id = insurance.patient_id
+             and patient.merged_into_patient_id is null
+            where insurance.id = @insuranceId
             for update;
             """;
         command.Parameters.AddWithValue("insuranceId", insuranceId);
@@ -2911,9 +2945,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             select canonical_id, legacy_pid
             from patients
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
+            where (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
+              and merged_into_patient_id is null
             limit 1;
             """;
         command.Parameters.AddWithValue("patientId", patientId);

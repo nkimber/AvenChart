@@ -268,10 +268,14 @@ public sealed class EncounterRepository(
             with selected_patient as (
                 select canonical_id, legacy_pid, provider_id as patient_provider_id, facility_id as patient_facility_id
                 from patients
-                where lower(canonical_id) = @patientId
-                   or lower(pubpid) = @patientId
-                   or legacy_pid::text = @patientId
+                where (lower(canonical_id) = @patientId
+                       or lower(pubpid) = @patientId
+                       or legacy_pid::text = @patientId)
+                  and merged_into_patient_id is null
+                  and coalesce(lower(lifecycle_status), 'active') = 'active'
+                  and deceased_date is null
                 limit 1
+                for update
             ),
             next_id as (
                 select nextval('encounters_id_seq')::integer as id

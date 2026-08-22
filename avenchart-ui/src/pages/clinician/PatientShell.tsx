@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { Activity, CalendarClock, CheckSquare, ClipboardList, FileCheck2, FileText, FlaskConical, FolderOpen, GitCommitHorizontal, Mail, Printer, Send, UserCircle, X } from 'lucide-react'
-import { getPatientChartSummary, type PatientChartSummary } from '../../api.ts'
+import { ApiRequestError, getPatientChartSummary, type PatientChartSummary } from '../../api.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
 export type PatientOutletContext = {
@@ -51,10 +51,19 @@ export default function PatientShell() {
       setLoading(false)
     } catch (err) {
       if (signal?.aborted) return
+      const mergedIntoPatientId = err instanceof ApiRequestError
+        && err.status === 410
+        && typeof err.problem?.targetPatientId === 'string'
+        ? err.problem.targetPatientId
+        : null
+      if (mergedIntoPatientId) {
+        navigate(`/clinician/patients/${encodeURIComponent(mergedIntoPatientId)}/summary`, { replace: true })
+        return
+      }
       setError(err instanceof Error ? err.message : 'Could not load patient.')
       setLoading(false)
     }
-  }, [patientId, session.sessionId])
+  }, [navigate, patientId, session.sessionId])
 
   useEffect(() => {
     const controller = new AbortController()

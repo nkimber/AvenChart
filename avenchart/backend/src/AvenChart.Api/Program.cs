@@ -1731,7 +1731,22 @@ patients.MapGet("/{canonicalId}", async (
         CancellationToken cancellationToken) =>
     {
         var patient = await repository.GetChartSummaryAsync(canonicalId, cancellationToken);
-        return patient is null ? Results.NotFound() : Results.Ok(patient);
+        if (patient is not null)
+        {
+            return Results.Ok(patient);
+        }
+
+        var mergedIntoPatientId = await repository.GetMergedIntoPatientIdAsync(canonicalId, cancellationToken);
+        return string.IsNullOrWhiteSpace(mergedIntoPatientId)
+            ? Results.NotFound()
+            : Results.Problem(
+                statusCode: StatusCodes.Status410Gone,
+                title: "Patient chart has been merged",
+                detail: "This chart is no longer independently available. Continue with the surviving patient chart.",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["targetPatientId"] = mergedIntoPatientId
+                });
     })
     .WithName("GetPatientChartSummary");
 patients.MapGet("/{patientId}/xml-export",async(string patientId,PatientXmlExchangeRepository repository,CancellationToken ct)=>{var xml=await repository.ExportAsync(patientId,ct);return xml is null?Results.NotFound():Results.File(Encoding.UTF8.GetBytes(xml),"application/xml",$"avenchart-patient-{patientId}.xml");}).WithName("ExportPatientXml");
