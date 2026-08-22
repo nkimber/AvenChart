@@ -938,16 +938,17 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        if (await IsEncounterLockedAsync(connection, encounter.Encounter, cancellationToken))
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        if (!await LockEncounterAndEnsureUnlockedAsync(connection, transaction, encounter.Encounter, cancellationToken))
         {
-            throw new EncounterLockConflictException(
-                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+            return null;
         }
 
-        var id = await GetNextIntIdAsync(connection, "lab_orders", "id", cancellationToken);
+        var id = await GetNextIntIdAsync(connection, "lab_orders", "id", transaction, cancellationToken);
         var providerId = request.ProviderId ?? encounter.ProviderId;
         var labId = request.LabId;
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             insert into lab_orders
                 (id, patient_id, pid, encounter, provider_id, lab_id, order_date, code, name,
@@ -971,6 +972,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("instructions", request.Instructions?.Trim() ?? string.Empty);
         command.Parameters.AddWithValue("status", request.Status.Trim());
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(patient.PatientId, cancellationToken);
         return detail is null ? null : new ProcedureMutationResponse(id, detail);
@@ -986,21 +988,18 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        await using (var lockConnection = await dataSource.OpenConnectionAsync(cancellationToken))
-        {
-            var order = await GetOrderMutationContextAsync(lockConnection, orderId, cancellationToken);
-            if (order is null) return null;
-            if (await IsEncounterLockedAsync(lockConnection, order.Encounter, cancellationToken))
-            {
-                throw new EncounterLockConflictException(
-                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
-            }
-        }
-
-        string? patientId = null;
+        string? patientId;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
-        await using (var command = connection.CreateCommand())
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
         {
+            var order = await GetOrderMutationContextAsync(connection, orderId, cancellationToken);
+            if (order is null || !await LockEncounterAndEnsureUnlockedAsync(connection, transaction, order.Encounter, cancellationToken))
+            {
+                return null;
+            }
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
             command.CommandText = """
                 update lab_orders
                 set order_status = @status
@@ -1009,13 +1008,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 """;
             command.Parameters.AddWithValue("id", orderId);
             command.Parameters.AddWithValue("status", request.Status.Trim());
-            var result = await command.ExecuteScalarAsync(cancellationToken);
-            patientId = result as string;
-        }
+            patientId = await command.ExecuteScalarAsync(cancellationToken) as string;
+            if (patientId is null)
+            {
+                return null;
+            }
 
-        if (patientId is null)
-        {
-            return null;
+            await transaction.CommitAsync(cancellationToken);
         }
 
         var detail = await GetForPatientAsync(patientId, cancellationToken);
@@ -1032,17 +1031,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        await using (var lockConnection = await dataSource.OpenConnectionAsync(cancellationToken))
-        {
-            var order = await GetOrderMutationContextAsync(lockConnection, orderId, cancellationToken);
-            if (order is null) return null;
-            if (await IsEncounterLockedAsync(lockConnection, order.Encounter, cancellationToken))
-            {
-                throw new EncounterLockConflictException(
-                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
-            }
-        }
-
         var transmittedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
         if (!string.IsNullOrWhiteSpace(request.TransmittedAt))
         {
@@ -1054,10 +1042,18 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             transmittedAt = DateTime.SpecifyKind(transmittedAt, DateTimeKind.Unspecified);
         }
 
-        string? patientId = null;
+        string? patientId;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
-        await using (var command = connection.CreateCommand())
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
         {
+            var order = await GetOrderMutationContextAsync(connection, orderId, cancellationToken);
+            if (order is null || !await LockEncounterAndEnsureUnlockedAsync(connection, transaction, order.Encounter, cancellationToken))
+            {
+                return null;
+            }
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
             command.CommandText = """
                 update lab_orders lo
                 set date_transmitted = @transmittedAt
@@ -1072,13 +1068,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 """;
             command.Parameters.AddWithValue("id", orderId);
             command.Parameters.Add("transmittedAt", NpgsqlDbType.Timestamp).Value = transmittedAt;
-            var result = await command.ExecuteScalarAsync(cancellationToken);
-            patientId = result as string;
-        }
+            patientId = await command.ExecuteScalarAsync(cancellationToken) as string;
+            if (patientId is null)
+            {
+                return null;
+            }
 
-        if (patientId is null)
-        {
-            return null;
+            await transaction.CommitAsync(cancellationToken);
         }
 
         var detail = await GetForPatientAsync(patientId, cancellationToken);
@@ -1102,21 +1098,18 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        await using (var lockConnection = await dataSource.OpenConnectionAsync(cancellationToken))
-        {
-            var order = await GetOrderMutationContextAsync(lockConnection, orderId, cancellationToken);
-            if (order is null) return null;
-            if (await IsEncounterLockedAsync(lockConnection, order.Encounter, cancellationToken))
-            {
-                throw new EncounterLockConflictException(
-                    "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
-            }
-        }
-
-        string? patientId = null;
+        string? patientId;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
-        await using (var command = connection.CreateCommand())
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
         {
+            var order = await GetOrderMutationContextAsync(connection, orderId, cancellationToken);
+            if (order is null || !await LockEncounterAndEnsureUnlockedAsync(connection, transaction, order.Encounter, cancellationToken))
+            {
+                return null;
+            }
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
             command.CommandText = """
                 update lab_orders
                 set order_date = @orderDate,
@@ -1139,17 +1132,55 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             command.Parameters.AddWithValue("procedureType", request.ProcedureType.Trim());
             command.Parameters.AddWithValue("instructions", request.Instructions?.Trim() ?? string.Empty);
             command.Parameters.AddWithValue("status", request.Status.Trim());
-            var result = await command.ExecuteScalarAsync(cancellationToken);
-            patientId = result as string;
-        }
+            patientId = await command.ExecuteScalarAsync(cancellationToken) as string;
+            if (patientId is null)
+            {
+                return null;
+            }
 
-        if (patientId is null)
-        {
-            return null;
+            await transaction.CommitAsync(cancellationToken);
         }
 
         var detail = await GetForPatientAsync(patientId, cancellationToken);
         return detail is null ? null : new ProcedureMutationResponse(orderId, detail);
+    }
+
+    /*
+     * A transaction that mutates an encounter-bound order must hold the same
+     * encounter row that SignAsync locks.  This replaces the former
+     * check-on-one-connection / write-on-another-connection pattern.
+     */
+    private static async Task<bool> LockEncounterAndEnsureUnlockedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select exists (
+                select 1
+                from encounter_signatures signature
+                where signature.encounter = current_encounter.encounter
+                  and signature.is_lock) as is_locked
+            from encounters current_encounter
+            where current_encounter.encounter = @encounter
+            for update;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return false;
+        }
+
+        if (reader.GetBoolean(reader.GetOrdinal("is_locked")))
+        {
+            throw new EncounterLockConflictException(
+                "This encounter has a locking signature. Add clinical changes through the governed amendment workflow.");
+        }
+        return true;
     }
 
     public async Task<ProcedureMutationResponse?> CreateReportAsync(
@@ -2443,17 +2474,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return new ProcedureEncounterMutationContext(
             Encounter: reader.GetInt32(reader.GetOrdinal("encounter")),
             ProviderId: ReadNullableInt(reader, "provider_id"));
-    }
-
-    private static async Task<bool> IsEncounterLockedAsync(
-        NpgsqlConnection connection,
-        int encounter,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = "select count(*) from encounter_signatures where encounter = @encounter and is_lock;";
-        command.Parameters.AddWithValue("encounter", encounter);
-        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 0) > 0;
     }
 
     private static async Task<ProcedureOrderMutationContext?> GetOrderMutationContextAsync(
