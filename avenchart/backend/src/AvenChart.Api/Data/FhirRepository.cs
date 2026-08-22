@@ -12,12 +12,16 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
 {
     private const int MaximumSearchLimit = 100;
 
-    public async Task<FhirPatientResource?> GetPatientAsync(string id, CancellationToken cancellationToken)
+    public async Task<FhirPatientResource?> GetPatientAsync(
+        string id,
+        int facilityId,
+        CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = PatientSelectSql + " where p.canonical_id = @id or p.pubpid = @id limit 1;";
+        command.CommandText = PatientSelectSql + " where p.facility_id = @facility and (p.canonical_id = @id or p.pubpid = @id) limit 1;";
         command.Parameters.AddWithValue("id", id.Trim());
+        AddFacilityParameter(command, facilityId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadPatient(reader) : null;
     }
@@ -28,6 +32,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         int? count,
         int? page,
         string fhirBaseUrl,
+        int facilityId,
         CancellationToken cancellationToken)
     {
         var searchPage = ResolveSearchPage(count, page);
@@ -35,13 +40,15 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         var normalizedIdentifier = identifier?.Trim();
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var countCommand = connection.CreateCommand();
-        countCommand.CommandText = $"select count(*) from patients p where {SearchPredicate};";
+        countCommand.CommandText = $"select count(*) from patients p where p.facility_id = @facility and ({SearchPredicate});";
         AddPatientSearchParameters(countCommand, normalizedName, normalizedIdentifier, searchPage);
+        AddFacilityParameter(countCommand, facilityId);
         var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
 
         await using var command = connection.CreateCommand();
-        command.CommandText = PatientSelectSql + $" where {SearchPredicate} order by p.last_name, p.first_name, p.canonical_id limit @limit offset @offset;";
+        command.CommandText = PatientSelectSql + $" where p.facility_id = @facility and ({SearchPredicate}) order by p.last_name, p.first_name, p.canonical_id limit @limit offset @offset;";
         AddPatientSearchParameters(command, normalizedName, normalizedIdentifier, searchPage);
+        AddFacilityParameter(command, facilityId);
         var entries = new List<FhirSearchEntry>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -57,12 +64,16 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             entries.Count == 0 ? null : entries);
     }
 
-    public async Task<FhirEncounterResource?> GetEncounterAsync(int encounterId, CancellationToken cancellationToken)
+    public async Task<FhirEncounterResource?> GetEncounterAsync(
+        int encounterId,
+        int facilityId,
+        CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = EncounterSelectSql + " where e.encounter = @encounter limit 1;";
+        command.CommandText = EncounterSelectSql + " where e.encounter = @encounter and p.facility_id = @facility limit 1;";
         command.Parameters.AddWithValue("encounter", encounterId);
+        AddFacilityParameter(command, facilityId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadEncounter(reader) : null;
     }
@@ -72,18 +83,21 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         int? count,
         int? page,
         string fhirBaseUrl,
+        int facilityId,
         CancellationToken cancellationToken)
     {
         var searchPage = ResolveSearchPage(count, page);
         var normalizedSubject = NormalizePatientReference(subject);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var countCommand = connection.CreateCommand();
-        countCommand.CommandText = "select count(*) from encounters e join patients p on p.legacy_pid = e.pid where (@subject is null or p.canonical_id = @subject or p.pubpid = @subject);";
+        countCommand.CommandText = "select count(*) from encounters e join patients p on p.legacy_pid = e.pid where p.facility_id = @facility and (@subject is null or p.canonical_id = @subject or p.pubpid = @subject);";
         AddSubjectParameter(countCommand, normalizedSubject);
+        AddFacilityParameter(countCommand, facilityId);
         var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         await using var command = connection.CreateCommand();
-        command.CommandText = EncounterSelectSql + " where (@subject is null or p.canonical_id = @subject or p.pubpid = @subject) order by e.encounter_date desc, e.encounter desc limit @limit offset @offset;";
+        command.CommandText = EncounterSelectSql + " where p.facility_id = @facility and (@subject is null or p.canonical_id = @subject or p.pubpid = @subject) order by e.encounter_date desc, e.encounter desc limit @limit offset @offset;";
         AddSubjectParameter(command, normalizedSubject);
+        AddFacilityParameter(command, facilityId);
         AddSearchPageParameters(command, searchPage);
         var entries = new List<FhirEncounterSearchEntry>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -100,12 +114,16 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             entries.Count == 0 ? null : entries);
     }
 
-    public async Task<FhirObservationResource?> GetObservationAsync(int observationId, CancellationToken cancellationToken)
+    public async Task<FhirObservationResource?> GetObservationAsync(
+        int observationId,
+        int facilityId,
+        CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = ObservationSelectSql + " where lrs.id = @id limit 1;";
+        command.CommandText = ObservationSelectSql + " where lrs.id = @id and p.facility_id = @facility limit 1;";
         command.Parameters.AddWithValue("id", observationId);
+        AddFacilityParameter(command, facilityId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadObservation(reader) : null;
     }
@@ -115,6 +133,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         int? count,
         int? page,
         string fhirBaseUrl,
+        int facilityId,
         CancellationToken cancellationToken)
     {
         var searchPage = ResolveSearchPage(count, page);
@@ -127,18 +146,22 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             inner join lab_reports lr on lr.id = lrs.report_id
             inner join lab_orders lo on lo.id = lr.order_id
             inner join patients p on p.legacy_pid = lo.pid
-            where (@subject is null or p.canonical_id = @subject or p.pubpid = @subject);
+            where p.facility_id = @facility
+              and (@subject is null or p.canonical_id = @subject or p.pubpid = @subject);
             """;
         AddSubjectParameter(countCommand, normalizedSubject);
+        AddFacilityParameter(countCommand, facilityId);
         var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
 
         await using var command = connection.CreateCommand();
         command.CommandText = ObservationSelectSql + """
-             where (@subject is null or p.canonical_id = @subject or p.pubpid = @subject)
+             where p.facility_id = @facility
+               and (@subject is null or p.canonical_id = @subject or p.pubpid = @subject)
              order by lrs.result_date desc, lrs.id desc
              limit @limit offset @offset;
             """;
         AddSubjectParameter(command, normalizedSubject);
+        AddFacilityParameter(command, facilityId);
         AddSearchPageParameters(command, searchPage);
         var entries = new List<FhirObservationSearchEntry>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -160,6 +183,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         int? count,
         int? page,
         string fhirBaseUrl,
+        int facilityId,
         CancellationToken cancellationToken)
     {
         var searchPage = ResolveSearchPage(count, page);
@@ -170,13 +194,16 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         countCommand.CommandText = """
             select count(*)
             from patient_sdoh_assessments assessment
+            inner join patients p on p.canonical_id = assessment.patient_id
             cross join lateral jsonb_each(assessment.domains) domain
-            where (@subject is null
+            where p.facility_id = @facility
+              and (@subject is null
                    or assessment.patient_id = @subject
                    or assessment.patient_id in (select canonical_id from patients where pubpid = @subject))
               and nullif(trim(domain.value ->> 'status'), '') is not null;
             """;
         AddSubjectParameter(countCommand, normalizedSubject);
+        AddFacilityParameter(countCommand, facilityId);
         var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
 
         await using var command = connection.CreateCommand();
@@ -188,8 +215,10 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
                    domain.value ->> 'status' as status,
                    domain.value ->> 'notes' as notes
             from patient_sdoh_assessments assessment
+            inner join patients p on p.canonical_id = assessment.patient_id
             cross join lateral jsonb_each(assessment.domains) domain
-            where (@subject is null
+            where p.facility_id = @facility
+              and (@subject is null
                    or assessment.patient_id = @subject
                    or assessment.patient_id in (select canonical_id from patients where pubpid = @subject))
               and nullif(trim(domain.value ->> 'status'), '') is not null
@@ -197,6 +226,7 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             limit @limit offset @offset;
             """;
         AddSubjectParameter(command, normalizedSubject);
+        AddFacilityParameter(command, facilityId);
         AddSearchPageParameters(command, searchPage);
         var entries = new List<FhirObservationSearchEntry>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -263,6 +293,16 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
     private static void AddSubjectParameter(NpgsqlCommand command, string? subject)
     {
         command.Parameters.Add("subject", NpgsqlDbType.Text).Value = (object?)subject ?? DBNull.Value;
+    }
+
+    private static void AddFacilityParameter(NpgsqlCommand command, int facilityId)
+    {
+        if (facilityId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(facilityId));
+        }
+
+        command.Parameters.AddWithValue("facility", facilityId);
     }
 
     private static void AddSearchPageParameters(NpgsqlCommand command, FhirSearchPage searchPage)

@@ -1416,41 +1416,75 @@ fhir.MapGet("/metadata", (HttpContext httpContext) =>
     })
     .WithName("GetFhirCapabilityStatement");
 
-fhir.MapGet("/Patient/{id}", async (FhirRepository repository, string id, CancellationToken cancellationToken) =>
+fhir.MapGet("/Patient/{id}", async (FhirRepository repository, HttpContext httpContext, string id, CancellationToken cancellationToken) =>
     {
-        var patient = await repository.GetPatientAsync(id, cancellationToken);
+        var patient = await repository.GetPatientAsync(
+            id,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return patient is null ? FhirResults.NotFound("Patient", id) : FhirResults.Ok(patient);
     })
     .WithName("GetFhirPatient");
 
 fhir.MapGet("/Patient", async (FhirRepository repository, HttpContext httpContext, string? name, string? identifier, int? _count, int? page, CancellationToken cancellationToken) =>
-    FhirResults.Ok(await repository.SearchPatientsAsync(name, identifier, _count, page, BuildFhirBaseUrl(httpContext), cancellationToken)))
+    FhirResults.Ok(await repository.SearchPatientsAsync(
+        name,
+        identifier,
+        _count,
+        page,
+        BuildFhirBaseUrl(httpContext),
+        RequireStaffAccessContext(httpContext).FacilityId,
+        cancellationToken)))
     .WithName("SearchFhirPatients");
 
-fhir.MapGet("/Encounter/{id:int}", async (FhirRepository repository, int id, CancellationToken cancellationToken) =>
+fhir.MapGet("/Encounter/{id:int}", async (FhirRepository repository, HttpContext httpContext, int id, CancellationToken cancellationToken) =>
     {
-        var encounter = await repository.GetEncounterAsync(id, cancellationToken);
+        var encounter = await repository.GetEncounterAsync(
+            id,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return encounter is null ? FhirResults.NotFound("Encounter", id.ToString(CultureInfo.InvariantCulture)) : FhirResults.Ok(encounter);
     })
     .WithName("GetFhirEncounter");
 
 fhir.MapGet("/Encounter", async (FhirRepository repository, HttpContext httpContext, string? subject, int? _count, int? page, CancellationToken cancellationToken) =>
-    FhirResults.Ok(await repository.SearchEncountersAsync(subject, _count, page, BuildFhirBaseUrl(httpContext), cancellationToken)))
+    FhirResults.Ok(await repository.SearchEncountersAsync(
+        subject,
+        _count,
+        page,
+        BuildFhirBaseUrl(httpContext),
+        RequireStaffAccessContext(httpContext).FacilityId,
+        cancellationToken)))
     .WithName("SearchFhirEncounters");
 
-fhir.MapGet("/Observation/{id:int}", async (FhirRepository repository, int id, CancellationToken cancellationToken) =>
+fhir.MapGet("/Observation/{id:int}", async (FhirRepository repository, HttpContext httpContext, int id, CancellationToken cancellationToken) =>
     {
-        var observation = await repository.GetObservationAsync(id, cancellationToken);
+        var observation = await repository.GetObservationAsync(
+            id,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return observation is null ? FhirResults.NotFound("Observation", id.ToString(CultureInfo.InvariantCulture)) : FhirResults.Ok(observation);
     })
     .WithName("GetFhirObservation");
 
 fhir.MapGet("/Observation", async (FhirRepository repository, HttpContext httpContext, string? subject, int? _count, int? page, CancellationToken cancellationToken) =>
-    FhirResults.Ok(await repository.SearchObservationsAsync(subject, _count, page, BuildFhirBaseUrl(httpContext), cancellationToken)))
+    FhirResults.Ok(await repository.SearchObservationsAsync(
+        subject,
+        _count,
+        page,
+        BuildFhirBaseUrl(httpContext),
+        RequireStaffAccessContext(httpContext).FacilityId,
+        cancellationToken)))
     .WithName("SearchFhirObservations");
 
 fhir.MapGet("/Observation/sdoh", async (FhirRepository repository, HttpContext httpContext, string? subject, int? _count, int? page, CancellationToken cancellationToken) =>
-    FhirResults.Ok(await repository.SearchSdohObservationsAsync(subject, _count, page, BuildFhirBaseUrl(httpContext), cancellationToken)))
+    FhirResults.Ok(await repository.SearchSdohObservationsAsync(
+        subject,
+        _count,
+        page,
+        BuildFhirBaseUrl(httpContext),
+        RequireStaffAccessContext(httpContext).FacilityId,
+        cancellationToken)))
     .WithName("SearchFhirSdohObservations");
 
 // This is intentionally separate from the staff integration group: an external
@@ -9868,6 +9902,12 @@ static Task WriteSchemaNotReadyAsync(HttpContext context)
             })
         .ExecuteAsync(context);
 }
+
+static StaffAccessContext RequireStaffAccessContext(HttpContext httpContext) =>
+    httpContext.Items.TryGetValue(StaffAccessContextService.HttpContextItemKey, out var value)
+        && value is StaffAccessContext accessContext
+        ? accessContext
+        : throw new InvalidOperationException("The endpoint requires a resolved staff access context.");
 
 static void RequireAccessPermission(
     RouteGroupBuilder group,
