@@ -7342,6 +7342,19 @@ export type TherapyGroupSession = {
   status: string
   createdAt: string
 }
+export type TherapyGroupSessionAttendance = {
+  sessionId: string
+  patientId: string
+  legacyPid: number
+  displayName: string
+  status: 'unrecorded' | 'present' | 'absent' | 'excused'
+  note?: string | null
+  recordedAt?: string | null
+}
+export type TherapyGroupSessionAttendanceResponse = {
+  sessionId: string
+  attendance: TherapyGroupSessionAttendance[]
+}
 export type TherapyGroupSessionEncounter = {
   sessionId: string
   patientId: string
@@ -7412,6 +7425,29 @@ export async function updateTherapyGroupSessionStatus(
     sessionId,
     `/api/therapy-groups/${groupId}/sessions/${groupSessionId}/status`,
     { status },
+  )
+}
+export async function getTherapyGroupSessionAttendance(
+  sessionId: string,
+  groupId: string,
+  groupSessionId: string,
+): Promise<TherapyGroupSessionAttendanceResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/therapy-groups/${groupId}/sessions/${groupSessionId}/attendance`,
+  )
+}
+export async function recordTherapyGroupSessionAttendance(
+  sessionId: string,
+  groupId: string,
+  groupSessionId: string,
+  patientId: string,
+  body: { status: 'present' | 'absent' | 'excused'; note?: string | null },
+): Promise<TherapyGroupSessionAttendance> {
+  return clinicianPut(
+    sessionId,
+    `/api/therapy-groups/${groupId}/sessions/${groupSessionId}/attendance/${encodeURIComponent(patientId)}`,
+    body,
   )
 }
 export async function getTherapyGroupSessionEncounters(

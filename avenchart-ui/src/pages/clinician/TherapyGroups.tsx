@@ -10,11 +10,14 @@ import {
   createTherapyGroupSessionEncounters,
   getTherapyGroupMembers,
   getTherapyGroups,
+  getTherapyGroupSessionAttendance,
   getTherapyGroupSessions,
+  recordTherapyGroupSessionAttendance,
   updateTherapyGroupSessionStatus,
   type TherapyGroup,
   type TherapyGroupMember,
   type TherapyGroupSession,
+  type TherapyGroupSessionAttendance,
 } from "../../api.ts";
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
 
@@ -26,6 +29,15 @@ export default function TherapyGroups() {
   const [selectedGroup, setSelectedGroup] = useState<TherapyGroup | null>(null);
   const [members, setMembers] = useState<TherapyGroupMember[]>([]);
   const [sessions, setSessions] = useState<TherapyGroupSession[]>([]);
+  const [attendanceSession, setAttendanceSession] =
+    useState<TherapyGroupSession | null>(null);
+  const [attendance, setAttendance] = useState<
+    TherapyGroupSessionAttendance[]
+  >([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceSavingPatientId, setAttendanceSavingPatientId] = useState<
+    string | null
+  >(null);
   const [patientId, setPatientId] = useState("");
   const [sessionStart, setSessionStart] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(60);
@@ -57,6 +69,8 @@ export default function TherapyGroups() {
   }
   async function select(group: TherapyGroup) {
     setSelectedGroup(group);
+    setAttendanceSession(null);
+    setAttendance([]);
     setError("");
     const [nextMembers, nextSessions] = await Promise.all([
       getTherapyGroupMembers(session.sessionId, group.id),
@@ -119,10 +133,65 @@ export default function TherapyGroups() {
       setSessions(
         await getTherapyGroupSessions(session.sessionId, selectedGroup.id),
       );
+      if (status === "completed") {
+        setAttendanceSession(null);
+        setAttendance([]);
+      }
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Unable to update session.",
       );
+    }
+  }
+  async function openAttendance(groupSession: TherapyGroupSession) {
+    if (!selectedGroup) return;
+    setAttendanceSession(groupSession);
+    setAttendanceLoading(true);
+    setError("");
+    try {
+      const response = await getTherapyGroupSessionAttendance(
+        session.sessionId,
+        selectedGroup.id,
+        groupSession.id,
+      );
+      setAttendance(response.attendance);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to load attendance.",
+      );
+      setAttendanceSession(null);
+    } finally {
+      setAttendanceLoading(false);
+    }
+  }
+  async function recordAttendance(
+    participant: TherapyGroupSessionAttendance,
+    status: "present" | "absent" | "excused",
+  ) {
+    if (!selectedGroup || !attendanceSession) return;
+    setAttendanceSavingPatientId(participant.patientId);
+    setError("");
+    try {
+      const saved = await recordTherapyGroupSessionAttendance(
+        session.sessionId,
+        selectedGroup.id,
+        attendanceSession.id,
+        participant.patientId,
+        { status, note: participant.note ?? null },
+      );
+      setAttendance((current) =>
+        current.map((item) =>
+          item.patientId === saved.patientId ? saved : item,
+        ),
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to record attendance.",
+      );
+    } finally {
+      setAttendanceSavingPatientId(null);
     }
   }
   async function createEncounters(groupSessionId: string) {
@@ -336,6 +405,13 @@ export default function TherapyGroups() {
                           <button
                             className="cl-btn-secondary"
                             type="button"
+                            onClick={() => openAttendance(groupSession)}
+                          >
+                            Record attendance
+                          </button>{" "}
+                          <button
+                            className="cl-btn-secondary"
+                            type="button"
                             onClick={() =>
                               updateSession(groupSession.id, "completed")
                             }
@@ -369,6 +445,92 @@ export default function TherapyGroups() {
             </table>
             {sessions.length === 0 && (
               <p className="cl-empty-text">No sessions are scheduled.</p>
+            )}
+            {attendanceSession && (
+              <section
+                className="cl-soap-section"
+                style={{ marginTop: 16 }}
+                aria-labelledby="therapy-attendance-heading"
+              >
+                <div className="cl-card-header">
+                  <div>
+                    <h3
+                      id="therapy-attendance-heading"
+                      className="cl-card-title"
+                    >
+                      Attendance — {attendanceSession.topic || "Session"}
+                    </h3>
+                    <p className="cl-empty-text">
+                      Record every member before completing this session.
+                    </p>
+                  </div>
+                  <button
+                    className="cl-btn-secondary"
+                    type="button"
+                    onClick={() => {
+                      setAttendanceSession(null);
+                      setAttendance([]);
+                    }}
+                  >
+                    Close attendance
+                  </button>
+                </div>
+                {attendanceLoading ? (
+                  <p className="cl-empty-text">Loading attendance…</p>
+                ) : (
+                  <table className="cl-table">
+                    <thead>
+                      <tr>
+                        <th>Participant</th>
+                        <th>Attendance</th>
+                        <th>Recorded</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {attendance.map((participant) => (
+                        <tr key={participant.patientId}>
+                          <td>{participant.displayName}</td>
+                          <td>
+                            <select
+                              className="select"
+                              aria-label={`Attendance for ${participant.displayName}`}
+                              value={participant.status}
+                              disabled={
+                                attendanceSavingPatientId ===
+                                participant.patientId
+                              }
+                              onChange={(event) => {
+                                const status = event.target.value;
+                                if (
+                                  status === "present" ||
+                                  status === "absent" ||
+                                  status === "excused"
+                                ) {
+                                  void recordAttendance(participant, status);
+                                }
+                              }}
+                            >
+                              <option value="unrecorded" disabled>
+                                Not recorded
+                              </option>
+                              <option value="present">Present</option>
+                              <option value="absent">Absent</option>
+                              <option value="excused">Excused</option>
+                            </select>
+                          </td>
+                          <td>
+                            {participant.recordedAt
+                              ? new Date(
+                                  participant.recordedAt,
+                                ).toLocaleString()
+                              : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </section>
             )}
           </section>
         </>
