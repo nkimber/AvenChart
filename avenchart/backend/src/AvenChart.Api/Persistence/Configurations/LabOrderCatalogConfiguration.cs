@@ -25,6 +25,18 @@ public sealed class LabOrderCatalogConfiguration : IEntityTypeConfiguration<LabO
         entity.Property(item => item.StandardCode).HasColumnName("standard_code");
         entity.Property(item => item.Sequence).HasColumnName("seq");
         entity.Property(item => item.Active).HasColumnName("active");
+        entity.HasIndex(item => new { item.ParentId, item.Code, item.ItemType })
+            .HasDatabaseName("ux_lab_order_catalog_parent_code_item")
+            .HasFilter("parent_id is not null and code is not null and btrim(code) <> ''")
+            .IsUnique();
+        entity.HasIndex(item => new { item.ParentId, item.LabId })
+            .HasDatabaseName("ux_lab_order_catalog_parent_lab_group")
+            .HasFilter("parent_id is not null and lab_id is not null and item_type = 'grp'")
+            .IsUnique();
+        entity.HasOne<LabOrderCatalogEntity>()
+            .WithMany()
+            .HasForeignKey(item => item.ParentId)
+            .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<LabProviderEntity>()
             .WithMany()
             .HasForeignKey(item => item.LabId)

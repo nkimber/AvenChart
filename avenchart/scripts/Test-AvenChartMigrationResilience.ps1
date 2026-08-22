@@ -950,10 +950,18 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
         -Method "DELETE" `
         -Path "/api/clinical-lists/immunizations/$($immunization.id)" `
         -Headers $authenticatedHeaders
-    if ([int]$allergyDeleteResponse.StatusCode -ne 204 -or
-        [int]$problemDeleteResponse.StatusCode -ne 204 -or
-        [int]$immunizationDeleteResponse.StatusCode -ne 204) {
-        throw "EF-backed clinical-list cleanup failed."
+    $allergyAfterDeactivate = (Get-HttpResponseContent -Response $allergyDeactivateResponse) | ConvertFrom-Json
+    $problemAfterDeactivate = (Get-HttpResponseContent -Response $problemDeactivateResponse) | ConvertFrom-Json
+    $immunizationAfterError = (Get-HttpResponseContent -Response $immunizationErrorResponse) | ConvertFrom-Json
+    $retainedClinicalListRecords =
+        @($allergyAfterDeactivate.detail.allergies | Where-Object { $_.id -eq $allergy.id -and $_.activity -eq 0 }).Count +
+        @($problemAfterDeactivate.detail.problems | Where-Object { $_.id -eq $problem.id -and $_.activity -eq 0 }).Count +
+        @($immunizationAfterError.detail.immunizations | Where-Object { $_.id -eq $immunization.id -and $_.enteredInError }).Count
+    if ([int]$allergyDeleteResponse.StatusCode -ne 409 -or
+        [int]$problemDeleteResponse.StatusCode -ne 409 -or
+        [int]$immunizationDeleteResponse.StatusCode -ne 409 -or
+        [int]$retainedClinicalListRecords -ne 3) {
+        throw "Clinical-list records must retain their corrective lifecycle evidence instead of being permanently deleted."
     }
     $CompletedScenarios.Add("ef-core-clinical-list-state")
 
@@ -1025,6 +1033,14 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
         throw "EF-backed procedure catalog order creation failed. HTTP $($procedureOrderResponse.StatusCode): $(Get-HttpResponseContent -Response $procedureOrderResponse)"
     }
     $procedureOrder = (Get-HttpResponseContent -Response $procedureOrderResponse) | ConvertFrom-Json
+    $duplicateProcedureOrderResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/procedures/order-catalog" `
+        -Headers $authenticatedHeaders `
+        -Body $procedureOrderBody
+    if ([int]$duplicateProcedureOrderResponse.StatusCode -ne 400) {
+        throw "Procedure catalog must reject a duplicate order identity. HTTP $($duplicateProcedureOrderResponse.StatusCode): $(Get-HttpResponseContent -Response $duplicateProcedureOrderResponse)"
+    }
     $procedureOrderUpdateBody = @{
         parentId = $procedureGroup.id
         labId = $procedureProvider.id
@@ -1060,12 +1076,18 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
     $catalogDefault = Invoke-DatabaseScalar -Sql "select column_default from information_schema.columns where table_name = 'lab_order_catalog' and column_name = 'id';"
     $providerDefault = Invoke-DatabaseScalar -Sql "select column_default from information_schema.columns where table_name = 'lab_providers' and column_name = 'id';"
     $organizationDefault = Invoke-DatabaseScalar -Sql "select column_default from information_schema.columns where table_name = 'lab_provider_address_book' and column_name = 'id';"
+    $catalogParentConstraint = Invoke-DatabaseScalar -Sql "select count(*) from pg_constraint where conname = 'fk_lab_order_catalog_parent' and contype = 'f';"
+    $catalogOrderIdentityIndex = Invoke-DatabaseScalar -Sql "select count(*) from pg_indexes where schemaname = 'public' and tablename = 'lab_order_catalog' and indexname = 'ux_lab_order_catalog_parent_code_item';"
+    $catalogGroupIdentityIndex = Invoke-DatabaseScalar -Sql "select count(*) from pg_indexes where schemaname = 'public' and tablename = 'lab_order_catalog' and indexname = 'ux_lab_order_catalog_parent_lab_group';"
     if ($procedureOrderUpdate.catalog.items.name -notcontains "EF Procedure Order Updated" -or
         $procedureProviderUpdate.directory.providers.notes -notcontains "Updated EF provider state" -or
         $catalogDefault -notlike "nextval*lab_order_catalog_id_seq*" -or
         $providerDefault -notlike "nextval*lab_providers_id_seq*" -or
-        $organizationDefault -notlike "nextval*lab_provider_address_book_id_seq*") {
-        throw "EF-backed procedure directory state or sequence defaults returned unexpected data."
+        $organizationDefault -notlike "nextval*lab_provider_address_book_id_seq*" -or
+        [int]$catalogParentConstraint -ne 1 -or
+        [int]$catalogOrderIdentityIndex -ne 1 -or
+        [int]$catalogGroupIdentityIndex -ne 1) {
+        throw "EF-backed procedure directory state, catalog integrity constraints, or sequence defaults returned unexpected data."
     }
     $procedureOrderDeleteResponse = Invoke-Http `
         -Method "DELETE" `

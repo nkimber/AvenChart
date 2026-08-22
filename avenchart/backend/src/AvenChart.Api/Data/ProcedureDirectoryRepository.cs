@@ -21,7 +21,10 @@ public sealed class ProcedureDirectoryRepository(
         CancellationToken cancellationToken)
     {
         var values = NormalizeOrderCatalogMutation(request);
-        if (values is null || !await IsValidOrderCatalogContextAsync(values.Value, cancellationToken))
+        if (values is null || !await IsValidOrderCatalogContextAsync(
+                values.Value,
+                excludedItemId: null,
+                cancellationToken: cancellationToken))
         {
             return null;
         }
@@ -33,7 +36,14 @@ public sealed class ProcedureDirectoryRepository(
         };
         ApplyOrderCatalogValues(item, values.Value);
         dbContext.LabOrderCatalog.Add(item);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            return null;
+        }
         return new ProcedureOrderCatalogMutationResponse(
             item.Id,
             await procedureRepository.GetOrderCatalogAsync(cancellationToken));
@@ -50,7 +60,7 @@ public sealed class ProcedureDirectoryRepository(
         }
 
         var values = NormalizeOrderCatalogMutation(request);
-        if (values is null || !await IsValidOrderCatalogContextAsync(values.Value, cancellationToken))
+        if (values is null || !await IsValidOrderCatalogContextAsync(values.Value, id, cancellationToken))
         {
             return null;
         }
@@ -64,7 +74,14 @@ public sealed class ProcedureDirectoryRepository(
         }
 
         ApplyOrderCatalogValues(item, values.Value);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            return null;
+        }
         return new ProcedureOrderCatalogMutationResponse(
             item.Id,
             await procedureRepository.GetOrderCatalogAsync(cancellationToken));
@@ -200,8 +217,14 @@ public sealed class ProcedureDirectoryRepository(
 
     private async Task<bool> IsValidOrderCatalogContextAsync(
         OrderCatalogMutationValues values,
+        int? excludedItemId,
         CancellationToken cancellationToken)
     {
+        if (values.ParentId is { } selfParentId && selfParentId == excludedItemId)
+        {
+            return false;
+        }
+
         if (values.ParentId is { } parentId
             && !await dbContext.LabOrderCatalog.AsNoTracking().AnyAsync(
                 item => item.Id == parentId && item.ItemType == "grp",
@@ -210,9 +233,32 @@ public sealed class ProcedureDirectoryRepository(
             return false;
         }
 
-        return values.LabId is not { } labId
-            || await dbContext.LabProviders.AsNoTracking().AnyAsync(
+        if (values.LabId is { } labId
+            && !await dbContext.LabProviders.AsNoTracking().AnyAsync(
                 provider => provider.Id == labId,
+                cancellationToken))
+        {
+            return false;
+        }
+
+        if (values.ItemType == "ord")
+        {
+            return !await dbContext.LabOrderCatalog.AsNoTracking().AnyAsync(
+                item => item.Id != excludedItemId
+                    && item.ParentId == values.ParentId
+                    && item.Code == values.Code
+                    && item.ItemType == values.ItemType,
+                cancellationToken);
+        }
+
+        return values.ItemType != "grp"
+            || values.ParentId is null
+            || values.LabId is null
+            || !await dbContext.LabOrderCatalog.AsNoTracking().AnyAsync(
+                item => item.Id != excludedItemId
+                    && item.ParentId == values.ParentId
+                    && item.LabId == values.LabId
+                    && item.ItemType == "grp",
                 cancellationToken);
     }
 
