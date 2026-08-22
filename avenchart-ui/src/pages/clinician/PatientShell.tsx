@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { Activity, CalendarClock, CheckSquare, ClipboardList, FileCheck2, FileText, FlaskConical, FolderOpen, GitCommitHorizontal, Mail, Printer, Send, UserCircle, X } from 'lucide-react'
 import { getPatientChartSummary, type PatientChartSummary } from '../../api.ts'
@@ -40,16 +40,29 @@ export default function PatientShell() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  function load() {
+  const load = useCallback(async (signal?: AbortSignal) => {
     if (!patientId) return
     setLoading(true)
     setError(null)
-    getPatientChartSummary(session.sessionId, patientId)
-      .then((data) => { setPatient(data); setLoading(false) })
-      .catch((err) => { setError(err instanceof Error ? err.message : 'Could not load patient.'); setLoading(false) })
-  }
+    try {
+      const data = await getPatientChartSummary(session.sessionId, patientId, signal)
+      if (signal?.aborted) return
+      setPatient(data)
+      setLoading(false)
+    } catch (err) {
+      if (signal?.aborted) return
+      setError(err instanceof Error ? err.message : 'Could not load patient.')
+      setLoading(false)
+    }
+  }, [patientId, session.sessionId])
 
-  useEffect(() => { load() }, [patientId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const controller = new AbortController()
+    void load(controller.signal)
+    return () => {
+      controller.abort()
+    }
+  }, [load])
 
   if (!patientId) return <Navigate to="/clinician/patients" replace />
 
@@ -62,7 +75,7 @@ export default function PatientShell() {
   if (isPatientRoot) return <Navigate to={`/clinician/patients/${patientId}/summary`} replace />
 
   const context: PatientOutletContext | null = patient
-    ? { session, patient, patientId, reload: load, signOut }
+    ? { session, patient, patientId, reload: () => { void load() }, signOut }
     : null
 
   return (
@@ -142,7 +155,7 @@ export default function PatientShell() {
         ) : error ? (
           <div className="clinician-page">
             <div className="error-banner">{error}</div>
-            <button className="cl-btn-secondary" type="button" onClick={load} style={{ marginTop: 12, width: 'auto' }}>
+            <button className="cl-btn-secondary" type="button" onClick={() => { void load() }} style={{ marginTop: 12, width: 'auto' }}>
               Retry
             </button>
           </div>
