@@ -3,10 +3,13 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +27,10 @@ using AvenChart.Api.Workflows;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var runtimeSafetyOptions = builder.Configuration
+    .GetSection(RuntimeSafetyOptions.SectionName)
+    .Get<RuntimeSafetyOptions>() ?? new RuntimeSafetyOptions();
+
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails(options =>
 {
@@ -34,7 +41,33 @@ builder.Services.AddProblemDetails(options =>
     };
 });
 builder.Services.AddResponseCompression();
-builder.Services.AddDataProtection();
+var dataProtection = builder.Services.AddDataProtection();
+if (RuntimeSafetyPolicy.HasCompleteDataProtectionConfiguration(runtimeSafetyOptions)
+    && !string.IsNullOrWhiteSpace(runtimeSafetyOptions.DataProtectionKeyRingPath))
+{
+    var keyRingPath = runtimeSafetyOptions.DataProtectionKeyRingPath;
+    var certificatePath = runtimeSafetyOptions.DataProtectionCertificatePath!;
+    if (!Directory.Exists(keyRingPath))
+    {
+        throw new InvalidOperationException(
+            "RuntimeSafety:DataProtectionKeyRingPath must name an existing durable directory when data protection is configured.");
+    }
+
+    if (!File.Exists(certificatePath))
+    {
+        throw new InvalidOperationException(
+            "RuntimeSafety:DataProtectionCertificatePath must name an existing PFX certificate when data protection is configured.");
+    }
+
+    var certificate = X509CertificateLoader.LoadPkcs12FromFile(
+        certificatePath,
+        runtimeSafetyOptions.DataProtectionCertificatePassword,
+        X509KeyStorageFlags.EphemeralKeySet);
+    dataProtection
+        .PersistKeysToFileSystem(new DirectoryInfo(keyRingPath))
+        .SetApplicationName(runtimeSafetyOptions.DataProtectionApplicationName!)
+        .ProtectKeysWithCertificate(certificate);
+}
 builder.Services.AddSingleton<SchemaMigrationCatalog>();
 builder.Services.AddSingleton<DatabaseBootstrapCatalog>();
 builder.Services.AddSingleton<SchemaMigrationState>();
@@ -85,6 +118,26 @@ builder.Services.AddOptions<RuntimeSafetyOptions>()
     .Validate(
         options => options.RateLimitQueueLimit >= 0,
         "RuntimeSafety:RateLimitQueueLimit must not be negative.")
+    .Validate(
+        options => options.ForwardedHeaderLimit is >= 1 and <= 5,
+        "RuntimeSafety:ForwardedHeaderLimit must be between 1 and 5.")
+    .Validate(
+        options => RuntimeSafetyPolicy.HasValidTrustedProxyAddresses(options.TrustedProxyAddresses),
+        "RuntimeSafety:TrustedProxyAddresses must contain only explicit IP addresses.")
+    .Validate(
+        RuntimeSafetyPolicy.HasCompleteDataProtectionConfiguration,
+        "RuntimeSafety data-protection configuration must specify key ring path, application name, and certificate path together.")
+    .Validate(
+        options => !builder.Environment.IsProduction() || options.RequireHttps,
+        "RuntimeSafety:RequireHttps must be true in Production.")
+    .Validate(
+        _ => !builder.Environment.IsProduction()
+            || RuntimeSafetyPolicy.HasExplicitAllowedHosts(builder.Configuration["AllowedHosts"]),
+        "AllowedHosts must name explicit allowed hosts and cannot contain '*' in Production.")
+    .Validate(
+        options => !builder.Environment.IsProduction()
+            || RuntimeSafetyPolicy.HasProductionDataProtectionConfiguration(options),
+        "Production requires absolute RuntimeSafety data-protection key-ring, application-name, and certificate-path settings.")
     .ValidateOnStart();
 
 builder.Services.AddOptions<IdentityProviderOptions>()
@@ -279,10 +332,6 @@ builder.Services.AddCors(options =>
     });
 });
 
-var runtimeSafetyOptions = builder.Configuration
-    .GetSection(RuntimeSafetyOptions.SectionName)
-    .Get<RuntimeSafetyOptions>() ?? new RuntimeSafetyOptions();
-
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -339,6 +388,17 @@ if (args.Any(argument => string.Equals(argument, "--migrate-only", StringCompari
     return;
 }
 
+var configuredRuntimeSafety = app.Services.GetRequiredService<IOptions<RuntimeSafetyOptions>>().Value;
+if (configuredRuntimeSafety.TrustedProxyAddresses.Length > 0)
+{
+    var forwardedHeaderOptions = new ForwardedHeadersOptions();
+    RuntimeSafetyPolicy.ConfigureForwardedHeaders(
+        forwardedHeaderOptions,
+        RuntimeSafetyPolicy.ParseTrustedProxyAddresses(configuredRuntimeSafety.TrustedProxyAddresses),
+        configuredRuntimeSafety.ForwardedHeaderLimit);
+    app.UseForwardedHeaders(forwardedHeaderOptions);
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -371,7 +431,6 @@ app.UseExceptionHandler(exceptionApp => exceptionApp.Run(async context =>
     await context.Response.WriteAsJsonAsync(new { error = "An unexpected server error occurred." });
 }));
 
-var configuredRuntimeSafety = app.Services.GetRequiredService<IOptions<RuntimeSafetyOptions>>().Value;
 if (configuredRuntimeSafety.RequireHttps)
 {
     app.UseHsts();
