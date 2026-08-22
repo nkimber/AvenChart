@@ -8875,14 +8875,30 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
         try
         {
             var result = await next(context);
-            await phiAuditRepository.RecordAccessDecisionAsync(
-                session,
-                context.HttpContext.Request.Method,
-                context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched",
-                $"{policy.PolicyId}@{AuthorizationPolicyCatalog.Revision}",
-                authorized: true,
-                responseStatus: context.HttpContext.Response.StatusCode,
-                context.HttpContext.RequestAborted);
+            var endpointName = context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched";
+            var requiredPermission = $"{policy.PolicyId}@{AuthorizationPolicyCatalog.Revision}";
+            if (result is IResult httpResult)
+            {
+                return new PhiAuditedResult(
+                    httpResult,
+                    phiAuditRepository,
+                    session,
+                    context.HttpContext.Request.Method,
+                    endpointName,
+                    requiredPermission);
+            }
+
+            context.HttpContext.Response.OnStarting(async () =>
+            {
+                await phiAuditRepository.RecordAccessDecisionAsync(
+                    session,
+                    context.HttpContext.Request.Method,
+                    endpointName,
+                    requiredPermission,
+                    authorized: true,
+                    responseStatus: context.HttpContext.Response.StatusCode,
+                    CancellationToken.None);
+            });
             return result;
         }
         catch
