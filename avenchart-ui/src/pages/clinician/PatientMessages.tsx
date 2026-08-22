@@ -106,7 +106,14 @@ export default function PatientMessages() {
           </div>
         </div>
       )}
-      {state.status === 'error' && <div className="error-banner">{state.message}</div>}
+      {state.status === 'error' && (
+        <div className="error-banner" role="alert">
+          <p>{state.message}</p>
+          <button className="cl-btn-secondary" type="button" onClick={() => load(patientId)}>
+            Retry
+          </button>
+        </div>
+      )}
       {state.status === 'ready' && (
         <div className="cl-messages-layout">
           <ul className="cl-msg-list">

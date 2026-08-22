@@ -182,7 +182,12 @@ export default function ClinicianSchedule() {
         </section>
       )}
       {apptState.status === 'error' && (
-        <div className="error-banner">{apptState.message}</div>
+        <div className="error-banner" role="alert">
+          <p>{apptState.message}</p>
+          <button className="cl-btn-secondary" type="button" onClick={() => load(selectedDate)}>
+            Retry
+          </button>
+        </div>
       )}
       {apptState.status === 'ready' && apptState.data.length === 0 && (
         <section className="cl-card">

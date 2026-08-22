@@ -22,13 +22,18 @@ export default function PatientSearch() {
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!query.trim()) return
+  function runSearch(searchTerm = query) {
+    const normalizedSearchTerm = searchTerm.trim()
+    if (!normalizedSearchTerm) return
     setState({ status: 'loading' })
-    searchPatients(session.sessionId, { search: query.trim(), limit: 25 })
+    searchPatients(session.sessionId, { search: normalizedSearchTerm, limit: 25 })
       .then((data) => setState({ status: 'ready', data: data.patients, total: data.totalMatches }))
       .catch((err) => setState({ status: 'error', message: err instanceof Error ? err.message : 'Search failed.' }))
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    runSearch()
   }
 
   return (
@@ -69,7 +74,12 @@ export default function PatientSearch() {
       )}
 
       {state.status === 'error' && (
-        <div className="error-banner">{state.message}</div>
+        <div className="error-banner" role="alert">
+          <p>{state.message}</p>
+          <button className="cl-btn-secondary" type="button" onClick={() => runSearch()}>
+            Retry
+          </button>
+        </div>
       )}
 
       {state.status === 'ready' && state.data.length === 0 && (

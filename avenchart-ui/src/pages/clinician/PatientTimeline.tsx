@@ -191,7 +191,14 @@ export default function PatientTimeline() {
           </div>
         </div>
       )}
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div className="error-banner" role="alert">
+          <p>{error}</p>
+          <button className="cl-btn-secondary" type="button" onClick={() => load(patientId)}>
+            Retry
+          </button>
+        </div>
+      )}
       {!loading && !error && events.length === 0 && (
         <div className="cl-card"><p className="cl-empty-text">No events to display.</p></div>
       )}

@@ -135,4 +135,22 @@ describe('PatientTimeline', () => {
     await waitFor(() => expect(screen.queryByText('Alpha appointment')).not.toBeInTheDocument())
     expect(screen.getByText('Beta appointment')).toBeInTheDocument()
   })
+
+  it('announces a loading failure and retries the current chart', async () => {
+    vi.mocked(searchEncounters).mockResolvedValue(emptyEncounters())
+    vi.mocked(searchAppointments)
+      .mockRejectedValueOnce(new Error('Timeline service unavailable'))
+      .mockResolvedValueOnce(appointmentResponse('patient-a', 'Recovered appointment'))
+    vi.mocked(getProcedureReportQueue).mockResolvedValue(emptyLabs())
+    vi.mocked(getClinicalLists).mockResolvedValue(emptyClinicalLists())
+
+    const user = userEvent.setup()
+    renderTimeline()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Timeline service unavailable')
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(await screen.findByText('Recovered appointment')).toBeInTheDocument()
+    expect(searchAppointments).toHaveBeenCalledTimes(2)
+  })
 })
