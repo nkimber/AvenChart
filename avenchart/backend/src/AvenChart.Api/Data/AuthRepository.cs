@@ -30,9 +30,18 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select username, display_name, role, staff_id, password_salt, password_hash
-            from auth_accounts
-            where lower(username) = lower(@username)
-              and active = true
+            from auth_accounts account
+            where lower(account.username) = lower(@username)
+              and account.active = true
+              and (
+                account.staff_id is null
+                or exists (
+                  select 1
+                  from staff
+                  where staff.id = account.staff_id
+                    and staff.active = true
+                )
+              )
             limit 1;
             """;
         command.Parameters.AddWithValue("username", username);
@@ -354,9 +363,16 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, username, display_name, role, staff_id, created_at, last_seen_at, expires_at, ended_at, session_source
-            from auth_sessions
-            where id = @session_id
+            select session.id, session.username, session.display_name, session.role, session.staff_id,
+                   session.created_at, session.last_seen_at, session.expires_at, session.ended_at, session.session_source
+            from auth_sessions session
+            join auth_accounts account
+              on lower(account.username) = lower(session.username)
+             and account.active = true
+            left join staff
+              on staff.id = account.staff_id
+            where session.id = @session_id
+              and (account.staff_id is null or staff.active = true)
             limit 1;
             """;
         command.Parameters.AddWithValue("session_id", sessionId);
@@ -377,12 +393,21 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
 
         await using var touchCommand = connection.CreateCommand();
         touchCommand.CommandText = """
-            update auth_sessions
+            update auth_sessions session
             set last_seen_at = now()
-            where id = @session_id
-              and ended_at is null
-              and expires_at > now()
-            returning id, username, display_name, role, staff_id, created_at, last_seen_at, expires_at, ended_at, session_source;
+            where session.id = @session_id
+              and session.ended_at is null
+              and session.expires_at > now()
+              and exists (
+                select 1
+                from auth_accounts account
+                left join staff on staff.id = account.staff_id
+                where lower(account.username) = lower(session.username)
+                  and account.active = true
+                  and (account.staff_id is null or staff.active = true)
+              )
+            returning session.id, session.username, session.display_name, session.role, session.staff_id,
+                      session.created_at, session.last_seen_at, session.expires_at, session.ended_at, session.session_source;
             """;
         touchCommand.Parameters.AddWithValue("session_id", sessionId);
 

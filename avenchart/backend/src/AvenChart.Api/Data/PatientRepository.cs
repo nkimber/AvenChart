@@ -1598,12 +1598,28 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            update patients
-            set portal_enabled = @portalEnabled
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
-            returning canonical_id;
+            with matched_patient as (
+                select canonical_id
+                from patients
+                where lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId
+                limit 1
+            ), updated_patient as (
+                update patients
+                set portal_enabled = @portalEnabled
+                where canonical_id in (select canonical_id from matched_patient)
+                returning canonical_id
+            ), revoked_sessions as (
+                update patient_portal_sessions
+                set ended_at = coalesce(ended_at, now()),
+                    last_seen_at = now()
+                where @portalEnabled = false
+                  and ended_at is null
+                  and patient_id in (select canonical_id from updated_patient)
+            )
+            select canonical_id
+            from updated_patient;
             """;
         command.Parameters.AddWithValue("patientId", patientId);
         command.Parameters.AddWithValue("portalEnabled", request.PortalEnabled);

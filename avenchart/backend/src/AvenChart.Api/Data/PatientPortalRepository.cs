@@ -166,12 +166,16 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            update patient_portal_sessions
+            update patient_portal_sessions session
             set last_seen_at = now()
-            where id = @session_id
-              and ended_at is null
-              and expires_at > now()
-            returning id, patient_id, pid, portal_username, portal_login_username, created_at, last_seen_at, expires_at, ended_at, session_source;
+            from patients patient
+            where session.id = @session_id
+              and session.patient_id = patient.canonical_id
+              and patient.portal_enabled = true
+              and session.ended_at is null
+              and session.expires_at > now()
+            returning session.id, session.patient_id, session.pid, session.portal_username, session.portal_login_username,
+                      session.created_at, session.last_seen_at, session.expires_at, session.ended_at, session.session_source;
             """;
         command.Parameters.AddWithValue("session_id", sessionId);
 
