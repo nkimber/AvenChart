@@ -159,6 +159,7 @@ builder.Services.AddScoped<IStaffIdentityAdapter, LocalDevelopmentStaffIdentityA
 builder.Services.AddScoped<StaffAccessContextService>();
 builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
+builder.Services.AddScoped<ExternalLaboratorySourceRepository>();
 builder.Services.AddScoped<PhiAuditRepository>();
 builder.Services.AddScoped<PatientMergeAuditRepository>();
 builder.Services.AddScoped<PatientMergeExecutionRepository>();
@@ -5760,6 +5761,65 @@ procedures.MapDelete("/orders/{orderId:int}", async (
 
 var integrations = app.MapGroup("/api/integrations").WithTags("Integrations");
 RequireAccessPermission(integrations, "admin", "super", "write");
+
+integrations.MapGet("/laboratory-sources", async (
+        ExternalLaboratorySourceRepository repository,
+        CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetSourcesAsync(cancellationToken)))
+    .WithName("ListExternalLaboratorySources");
+
+integrations.MapPost("/laboratory-sources", async (
+        ExternalLaboratorySourceCreateRequest request,
+        ExternalLaboratorySourceRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var source = await repository.CreateSourceAsync(request, session.Username, cancellationToken);
+            return Results.Created($"/api/integrations/laboratory-sources/{source.SourceId}", source);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = [exception.Message]
+            });
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            return Results.Conflict(new { error = "An external laboratory source with that source ID already exists." });
+        }
+    })
+    .WithName("CreateExternalLaboratorySource");
+
+integrations.MapPost("/laboratory-sources/{sourceId}/deactivate", async (
+        string sourceId,
+        ExternalLaboratorySourceDeactivateRequest request,
+        ExternalLaboratorySourceRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var source = await repository.DeactivateSourceAsync(sourceId, request, session.Username, cancellationToken);
+            return source is null
+                ? Results.Conflict(new { error = "The external laboratory source does not exist or is already deactivated." })
+                : Results.Ok(source);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("DeactivateExternalLaboratorySource");
 
 integrations.MapGet("/outbox", async (
         IntegrationRepository repository,
