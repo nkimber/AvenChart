@@ -297,6 +297,24 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
             facilityId,
             cancellationToken);
 
+    public Task<bool> CanAccessMessageAsync(
+        string? messageId,
+        int facilityId,
+        CancellationToken cancellationToken) =>
+        CanAccessPatientResourceAsync(
+            """
+            select exists(
+              select 1
+              from messages message
+              join patients patient on patient.legacy_pid=message.pid
+              where message.id=@resourceId
+                and patient.facility_id=@facility
+                and patient.merged_into_patient_id is null);
+            """,
+            messageId,
+            facilityId,
+            cancellationToken);
+
     public async Task<AuthAccessContextGrantResponse> GetPrincipalGrantAsync(
         string username,
         CancellationToken cancellationToken)

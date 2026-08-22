@@ -4289,6 +4289,7 @@ clinicalLists.MapGet("/immunizations/{immunizationKey}/audit-history", async (
 
 var messages = app.MapGroup("/api/messages").WithTags("Messages");
 RequireAccessPermission(messages, "patients", "notes", "view");
+messages.AddEndpointFilter(MessageFacilityScopeFilter());
 
 messages.MapGet("/inbox", async (
         MessageRepository repository,
@@ -4318,7 +4319,11 @@ messages.MapGet("/inbox", async (
             MaximumAgeDays: maximumAgeDays,
             Offset: offset ?? 0,
             Limit: limit ?? 25);
-        return Results.Ok(await repository.GetInboxAsync(session.Username, query, cancellationToken));
+        return Results.Ok(await repository.GetInboxAsync(
+            session.Username,
+            query,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken));
     })
     .WithName("GetStaffMessageInbox");
 
@@ -4345,9 +4350,13 @@ messages.MapGet("/{patientId}", async (
 messages.MapPost("/", async (
         MessageRepository repository,
         PatientMessageCreateRequest request,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateAsync(request, cancellationToken);
+        var mutation = await repository.CreateAsync(
+            request,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return mutation is null
             ? Results.BadRequest("Patient message could not be created from the supplied patient, title, and body.")
             : Results.Created($"/api/messages/{mutation.Id}", mutation);
@@ -10408,6 +10417,41 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 specimenId,
                 accessContext.FacilityId,
                 cancellationToken);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        return await next(context);
+    };
+}
+
+static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> MessageFacilityScopeFilter()
+{
+    return async (context, next) =>
+    {
+        var routeValues = context.HttpContext.Request.RouteValues;
+        var accessContext = RequireStaffAccessContext(context.HttpContext);
+        var accessContextService = context.HttpContext.RequestServices
+            .GetRequiredService<StaffAccessContextService>();
+
+        if (routeValues.TryGetValue("patientId", out var patientRouteValue))
+        {
+            var patientId = patientRouteValue?.ToString();
+            PhiAuditResourceContext.Set(context.HttpContext, "Patient", patientId);
+            var allowed = await accessContextService.CanAccessPatientAsync(
+                patientId,
+                accessContext.FacilityId,
+                context.HttpContext.RequestAborted);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        if (routeValues.TryGetValue("messageId", out var messageRouteValue))
+        {
+            var messageId = messageRouteValue?.ToString();
+            PhiAuditResourceContext.Set(context.HttpContext, "Message", messageId);
+            var allowed = await accessContextService.CanAccessMessageAsync(
+                messageId,
+                accessContext.FacilityId,
+                context.HttpContext.RequestAborted);
             return allowed ? await next(context) : Results.NotFound();
         }
 

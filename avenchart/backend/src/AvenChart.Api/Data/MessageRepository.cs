@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Security.Cryptography;
 using Npgsql;
+using NpgsqlTypes;
 using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
@@ -15,12 +16,14 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
     public async Task<StaffMessageInboxResponse> GetInboxAsync(
         string currentUsername,
         StaffMessageInboxQuery query,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         var metadata = await GetMetadataAsync(cancellationToken);
         var offset = Math.Max(0, query.Offset);
         var limit = Math.Clamp(query.Limit, 1, 100);
-        var conditions = new List<string> { "m.deleted = 0", "m.activity = 1" };
+        var conditions = new List<string> { "m.deleted = 0", "m.activity = 1", "p.facility_id = @facilityId" };
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -124,6 +127,7 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
             limit @limit;
             """;
         command.Parameters.AddWithValue("currentUsername", currentUsername);
+        command.Parameters.AddWithValue("facilityId", facilityId);
         command.Parameters.AddWithValue("offset", offset);
         command.Parameters.AddWithValue("limit", limit);
 
@@ -159,10 +163,14 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
                 count(*) filter (where lower(coalesce(status, '')) = 'new')::int as unread,
                 count(*) filter (where lower(coalesce(assigned_to, '')) = lower(@currentUsername))::int as assigned_to_me,
                 count(*) filter (where nullif(trim(coalesce(assigned_to, '')), '') is null)::int as unassigned
-            from messages
-            where deleted = 0 and activity = 1;
+            from messages m
+            join patients p on p.legacy_pid = m.pid
+            where m.deleted = 0
+              and m.activity = 1
+              and p.facility_id = @facilityId;
             """;
         countsCommand.Parameters.AddWithValue("currentUsername", currentUsername);
+        countsCommand.Parameters.AddWithValue("facilityId", facilityId);
         await using var countsReader = await countsCommand.ExecuteReaderAsync(cancellationToken);
         await countsReader.ReadAsync(cancellationToken);
         var counts = new StaffMessageInboxCounts(
@@ -209,8 +217,10 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
 
     public async Task<PatientMessageMutationResponse?> CreateAsync(
         PatientMessageCreateRequest request,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         if (string.IsNullOrWhiteSpace(request.PatientId)
             || string.IsNullOrWhiteSpace(request.Title)
             || string.IsNullOrWhiteSpace(request.Body))
@@ -219,7 +229,7 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken, facilityId);
         if (patient is null)
         {
             return null;
@@ -917,18 +927,21 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
     private static async Task<MessagePatient?> GetPatientAsync(
         NpgsqlConnection connection,
         string patientId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? facilityId = null)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select canonical_id, legacy_pid, pubpid, first_name, last_name, preferred_name, portal_enabled
             from patients
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
+            where (@facilityId is null or facility_id = @facilityId)
+              and (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
             limit 1;
             """;
         command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = facilityId is null ? DBNull.Value : facilityId.Value;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -1017,6 +1030,14 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         return reader.IsDBNull(ordinal)
             ? null
             : reader.GetFieldValue<DateTime>(ordinal).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+    }
+
+    private static void EnsureFacilityId(int facilityId)
+    {
+        if (facilityId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(facilityId));
+        }
     }
 
     private static object NullableText(string? value)
