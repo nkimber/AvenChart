@@ -19,12 +19,12 @@ public sealed class ReportExecutionRepository(
     ReportRepository reportRepository,
     IOptions<ReportExecutionOptions> options)
 {
-    private const string ExecutionRevision = "local-report-execution-v4";
+    private const string ExecutionRevision = "local-report-execution-v5";
     private const string DefinitionRevision = "local-report-definition-v2";
     private const string ScopeRevision = "local-report-scope-v2";
     private const string FormReportingRevision =
         "local-clinical-form-reporting-v1";
-    private const string QueueRevision = "local-report-queue-v1";
+    private const string QueueRevision = "local-report-queue-v2";
     private const string OperationsRevision = "local-report-operations-v2";
     private const int OperationsPollIntervalSeconds = 5;
     private const int MaximumDateSpanDays = 366;
@@ -143,7 +143,7 @@ public sealed class ReportExecutionRepository(
                 "The executable staff/facility/provider/care-team mapping is a local development contract and still requires accountable production policy approval.",
                 "Patient-assigned inventory execution remains denied because inventory transactions have no approved patient relationship.",
                 "Clinical form reporting includes only signed, amended, or corrected instances and labels pinned form, field, schema, renderer, instance, and content revisions; accountable metric and cross-revision semantic approval remain open.",
-                "Only the exact synthetic dataset as-of date is executable; historical snapshots and source-version time travel are not available.",
+                "A bounded source-result snapshot is captured when a request is accepted; historical source-version time travel remains unavailable.",
                 "The local database queue and in-process worker are not approved independent production worker infrastructure or an operational service-level contract.",
                 "The local database artifact is not approved encrypted production object storage; definition retention is enforced locally without legal hold, backup, recovery, or accountable disposition approval.",
                 "Only requesting-user or report-owner recipients and local download are supported; schedules and external delivery remain disabled.",
@@ -312,12 +312,22 @@ public sealed class ReportExecutionRepository(
             };
         }
 
+        ReportSourceSnapshot? sourceSnapshot = null;
+        if (context.Scope.Executable)
+        {
+            EnsureScopeExecutable(context.Scope);
+            sourceSnapshot = await CaptureSourceSnapshotAsync(
+                context,
+                cancellationToken);
+        }
+
         var runId = $"RPT-{Guid.NewGuid():N}";
         try
         {
             await CreateQueuedRunAsync(
                 runId,
                 context,
+                sourceSnapshot,
                 actor,
                 idempotencyKey,
                 fingerprint,
@@ -681,6 +691,8 @@ public sealed class ReportExecutionRepository(
                       finished_at=@now,
                       duration_ms=0,
                       next_attempt_at=null,
+                      source_snapshot_content=null,
+                      source_snapshot_checksum=null,
                       failure_code='cancelled-by-request',
                       failure_message=@reason,
                       failure_retryable=false,
@@ -753,6 +765,7 @@ public sealed class ReportExecutionRepository(
         int lifecycleVersion;
         int attemptCount;
         bool failureRetryable;
+        bool sourceSnapshotAvailable;
         string? failureCode;
         await using (var command = connection.CreateCommand())
         {
@@ -762,6 +775,8 @@ public sealed class ReportExecutionRepository(
                        lifecycle_version,
                        attempt_count,
                        coalesce(failure_retryable, false),
+                       source_snapshot_content is not null
+                         and coalesce(btrim(source_snapshot_checksum), '') <> '',
                        failure_code
                 from saved_report_runs
                 where run_id=@run
@@ -781,7 +796,8 @@ public sealed class ReportExecutionRepository(
             lifecycleVersion = reader.GetInt32(1);
             attemptCount = reader.GetInt32(2);
             failureRetryable = reader.GetBoolean(3);
-            failureCode = reader.IsDBNull(4) ? null : reader.GetString(4);
+            sourceSnapshotAvailable = reader.GetBoolean(4);
+            failureCode = reader.IsDBNull(5) ? null : reader.GetString(5);
         }
 
         if (request.ExpectedLifecycleVersion != lifecycleVersion)
@@ -798,6 +814,11 @@ public sealed class ReportExecutionRepository(
         {
             throw new ReportExecutionConflictException(
                 "This failure was classified as non-retryable.");
+        }
+        if (!sourceSnapshotAvailable)
+        {
+            throw new ReportExecutionConflictException(
+                "This report's source snapshot was discarded after terminal failure; submit a new report request.");
         }
         if (attemptCount >= 10)
         {
@@ -1129,6 +1150,7 @@ public sealed class ReportExecutionRepository(
     private async Task CreateQueuedRunAsync(
         string runId,
         ExecutionContext context,
+        ReportSourceSnapshot? sourceSnapshot,
         string actor,
         string idempotencyKey,
         string fingerprint,
@@ -1164,6 +1186,7 @@ public sealed class ReportExecutionRepository(
               dataset_version, execution_revision, source_watermark,
               definition_snapshot_checksum, request_fingerprint, idempotency_key,
               result_summary, artifact_content_type, artifact_file_name,
+              source_snapshot_content, source_snapshot_checksum,
               scope_revision, scope_snapshot, scope_snapshot_checksum,
               scope_facility_id, scope_subject_count,
               form_reporting_revision, queue_revision,
@@ -1175,6 +1198,7 @@ public sealed class ReportExecutionRepository(
               @parameters, @asOf, @dataset, @datasetVersion, @executionRevision,
               @watermark, @definitionChecksum, @fingerprint, @idempotency,
               '{}'::jsonb, 'text/csv; charset=utf-8', @fileName,
+              @sourceSnapshot, @sourceSnapshotChecksum,
               @scopeRevision, @scopeSnapshot, @scopeChecksum,
               @scopeFacility, @scopeSubjects, @formReportingRevision,
               @queueRevision,
@@ -1201,6 +1225,10 @@ public sealed class ReportExecutionRepository(
         command.Parameters.AddWithValue("fingerprint", fingerprint);
         command.Parameters.AddWithValue("idempotency", idempotencyKey);
         command.Parameters.AddWithValue("fileName", fileName);
+        command.Parameters.Add("sourceSnapshot", NpgsqlDbType.Text).Value =
+            (object?)sourceSnapshot?.Content ?? DBNull.Value;
+        command.Parameters.Add("sourceSnapshotChecksum", NpgsqlDbType.Text).Value =
+            (object?)sourceSnapshot?.Checksum ?? DBNull.Value;
         command.Parameters.AddWithValue("scopeRevision", ScopeRevision);
         command.Parameters.Add("scopeSnapshot", NpgsqlDbType.Jsonb).Value =
             context.Scope.SnapshotJson;
@@ -1239,6 +1267,10 @@ public sealed class ReportExecutionRepository(
                     GetFormReportingRevision(context.Definition.ReportFamily),
                 ["recipient"] = context.RecipientUsername,
                 ["asOfDate"] = context.Watermark.BaseDate.ToString("yyyy-MM-dd"),
+                ["sourceSnapshotCapturedAt"] = sourceSnapshot?.CapturedAt.ToString("O"),
+                ["sourceSnapshotChecksum"] = sourceSnapshot?.Checksum,
+                ["sourceSnapshotRows"] = sourceSnapshot?.RowCount,
+                ["sourceSnapshotBytes"] = sourceSnapshot?.Bytes,
                 ["queueRevision"] = QueueRevision,
                 ["nextAttemptAt"] = nextAttemptAt.ToString("O"),
                 ["queueExpiresAt"] = queueExpiresAt.ToString("O"),
@@ -1246,6 +1278,32 @@ public sealed class ReportExecutionRepository(
             },
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task<ReportSourceSnapshot> CaptureSourceSnapshotAsync(
+        ExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var capturedAt = DateTimeOffset.UtcNow;
+        var csv = await reportRepository.GetGovernedFamilyCsvAsync(
+            context.Definition.ReportFamily,
+            context.From,
+            context.To,
+            context.Scope.DataScope,
+            cancellationToken);
+        var rowCount = Math.Max(0, ParseCsv(csv).Count - 1);
+        if (rowCount > MaximumRows)
+        {
+            throw new InvalidOperationException(
+                $"The result exceeded the {MaximumRows}-row execution limit.");
+        }
+
+        return new(
+            csv,
+            Sha256(csv),
+            rowCount,
+            Encoding.UTF8.GetByteCount(csv),
+            capturedAt);
     }
 
     private async Task FailRunAsync(
@@ -2453,4 +2511,11 @@ public sealed class ReportExecutionRepository(
         string SnapshotJson,
         string SnapshotChecksum,
         GovernedReportDataScope DataScope);
+
+    private sealed record ReportSourceSnapshot(
+        string Content,
+        string Checksum,
+        int RowCount,
+        int Bytes,
+        DateTimeOffset CapturedAt);
 }

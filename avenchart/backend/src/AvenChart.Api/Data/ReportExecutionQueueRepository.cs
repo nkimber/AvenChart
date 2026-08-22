@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -14,12 +13,11 @@ namespace AvenChart.Api.Data;
 
 public sealed class ReportExecutionQueueRepository(
     NpgsqlDataSource dataSource,
-    ReportRepository reportRepository,
     IOptions<ReportExecutionOptions> options,
     ILogger<ReportExecutionQueueRepository> logger)
 {
     private const int MaximumRows = 5000;
-    private const string QueueRevision = "local-report-queue-v1";
+    private const string QueueRevision = "local-report-queue-v2";
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
 
@@ -75,6 +73,8 @@ public sealed class ReportExecutionQueueRepository(
                   lease_expires_at=null,
                   last_heartbeat_at=null,
                   next_attempt_at=null,
+                  source_snapshot_content=null,
+                  source_snapshot_checksum=null,
                   failure_code='cancelled-by-request',
                   failure_message=coalesce(
                     run.cancel_reason,
@@ -142,6 +142,8 @@ public sealed class ReportExecutionQueueRepository(
                   lease_expires_at=null,
                   last_heartbeat_at=null,
                   next_attempt_at=null,
+                  source_snapshot_content=null,
+                  source_snapshot_checksum=null,
                   failure_code='worker-lease-exhausted',
                   failure_message='The worker lease expired after the maximum attempt count.',
                   failure_retryable=false,
@@ -253,6 +255,8 @@ public sealed class ReportExecutionQueueRepository(
                   finished_at=now(),
                   duration_ms=0,
                   next_attempt_at=null,
+                  source_snapshot_content=null,
+                  source_snapshot_checksum=null,
                   failure_code='queue-expired',
                   failure_message='The report request expired before a worker could start it.',
                   failure_retryable=false,
@@ -300,6 +304,8 @@ public sealed class ReportExecutionQueueRepository(
               set status='expired',
                   lifecycle_version=run.lifecycle_version+1,
                   artifact_content=null,
+                  source_snapshot_content=null,
+                  source_snapshot_checksum=null,
                   artifact_expired_at=now()
               from candidates
               where run.run_id=candidates.run_id
@@ -439,17 +445,16 @@ public sealed class ReportExecutionQueueRepository(
                   run.scope_facility_id,
                   run.dataset_id,
                   run.dataset_version,
+                  run.source_snapshot_content,
+                  run.source_snapshot_checksum,
                   revision.retention_days,
                   (
                     definition.active_revision_id=run.revision_id
                     and revision.status='active'
                   ) as active_revision_available,
-                  exists (
-                    select 1
-                    from dataset_metadata dataset
-                    where dataset.dataset_id=run.dataset_id
-                      and dataset.version=run.dataset_version
-                      and dataset.base_date=run.as_of_date
+                  (
+                    run.source_snapshot_content is not null
+                    and coalesce(btrim(run.source_snapshot_checksum), '') <> ''
                   ) as source_snapshot_available
                 from saved_report_runs run
                 join saved_report_definitions definition
@@ -481,9 +486,11 @@ public sealed class ReportExecutionQueueRepository(
                 reader.IsDBNull(7) ? null : reader.GetInt32(7),
                 reader.GetString(8),
                 reader.GetString(9),
-                reader.GetInt32(10),
-                reader.GetBoolean(11),
-                reader.GetBoolean(12));
+                reader.IsDBNull(10) ? string.Empty : reader.GetString(10),
+                reader.IsDBNull(11) ? string.Empty : reader.GetString(11),
+                reader.GetInt32(12),
+                reader.GetBoolean(13),
+                reader.GetBoolean(14));
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -513,16 +520,27 @@ public sealed class ReportExecutionQueueRepository(
                 claim.RunId,
                 workerId,
                 "source-snapshot-unavailable",
-                $"Dataset {claim.DatasetId}@{claim.DatasetVersion} is no longer available for the pinned as-of date.",
+                "The immutable source snapshot for this queued report is unavailable.",
                 retryable: false,
                 CancellationToken.None);
             return;
         }
 
-        GovernedReportDataScope scope;
+        if (!SourceSnapshotMatchesChecksum(claim))
+        {
+            await TransitionFailureAsync(
+                claim.RunId,
+                workerId,
+                "source-snapshot-invalid",
+                "The immutable source snapshot did not match its recorded checksum.",
+                retryable: false,
+                CancellationToken.None);
+            return;
+        }
+
         try
         {
-            scope = BuildDataScope(claim);
+            ValidateScopeSnapshot(claim);
         }
         catch (Exception exception)
         {
@@ -552,15 +570,8 @@ public sealed class ReportExecutionQueueRepository(
 
         try
         {
-            var from = ReadDateParameter(claim.Parameters, "from");
-            var to = ReadDateParameter(claim.Parameters, "to");
             var started = DateTimeOffset.UtcNow;
-            var csv = await reportRepository.GetGovernedFamilyCsvAsync(
-                claim.ReportFamily,
-                from,
-                to,
-                scope,
-                executionCancellation.Token);
+            var csv = claim.SourceSnapshotContent;
             var rowCount = Math.Max(0, ParseCsv(csv).Count - 1);
             if (rowCount > MaximumRows)
             {
@@ -785,6 +796,8 @@ public sealed class ReportExecutionQueueRepository(
                     result_checksum=@checksum,
                     result_summary=@summary,
                     artifact_content=@artifact,
+                    source_snapshot_content=null,
+                    source_snapshot_checksum=null,
                     artifact_expires_at=@finished+(@retentionDays*interval '1 day'),
                     artifact_expired_at=null,
                     lease_owner=null,
@@ -917,6 +930,8 @@ public sealed class ReportExecutionQueueRepository(
                     lease_expires_at=null,
                     last_heartbeat_at=null,
                     next_attempt_at=null,
+                    source_snapshot_content=null,
+                    source_snapshot_checksum=null,
                     failure_code='cancelled-by-request',
                     failure_message=@reason,
                     failure_retryable=false,
@@ -1065,6 +1080,8 @@ public sealed class ReportExecutionQueueRepository(
                           floor(extract(epoch from (now()-last_attempt_at))*1000)::integer)
                       end,
                       next_attempt_at=null,
+                      source_snapshot_content=null,
+                      source_snapshot_checksum=null,
                       lease_owner=null,
                       lease_expires_at=null,
                       last_heartbeat_at=null,
@@ -1116,26 +1133,16 @@ public sealed class ReportExecutionQueueRepository(
         await transaction.CommitAsync(cancellationToken);
     }
 
-    private static GovernedReportDataScope BuildDataScope(
+    private static bool SourceSnapshotMatchesChecksum(ClaimedReportRun claim) =>
+        string.Equals(
+            Sha256(claim.SourceSnapshotContent),
+            claim.SourceSnapshotChecksum,
+            StringComparison.Ordinal);
+
+    private static void ValidateScopeSnapshot(
         ClaimedReportRun claim)
     {
-        var patientIds = new List<string>();
         using var snapshot = JsonDocument.Parse(claim.ScopeSnapshot);
-        if (snapshot.RootElement.TryGetProperty(
-                "assignedPatientIds",
-                out var assigned) &&
-            assigned.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in assigned.EnumerateArray())
-            {
-                if (item.ValueKind == JsonValueKind.String &&
-                    !string.IsNullOrWhiteSpace(item.GetString()))
-                {
-                    patientIds.Add(item.GetString()!);
-                }
-            }
-        }
-
         if (claim.RowPolicy == "facility-scoped" &&
             claim.ScopeFacilityId is null)
         {
@@ -1150,27 +1157,6 @@ public sealed class ReportExecutionQueueRepository(
             throw new InvalidOperationException(
                 "The pinned patient-assignment scope is unavailable.");
         }
-
-        return new(
-            claim.RowPolicy,
-            claim.ScopeFacilityId,
-            patientIds);
-    }
-
-    private static DateOnly? ReadDateParameter(
-        IReadOnlyDictionary<string, string?> parameters,
-        string key)
-    {
-        if (!parameters.TryGetValue(key, out var value) ||
-            string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        return DateOnly.ParseExact(
-            value,
-            "yyyy-MM-dd",
-            CultureInfo.InvariantCulture);
     }
 
     private static bool IsRetryable(Exception exception) =>
@@ -1313,6 +1299,8 @@ public sealed class ReportExecutionQueueRepository(
         int? ScopeFacilityId,
         string DatasetId,
         string DatasetVersion,
+        string SourceSnapshotContent,
+        string SourceSnapshotChecksum,
         int RetentionDays,
         bool ActiveRevisionAvailable,
         bool SourceSnapshotAvailable);
