@@ -51,8 +51,14 @@ public sealed class ReferralRepository(
         bool overdueOnly,
         string? query,
         int limit,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        if (facilityId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(facilityId));
+        }
+
         var normalizedStatus = status?.Trim().ToLowerInvariant() is "all" or null or ""
             ? null
             : status.Trim().ToLowerInvariant();
@@ -74,11 +80,13 @@ public sealed class ReferralRepository(
               count(*) filter (where r.status in ('draft', 'sent', 'received') and r.due_at is not null and r.due_at < now()) as overdue_count
             from referrals r join patients p on p.canonical_id = r.patient_id
             where (@status::text is null or r.status = @status::text)
+              and p.facility_id = @facilityId
               and (@assignedTo::text is null or lower(coalesce(r.assigned_to, r.created_by, 'admin')) = @assignedTo::text)
               and (@overdueOnly = false or (r.status in ('draft', 'sent', 'received') and r.due_at is not null and r.due_at < now()))
               and (@query::text is null or lower(r.destination) like '%' || @query::text || '%' or lower(r.reason) like '%' || @query::text || '%' or lower(p.canonical_id) like '%' || @query::text || '%' or lower(p.pubpid) like '%' || @query::text || '%' or lower(concat(p.last_name, ', ', p.first_name)) like '%' || @query::text || '%');
             """;
         count.Parameters.AddWithValue("status", (object?)normalizedStatus ?? DBNull.Value);
+        count.Parameters.AddWithValue("facilityId", facilityId);
         count.Parameters.AddWithValue("assignedTo", (object?)assigneeFilter ?? DBNull.Value);
         count.Parameters.AddWithValue("overdueOnly", overdueOnly);
         count.Parameters.AddWithValue("query", (object?)queryFilter ?? DBNull.Value);
@@ -106,6 +114,7 @@ public sealed class ReferralRepository(
             join patients p on p.canonical_id = r.patient_id
             left join auth_accounts a on lower(a.username) = lower(r.assigned_to)
             where (@status::text is null or r.status = @status::text)
+              and p.facility_id = @facilityId
               and (@assignedTo::text is null or lower(coalesce(r.assigned_to, r.created_by, 'admin')) = @assignedTo::text)
               and (@overdueOnly = false or (r.status in ('draft', 'sent', 'received') and r.due_at is not null and r.due_at < now()))
               and (@query::text is null or lower(r.destination) like '%' || @query::text || '%' or lower(r.reason) like '%' || @query::text || '%' or lower(p.canonical_id) like '%' || @query::text || '%' or lower(p.pubpid) like '%' || @query::text || '%' or lower(concat(p.last_name, ', ', p.first_name)) like '%' || @query::text || '%')
@@ -114,6 +123,7 @@ public sealed class ReferralRepository(
             limit @limit;
             """;
         command.Parameters.AddWithValue("status", (object?)normalizedStatus ?? DBNull.Value);
+        command.Parameters.AddWithValue("facilityId", facilityId);
         command.Parameters.AddWithValue("assignedTo", (object?)assigneeFilter ?? DBNull.Value);
         command.Parameters.AddWithValue("overdueOnly", overdueOnly);
         command.Parameters.AddWithValue("query", (object?)queryFilter ?? DBNull.Value);

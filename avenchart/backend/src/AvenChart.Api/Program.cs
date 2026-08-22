@@ -1579,6 +1579,7 @@ clinicalWorkflows.MapGet("/assignees", async (
     .WithName("GetClinicalWorkflowAssignees");
 clinicalWorkflows.MapGet("/referral-work-queue", async (
         ReferralRepository repository,
+        HttpContext httpContext,
         string? status,
         string? assignedTo,
         bool? overdueOnly,
@@ -1594,6 +1595,7 @@ clinicalWorkflows.MapGet("/referral-work-queue", async (
                 overdueOnly ?? false,
                 query,
                 limit ?? 25,
+                RequireStaffAccessContext(httpContext).FacilityId,
                 cancellationToken));
         }
         catch (ArgumentException exception)
@@ -1605,6 +1607,7 @@ clinicalWorkflows.MapGet("/referral-work-queue", async (
 
 clinicalWorkflows.MapGet("/authorization-work-queue", async (
         AuthorizationRepository repository,
+        HttpContext httpContext,
         string? status,
         string? assignedTo,
         bool? overdueOnly,
@@ -1615,7 +1618,15 @@ clinicalWorkflows.MapGet("/authorization-work-queue", async (
     {
         try
         {
-            return Results.Ok(await repository.GetWorkQueueAsync(status, assignedTo, overdueOnly ?? false, expiringOnly ?? false, query, limit ?? 25, cancellationToken));
+            return Results.Ok(await repository.GetWorkQueueAsync(
+                status,
+                assignedTo,
+                overdueOnly ?? false,
+                expiringOnly ?? false,
+                query,
+                limit ?? 25,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken));
         }
         catch (ArgumentException exception)
         {
