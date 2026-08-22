@@ -10,6 +10,10 @@ public sealed class VitalEntity
     public int LegacyPid { get; set; }
     public int? EncounterNumber { get; set; }
     public DateTime VitalDateTime { get; set; }
+    public DateTime RecordedAt { get; set; }
+    public required string RecordedBy { get; set; }
+    public int? CorrectionOfVitalId { get; set; }
+    public string? CorrectionReason { get; set; }
     public int? Systolic { get; set; }
     public int? Diastolic { get; set; }
     public decimal? Weight { get; set; }

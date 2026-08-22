@@ -20,6 +20,12 @@ public sealed class VitalConfiguration : IEntityTypeConfiguration<VitalEntity>
         entity.Property(vital => vital.VitalDateTime)
             .HasColumnName("vital_datetime")
             .HasColumnType("timestamp without time zone");
+        entity.Property(vital => vital.RecordedAt)
+            .HasColumnName("recorded_at")
+            .HasColumnType("timestamp without time zone");
+        entity.Property(vital => vital.RecordedBy).HasColumnName("recorded_by").IsRequired();
+        entity.Property(vital => vital.CorrectionOfVitalId).HasColumnName("correction_of_vital_id");
+        entity.Property(vital => vital.CorrectionReason).HasColumnName("correction_reason");
         entity.Property(vital => vital.Systolic).HasColumnName("bps");
         entity.Property(vital => vital.Diastolic).HasColumnName("bpd");
         entity.Property(vital => vital.Weight).HasColumnName("weight");

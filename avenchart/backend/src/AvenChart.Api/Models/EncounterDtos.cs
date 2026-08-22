@@ -165,6 +165,12 @@ public sealed record EncounterDocumentLifecycleEvent(
     string Detail);
 
 public sealed record EncounterVitals(
+    int Id,
+    string VitalDateTime,
+    string RecordedAt,
+    string RecordedBy,
+    int? CorrectionOfVitalId,
+    string? CorrectionReason,
     int? Systolic,
     int? Diastolic,
     string? BloodPressure,
@@ -174,7 +180,26 @@ public sealed record EncounterVitals(
     int? Pulse,
     int? Respiration,
     decimal? Bmi,
-    int? OxygenSaturation);
+    int? OxygenSaturation,
+    IReadOnlyList<EncounterVitalVersion> History);
+
+public sealed record EncounterVitalVersion(
+    int Id,
+    string VitalDateTime,
+    string RecordedAt,
+    string RecordedBy,
+    int? CorrectionOfVitalId,
+    string? CorrectionReason,
+    int? Systolic,
+    int? Diastolic,
+    decimal? Weight,
+    decimal? Height,
+    decimal? Temperature,
+    int? Pulse,
+    int? Respiration,
+    decimal? Bmi,
+    int? OxygenSaturation,
+    string? Note);
 
 public sealed record EncounterSoapNote(
     int Id,
@@ -265,7 +290,9 @@ public sealed record EncounterVitalsCreateRequest(
     int? Pulse,
     int? Respiration,
     int? OxygenSaturation,
-    string? Note);
+    string? Note,
+    int? CorrectionOfVitalId = null,
+    string? CorrectionReason = null);
 
 public sealed record EncounterSoapNoteCreateRequest(
     string DateTime,

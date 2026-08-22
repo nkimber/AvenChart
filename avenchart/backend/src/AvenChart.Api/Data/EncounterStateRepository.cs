@@ -93,12 +93,17 @@ public sealed class EncounterStateRepository(
     public async Task<EncounterFormMutationResponse?> CreateVitalsAsync(
         int encounter,
         EncounterVitalsCreateRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
         if (!DateTime.TryParse(request.DateTime, out var vitalDateTime))
         {
-            return null;
+            throw new ArgumentException("Vital date/time must be a valid timestamp.");
         }
+
+        var validatedVitals = ValidateVitalMeasurements(request);
+        var recordedBy = NormalizeText(username)
+            ?? throw new ArgumentException("An authenticated staff identity is required to record vitals.");
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var encounterEntity = await GetEncounterForUpdateAsync(encounter, cancellationToken);
@@ -108,12 +113,29 @@ public sealed class EncounterStateRepository(
         }
         await EnsureEncounterIsUnlockedAsync(encounter, cancellationToken);
 
+        if (request.CorrectionOfVitalId is { } correctionOfVitalId)
+        {
+            var correctedVital = await dbContext.Vitals.SingleOrDefaultAsync(
+                vital => vital.Id == correctionOfVitalId
+                    && vital.EncounterNumber == encounter
+                    && vital.LegacyPid == encounterEntity.LegacyPid,
+                cancellationToken);
+            if (correctedVital is null)
+            {
+                throw new ArgumentException("The vital selected for correction does not belong to this encounter.");
+            }
+        }
+
         var vital = new VitalEntity
         {
             PatientId = encounterEntity.PatientId,
             LegacyPid = encounterEntity.LegacyPid,
             EncounterNumber = encounterEntity.EncounterNumber,
             VitalDateTime = DateTime.SpecifyKind(vitalDateTime, DateTimeKind.Unspecified),
+            RecordedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
+            RecordedBy = recordedBy,
+            CorrectionOfVitalId = request.CorrectionOfVitalId,
+            CorrectionReason = validatedVitals.CorrectionReason,
             Systolic = request.Systolic,
             Diastolic = request.Diastolic,
             Weight = request.Weight,
@@ -123,10 +145,17 @@ public sealed class EncounterStateRepository(
             Respiration = request.Respiration,
             Bmi = ComputeBmi(request.Weight, request.Height),
             OxygenSaturation = request.OxygenSaturation,
-            Note = NormalizeText(request.Note)
+            Note = validatedVitals.Note
         };
         dbContext.Vitals.Add(vital);
         encounterEntity.RowVersion++;
+        dbContext.EncounterAuditEvents.Add(CreateAuditEvent(
+            encounter,
+            recordedBy,
+            request.CorrectionOfVitalId is null ? "vitals-recorded" : "vitals-corrected",
+            request.CorrectionOfVitalId is null
+                ? ["vital-observation"]
+                : ["vital-observation", "correction"]));
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         var detail = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
@@ -271,4 +300,73 @@ public sealed class EncounterStateRepository(
         var trimmed = value?.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
     }
+
+    private static ValidatedVitals CreateValidatedVitals(string? note, string? correctionReason) =>
+        new(NormalizeText(note), NormalizeText(correctionReason));
+
+    private static ValidatedVitals ValidateVitalMeasurements(EncounterVitalsCreateRequest request)
+    {
+        if (request.Systolic is null
+            && request.Diastolic is null
+            && request.Weight is null
+            && request.Height is null
+            && request.Temperature is null
+            && request.Pulse is null
+            && request.Respiration is null
+            && request.OxygenSaturation is null)
+        {
+            throw new ArgumentException("At least one vital observation is required.");
+        }
+
+        ValidateRange("Systolic blood pressure", request.Systolic, 1, 400);
+        ValidateRange("Diastolic blood pressure", request.Diastolic, 1, 300);
+        if (request.Systolic is not null && request.Diastolic is not null && request.Diastolic >= request.Systolic)
+        {
+            throw new ArgumentException("Diastolic blood pressure must be lower than systolic blood pressure.");
+        }
+
+        ValidateRange("Weight", request.Weight, 0.1m, 2000m);
+        ValidateRange("Height", request.Height, 0.1m, 120m);
+        ValidateRange("Temperature", request.Temperature, 1m, 150m);
+        ValidateRange("Pulse", request.Pulse, 1, 400);
+        ValidateRange("Respiration", request.Respiration, 1, 200);
+        ValidateRange("Oxygen saturation", request.OxygenSaturation, 0, 100);
+
+        var validated = CreateValidatedVitals(request.Note, request.CorrectionReason);
+        if (validated.Note?.Length > 2000)
+        {
+            throw new ArgumentException("Vital note must not exceed 2,000 characters.");
+        }
+
+        if (request.CorrectionOfVitalId is null && validated.CorrectionReason is not null)
+        {
+            throw new ArgumentException("A correction reason requires a vital selected for correction.");
+        }
+
+        if (request.CorrectionOfVitalId is not null
+            && (validated.CorrectionReason is null || validated.CorrectionReason.Length is < 3 or > 500))
+        {
+            throw new ArgumentException("A 3–500 character reason is required when correcting a vital observation.");
+        }
+
+        return validated;
+    }
+
+    private static void ValidateRange(string name, int? value, int minimum, int maximum)
+    {
+        if (value is not null && (value < minimum || value > maximum))
+        {
+            throw new ArgumentException($"{name} must be between {minimum} and {maximum}.");
+        }
+    }
+
+    private static void ValidateRange(string name, decimal? value, decimal minimum, decimal maximum)
+    {
+        if (value is not null && (value < minimum || value > maximum))
+        {
+            throw new ArgumentException($"{name} must be between {minimum} and {maximum}.");
+        }
+    }
+
+    private sealed record ValidatedVitals(string? Note, string? CorrectionReason);
 }

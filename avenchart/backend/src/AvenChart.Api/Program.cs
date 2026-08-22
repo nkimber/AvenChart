@@ -3214,13 +3214,16 @@ encounters.MapGet("/{encounter:int}/audit", async (EncounterRepository repositor
 
 encounters.MapPost("/{encounter:int}/vitals", async (
         EncounterStateRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int encounter,
         EncounterVitalsCreateRequest request,
         CancellationToken cancellationToken) =>
     {
         try
         {
-            var response = await repository.CreateVitalsAsync(encounter, request, cancellationToken);
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var response = await repository.CreateVitalsAsync(encounter, request, session.Username, cancellationToken);
             return response is null
                 ? Results.BadRequest("Vitals could not be recorded for the supplied encounter.")
                 : Results.Created($"/api/encounters/{encounter}/vitals/{response.Id}", response);
@@ -3228,6 +3231,13 @@ encounters.MapPost("/{encounter:int}/vitals", async (
         catch (EncounterLockConflictException exception)
         {
             return Results.Conflict(new { error = exception.Message, code = "encounter_locked" });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["vitals"] = [exception.Message]
+            });
         }
     })
     .WithName("CreateEncounterVitals")

@@ -13128,6 +13128,8 @@ function EncounterWorkspace({
   const [vitalsPulse, setVitalsPulse] = useState('72')
   const [vitalsOxygen, setVitalsOxygen] = useState('98')
   const [vitalsNote, setVitalsNote] = useState('Parity vitals detail.')
+  const [vitalsCorrectionOfId, setVitalsCorrectionOfId] = useState('')
+  const [vitalsCorrectionReason, setVitalsCorrectionReason] = useState('')
   const [vitalsStatus, setVitalsStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   const [soapDateTime, setSoapDateTime] = useState('2026-06-18T10:10')
@@ -13250,6 +13252,8 @@ function EncounterWorkspace({
     setSummaryPosCode(encounterDetail.posCode?.toString() ?? '')
     setSummaryBillingNote(encounterDetail.billingNote ?? '')
     setVitalsDateTime(`${encounterDetail.date}T10:05`)
+    setVitalsCorrectionOfId('')
+    setVitalsCorrectionReason('')
     setSoapDateTime(`${encounterDetail.date}T10:10`)
     setEncounterDocumentDate(encounterDetail.date)
     setEncounterBinaryDocumentDate(encounterDetail.date)
@@ -13415,6 +13419,8 @@ function EncounterWorkspace({
         pulse: numberOrNull(vitalsPulse),
         oxygenSaturation: numberOrNull(vitalsOxygen),
         note: vitalsNote,
+        correctionOfVitalId: numberOrNull(vitalsCorrectionOfId),
+        correctionReason: vitalsCorrectionReason,
       })
       setVitalsStatus('saved')
     } catch {
@@ -14034,6 +14040,25 @@ function EncounterWorkspace({
                 <Field label="Respiration" value={encounterDetail.vitals?.respiration} />
                 <Field label="Oxygen" value={formatPercent(encounterDetail.vitals?.oxygenSaturation)} />
                 <Field label="BMI" value={encounterDetail.vitals?.bmi} />
+                <Field label="Recorded by" value={encounterDetail.vitals?.recordedBy} />
+                <Field label="Recorded at" value={encounterDetail.vitals?.recordedAt} />
+                {encounterDetail.vitals?.correctionOfVitalId && (
+                  <Field
+                    label="Correction"
+                    value={`Observation #${encounterDetail.vitals.correctionOfVitalId}: ${encounterDetail.vitals.correctionReason ?? 'No reason recorded'}`}
+                  />
+                )}
+                {(encounterDetail.vitals?.history.length ?? 0) > 1 && (
+                  <div className="encounter-vital-history" aria-label="Vital observation history">
+                    <strong>Observation history</strong>
+                    {encounterDetail.vitals?.history.map((vital) => (
+                      <div className="summary-row" key={vital.id}>
+                        <span>{vital.vitalDateTime.slice(0, 16).replace('T', ' ')} · {vital.systolic ?? '—'}/{vital.diastolic ?? '—'} · {vital.pulse ?? '—'} bpm</span>
+                        <span>{vital.recordedBy}{vital.correctionOfVitalId ? ` · corrects #${vital.correctionOfVitalId}` : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </InfoPanel>
             </div>
 
@@ -14780,61 +14805,75 @@ function EncounterWorkspace({
                 </label>
                 <div className="mutation-grid two-column">
                   <label className="filter-field">
-                    <span>Systolic</span>
+                    <span>Systolic (mmHg)</span>
                     <input
                       value={vitalsSystolic}
                       onChange={(event) => setVitalsSystolic(event.target.value)}
                       aria-label="Encounter systolic"
-                      inputMode="numeric"
+                      type="number"
+                      min="1"
+                      max="400"
                     />
                   </label>
                   <label className="filter-field">
-                    <span>Diastolic</span>
+                    <span>Diastolic (mmHg)</span>
                     <input
                       value={vitalsDiastolic}
                       onChange={(event) => setVitalsDiastolic(event.target.value)}
                       aria-label="Encounter diastolic"
-                      inputMode="numeric"
+                      type="number"
+                      min="1"
+                      max="300"
                     />
                   </label>
                 </div>
                 <div className="mutation-grid two-column">
                   <label className="filter-field">
-                    <span>Weight</span>
+                    <span>Weight (lb)</span>
                     <input
                       value={vitalsWeight}
                       onChange={(event) => setVitalsWeight(event.target.value)}
                       aria-label="Encounter weight"
-                      inputMode="decimal"
+                      type="number"
+                      min="0.1"
+                      max="2000"
+                      step="0.1"
                     />
                   </label>
                   <label className="filter-field">
-                    <span>Height</span>
+                    <span>Height (in)</span>
                     <input
                       value={vitalsHeight}
                       onChange={(event) => setVitalsHeight(event.target.value)}
                       aria-label="Encounter height"
-                      inputMode="decimal"
+                      type="number"
+                      min="0.1"
+                      max="120"
+                      step="0.1"
                     />
                   </label>
                 </div>
                 <div className="mutation-grid two-column">
                   <label className="filter-field">
-                    <span>Pulse</span>
+                    <span>Pulse (bpm)</span>
                     <input
                       value={vitalsPulse}
                       onChange={(event) => setVitalsPulse(event.target.value)}
                       aria-label="Encounter pulse"
-                      inputMode="numeric"
+                      type="number"
+                      min="1"
+                      max="400"
                     />
                   </label>
                   <label className="filter-field">
-                    <span>Oxygen</span>
+                    <span>Oxygen saturation (%)</span>
                     <input
                       value={vitalsOxygen}
                       onChange={(event) => setVitalsOxygen(event.target.value)}
                       aria-label="Encounter oxygen"
-                      inputMode="numeric"
+                      type="number"
+                      min="0"
+                      max="100"
                     />
                   </label>
                 </div>
@@ -14846,6 +14885,38 @@ function EncounterWorkspace({
                     aria-label="Encounter vitals note"
                   />
                 </label>
+                {encounterDetail.vitals?.history.length ? (
+                  <>
+                    <label className="filter-field">
+                      <span>Correct a prior observation</span>
+                      <select
+                        value={vitalsCorrectionOfId}
+                        onChange={(event) => setVitalsCorrectionOfId(event.target.value)}
+                        aria-label="Vital observation to correct"
+                      >
+                        <option value="">Record a new observation</option>
+                        {encounterDetail.vitals.history.map((vital) => (
+                          <option key={vital.id} value={vital.id}>
+                            {`${vital.vitalDateTime.slice(0, 16).replace('T', ' ')} · ${vital.systolic ?? '—'}/${vital.diastolic ?? '—'} · #${vital.id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {vitalsCorrectionOfId && (
+                      <label className="filter-field">
+                        <span>Correction reason</span>
+                        <textarea
+                          value={vitalsCorrectionReason}
+                          onChange={(event) => setVitalsCorrectionReason(event.target.value)}
+                          aria-label="Vital correction reason"
+                          minLength={3}
+                          maxLength={500}
+                          required
+                        />
+                      </label>
+                    )}
+                  </>
+                ) : null}
               </div>
               <div className="detail-actions">
                 <button className="icon-text-button primary" type="submit" disabled={vitalsStatus === 'saving' || encounterLockedBySignature}>

@@ -764,6 +764,12 @@ export type EncounterListItem = {
 }
 
 export type EncounterVitals = {
+  id: number
+  vitalDateTime: string
+  recordedAt: string
+  recordedBy: string
+  correctionOfVitalId?: number | null
+  correctionReason?: string | null
   systolic?: number | null
   diastolic?: number | null
   bloodPressure?: string | null
@@ -774,6 +780,26 @@ export type EncounterVitals = {
   respiration?: number | null
   bmi?: number | null
   oxygenSaturation?: number | null
+  history: EncounterVitalVersion[]
+}
+
+export type EncounterVitalVersion = {
+  id: number
+  vitalDateTime: string
+  recordedAt: string
+  recordedBy: string
+  correctionOfVitalId?: number | null
+  correctionReason?: string | null
+  systolic?: number | null
+  diastolic?: number | null
+  weight?: number | null
+  height?: number | null
+  temperature?: number | null
+  pulse?: number | null
+  respiration?: number | null
+  bmi?: number | null
+  oxygenSaturation?: number | null
+  note?: string | null
 }
 
 export type EncounterSoapNote = {
@@ -954,6 +980,8 @@ export type EncounterVitalsCreateInput = {
   respiration?: number | null
   oxygenSaturation?: number | null
   note?: string | null
+  correctionOfVitalId?: number | null
+  correctionReason?: string | null
 }
 
 export type EncounterSoapNoteCreateInput = {

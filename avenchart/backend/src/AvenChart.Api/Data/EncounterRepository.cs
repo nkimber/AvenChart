@@ -130,6 +130,12 @@ public sealed class EncounterRepository(
                 e.row_version,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 f.name as facility_name,
+                v.id as vital_id,
+                v.vital_datetime as vital_datetime,
+                v.recorded_at as vital_recorded_at,
+                v.recorded_by as vital_recorded_by,
+                v.correction_of_vital_id,
+                v.correction_reason,
                 v.bps,
                 v.bpd,
                 v.weight,
@@ -222,6 +228,7 @@ public sealed class EncounterRepository(
         var claims = await GetClaimsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var procedureOrders = await GetProcedureOrdersForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var signatures = await GetSignaturesForEncounterAsync(connection, detail.Encounter, cancellationToken);
+        var vitalHistory = await GetVitalHistoryAsync(connection, detail.Encounter, cancellationToken);
         var soapNoteVersions = await GetSoapNoteVersionsAsync(connection, detail.Encounter, cancellationToken);
         var diagnosisCodes = BuildDiagnosisCodes(detail, billingLines, procedureOrders);
         var patientDocuments = await documentRepository.GetForPatientAsync(
@@ -242,6 +249,9 @@ public sealed class EncounterRepository(
             ProcedureOrders = procedureOrders,
             Signatures = signatures,
             AmendmentHistory = BuildAmendmentHistory(signatures),
+            Vitals = detail.Vitals is null
+                ? null
+                : detail.Vitals with { History = vitalHistory },
             SoapNote = detail.SoapNote is null
                 ? null
                 : detail.SoapNote with
@@ -849,12 +859,8 @@ public sealed class EncounterRepository(
 
     private static EncounterVitals? ReadVitals(DbDataReader reader)
     {
-        var hasVitals = !reader.IsDBNull(reader.GetOrdinal("bps"))
-            || !reader.IsDBNull(reader.GetOrdinal("bpd"))
-            || !reader.IsDBNull(reader.GetOrdinal("weight"))
-            || !reader.IsDBNull(reader.GetOrdinal("height"));
-
-        if (!hasVitals)
+        var vitalIdOrdinal = reader.GetOrdinal("vital_id");
+        if (reader.IsDBNull(vitalIdOrdinal))
         {
             return null;
         }
@@ -862,6 +868,12 @@ public sealed class EncounterRepository(
         var systolic = ReadNullableInt(reader, "bps");
         var diastolic = ReadNullableInt(reader, "bpd");
         return new EncounterVitals(
+            Id: reader.GetInt32(vitalIdOrdinal),
+            VitalDateTime: ReadDateTime(reader, "vital_datetime"),
+            RecordedAt: ReadDateTime(reader, "vital_recorded_at"),
+            RecordedBy: reader.GetString(reader.GetOrdinal("vital_recorded_by")),
+            CorrectionOfVitalId: ReadNullableInt(reader, "correction_of_vital_id"),
+            CorrectionReason: ReadNullableString(reader, "correction_reason"),
             Systolic: systolic,
             Diastolic: diastolic,
             BloodPressure: systolic is null || diastolic is null ? null : $"{systolic}/{diastolic}",
@@ -871,7 +883,64 @@ public sealed class EncounterRepository(
             Pulse: ReadNullableInt(reader, "pulse"),
             Respiration: ReadNullableInt(reader, "respiration"),
             Bmi: ReadNullableDecimal(reader, "bmi"),
-            OxygenSaturation: ReadNullableInt(reader, "oxygen_saturation"));
+            OxygenSaturation: ReadNullableInt(reader, "oxygen_saturation"),
+            History: Array.Empty<EncounterVitalVersion>());
+    }
+
+    private static async Task<IReadOnlyList<EncounterVitalVersion>> GetVitalHistoryAsync(
+        NpgsqlConnection connection,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                id,
+                vital_datetime,
+                recorded_at,
+                recorded_by,
+                correction_of_vital_id,
+                correction_reason,
+                bps,
+                bpd,
+                weight,
+                height,
+                temperature,
+                pulse,
+                respiration,
+                bmi,
+                oxygen_saturation,
+                note
+            from vitals
+            where encounter = @encounter
+            order by vital_datetime desc, id desc;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+
+        var history = new List<EncounterVitalVersion>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            history.Add(new EncounterVitalVersion(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                VitalDateTime: ReadDateTime(reader, "vital_datetime"),
+                RecordedAt: ReadDateTime(reader, "recorded_at"),
+                RecordedBy: reader.GetString(reader.GetOrdinal("recorded_by")),
+                CorrectionOfVitalId: ReadNullableInt(reader, "correction_of_vital_id"),
+                CorrectionReason: ReadNullableString(reader, "correction_reason"),
+                Systolic: ReadNullableInt(reader, "bps"),
+                Diastolic: ReadNullableInt(reader, "bpd"),
+                Weight: ReadNullableDecimal(reader, "weight"),
+                Height: ReadNullableDecimal(reader, "height"),
+                Temperature: ReadNullableDecimal(reader, "temperature"),
+                Pulse: ReadNullableInt(reader, "pulse"),
+                Respiration: ReadNullableInt(reader, "respiration"),
+                Bmi: ReadNullableDecimal(reader, "bmi"),
+                OxygenSaturation: ReadNullableInt(reader, "oxygen_saturation"),
+                Note: ReadNullableString(reader, "note")));
+        }
+
+        return history;
     }
 
     private static EncounterSoapNote? ReadSoapNote(DbDataReader reader)
