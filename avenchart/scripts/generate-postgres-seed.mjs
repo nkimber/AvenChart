@@ -1583,6 +1583,7 @@ create table lab_order_catalog (
 create table lab_reports (
   id integer primary key,
   order_id integer not null references lab_orders(id),
+  specimen_id integer,
   date_collected timestamp not null,
   report_date timestamp not null,
   specimen_number text,
@@ -2870,9 +2871,48 @@ copyRows('lab_orders', [
   order.dateTransmitted ?? null,
 ]))
 
+const legacyReportSpecimens = dataset.labReports.map((report) => [
+  report.id,
+  report.orderId,
+  `legacy-report-${report.id}`,
+  `SP-${report.id}`,
+  'LEGACY',
+  'Legacy report specimen',
+  '',
+  '',
+  '',
+  '',
+  report.date,
+  null,
+  '',
+  '',
+  '',
+  'Synthetic specimen created to bind the legacy report to its order.',
+])
+
+copyRows('lab_specimens', [
+  'id',
+  'order_id',
+  'specimen_identifier',
+  'accession_identifier',
+  'specimen_type_code',
+  'specimen_type',
+  'collection_method_code',
+  'collection_method',
+  'specimen_location_code',
+  'specimen_location',
+  'collected_date',
+  'volume_value',
+  'volume_unit',
+  'condition_code',
+  'specimen_condition',
+  'comments',
+], legacyReportSpecimens)
+
 copyRows('lab_reports', [
   'id',
   'order_id',
+  'specimen_id',
   'date_collected',
   'report_date',
   'specimen_number',
@@ -2887,6 +2927,7 @@ copyRows('lab_reports', [
   return [
     report.id,
     report.orderId,
+    report.id,
     report.date,
     report.date,
     `SP-${report.id}`,

@@ -1135,7 +1135,7 @@ public sealed class EncounterRepository(
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, order_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at,
+            select id, order_id, specimen_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at,
                    review_version,
                    (select count(*) from lab_report_review_events event where event.report_id = lab_reports.id) as review_history_count,
                    notes
@@ -1157,6 +1157,7 @@ public sealed class EncounterRepository(
                     Id: id,
                     DateCollected: ReadDateTime(reader, "date_collected"),
                     ReportDate: ReadDateTime(reader, "report_date"),
+                    SpecimenId: ReadNullableInt(reader, "specimen_id"),
                     SpecimenNumber: ReadNullableString(reader, "specimen_number"),
                     Status: ReadNullableString(reader, "status"),
                     ReviewStatus: ReadNullableString(reader, "review_status"),

@@ -108,6 +108,45 @@ function Get-ClinicianHeaders {
     return $script:ClinicianHeaders
 }
 
+function New-ReceivedProcedureSpecimen {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$OrderId,
+        [Parameter(Mandatory = $true)]
+        [string]$SpecimenIdentifier,
+        [Parameter(Mandatory = $true)]
+        [string]$AccessionIdentifier,
+        [string]$CollectedDate = "2026-06-18 12:20:00"
+    )
+
+    $createBody = @{
+        orderId = $OrderId
+        specimenIdentifier = $SpecimenIdentifier
+        accessionIdentifier = $AccessionIdentifier
+        specimenTypeCode = "BLD"
+        specimenType = "Blood"
+        collectionMethodCode = "VP"
+        collectionMethod = "Venipuncture"
+        specimenLocationCode = "LAC"
+        specimenLocation = "Left antecubital"
+        collectedDate = $CollectedDate
+        volumeValue = 4.5
+        volumeUnit = "mL"
+        conditionCode = "OK"
+        specimenCondition = "Acceptable"
+        comments = "Created by the smoke received-specimen helper."
+    } | ConvertTo-Json -Depth 5
+
+    $created = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/specimens" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $transitionBody = @{
+        status = "received"
+        expectedVersion = 1
+        reason = "Received before local report capture."
+    } | ConvertTo-Json -Depth 5
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/specimens/$($created.id)/lifecycle" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $transitionBody -TimeoutSec 20 | Out-Null
+    return [int]$created.id
+}
+
 function New-AuthenticatedHttpClient {
     $client = [System.Net.Http.HttpClient]::new()
     $headers = Get-AdministrationHeaders
@@ -6324,12 +6363,13 @@ try {
 
     $createdEncounterProcedureResultOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureResultOrderBody -TimeoutSec 20
     $smokeEncounterProcedureResultOrderId = $createdEncounterProcedureResultOrder.id
+    $encounterProcedureResultSpecimenId = New-ReceivedProcedureSpecimen -OrderId $smokeEncounterProcedureResultOrderId -SpecimenIdentifier "SMOKE-ENC-PROC" -AccessionIdentifier "SMOKE-ENC-PROC"
 
     $procedureResultReportBody = @{
         orderId = $smokeEncounterProcedureResultOrderId
+        specimenId = $encounterProcedureResultSpecimenId
         dateCollected = "2026-06-18 12:30:00"
         dateReport = "2026-06-18 13:00:00"
-        specimenNumber = "SMOKE-ENC-PROC"
         reportStatus = "final"
         reviewStatus = "reviewed"
         notes = "Created by the smoke encounter procedure result entry check."
@@ -6363,6 +6403,7 @@ try {
         @($createdEncounterProcedureResultOrderRow.reports | Where-Object { $null -ne $_ }) | Where-Object {
             $_.id -eq $createdEncounterProcedureResultReport.id `
                 -and $_.dateCollected -eq "2026-06-18 12:30" `
+                -and $_.specimenId -eq $encounterProcedureResultSpecimenId `
                 -and $_.specimenNumber -eq "SMOKE-ENC-PROC" `
                 -and $_.status -eq "final" `
                 -and $_.reviewStatus -eq "reviewed"
@@ -6439,12 +6480,13 @@ try {
 
     $createdProcedureCorrectionOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureCorrectionOrderBody -TimeoutSec 20
     $smokeProcedureResultCorrectionOrderId = $createdProcedureCorrectionOrder.id
+    $procedureCorrectionSpecimenId = New-ReceivedProcedureSpecimen -OrderId $smokeProcedureResultCorrectionOrderId -SpecimenIdentifier "SMOKE-PROC-CORR" -AccessionIdentifier "SMOKE-PROC-CORR"
 
     $procedureCorrectionReportBody = @{
         orderId = $smokeProcedureResultCorrectionOrderId
+        specimenId = $procedureCorrectionSpecimenId
         dateCollected = "2026-06-18 12:30:00"
         dateReport = "2026-06-18 13:00:00"
-        specimenNumber = "SMOKE-PROC-CORR"
         reportStatus = "final"
         reviewStatus = "reviewed"
         notes = "Created by the smoke procedure result correction check."
@@ -8875,12 +8917,13 @@ try {
     } | ConvertTo-Json
     $completedProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $completeProcedureBody -TimeoutSec 20
     $completedProcedureVisible = $completedProcedureOrder.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId -and $_.orderStatus -eq "complete" } | Select-Object -First 1
+    $reportSpecimenId = New-ReceivedProcedureSpecimen -OrderId $procedureOrderMutationId -SpecimenIdentifier "SMOKE-PROC-CORR" -AccessionIdentifier "SMOKE-PROC-CORR"
 
     $createProcedureReportBody = @{
         orderId = $procedureOrderMutationId
+        specimenId = $reportSpecimenId
         dateCollected = "2026-06-18 12:30:00"
         dateReport = "2026-06-18 13:00:00"
-        specimenNumber = "SMOKE-PROC"
         reportStatus = "final"
         reviewStatus = "received"
         notes = "Smoke procedure report."
@@ -8889,9 +8932,9 @@ try {
     $procedureReportId = $createdProcedureReport.id
 
     $correctProcedureReportBody = @{
+        specimenId = $reportSpecimenId
         dateCollected = "2026-06-19 10:20:00"
         dateReport = "2026-06-19 11:00:00"
-        specimenNumber = "SMOKE-PROC-CORR"
         reportStatus = "corrected"
         reviewStatus = "received"
         notes = "Corrected smoke procedure report."
@@ -8899,10 +8942,11 @@ try {
     $correctedProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports/$procedureReportId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $correctProcedureReportBody -TimeoutSec 20
     $correctedProcedureReportVisible = $correctedProcedureReport.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId } | Select-Object -First 1
     $correctedProcedureReportRow = $correctedProcedureReportVisible.reports | Where-Object {
-        $_.id -eq $procedureReportId `
-            -and $_.dateCollected -eq "2026-06-19 10:20" `
-            -and $_.reportDate -eq "2026-06-19 11:00" `
-            -and $_.specimenNumber -eq "SMOKE-PROC-CORR" `
+            $_.id -eq $procedureReportId `
+                -and $_.dateCollected -eq "2026-06-19 10:20" `
+                -and $_.reportDate -eq "2026-06-19 11:00" `
+                -and $_.specimenId -eq $reportSpecimenId `
+                -and $_.specimenNumber -eq "SMOKE-PROC-CORR" `
             -and $_.status -eq "corrected" `
             -and $_.reviewStatus -eq "received" `
             -and $_.notes -eq "Corrected smoke procedure report."
@@ -8927,6 +8971,21 @@ try {
     } | ConvertTo-Json
     $createdProcedureSpecimen = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/specimens" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createProcedureSpecimenBody -TimeoutSec 20
     $procedureSpecimenId = $createdProcedureSpecimen.id
+    $unreceivedSpecimenReportRejected = $false
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{
+            orderId = $procedureOrderMutationId
+            specimenId = $procedureSpecimenId
+            dateCollected = "2026-06-18 12:30:00"
+            dateReport = "2026-06-18 13:00:00"
+            reportStatus = "final"
+            reviewStatus = "received"
+            notes = "This report must be rejected because its specimen is not received."
+        } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        $unreceivedSpecimenReportRejected = $_.Exception.Response.StatusCode.value__ -eq 400
+    }
 
     $createProcedureResultBody = @{
         reportId = $procedureReportId
@@ -8960,6 +9019,7 @@ try {
         $_.id -eq $procedureReportId `
             -and $_.dateCollected -eq "2026-06-19 10:20" `
             -and $_.reportDate -eq "2026-06-19 11:00" `
+            -and $_.specimenId -eq $reportSpecimenId `
             -and $_.specimenNumber -eq "SMOKE-PROC-CORR" `
             -and $_.status -eq "corrected" `
             -and $_.reviewStatus -eq "received" `
@@ -9024,6 +9084,7 @@ try {
         -and $null -ne $correctedProcedureReportRow `
         -and $null -ne $resultSpecimen `
         -and $null -ne $resultReport `
+        -and $unreceivedSpecimenReportRejected `
         -and $null -ne $queuedProcedureReportBeforeSign `
         -and $null -ne $filteredQueuedProcedureReportBeforeSign `
         -and $null -ne $providerFilteredQueuedProcedureReportBeforeSign `
@@ -9049,6 +9110,7 @@ try {
         completedVisible = $completedProcedureVisible
         specimenId = $procedureSpecimenId
         specimenVisible = $resultSpecimen
+        unreceivedSpecimenReportRejected = $unreceivedSpecimenReportRejected
         reportId = $procedureReportId
         correctedReportVisible = $correctedProcedureReportRow
         queuedReportBeforeSign = $queuedProcedureReportBeforeSign

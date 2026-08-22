@@ -2044,7 +2044,7 @@ describe('authenticated API transport', () => {
 
   it('uses protected local lab report, result, and result-correction contracts', async () => {
     const detail = { patientId: 'MOD-PAT-0004', patientDisplayName: 'Alex Morgan', counts: { orders: 1, reports: 1, results: 1, finalResults: 1 }, orders: [] }
-    const report = { orderId: 7001, dateCollected: '2026-07-29T12:00:00', dateReport: '2026-07-29T12:00:00', specimenNumber: 'SP-7001', reportStatus: 'received', reviewStatus: 'received', notes: '' }
+    const report = { orderId: 7001, specimenId: 8001, dateCollected: '2026-07-29T12:00:00', dateReport: '2026-07-29T12:00:00', reportStatus: 'received', reviewStatus: 'received', notes: '' }
     const result = { reportId: 8001, resultCode: 'GLU', resultText: 'Glucose', dateTime: '2026-07-29T12:00:00', facility: '', units: 'mg/dL', result: '95', range: '70-99', abnormal: '', comments: '', status: 'final' }
     const correction = { resultCode: 'GLU', resultText: 'Glucose', dateTime: '2026-07-29T12:00:00', units: 'mg/dL', result: '105', range: '70-99', abnormal: 'H', status: 'corrected' }
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 8001, detail })).mockResolvedValueOnce(jsonResponse({ id: 9001, detail })).mockResolvedValueOnce(jsonResponse({ id: 9001, detail }))

@@ -6848,6 +6848,7 @@ export type ProcedureReportItem = {
   id: number
   dateCollected: string
   reportDate: string
+  specimenId?: number | null
   specimenNumber?: string | null
   status?: string | null
   reviewStatus?: string | null
@@ -7020,9 +7021,9 @@ export function getProcedureSpecimenLifecycleHistory(
 
 export type ProcedureReportCreateInput = {
   orderId: number
+  specimenId: number
   dateCollected: string
   dateReport: string
-  specimenNumber: string
   reportStatus: string
   reviewStatus: string
   notes: string

@@ -288,6 +288,7 @@ public sealed record ProcedureReportItem(
     int Id,
     string DateCollected,
     string ReportDate,
+    int? SpecimenId,
     string? SpecimenNumber,
     string? Status,
     string? ReviewStatus,
@@ -401,17 +402,17 @@ public sealed record ProcedureOrderUpdateRequest(
 
 public sealed record ProcedureReportCreateRequest(
     int OrderId,
+    int SpecimenId,
     string DateCollected,
     string DateReport,
-    string SpecimenNumber,
     string ReportStatus,
     string ReviewStatus,
     string Notes);
 
 public sealed record ProcedureReportUpdateRequest(
+    int SpecimenId,
     string DateCollected,
     string DateReport,
-    string SpecimenNumber,
     string ReportStatus,
     string ReviewStatus,
     string Notes);

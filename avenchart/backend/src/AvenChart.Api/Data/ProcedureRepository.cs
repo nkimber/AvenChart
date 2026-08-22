@@ -1128,9 +1128,9 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         CancellationToken cancellationToken)
     {
         if (request.OrderId <= 0
+            || request.SpecimenId <= 0
             || string.IsNullOrWhiteSpace(request.ReportStatus)
             || string.IsNullOrWhiteSpace(request.ReviewStatus)
-            || string.IsNullOrWhiteSpace(request.SpecimenNumber)
             || !TryReadDateTime(request.DateCollected, out var collectedDate)
             || !TryReadDateTime(request.DateReport, out var reportDate))
         {
@@ -1145,21 +1145,36 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         var id = await GetNextIntIdAsync(connection, "lab_reports", "id", cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var specimen = await GetReceivedReportSpecimenAsync(
+            connection,
+            transaction,
+            order.Id,
+            request.SpecimenId,
+            cancellationToken);
+        if (specimen is null)
+        {
+            return null;
+        }
+
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             insert into lab_reports
-                (id, order_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at, notes)
+                (id, order_id, specimen_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at, notes)
             values
-                (@id, @orderId, @dateCollected, @reportDate, @specimenNumber, @status, 'received', null, null, @notes);
+                (@id, @orderId, @specimenId, @dateCollected, @reportDate, @specimenNumber, @status, 'received', null, null, @notes);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("orderId", order.Id);
+        command.Parameters.AddWithValue("specimenId", specimen.Id);
         command.Parameters.Add("dateCollected", NpgsqlDbType.Timestamp).Value = collectedDate;
         command.Parameters.Add("reportDate", NpgsqlDbType.Timestamp).Value = reportDate;
-        command.Parameters.AddWithValue("specimenNumber", request.SpecimenNumber.Trim());
+        command.Parameters.AddWithValue("specimenNumber", specimen.DisplayIdentifier);
         command.Parameters.AddWithValue("status", request.ReportStatus.Trim());
         command.Parameters.AddWithValue("notes", request.Notes?.Trim() ?? string.Empty);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(order.PatientId, cancellationToken);
         return detail is null ? null : new ProcedureMutationResponse(id, detail);
@@ -1171,9 +1186,9 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         CancellationToken cancellationToken)
     {
         if (reportId <= 0
+            || request.SpecimenId <= 0
             || string.IsNullOrWhiteSpace(request.ReportStatus)
             || string.IsNullOrWhiteSpace(request.ReviewStatus)
-            || string.IsNullOrWhiteSpace(request.SpecimenNumber)
             || !TryReadDateTime(request.DateCollected, out var collectedDate)
             || !TryReadDateTime(request.DateReport, out var reportDate))
         {
@@ -1187,10 +1202,24 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var specimen = await GetReceivedReportSpecimenAsync(
+            connection,
+            transaction,
+            report.OrderId,
+            request.SpecimenId,
+            cancellationToken);
+        if (specimen is null)
+        {
+            return null;
+        }
+
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             update lab_reports
-            set date_collected = @dateCollected,
+            set specimen_id = @specimenId,
+                date_collected = @dateCollected,
                 report_date = @reportDate,
                 specimen_number = @specimenNumber,
                 status = @status,
@@ -1198,12 +1227,14 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             where id = @id;
             """;
         command.Parameters.AddWithValue("id", report.Id);
+        command.Parameters.AddWithValue("specimenId", specimen.Id);
         command.Parameters.Add("dateCollected", NpgsqlDbType.Timestamp).Value = collectedDate;
         command.Parameters.Add("reportDate", NpgsqlDbType.Timestamp).Value = reportDate;
-        command.Parameters.AddWithValue("specimenNumber", request.SpecimenNumber.Trim());
+        command.Parameters.AddWithValue("specimenNumber", specimen.DisplayIdentifier);
         command.Parameters.AddWithValue("status", request.ReportStatus.Trim());
         command.Parameters.AddWithValue("notes", request.Notes?.Trim() ?? string.Empty);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(report.PatientId, cancellationToken);
         return detail is null ? null : new ProcedureMutationResponse(report.Id, detail);
@@ -1913,7 +1944,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, order_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at,
+            select id, order_id, specimen_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at,
                    review_version,
                    (select count(*) from lab_report_review_events lrrh where lrrh.report_id = lab_reports.id) as review_history_count,
                    notes
@@ -1935,6 +1966,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     Id: id,
                     DateCollected: reader.GetDateTime(reader.GetOrdinal("date_collected")).ToString("yyyy-MM-dd HH:mm"),
                     ReportDate: reader.GetDateTime(reader.GetOrdinal("report_date")).ToString("yyyy-MM-dd HH:mm"),
+                    SpecimenId: ReadNullableInt(reader, "specimen_id"),
                     SpecimenNumber: ReadNullableString(reader, "specimen_number"),
                     Status: ReadNullableString(reader, "status"),
                     ReviewStatus: ReadNullableString(reader, "review_status"),
@@ -2323,7 +2355,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select lr.id, lo.patient_id, lo.pid
+            select lr.id, lr.order_id, lo.patient_id, lo.pid
             from lab_reports lr
             inner join lab_orders lo on lo.id = lr.order_id
             where lr.id = @id
@@ -2339,8 +2371,41 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         return new ProcedureReportMutationContext(
             Id: reader.GetInt32(reader.GetOrdinal("id")),
+            OrderId: reader.GetInt32(reader.GetOrdinal("order_id")),
             PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
             LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")));
+    }
+
+    private static async Task<ProcedureReportSpecimenContext?> GetReceivedReportSpecimenAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int orderId,
+        int specimenId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select id,
+                   coalesce(nullif(btrim(accession_identifier), ''), nullif(btrim(specimen_identifier), ''), concat('Specimen ', id)) as display_identifier
+            from lab_specimens
+            where id = @specimenId
+              and order_id = @orderId
+              and specimen_status = 'received'
+            for update;
+            """;
+        command.Parameters.AddWithValue("specimenId", specimenId);
+        command.Parameters.AddWithValue("orderId", orderId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new ProcedureReportSpecimenContext(
+            reader.GetInt32(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("display_identifier")));
     }
 
     private static async Task<ProcedureResultMutationContext?> GetResultMutationContextAsync(
@@ -2856,7 +2921,9 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     private sealed record ProcedureOrderMutationContext(int Id, string PatientId, int LegacyPid, int Encounter);
 
-    private sealed record ProcedureReportMutationContext(int Id, string PatientId, int LegacyPid);
+    private sealed record ProcedureReportMutationContext(int Id, int OrderId, string PatientId, int LegacyPid);
+
+    private sealed record ProcedureReportSpecimenContext(int Id, string DisplayIdentifier);
 
     private sealed record ProcedureReportReviewContext(
         int Id,
