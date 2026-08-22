@@ -14,6 +14,8 @@ export type ClinicianSession = {
   purposeOfUse?: string
   facilities?: ClinicianAccessFacility[]
   purposes?: string[]
+  authenticationMode?: 'local' | 'oidc-bff'
+  csrfToken?: string
 }
 
 export type ClinicianAccessFacility = {
@@ -28,6 +30,8 @@ export type PortalSession = {
   username: string
   portalUsername: string
   displayName: string
+  authenticationMode?: 'local' | 'oidc-bff'
+  csrfToken?: string
 }
 
 const CLINICIAN_KEY = 'avenchart-ui.clinicianSession'

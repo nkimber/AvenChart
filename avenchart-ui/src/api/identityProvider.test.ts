@@ -70,11 +70,13 @@ describe("getIdentityProviderReadiness", () => {
     expect(result).toEqual(readiness);
     expect(result.counts.productionApproved).toBe(0);
     expect(result.counts.emergencyEnabled).toBe(0);
-    expect(fetchMock).toHaveBeenCalledWith(
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
       "http://localhost:5001/api/administration/identity-provider/readiness",
-      expect.objectContaining({
-        headers: { "X-AvenChart-Session": "staff-session" },
-      }),
     );
+    expect(new Headers(init.headers).get("X-AvenChart-Session")).toBe(
+      "staff-session",
+    );
+    expect(init.credentials).toBe("include");
   });
 });

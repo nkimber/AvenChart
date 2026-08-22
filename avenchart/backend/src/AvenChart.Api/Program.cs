@@ -34,6 +34,7 @@ builder.Services.AddProblemDetails(options =>
     };
 });
 builder.Services.AddResponseCompression();
+builder.Services.AddDataProtection();
 builder.Services.AddSingleton<SchemaMigrationCatalog>();
 builder.Services.AddSingleton<DatabaseBootstrapCatalog>();
 builder.Services.AddSingleton<SchemaMigrationState>();
@@ -47,6 +48,11 @@ builder.Services.AddHttpClient("azure-deployment-health", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(20);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("AvenChart-Azure-Operations/1.0");
+});
+builder.Services.AddHttpClient("browser-oidc", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("AvenChart-Browser-OIDC/1.0");
 });
 
 builder.Services.AddOptions<AzureOperationsOptions>()
@@ -88,12 +94,30 @@ builder.Services.AddOptions<IdentityProviderOptions>()
         "IdentityProvider:ClockSkewSeconds must be between 0 and 300.")
     .Validate(options => options.TestTokenLifetimeMinutes is >= 1 and <= 60,
         "IdentityProvider:TestTokenLifetimeMinutes must be between 1 and 60.")
+    .Validate(options => options.BrowserStateLifetimeSeconds is >= 60 and <= 900,
+        "IdentityProvider:BrowserStateLifetimeSeconds must be between 60 and 900.")
+    .Validate(options => options.BrowserAllowedOrigins.All(origin => Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+        && string.IsNullOrWhiteSpace(uri.UserInfo)
+        && uri.AbsolutePath == "/"
+        && string.IsNullOrWhiteSpace(uri.Query)
+        && string.IsNullOrWhiteSpace(uri.Fragment)),
+        "IdentityProvider:BrowserAllowedOrigins must contain absolute origin URLs only.")
+    .Validate(options => !options.EnableBrowserBff || options.IsOidc,
+        "IdentityProvider:EnableBrowserBff is supported only with IdentityProvider:Mode oidc; test-oidc enables its development BFF automatically.")
+    .Validate(options => !options.EnableBrowserBff || options.BrowserBffEnabled,
+        "IdentityProvider:EnableBrowserBff requires BrowserClientId and at least one BrowserAllowedOrigin.")
     .Validate(options => !options.IsOidc || (!string.IsNullOrWhiteSpace(options.Authority) && !string.IsNullOrWhiteSpace(options.Audience) && !string.IsNullOrWhiteSpace(options.ProviderId)),
         "IdentityProvider:Authority, Audience, and ProviderId are required when IdentityProvider:Mode is oidc.")
     .Validate(options => !options.IsTestOidc || (!string.IsNullOrWhiteSpace(options.TestIssuer) && !string.IsNullOrWhiteSpace(options.TestAudience)),
         "IdentityProvider:TestIssuer and TestAudience are required when IdentityProvider:Mode is test-oidc.")
     .Validate(options => !builder.Environment.IsProduction() || !options.IsTestOidc,
         "IdentityProvider:Mode test-oidc is development-only and cannot run in Production.")
+    .Validate(options => !builder.Environment.IsProduction() || !options.BrowserBffEnabled
+        || (Uri.TryCreate(options.BrowserCallbackUrl, UriKind.Absolute, out var callback)
+            && string.Equals(callback.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && options.BrowserAllowedOrigins.All(origin => Uri.TryCreate(origin, UriKind.Absolute, out var originUri)
+                && string.Equals(originUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))),
+        "IdentityProvider browser BFF requires an explicit HTTPS BrowserCallbackUrl and HTTPS BrowserAllowedOrigins in Production.")
     .ValidateOnStart();
 
 builder.Services.AddOptions<ReportExecutionOptions>()
@@ -174,6 +198,7 @@ builder.Services.AddScoped<AuthorizationRepository>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<ExternalIdentityMappingRepository>();
 builder.Services.AddScoped<PatientPortalExternalIdentityMappingRepository>();
+builder.Services.AddScoped<BrowserOidcSessionService>();
 builder.Services.AddScoped<LocalDevelopmentStaffIdentityAdapter>();
 builder.Services.AddScoped<OidcStaffIdentityAdapter>();
 builder.Services.AddScoped<TestOidcStaffIdentityAdapter>();
@@ -225,20 +250,31 @@ builder.Services.AddSingleton<AzureCliRunner>();
 builder.Services.AddSingleton<AzureDeploymentCoordinator>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<AzureDeploymentCoordinator>());
 
+var configuredBrowserOrigins = builder.Configuration
+    .GetSection(IdentityProviderOptions.SectionName)
+    .Get<IdentityProviderOptions>()?.BrowserAllowedOrigins ?? [];
+var corsOrigins = new[]
+    {
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3100",
+        "http://127.0.0.1:3100"
+    }
+    .Concat(configuredBrowserOrigins.Where(origin => !string.IsNullOrWhiteSpace(origin)))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("local-app-clients", policy =>
     {
         policy
-            .WithOrigins(
-                "http://localhost:3000",
-                "http://127.0.0.1:3000",
-                "http://localhost:5173",
-                "http://127.0.0.1:5173",
-                "http://localhost:3100",
-                "http://127.0.0.1:3100")
+            .WithOrigins(corsOrigins)
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials()
+            .WithExposedHeaders("X-AvenChart-CSRF");
     });
 });
 
@@ -391,6 +427,39 @@ app.Use(async (context, next) =>
 });
 app.Use(async (context, next) =>
 {
+    // A browser BFF session is cookie-authenticated. State-changing requests
+    // must therefore prove same-origin intent with an independently issued
+    // CSRF value; bearer and non-browser integration requests do not use this
+    // path and remain governed by their own authentication boundary.
+    var isUnsafeApiMethod = context.Request.Path.StartsWithSegments("/api")
+        && !HttpMethods.IsGet(context.Request.Method)
+        && !HttpMethods.IsHead(context.Request.Method)
+        && !HttpMethods.IsOptions(context.Request.Method);
+    // The development-only test IdP is an identity-provider origin in this
+    // topology, not an AvenChart application mutation endpoint. Its own
+    // authorization-code correlation and PKCE checks apply there.
+    var isDevelopmentTestIdentityProviderRequest = context.Request.Path.StartsWithSegments("/api/test-idp");
+    if (isUnsafeApiMethod && !isDevelopmentTestIdentityProviderRequest)
+    {
+        var browserOidcSessions = context.RequestServices.GetRequiredService<BrowserOidcSessionService>();
+        var hasBrowserSession = browserOidcSessions.IsBrowserSessionRequest(context, BrowserOidcSessionService.StaffAudience)
+            || browserOidcSessions.IsBrowserSessionRequest(context, BrowserOidcSessionService.PortalAudience);
+        if (hasBrowserSession)
+        {
+            var origin = context.Request.Headers.Origin.ToString();
+            if (!browserOidcSessions.IsAllowedBrowserOrigin(origin) || !browserOidcSessions.HasValidBrowserCsrf(context))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new { error = "A valid browser single sign-on origin and CSRF token are required." });
+                return;
+            }
+        }
+    }
+
+    await next(context);
+});
+app.Use(async (context, next) =>
+{
     // Keep all portal routes bound to the established server-side session
     // contract. In external-identity modes, a validated bearer is exchanged
     // for a token-bounded derived session; a legacy header is never honored.
@@ -455,6 +524,52 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 var auth = app.MapGroup("/api/auth").WithTags("Authentication");
 
+auth.MapGet("/oidc/browser-configuration", (BrowserOidcSessionService browserOidcSessions) =>
+        Results.Ok(browserOidcSessions.GetConfiguration()))
+    .WithName("GetBrowserOidcConfiguration");
+
+auth.MapGet("/oidc/start", async (
+        string audience,
+        string returnUrl,
+        BrowserOidcSessionService browserOidcSessions,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Redirect(await browserOidcSessions.StartAsync(httpContext, audience, returnUrl, cancellationToken));
+        }
+        catch (BrowserOidcException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("StartBrowserOidcSignIn");
+
+auth.MapGet("/oidc/callback", async (
+        string? code,
+        string? state,
+        string? error,
+        BrowserOidcSessionService browserOidcSessions,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Redirect(await browserOidcSessions.CompleteAsync(
+                httpContext,
+                code,
+                state,
+                error,
+                cancellationToken));
+        }
+        catch (BrowserOidcException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("CompleteBrowserOidcSignIn");
+
 auth.MapPost("/login", async (
         AuthRepository repository,
         StaffAccessContextService accessContextService,
@@ -494,10 +609,12 @@ if (app.Environment.IsDevelopment())
             return Results.Ok(new
             {
                 issuer = options.Value.TestIssuer,
+                authorization_endpoint = $"{baseUrl}/authorize",
                 token_endpoint = $"{baseUrl}/token",
                 jwks_uri = $"{baseUrl}/jwks",
-                response_types_supported = new[] { "token" },
-                grant_types_supported = new[] { "password" },
+                response_types_supported = new[] { "code" },
+                grant_types_supported = new[] { "authorization_code" },
+                code_challenge_methods_supported = new[] { "S256" },
                 subject_types_supported = new[] { "public" },
                 id_token_signing_alg_values_supported = new[] { "RS256" },
             });
@@ -505,15 +622,118 @@ if (app.Environment.IsDevelopment())
         .WithName("GetDevelopmentTestIdentityProviderConfiguration");
     testIdentityProvider.MapGet("/jwks", (TestIdentityProviderService provider) => Results.Ok(provider.GetJwks()))
         .WithName("GetDevelopmentTestIdentityProviderJwks");
+    testIdentityProvider.MapGet("/authorize", (
+            string? client_id,
+            string? redirect_uri,
+            string? state,
+            string? code_challenge,
+            string? code_challenge_method,
+            string? scope,
+            IOptions<IdentityProviderOptions> options,
+            HttpContext httpContext) =>
+        {
+            if (!TryCreateDevelopmentTestOidcAuthorizationRequest(
+                    client_id,
+                    redirect_uri,
+                    state,
+                    code_challenge,
+                    code_challenge_method,
+                    scope,
+                    options.Value,
+                    httpContext,
+                    out var authorizationRequest))
+            {
+                return Results.BadRequest(new { error = "The development test IdP authorization request is invalid." });
+            }
+            return Results.Content(BuildDevelopmentTestOidcAuthorizationPage(authorizationRequest), "text/html; charset=utf-8");
+        })
+        .WithName("AuthorizeDevelopmentTestIdentity");
+    testIdentityProvider.MapPost("/authorize", async (
+            HttpRequest request,
+            AuthRepository repository,
+            TestIdentityProviderService provider,
+            IOptions<IdentityProviderOptions> options,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            if (!request.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "The development test IdP authorization form is required." });
+            }
+            var form = await request.ReadFormAsync(cancellationToken);
+            if (!TryCreateDevelopmentTestOidcAuthorizationRequest(
+                    form["client_id"],
+                    form["redirect_uri"],
+                    form["state"],
+                    form["code_challenge"],
+                    form["code_challenge_method"],
+                    form["scope"],
+                    options.Value,
+                    httpContext,
+                    out var authorizationRequest))
+            {
+                return Results.BadRequest(new { error = "The development test IdP authorization request is invalid." });
+            }
+            var login = await repository.LoginAsync(
+                new AuthLoginRequest(form["username"].ToString(), form["password"].ToString()),
+                httpContext.Connection.RemoteIpAddress?.ToString(),
+                httpContext.Request.Headers.UserAgent.ToString(),
+                cancellationToken);
+            if (!login.Authenticated)
+            {
+                return Results.Unauthorized();
+            }
+            var authorizationCode = provider.IssueAuthorizationCode(
+                login.Username,
+                login.DisplayName,
+                authorizationRequest.ClientId,
+                authorizationRequest.RedirectUri,
+                authorizationRequest.CodeChallenge);
+            return Results.Redirect(Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+                authorizationRequest.RedirectUri,
+                new Dictionary<string, string?>
+                {
+                    ["code"] = authorizationCode,
+                    ["state"] = authorizationRequest.State,
+                }));
+        })
+        .WithName("CompleteDevelopmentTestIdentityAuthorization");
     testIdentityProvider.MapPost("/token", async (
-            TestIdentityProviderTokenRequest request,
+            HttpRequest request,
             AuthRepository repository,
             TestIdentityProviderService provider,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
+            if (request.HasFormContentType)
+            {
+                var form = await request.ReadFormAsync(cancellationToken);
+                if (!string.Equals(form["grant_type"], "authorization_code", StringComparison.Ordinal))
+                {
+                    return Results.BadRequest(new { error = "unsupported_grant_type" });
+                }
+                var issued = provider.ExchangeAuthorizationCode(
+                    form["code"].ToString(),
+                    form["client_id"].ToString(),
+                    form["redirect_uri"].ToString(),
+                    form["code_verifier"].ToString());
+                return issued is null
+                    ? Results.BadRequest(new { error = "invalid_grant" })
+                    : Results.Ok(new
+                    {
+                        access_token = issued.AccessToken,
+                        token_type = issued.TokenType,
+                        expires_in = issued.ExpiresIn,
+                    });
+            }
+
+            var credentialRequest = await request.ReadFromJsonAsync<TestIdentityProviderTokenRequest>(cancellationToken);
+            if (credentialRequest is null)
+            {
+                return Results.BadRequest(new { error = "The development test identity token request is required." });
+            }
             var login = await repository.LoginAsync(
-                new AuthLoginRequest(request.Username, request.Password),
+                new AuthLoginRequest(credentialRequest.Username, credentialRequest.Password),
                 httpContext.Connection.RemoteIpAddress?.ToString(),
                 httpContext.Request.Headers.UserAgent.ToString(),
                 cancellationToken);
@@ -526,13 +746,30 @@ if (app.Environment.IsDevelopment())
 
 auth.MapGet("/session", async (
         AuthRepository repository,
+        BrowserOidcSessionService browserOidcSessions,
+        StaffAccessContextService accessContextService,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        return Results.Ok(await GetSessionFromHeaderAsync(
+        var session = await GetSessionFromHeaderAsync(
             repository,
             httpContext,
-            cancellationToken));
+            cancellationToken);
+        if (session.Authenticated)
+        {
+            session = session with
+            {
+                AccessContext = await accessContextService.GetAvailableAsync(session.Username, cancellationToken)
+            };
+        }
+        if (session.Authenticated && browserOidcSessions.TryGetCsrfToken(
+                httpContext,
+                BrowserOidcSessionService.StaffAudience,
+                out var csrfToken))
+        {
+            httpContext.Response.Headers["X-AvenChart-CSRF"] = csrfToken;
+        }
+        return Results.Ok(session);
     })
     .WithName("GetCurrentSession");
 
@@ -551,10 +788,19 @@ auth.MapGet("/access-context", async (
 
 auth.MapPost("/logout", async (
         AuthRepository repository,
+        BrowserOidcSessionService browserOidcSessions,
         AuthSessionRequest request,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var response = await repository.LogoutAsync(request.SessionId, cancellationToken);
+        var browserSession = await browserOidcSessions.ResolveBrowserStaffSessionAsync(httpContext, cancellationToken);
+        var response = browserSession is not null
+            ? await repository.LogoutAsync(browserSession.SessionId!.Value, cancellationToken)
+            : await repository.LogoutAsync(request.SessionId, cancellationToken);
+        if (browserSession is not null)
+        {
+            browserOidcSessions.ClearBrowserSessionCookies(httpContext, BrowserOidcSessionService.StaffAudience);
+        }
         return Results.Ok(response);
     })
     .WithName("Logout");
@@ -609,11 +855,12 @@ patientPortal.MapPost("/login", async (
 
 patientPortal.MapGet("/session", async (
         PatientPortalRepository repository,
+        BrowserOidcSessionService browserOidcSessions,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
-        return Guid.TryParse(header, out var sessionId)
+        var response = Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.GetCurrentSessionAsync(sessionId, cancellationToken))
             : Results.Ok(new PatientPortalSessionResponse(
                 Authenticated: false,
@@ -630,6 +877,14 @@ patientPortal.MapGet("/session", async (
                 EndedAt: null,
                 FailureReason: "Patient portal session header was not supplied.",
                 SessionSource: "avenchart-portal"));
+        if (browserOidcSessions.TryGetCsrfToken(
+                httpContext,
+                BrowserOidcSessionService.PortalAudience,
+                out var csrfToken))
+        {
+            httpContext.Response.Headers["X-AvenChart-CSRF"] = csrfToken;
+        }
+        return response;
     })
     .WithName("GetPatientPortalSession");
 
@@ -1030,11 +1285,12 @@ patientPortal.MapDelete("/messages/{messageId:int}", async (
 
 patientPortal.MapDelete("/session", async (
         PatientPortalRepository repository,
+        BrowserOidcSessionService browserOidcSessions,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         var header = httpContext.Request.Headers["X-AvenChart-Patient-Portal-Session"].ToString();
-        return Guid.TryParse(header, out var sessionId)
+        var response = Guid.TryParse(header, out var sessionId)
             ? Results.Ok(await repository.EndSessionAsync(sessionId, cancellationToken))
             : Results.Ok(new PatientPortalSessionResponse(
                 Authenticated: false,
@@ -1051,6 +1307,11 @@ patientPortal.MapDelete("/session", async (
                 EndedAt: null,
                 FailureReason: "Patient portal session header was not supplied.",
                 SessionSource: "avenchart-portal"));
+        if (browserOidcSessions.IsBrowserSessionRequest(httpContext, BrowserOidcSessionService.PortalAudience))
+        {
+            browserOidcSessions.ClearBrowserSessionCookies(httpContext, BrowserOidcSessionService.PortalAudience);
+        }
+        return response;
     })
     .WithName("EndPatientPortalSession");
 
@@ -9806,4 +10067,80 @@ static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
     _ = repository;
     var adapter = httpContext.RequestServices.GetRequiredService<IStaffIdentityAdapter>();
     return await adapter.ResolveAsync(httpContext, cancellationToken);
+}
+
+static bool TryCreateDevelopmentTestOidcAuthorizationRequest(
+    string? clientId,
+    string? redirectUri,
+    string? state,
+    string? codeChallenge,
+    string? codeChallengeMethod,
+    string? scope,
+    IdentityProviderOptions options,
+    HttpContext httpContext,
+    out TestIdentityProviderAuthorizationRequest request)
+{
+    request = default!;
+    if (string.IsNullOrWhiteSpace(clientId)
+        || string.IsNullOrWhiteSpace(redirectUri)
+        || string.IsNullOrWhiteSpace(state)
+        || string.IsNullOrWhiteSpace(codeChallenge)
+        || !string.Equals(codeChallengeMethod, "S256", StringComparison.Ordinal)
+        || !string.Equals(clientId, options.BrowserClientId, StringComparison.Ordinal)
+        || codeChallenge.Length is < 43 or > 128
+        || !codeChallenge.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_'))
+    {
+        return false;
+    }
+
+    var expectedCallback = string.IsNullOrWhiteSpace(options.BrowserCallbackUrl)
+        ? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}{BrowserOidcSessionService.CallbackPath}"
+        : options.BrowserCallbackUrl;
+    if (!Uri.TryCreate(redirectUri, UriKind.Absolute, out var requestedCallback)
+        || !Uri.TryCreate(expectedCallback, UriKind.Absolute, out var configuredCallback)
+        || !string.Equals(requestedCallback.ToString(), configuredCallback.ToString(), StringComparison.Ordinal))
+    {
+        return false;
+    }
+
+    request = new TestIdentityProviderAuthorizationRequest(
+        clientId!,
+        redirectUri!,
+        state!,
+        codeChallenge!,
+        codeChallengeMethod!,
+        scope);
+    return true;
+}
+
+static string BuildDevelopmentTestOidcAuthorizationPage(TestIdentityProviderAuthorizationRequest request)
+{
+    static string Encode(string? value) => System.Net.WebUtility.HtmlEncode(value ?? string.Empty);
+    return $"""
+        <!doctype html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>AvenChart development test identity provider</title>
+        </head>
+        <body>
+          <main>
+            <h1>Development test identity provider</h1>
+            <p>This non-production page issues a short-lived token only for the configured AvenChart test client.</p>
+            <form method="post" action="/api/test-idp/authorize">
+              <input type="hidden" name="client_id" value="{Encode(request.ClientId)}">
+              <input type="hidden" name="redirect_uri" value="{Encode(request.RedirectUri)}">
+              <input type="hidden" name="state" value="{Encode(request.State)}">
+              <input type="hidden" name="code_challenge" value="{Encode(request.CodeChallenge)}">
+              <input type="hidden" name="code_challenge_method" value="{Encode(request.CodeChallengeMethod)}">
+              <input type="hidden" name="scope" value="{Encode(request.Scope)}">
+              <p><label>Username <input name="username" autocomplete="username" required></label></p>
+              <p><label>Password <input name="password" type="password" autocomplete="current-password" required></label></p>
+              <button type="submit">Continue</button>
+            </form>
+          </main>
+        </body>
+        </html>
+        """;
 }

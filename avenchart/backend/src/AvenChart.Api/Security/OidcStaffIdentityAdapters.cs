@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.IdentityModel.Tokens.Jwt;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Security.Claims;
+using System.Text;
 using AvenChart.Api.Configuration;
 using AvenChart.Api.Data;
 using AvenChart.Api.Models;
@@ -21,6 +23,7 @@ namespace AvenChart.Api.Security;
 /// </summary>
 public sealed class OidcStaffIdentityAdapter(
     AuthRepository authRepository,
+    BrowserOidcSessionService browserOidcSessions,
     IOptions<IdentityProviderOptions> options) : IStaffIdentityAdapter
 {
     public const string Id = "oidc-discovery-jwks";
@@ -32,7 +35,11 @@ public sealed class OidcStaffIdentityAdapter(
     public async Task<AuthSessionResponse> ResolveAsync(HttpContext httpContext, CancellationToken cancellationToken)
     {
         var token = OidcIdentityAdapterHelpers.ReadBearerToken(httpContext);
-        if (token is null) return OidcIdentityAdapterHelpers.MissingSession("A bearer token is required.");
+        if (token is null)
+        {
+            return await browserOidcSessions.ResolveBrowserStaffSessionAsync(httpContext, cancellationToken)
+                ?? OidcIdentityAdapterHelpers.MissingSession("A bearer token or browser single sign-on session is required.");
+        }
         try
         {
             var metadata = await _configurationManager.GetConfigurationAsync(cancellationToken);
@@ -82,6 +89,7 @@ public sealed class OidcStaffIdentityAdapter(
 public sealed class TestOidcStaffIdentityAdapter(
     AuthRepository authRepository,
     TestIdentityProviderService testIdentityProvider,
+    BrowserOidcSessionService browserOidcSessions,
     IOptions<IdentityProviderOptions> options) : IStaffIdentityAdapter
 {
     public const string Id = "first-party-test-oidc";
@@ -92,7 +100,11 @@ public sealed class TestOidcStaffIdentityAdapter(
     public async Task<AuthSessionResponse> ResolveAsync(HttpContext httpContext, CancellationToken cancellationToken)
     {
         var token = OidcIdentityAdapterHelpers.ReadBearerToken(httpContext);
-        if (token is null) return OidcIdentityAdapterHelpers.MissingSession("A bearer token is required.");
+        if (token is null)
+        {
+            return await browserOidcSessions.ResolveBrowserStaffSessionAsync(httpContext, cancellationToken)
+                ?? OidcIdentityAdapterHelpers.MissingSession("A bearer token or browser single sign-on session is required.");
+        }
         try
         {
             var validation = await new JwtSecurityTokenHandler().ValidateTokenAsync(token, new TokenValidationParameters
@@ -128,6 +140,7 @@ public sealed class TestIdentityProviderService
 {
     private readonly IdentityProviderOptions _options;
     private readonly RSA _rsa;
+    private readonly ConcurrentDictionary<string, TestAuthorizationCode> _authorizationCodes = new(StringComparer.Ordinal);
     public RsaSecurityKey SigningKey { get; }
 
     public TestIdentityProviderService(IOptions<IdentityProviderOptions> options)
@@ -158,6 +171,51 @@ public sealed class TestIdentityProviderService
         return new TestIdentityTokenResponse(new JwtSecurityTokenHandler().WriteToken(token), "Bearer", Math.Max(1, (int)(expires - now).TotalSeconds), _options.TestIssuer, _options.TestAudience);
     }
 
+    /// <summary>
+    /// Creates an opaque one-time authorization code for the development-only
+    /// test IdP. The verifier itself is never retained: only the S256 challenge
+    /// needed for the later token exchange is held until the short expiry.
+    /// </summary>
+    public string IssueAuthorizationCode(
+        string username,
+        string displayName,
+        string clientId,
+        string redirectUri,
+        string codeChallenge)
+    {
+        PurgeExpiredAuthorizationCodes();
+        var code = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
+        _authorizationCodes[code] = new TestAuthorizationCode(
+            username,
+            displayName,
+            clientId,
+            redirectUri,
+            codeChallenge,
+            DateTimeOffset.UtcNow.AddMinutes(2));
+        return code;
+    }
+
+    public TestIdentityTokenResponse? ExchangeAuthorizationCode(
+        string code,
+        string clientId,
+        string redirectUri,
+        string codeVerifier)
+    {
+        PurgeExpiredAuthorizationCodes();
+        if (!_authorizationCodes.TryRemove(code, out var authorizationCode)
+            || authorizationCode.ExpiresAt <= DateTimeOffset.UtcNow
+            || !string.Equals(authorizationCode.ClientId, clientId, StringComparison.Ordinal)
+            || !string.Equals(authorizationCode.RedirectUri, redirectUri, StringComparison.Ordinal)
+            || !CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(authorizationCode.CodeChallenge),
+                Encoding.UTF8.GetBytes(Base64UrlEncoder.Encode(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier))))))
+        {
+            return null;
+        }
+
+        return Issue(authorizationCode.Username, authorizationCode.DisplayName);
+    }
+
     public object GetJwks()
     {
         var parameters = _rsa.ExportParameters(false);
@@ -177,10 +235,37 @@ public sealed class TestIdentityProviderService
             }
         };
     }
+
+    private void PurgeExpiredAuthorizationCodes()
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var (key, value) in _authorizationCodes)
+        {
+            if (value.ExpiresAt <= now)
+            {
+                _authorizationCodes.TryRemove(key, out _);
+            }
+        }
+    }
+
+    private sealed record TestAuthorizationCode(
+        string Username,
+        string DisplayName,
+        string ClientId,
+        string RedirectUri,
+        string CodeChallenge,
+        DateTimeOffset ExpiresAt);
 }
 
 public sealed record TestIdentityProviderTokenRequest(string Username, string Password);
 public sealed record TestIdentityTokenResponse(string AccessToken, string TokenType, int ExpiresIn, string Issuer, string Audience);
+public sealed record TestIdentityProviderAuthorizationRequest(
+    string ClientId,
+    string RedirectUri,
+    string State,
+    string CodeChallenge,
+    string CodeChallengeMethod,
+    string? Scope);
 
 internal static class OidcIdentityAdapterHelpers
 {

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { loadClinicianSession } from '../auth/session.ts'
+import { loadClinicianSession, loadPortalSession } from '../auth/session.ts'
 
 export const apiBaseUrl =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5001";
@@ -105,6 +105,25 @@ export async function apiFetch(
           storedSession.purposeOfUse || 'treatment',
         );
       }
+      if (
+        storedSession.authenticationMode === 'oidc-bff'
+        && storedSession.csrfToken
+        && !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase())
+      ) {
+        headers.set('X-AvenChart-CSRF', storedSession.csrfToken)
+      }
+    }
+  }
+  const portalSessionId = headers.get('X-AvenChart-Patient-Portal-Session');
+  if (portalSessionId) {
+    const storedPortalSession = loadPortalSession();
+    if (
+      storedPortalSession?.sessionId === portalSessionId
+      && storedPortalSession.authenticationMode === 'oidc-bff'
+      && storedPortalSession.csrfToken
+      && !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase())
+    ) {
+      headers.set('X-AvenChart-CSRF', storedPortalSession.csrfToken)
     }
   }
   const scope: SessionScope | undefined = headers.has(
@@ -133,6 +152,7 @@ export async function apiFetch(
     const response = await globalThis.fetch(input, {
       ...init,
       headers,
+      credentials: 'include',
       signal: requestController.signal,
     });
     await requireSuccessfulResponse(response, action, scope);

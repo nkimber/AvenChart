@@ -6,6 +6,11 @@ import { useNavigate } from 'react-router-dom'
 import { ShieldCheck, Stethoscope } from 'lucide-react'
 import { login } from '../api.ts'
 import { saveClinicianSession } from '../auth/session.ts'
+import {
+  getBrowserOidcConfiguration,
+  startBrowserOidcSignIn,
+  type BrowserOidcConfiguration,
+} from '../auth/browserOidc.ts'
 import LegalAttribution from '../components/LegalAttribution.tsx'
 import { ClinicianIllustration } from '../illustrations.tsx'
 
@@ -15,12 +20,40 @@ export default function ClinicianLogin() {
   const [password, setPassword] = useState('pass')
   const [status, setStatus] = useState<'idle' | 'checking' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [identityConfiguration, setIdentityConfiguration] = useState<BrowserOidcConfiguration | null>(null)
   const errorReference = useRef<HTMLDivElement>(null)
   const errorId = 'clinician-sign-in-error'
 
   useEffect(() => {
     if (error) errorReference.current?.focus()
   }, [error])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    getBrowserOidcConfiguration(controller.signal)
+      .then((configuration) => setIdentityConfiguration(configuration))
+      .catch(() => {
+        // Keep the local sign-in form available when the API is offline. If an
+        // external identity mode is configured, its successful configuration
+        // response replaces this form before a user can begin SSO.
+      })
+    return () => controller.abort()
+  }, [])
+
+  const externalIdentityMode = identityConfiguration?.mode === 'oidc'
+    || identityConfiguration?.mode === 'test-oidc'
+
+  function handleBrowserSingleSignOn() {
+    if (!identityConfiguration) return
+    setStatus('checking')
+    setError(null)
+    try {
+      startBrowserOidcSignIn(identityConfiguration, 'staff')
+    } catch (err) {
+      setStatus('error')
+      setError(err instanceof Error ? err.message : 'Single sign-on could not be started.')
+    }
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -80,9 +113,15 @@ export default function ClinicianLogin() {
         <div className="auth-card">
           <p className="eyebrow">Professional sign-in</p>
           <h2 className="title">Welcome back</h2>
-          <p className="subtitle">Sign in with your AvenChart staff credentials.</p>
+          <p className="subtitle">
+            {externalIdentityMode
+              ? 'Continue with your organization’s approved identity provider.'
+              : 'Sign in with your AvenChart staff credentials.'}
+          </p>
 
-          <div className="hint-banner">Demo credentials are pre-filled: admin / pass.</div>
+          {!externalIdentityMode && (
+            <div className="hint-banner">Demo credentials are pre-filled: admin / pass.</div>
+          )}
 
           {error && (
             <div
@@ -96,6 +135,22 @@ export default function ClinicianLogin() {
             </div>
           )}
 
+          {externalIdentityMode ? (
+            identityConfiguration?.browserSignInEnabled ? (
+              <button
+                className="button-primary"
+                type="button"
+                onClick={handleBrowserSingleSignOn}
+                disabled={status === 'checking'}
+              >
+                {status === 'checking' ? 'Redirecting to single sign-on…' : 'Continue with single sign-on'}
+              </button>
+            ) : (
+              <div className="error-banner" role="alert">
+                {identityConfiguration?.failureReason ?? 'Single sign-on is not available for this deployment.'}
+              </div>
+            )
+          ) : (
           <form onSubmit={handleSubmit} aria-busy={status === 'checking'}>
             <div className="field">
               <label className="label" htmlFor="clinician-username">Username</label>
@@ -130,6 +185,7 @@ export default function ClinicianLogin() {
               {status === 'checking' ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+          )}
           <LegalAttribution />
         </div>
       </div>

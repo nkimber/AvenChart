@@ -111,6 +111,59 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
     }
 
     /// <summary>
+    /// Creates a short-lived, server-owned session only after an OIDC subject
+    /// has been signature-validated and resolved through an active local
+    /// mapping. The raw provider token is intentionally never persisted.
+    /// </summary>
+    public async Task<AuthSessionResponse> CreateBrowserOidcSessionAsync(
+        AuthSessionResponse principal,
+        DateTimeOffset expiresAt,
+        string sessionSource,
+        string? sourceIp,
+        string? userAgent,
+        CancellationToken cancellationToken)
+    {
+        if (!principal.Authenticated || string.IsNullOrWhiteSpace(principal.Username)
+            || string.IsNullOrWhiteSpace(principal.DisplayName) || string.IsNullOrWhiteSpace(principal.Role)
+            || expiresAt <= DateTimeOffset.UtcNow || !sessionSource.StartsWith("oidc-browser:", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("A validated mapped OIDC principal and future token expiry are required.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var session = await CreateSessionAsync(
+            connection,
+            principal.Username,
+            principal.DisplayName,
+            principal.Role,
+            principal.StaffId,
+            sourceIp,
+            userAgent,
+            cancellationToken,
+            expiresAt,
+            sessionSource);
+        return session.ToResponse();
+    }
+
+    /// <summary>
+    /// Resolves only a browser-BFF session produced for the selected provider;
+    /// a pre-existing local development session cannot be replayed through the
+    /// external identity cookie path.
+    /// </summary>
+    public async Task<AuthSessionResponse> GetBrowserOidcSessionAsync(
+        Guid sessionId,
+        string expectedSessionSource,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var session = await GetSessionAsync(connection, sessionId, touchActiveSession: true, cancellationToken);
+        return session is not null && session.Authenticated
+               && string.Equals(session.SessionSource, expectedSessionSource, StringComparison.Ordinal)
+            ? session.ToResponse()
+            : InactiveSession(sessionId, "Browser single sign-on session is not active.");
+    }
+
+    /// <summary>
     /// Resolves an already validated provider-scoped OIDC subject through an
     /// administrator-governed mapping to the local account that owns AvenChart
     /// capabilities and facility/purpose grants. The token adapter owns
@@ -386,18 +439,21 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
         int? staffId,
         string? sourceIp,
         string? userAgent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTimeOffset? explicitExpiresAt = null,
+        string sessionSource = "avenchart")
     {
         var sessionId = Guid.NewGuid();
         var source = string.IsNullOrWhiteSpace(sourceIp) ? "unknown" : sourceIp;
         var agent = string.IsNullOrWhiteSpace(userAgent) ? "unknown" : userAgent;
+        var expiresAt = explicitExpiresAt ?? DateTimeOffset.UtcNow.AddHours(8);
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into auth_sessions
               (id, username, display_name, role, staff_id, created_at, last_seen_at, expires_at, source_ip, user_agent, session_source)
             values
-              (@id, @username, @display_name, @role, @staff_id, now(), now(), now() + interval '8 hours', @source_ip, @user_agent, 'avenchart')
+              (@id, @username, @display_name, @role, @staff_id, now(), now(), @expires_at, @source_ip, @user_agent, @session_source)
             returning id, username, display_name, role, staff_id, created_at, last_seen_at, expires_at, ended_at, session_source;
             """;
         command.Parameters.AddWithValue("id", sessionId);
@@ -407,6 +463,8 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("staff_id", (object?)staffId ?? DBNull.Value);
         command.Parameters.AddWithValue("source_ip", source);
         command.Parameters.AddWithValue("user_agent", agent);
+        command.Parameters.AddWithValue("expires_at", expiresAt);
+        command.Parameters.AddWithValue("session_source", sessionSource);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

@@ -9,6 +9,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary.tsx'
 const EntryChooser = lazy(() => import('./pages/EntryChooser.tsx'))
 const ClinicianLogin = lazy(() => import('./pages/ClinicianLogin.tsx'))
 const PortalLogin = lazy(() => import('./pages/PortalLogin.tsx'))
+const OidcCallback = lazy(() => import('./pages/OidcCallback.tsx'))
 const PortalShell = lazy(() => import('./pages/portal/PortalShell.tsx'))
 const PortalDashboard = lazy(() => import('./pages/portal/PortalDashboard.tsx'))
 const PortalMessages = lazy(() => import('./pages/portal/PortalMessages.tsx'))
@@ -105,6 +106,7 @@ export default function App() {
           <Routes>
         <Route path="/" element={<EntryChooser />} />
         <Route path="/login" element={<ClinicianLogin />} />
+        <Route path="/auth/oidc/callback" element={<OidcCallback />} />
         {/* Legacy redirect */}
         <Route path="/home" element={<Navigate to="/clinician/dashboard" replace />} />
 

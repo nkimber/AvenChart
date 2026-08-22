@@ -41,6 +41,7 @@ public sealed class LocalPatientPortalIdentityAdapter : IPatientPortalIdentityAd
 /// </summary>
 public sealed class OidcPatientPortalIdentityAdapter(
     PatientPortalRepository repository,
+    BrowserOidcSessionService browserOidcSessions,
     IOptions<IdentityProviderOptions> options) : IPatientPortalIdentityAdapter
 {
     private readonly IdentityProviderOptions _options = options.Value;
@@ -49,7 +50,7 @@ public sealed class OidcPatientPortalIdentityAdapter(
     public async Task<Guid?> ResolveSessionIdAsync(HttpContext httpContext, CancellationToken cancellationToken)
     {
         var token = OidcIdentityAdapterHelpers.ReadBearerToken(httpContext);
-        if (token is null) return null;
+        if (token is null) return await browserOidcSessions.ResolveBrowserPortalSessionAsync(httpContext, cancellationToken);
         try
         {
             var metadata = await _configurationManager.GetConfigurationAsync(cancellationToken);
@@ -96,6 +97,7 @@ public sealed class OidcPatientPortalIdentityAdapter(
 public sealed class TestOidcPatientPortalIdentityAdapter(
     PatientPortalRepository repository,
     TestIdentityProviderService testIdentityProvider,
+    BrowserOidcSessionService browserOidcSessions,
     IOptions<IdentityProviderOptions> options) : IPatientPortalIdentityAdapter
 {
     private readonly IdentityProviderOptions _options = options.Value;
@@ -103,7 +105,7 @@ public sealed class TestOidcPatientPortalIdentityAdapter(
     public async Task<Guid?> ResolveSessionIdAsync(HttpContext httpContext, CancellationToken cancellationToken)
     {
         var token = OidcIdentityAdapterHelpers.ReadBearerToken(httpContext);
-        if (token is null) return null;
+        if (token is null) return await browserOidcSessions.ResolveBrowserPortalSessionAsync(httpContext, cancellationToken);
         try
         {
             var validation = await new JwtSecurityTokenHandler().ValidateTokenAsync(token, new TokenValidationParameters

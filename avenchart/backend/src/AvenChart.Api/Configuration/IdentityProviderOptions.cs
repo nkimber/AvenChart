@@ -20,6 +20,17 @@ public sealed class IdentityProviderOptions
     public string SubjectClaim { get; init; } = "sub";
     public bool RequireHttpsMetadata { get; init; } = true;
     public int ClockSkewSeconds { get; init; } = 60;
+    /// <summary>
+    /// Public OIDC client identifier used only by the modern browser BFF
+    /// authorization-code flow. A confidential client secret is deliberately
+    /// not accepted from the browser or configuration catalog.
+    /// </summary>
+    public string BrowserClientId { get; init; } = "avenchart-modern-ui";
+    public string BrowserScopes { get; init; } = "openid profile";
+    public IReadOnlyList<string> BrowserAllowedOrigins { get; init; } = [];
+    public string? BrowserCallbackUrl { get; init; }
+    public bool EnableBrowserBff { get; init; }
+    public int BrowserStateLifetimeSeconds { get; init; } = 300;
     public string TestIssuer { get; init; } = "http://localhost:5001/api/test-idp";
     public string TestAudience { get; init; } = "avenchart-api";
     public int TestTokenLifetimeMinutes { get; init; } = 15;
@@ -27,4 +38,10 @@ public sealed class IdentityProviderOptions
     public bool IsLocal => string.Equals(Mode, "local", StringComparison.OrdinalIgnoreCase);
     public bool IsOidc => string.Equals(Mode, "oidc", StringComparison.OrdinalIgnoreCase);
     public bool IsTestOidc => string.Equals(Mode, "test-oidc", StringComparison.OrdinalIgnoreCase);
+    public bool BrowserBffEnabled => !IsLocal
+        && (IsTestOidc || EnableBrowserBff)
+        && !string.IsNullOrWhiteSpace(BrowserClientId)
+        && BrowserAllowedOrigins.Any(origin => !string.IsNullOrWhiteSpace(origin));
+    public string EffectiveProviderId => IsTestOidc ? "test-oidc" : ProviderId;
+    public string EffectiveIssuer => IsTestOidc ? TestIssuer : Issuer ?? Authority ?? string.Empty;
 }

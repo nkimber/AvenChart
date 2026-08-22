@@ -6,6 +6,11 @@ import { useNavigate } from 'react-router-dom'
 import { HeartPulse, ShieldCheck } from 'lucide-react'
 import { loginPatientPortal } from '../api.ts'
 import { savePortalSession } from '../auth/session.ts'
+import {
+  getBrowserOidcConfiguration,
+  startBrowserOidcSignIn,
+  type BrowserOidcConfiguration,
+} from '../auth/browserOidc.ts'
 import LegalAttribution from '../components/LegalAttribution.tsx'
 import { PatientIllustration } from '../illustrations.tsx'
 
@@ -15,12 +20,39 @@ export default function PortalLogin() {
   const [password, setPassword] = useState('PortalPass207!')
   const [status, setStatus] = useState<'idle' | 'checking' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [identityConfiguration, setIdentityConfiguration] = useState<BrowserOidcConfiguration | null>(null)
   const errorReference = useRef<HTMLDivElement>(null)
   const errorId = 'portal-sign-in-error'
 
   useEffect(() => {
     if (error) errorReference.current?.focus()
   }, [error])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    getBrowserOidcConfiguration(controller.signal)
+      .then((configuration) => setIdentityConfiguration(configuration))
+      .catch(() => {
+        // Retain the local portal path when the API cannot be reached. An
+        // external deployment replaces it after its public configuration loads.
+      })
+    return () => controller.abort()
+  }, [])
+
+  const externalIdentityMode = identityConfiguration?.mode === 'oidc'
+    || identityConfiguration?.mode === 'test-oidc'
+
+  function handleBrowserSingleSignOn() {
+    if (!identityConfiguration) return
+    setStatus('checking')
+    setError(null)
+    try {
+      startBrowserOidcSignIn(identityConfiguration, 'portal')
+    } catch (err) {
+      setStatus('error')
+      setError(err instanceof Error ? err.message : 'Single sign-on could not be started.')
+    }
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -75,9 +107,15 @@ export default function PortalLogin() {
         <div className="auth-card">
           <p className="eyebrow">Patient portal</p>
           <h2 className="title">Hello, welcome back</h2>
-          <p className="subtitle">Sign in to view your messages and appointments.</p>
+          <p className="subtitle">
+            {externalIdentityMode
+              ? 'Continue with your organization’s approved identity provider.'
+              : 'Sign in to view your messages and appointments.'}
+          </p>
 
-          <div className="hint-banner">Demo credentials are pre-filled: mod-pat-0004@example.test / PortalPass207!</div>
+          {!externalIdentityMode && (
+            <div className="hint-banner">Demo credentials are pre-filled: mod-pat-0004@example.test / PortalPass207!</div>
+          )}
 
           {error && (
             <div
@@ -91,6 +129,22 @@ export default function PortalLogin() {
             </div>
           )}
 
+          {externalIdentityMode ? (
+            identityConfiguration?.browserSignInEnabled ? (
+              <button
+                className="button-primary"
+                type="button"
+                onClick={handleBrowserSingleSignOn}
+                disabled={status === 'checking'}
+              >
+                {status === 'checking' ? 'Redirecting to single sign-on…' : 'Continue with single sign-on'}
+              </button>
+            ) : (
+              <div className="error-banner" role="alert">
+                {identityConfiguration?.failureReason ?? 'Single sign-on is not available for this deployment.'}
+              </div>
+            )
+          ) : (
           <form onSubmit={handleSubmit} aria-busy={status === 'checking'}>
             <div className="field">
               <label className="label" htmlFor="portal-username">Email or username</label>
@@ -125,6 +179,7 @@ export default function PortalLogin() {
               {status === 'checking' ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+          )}
           <LegalAttribution />
         </div>
       </div>
