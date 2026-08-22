@@ -21,8 +21,24 @@ export type PortalSession = {
 
 const CLINICIAN_KEY = 'avenchart-ui.clinicianSession'
 const PORTAL_KEY = 'avenchart-ui.portalSession'
+export const CLINICIAN_EPHEMERAL_STORAGE_PREFIX = 'avenchart-ui.clinician.'
+export const CLINICIAN_ENCOUNTER_TEMPLATE_KEY = `${CLINICIAN_EPHEMERAL_STORAGE_PREFIX}encounterTemplates`
+const LEGACY_ENCOUNTER_TEMPLATE_KEY = 'encounter-templates'
+
+function clearClinicianEphemeralBrowserData() {
+  for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+    const key = sessionStorage.key(index)
+    if (key?.startsWith(CLINICIAN_EPHEMERAL_STORAGE_PREFIX)) {
+      sessionStorage.removeItem(key)
+    }
+  }
+  // Phase 1 stored complete SOAP text in persistent local storage. It is not
+  // safe to carry that content into another clinician's browser session.
+  localStorage.removeItem(LEGACY_ENCOUNTER_TEMPLATE_KEY)
+}
 
 export function saveClinicianSession(session: ClinicianSession) {
+  clearClinicianEphemeralBrowserData()
   sessionStorage.setItem(CLINICIAN_KEY, JSON.stringify(session))
 }
 
@@ -37,6 +53,7 @@ export function loadClinicianSession(): ClinicianSession | null {
 }
 
 export function clearClinicianSession() {
+  clearClinicianEphemeralBrowserData()
   sessionStorage.removeItem(CLINICIAN_KEY)
 }
 

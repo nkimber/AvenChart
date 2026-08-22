@@ -11,7 +11,11 @@ import {
   getProcedureReportQueue,
   logout,
 } from '../../api.ts'
-import { loadClinicianSession, saveClinicianSession } from '../../auth/session.ts'
+import {
+  CLINICIAN_ENCOUNTER_TEMPLATE_KEY,
+  loadClinicianSession,
+  saveClinicianSession,
+} from '../../auth/session.ts'
 import ClinicianShell from './ClinicianShell.tsx'
 
 vi.mock('../../api.ts', async (importOriginal) => {
@@ -166,6 +170,8 @@ describe('ClinicianShell', () => {
 
   it('ends the server session before clearing local authentication', async () => {
     const user = userEvent.setup()
+    window.sessionStorage.setItem(CLINICIAN_ENCOUNTER_TEMPLATE_KEY, '[{"subjective":"private note"}]')
+    window.localStorage.setItem('encounter-templates', '[{"subjective":"legacy private note"}]')
     renderShell()
     await screen.findByText('Dashboard content')
 
@@ -174,5 +180,7 @@ describe('ClinicianShell', () => {
     await waitFor(() => expect(logout).toHaveBeenCalledWith('staff-session', expect.any(AbortSignal)))
     expect(await screen.findByText('Clinician login')).toBeInTheDocument()
     expect(loadClinicianSession()).toBeNull()
+    expect(window.sessionStorage.getItem(CLINICIAN_ENCOUNTER_TEMPLATE_KEY)).toBeNull()
+    expect(window.localStorage.getItem('encounter-templates')).toBeNull()
   })
 })

@@ -15,6 +15,7 @@ import {
 import { createCompleteEncounter } from '../../api/encounterCoding.ts'
 import { signEncounterUnderLocalPolicy } from '../../api/encounterLifecycle.ts'
 import { showToast } from '../../components/Toast.tsx'
+import { CLINICIAN_ENCOUNTER_TEMPLATE_KEY } from '../../auth/session.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
 type Template = {
@@ -27,7 +28,7 @@ type Template = {
 
 function loadTemplates(): Template[] {
   try {
-    return JSON.parse(localStorage.getItem('encounter-templates') ?? '[]')
+    return JSON.parse(sessionStorage.getItem(CLINICIAN_ENCOUNTER_TEMPLATE_KEY) ?? '[]')
   } catch {
     return []
   }
@@ -35,8 +36,8 @@ function loadTemplates(): Template[] {
 
 function saveTemplate(tpl: Template) {
   const existing = loadTemplates().filter((t) => t.name !== tpl.name)
-  localStorage.setItem(
-    'encounter-templates',
+  sessionStorage.setItem(
+    CLINICIAN_ENCOUNTER_TEMPLATE_KEY,
     JSON.stringify([tpl, ...existing].slice(0, 20)),
   )
 }
