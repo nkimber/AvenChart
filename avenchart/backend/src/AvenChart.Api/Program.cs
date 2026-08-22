@@ -937,9 +937,11 @@ patientPortal.MapDelete("/session", async (
 
 var fhir = app.MapGroup("/api/fhir/R4").WithTags("FHIR R4");
 RequireAccessPermission(fhir, "patients", "demo", "view");
+fhir.AddEndpointFilter(FhirContentNegotiationFilter());
 
 fhir.MapGet("/metadata", (HttpContext httpContext) =>
     {
+        var baseUrl = BuildFhirBaseUrl(httpContext);
         var patientCapability = new FhirResourceCapability(
             "Patient",
             [new FhirCapabilityInteraction("read"), new FhirCapabilityInteraction("search-type")],
@@ -953,11 +955,15 @@ fhir.MapGet("/metadata", (HttpContext httpContext) =>
             [new FhirCapabilityInteraction("read"), new FhirCapabilityInteraction("search-type")],
             [new FhirSearchParameter("subject", "reference")]);
         var server = new FhirCapabilityResource("server", null, [patientCapability, encounterCapability, observationCapability]);
-        var baseUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}/api/fhir/R4";
         return FhirResults.Ok(new FhirCapabilityStatement(
             "CapabilityStatement",
+            $"{baseUrl}/metadata",
+            "1.0.0",
+            "AvenChartFhirR4",
             "active",
+            false,
             DateTimeOffset.UtcNow.ToString("O"),
+            "AvenChart contributors",
             "instance",
             "4.0.1",
             new FhirSoftware("AvenChart", "Phase 3"),
@@ -974,8 +980,8 @@ fhir.MapGet("/Patient/{id}", async (FhirRepository repository, string id, Cancel
     })
     .WithName("GetFhirPatient");
 
-fhir.MapGet("/Patient", async (FhirRepository repository, string? name, string? identifier, int? _count, CancellationToken cancellationToken) =>
-    FhirResults.Ok(await repository.SearchPatientsAsync(name, identifier, _count, cancellationToken)))
+fhir.MapGet("/Patient", async (FhirRepository repository, HttpContext httpContext, string? name, string? identifier, int? _count, int? page, CancellationToken cancellationToken) =>
+    FhirResults.Ok(await repository.SearchPatientsAsync(name, identifier, _count, page, BuildFhirBaseUrl(httpContext), cancellationToken)))
     .WithName("SearchFhirPatients");
 
 fhir.MapGet("/Encounter/{id:int}", async (FhirRepository repository, int id, CancellationToken cancellationToken) =>
@@ -985,8 +991,8 @@ fhir.MapGet("/Encounter/{id:int}", async (FhirRepository repository, int id, Can
     })
     .WithName("GetFhirEncounter");
 
-fhir.MapGet("/Encounter", async (FhirRepository repository, string? subject, int? _count, CancellationToken cancellationToken) =>
-    FhirResults.Ok(await repository.SearchEncountersAsync(subject, _count, cancellationToken)))
+fhir.MapGet("/Encounter", async (FhirRepository repository, HttpContext httpContext, string? subject, int? _count, int? page, CancellationToken cancellationToken) =>
+    FhirResults.Ok(await repository.SearchEncountersAsync(subject, _count, page, BuildFhirBaseUrl(httpContext), cancellationToken)))
     .WithName("SearchFhirEncounters");
 
 fhir.MapGet("/Observation/{id:int}", async (FhirRepository repository, int id, CancellationToken cancellationToken) =>
@@ -996,12 +1002,12 @@ fhir.MapGet("/Observation/{id:int}", async (FhirRepository repository, int id, C
     })
     .WithName("GetFhirObservation");
 
-fhir.MapGet("/Observation", async (FhirRepository repository, string? subject, int? _count, CancellationToken cancellationToken) =>
-    FhirResults.Ok(await repository.SearchObservationsAsync(subject, _count, cancellationToken)))
+fhir.MapGet("/Observation", async (FhirRepository repository, HttpContext httpContext, string? subject, int? _count, int? page, CancellationToken cancellationToken) =>
+    FhirResults.Ok(await repository.SearchObservationsAsync(subject, _count, page, BuildFhirBaseUrl(httpContext), cancellationToken)))
     .WithName("SearchFhirObservations");
 
-fhir.MapGet("/Observation/sdoh", async (FhirRepository repository, string? subject, int? _count, CancellationToken cancellationToken) =>
-    FhirResults.Ok(await repository.SearchSdohObservationsAsync(subject, _count, cancellationToken)))
+fhir.MapGet("/Observation/sdoh", async (FhirRepository repository, HttpContext httpContext, string? subject, int? _count, int? page, CancellationToken cancellationToken) =>
+    FhirResults.Ok(await repository.SearchSdohObservationsAsync(subject, _count, page, BuildFhirBaseUrl(httpContext), cancellationToken)))
     .WithName("SearchFhirSdohObservations");
 
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
@@ -9332,6 +9338,28 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
         }
     };
 }
+
+static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> FhirContentNegotiationFilter()
+{
+    return async (context, next) =>
+    {
+        var accept = context.HttpContext.Request.GetTypedHeaders().Accept;
+        if (accept is { Count: > 0 }
+            && !accept.Any(header =>
+                (header.Quality is null || header.Quality > 0)
+                && (string.Equals(header.MediaType.Value, "application/fhir+json", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(header.MediaType.Value, "application/json", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(header.MediaType.Value, "*/*", StringComparison.OrdinalIgnoreCase))))
+        {
+            return FhirResults.NotAcceptable();
+        }
+
+        return await next(context);
+    };
+}
+
+static string BuildFhirBaseUrl(HttpContext httpContext) =>
+    $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}/api/fhir/R4";
 
 static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
     AuthRepository repository,

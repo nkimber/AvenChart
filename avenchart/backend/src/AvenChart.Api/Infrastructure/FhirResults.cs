@@ -28,4 +28,16 @@ public static class FhirResults
             SerializerOptions,
             statusCode: StatusCodes.Status404NotFound,
             contentType: ContentType);
+
+    public static IResult NotAcceptable() =>
+        Results.Json(
+            new FhirOperationOutcome(
+                "OperationOutcome",
+                [new FhirOperationOutcomeIssue(
+                    "error",
+                    "not-supported",
+                    "AvenChart FHIR R4 supports application/fhir+json and application/json response representations.")]),
+            SerializerOptions,
+            statusCode: StatusCodes.Status406NotAcceptable,
+            contentType: ContentType);
 }

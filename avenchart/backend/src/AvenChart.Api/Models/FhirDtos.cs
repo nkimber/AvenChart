@@ -5,8 +5,13 @@ namespace AvenChart.Api.Models;
 
 public sealed record FhirCapabilityStatement(
     string ResourceType,
+    string Url,
+    string Version,
+    string Name,
     string Status,
+    bool Experimental,
     string Date,
+    string Publisher,
     string Kind,
     string FhirVersion,
     FhirSoftware Software,
@@ -50,9 +55,11 @@ public sealed record FhirSearchBundle(
     string ResourceType,
     string Type,
     int Total,
+    IReadOnlyList<FhirBundleLink> Link,
     IReadOnlyList<FhirSearchEntry> Entry);
 
 public sealed record FhirSearchEntry(string FullUrl, FhirPatientResource Resource);
+public sealed record FhirBundleLink(string Relation, string Url);
 
 public sealed record FhirEncounterResource(
     string ResourceType,
@@ -64,7 +71,12 @@ public sealed record FhirEncounterResource(
     IReadOnlyList<FhirCodeableConcept>? ReasonCode);
 public sealed record FhirReference(string Reference);
 public sealed record FhirPeriod(string Start);
-public sealed record FhirEncounterBundle(string ResourceType, string Type, int Total, IReadOnlyList<FhirEncounterSearchEntry> Entry);
+public sealed record FhirEncounterBundle(
+    string ResourceType,
+    string Type,
+    int Total,
+    IReadOnlyList<FhirBundleLink> Link,
+    IReadOnlyList<FhirEncounterSearchEntry> Entry);
 public sealed record FhirEncounterSearchEntry(string FullUrl, FhirEncounterResource Resource);
 
 public sealed record FhirObservationResource(
@@ -84,7 +96,12 @@ public sealed record FhirCodeableConcept(IReadOnlyList<FhirCoding> Coding, strin
 public sealed record FhirCoding(string System, string Code, string? Display);
 public sealed record FhirQuantity(decimal Value, string? Unit);
 public sealed record FhirObservationReferenceRange(string? Text);
-public sealed record FhirObservationBundle(string ResourceType, string Type, int Total, IReadOnlyList<FhirObservationSearchEntry> Entry);
+public sealed record FhirObservationBundle(
+    string ResourceType,
+    string Type,
+    int Total,
+    IReadOnlyList<FhirBundleLink> Link,
+    IReadOnlyList<FhirObservationSearchEntry> Entry);
 public sealed record FhirObservationSearchEntry(string FullUrl, FhirObservationResource Resource);
 
 public sealed record FhirOperationOutcome(string ResourceType, IReadOnlyList<FhirOperationOutcomeIssue> Issue);
