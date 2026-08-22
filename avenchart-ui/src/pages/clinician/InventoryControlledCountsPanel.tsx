@@ -3,14 +3,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  approveInventoryControlledCountAttestation,
+  approveInventoryControlledDiscrepancyCorrectionAttestation,
   closeInventoryControlledDiscrepancy,
   correctInventoryControlledDiscrepancy,
   createInventoryControlledCountSession,
   getInventoryControlledCountSession,
   getInventoryControlledCountSessions,
   getInventoryControlledSubstanceCatalog,
+  getPendingInventoryControlledCountAttestations,
+  getPendingInventoryControlledDiscrepancyCorrectionAttestations,
   investigateInventoryControlledDiscrepancy,
+  requestInventoryControlledCountSubmissionAttestation,
+  requestInventoryControlledDiscrepancyCorrectionAttestation,
   submitInventoryControlledCountSession,
+  type InventoryControlledAttestation,
   type InventoryControlledCountSession,
   type InventoryControlledCountSessionSummary,
   type InventoryControlledSubstanceCatalogResponse,
@@ -45,21 +52,29 @@ export default function InventoryControlledCountsPanel({
   const [countType, setCountType] = useState('cycle')
   const [movementLockActive, setMovementLockActive] = useState(true)
   const [createReason, setCreateReason] = useState('')
-  const [counterSessionId, setCounterSessionId] = useState('')
   const [actionNotes, setActionNotes] = useState('')
-  const [witnessSessionId, setWitnessSessionId] = useState('')
   const [observations, setObservations] = useState<Record<number, string>>({})
+  const [pendingApprovals, setPendingApprovals] = useState<InventoryControlledAttestation[]>([])
+  const [pendingCountSubmission, setPendingCountSubmission] = useState<{
+    attestationId: string; countSessionId: string; reason: string; idempotencyKey: string; observations: { lotId: number; observedQuantity: number }[]
+  } | null>(null)
+  const [pendingCorrection, setPendingCorrection] = useState<{
+    attestationId: string; discrepancyId: string; notes: string; idempotencyKey: string
+  } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [nextCatalog, nextSessions] = await Promise.all([
+      const [nextCatalog, nextSessions, countApprovals, correctionApprovals] = await Promise.all([
         getInventoryControlledSubstanceCatalog(sessionId),
         getInventoryControlledCountSessions(sessionId),
+        getPendingInventoryControlledCountAttestations(sessionId),
+        getPendingInventoryControlledDiscrepancyCorrectionAttestations(sessionId),
       ])
       setCatalog(nextCatalog)
       setSessions(nextSessions)
+      setPendingApprovals([...countApprovals, ...correctionApprovals])
       if (!locationId && nextCatalog.locations[0]) setLocationId(nextCatalog.locations[0].locationId)
     } catch (caught) {
       setError(messageOf(caught, 'Could not load controlled-count operations.'))
@@ -87,8 +102,8 @@ export default function InventoryControlledCountsPanel({
       setSelected(detail)
       setObservations(Object.fromEntries(detail.lines.map((line) => [line.lotId, String(line.expectedQuantity)])))
       setActionNotes('')
-      setCounterSessionId('')
-      setWitnessSessionId('')
+      setPendingCountSubmission(null)
+      setPendingCorrection(null)
     } catch (caught) {
       setError(messageOf(caught, 'Could not open this controlled count.'))
     } finally {
@@ -124,8 +139,8 @@ export default function InventoryControlledCountsPanel({
 
   async function submitCount(event: React.FormEvent) {
     event.preventDefault()
-    if (!selected || !counterSessionId.trim() || !actionNotes.trim()) {
-      setError('A different authenticated counter session and submission reason are required.')
+    if (!selected || !actionNotes.trim()) {
+      setError('A submission reason is required before requesting independent approval.')
       return
     }
     const nextObservations = selected.lines.map((line) => ({ lotId: line.lotId, observedQuantity: Number(observations[line.lotId]) }))
@@ -135,10 +150,17 @@ export default function InventoryControlledCountsPanel({
     }
     setBusy(true); setError(null)
     try {
-      const count = await submitInventoryControlledCountSession(sessionId, selected.sessionId, { counterSessionId: counterSessionId.trim(), reason: actionNotes.trim(), idempotencyKey: idempotencyKey('ui-count-submit'), observations: nextObservations })
-      setSelected(count); setActionNotes(''); setCounterSessionId('')
-      await load(); await onChanged()
-      showToast('Independent controlled count submitted.', 'success')
+      if (pendingCountSubmission?.countSessionId === selected.sessionId) {
+        const count = await submitInventoryControlledCountSession(sessionId, selected.sessionId, pendingCountSubmission)
+        setSelected(count); setActionNotes(''); setPendingCountSubmission(null)
+        await load(); await onChanged()
+        showToast('Independently approved controlled count submitted.', 'success')
+      } else {
+        const input = { reason: actionNotes.trim(), idempotencyKey: idempotencyKey('ui-count-submit'), observations: nextObservations }
+        const attestation = await requestInventoryControlledCountSubmissionAttestation(sessionId, selected.sessionId, input)
+        setPendingCountSubmission({ attestationId: attestation.attestationId, countSessionId: selected.sessionId, ...input })
+        showToast('Independent count approval requested. A second clinician must approve it from their own session.', 'success')
+      }
     } catch (caught) { setError(messageOf(caught, 'Could not submit the controlled count.')) } finally { setBusy(false) }
   }
 
@@ -156,10 +178,27 @@ export default function InventoryControlledCountsPanel({
     if (!actionNotes.trim()) { setError('Correction notes are required.'); return }
     setBusy(true); setError(null)
     try {
-      await correctInventoryControlledDiscrepancy(sessionId, discrepancyId, { notes: actionNotes.trim(), idempotencyKey: idempotencyKey('ui-count-correction'), ...(witnessSessionId.trim() ? { witnessSessionId: witnessSessionId.trim() } : {}) })
-      setActionNotes(''); setWitnessSessionId(''); await refreshSelected(selected); await onChanged()
-      showToast('Compensating custody correction recorded.', 'success')
+      if (pendingCorrection?.discrepancyId === discrepancyId) {
+        await correctInventoryControlledDiscrepancy(sessionId, discrepancyId, pendingCorrection)
+        setActionNotes(''); setPendingCorrection(null); await refreshSelected(selected); await onChanged()
+        showToast('Independently approved compensating custody correction recorded.', 'success')
+      } else {
+        const input = { notes: actionNotes.trim(), idempotencyKey: idempotencyKey('ui-count-correction') }
+        const attestation = await requestInventoryControlledDiscrepancyCorrectionAttestation(sessionId, discrepancyId, input)
+        setPendingCorrection({ attestationId: attestation.attestationId, discrepancyId, ...input })
+        showToast('Correction approval requested. A second clinician must approve it from their own session.', 'success')
+      }
     } catch (caught) { setError(messageOf(caught, 'Could not record the discrepancy correction.')) } finally { setBusy(false) }
+  }
+
+  async function approve(attestation: InventoryControlledAttestation) {
+    setBusy(true); setError(null)
+    try {
+      if (attestation.action === 'count_submit') await approveInventoryControlledCountAttestation(sessionId, attestation.attestationId)
+      else await approveInventoryControlledDiscrepancyCorrectionAttestation(sessionId, attestation.attestationId)
+      await load()
+      showToast('Independent controlled-action approval recorded.', 'success')
+    } catch (caught) { setError(messageOf(caught, 'Could not approve this controlled action.')) } finally { setBusy(false) }
   }
 
   async function close(discrepancyId: string) {
@@ -182,6 +221,7 @@ export default function InventoryControlledCountsPanel({
       {error && <div className="error-banner" role="alert">{error}</div>}
       {loading ? <p className="cl-empty-text">Loading controlled count operations…</p> : <>
         <section className="cl-stats-grid" aria-label="Controlled count status"><div className="cl-stat-tile"><strong>{lockedSessions.length}</strong><span>Locked locations</span></div><div className="cl-stat-tile"><strong>{unresolvedSessions.length}</strong><span>Open discrepancies</span></div><div className="cl-stat-tile"><strong>{catalog?.locations.length ?? 0}</strong><span>Secure locations</span></div></section>
+        {pendingApprovals.length > 0 && <section className="inventory-medication-result" aria-label="Controlled action approvals waiting for you"><strong>Independent approvals waiting for you</strong><span>Approve only after reviewing the exact action in your own authenticated session. No session credential is shared with another user.</span>{pendingApprovals.map((attestation) => <div className="inventory-medication-current" key={attestation.attestationId}><span>{attestation.summary} / requested by {attestation.requestedBy} / expires {formatDate(attestation.expiresAt)}</span><button className="cl-btn-secondary" type="button" disabled={busy} onClick={() => void approve(attestation)}>Approve independently</button></div>)}</section>}
         <form className="inventory-medication-link-form" onSubmit={createCount}>
           <label className="cl-admin-field"><span>Secure location</span><select value={locationId} onChange={(event) => setLocationId(event.target.value)} required>{catalog?.locations.map((location) => <option key={location.locationId} value={location.locationId}>{location.locationCode} / {location.displayName}{location.dualAttestationRequired ? ' / witness required' : ''}</option>)}</select></label>
           <label className="cl-admin-field"><span>Count type</span><select value={countType} onChange={(event) => setCountType(event.target.value)}><option value="opening">Opening</option><option value="shift">Shift</option><option value="cycle">Cycle</option><option value="closing">Closing</option></select></label>
@@ -192,9 +232,9 @@ export default function InventoryControlledCountsPanel({
         <div className="cl-table-scroll" role="region" aria-label="Controlled count sessions" tabIndex={0}><table className="cl-table"><thead><tr><th>Location</th><th>Status</th><th>Lock</th><th>Lines</th><th>Discrepancies</th><th>Started</th><th /></tr></thead><tbody>{sessions.length === 0 ? <tr><td colSpan={7}>No controlled count sessions have been recorded.</td></tr> : sessions.map((session) => <tr key={session.sessionId}><td><strong>{session.locationCode}</strong><span className="inventory-table-secondary">{session.locationName} / {session.countType}</span></td><td>{session.status}</td><td>{session.movementLockActive ? 'Movement locked' : 'Released'}</td><td>{session.lineCount}</td><td>{session.openDiscrepancyCount} open / {session.discrepancyCount} total</td><td>{formatDate(session.startedAt)}</td><td><button className="link-button" type="button" disabled={busy} onClick={() => void selectSession(session.sessionId)}>Review</button></td></tr>)}</tbody></table></div>
       </>}
       {selected && <section className="inventory-medication-result"><strong>{selected.locationCode} / {selected.countType} count / {selected.status}</strong><span>Started by {selected.startedBy} / {formatDate(selected.startedAt)} / {selected.movementLockActive ? 'movements locked' : 'movement lock released'}</span><span>{selected.reason}</span>
-        {selected.status === 'in_progress' && <form className="inventory-medication-link-form" onSubmit={submitCount}><label className="cl-admin-field"><span>Independent counter session ID</span><input value={counterSessionId} onChange={(event) => setCounterSessionId(event.target.value)} placeholder="Authenticated second user session UUID" required /></label><label className="cl-admin-field"><span>Submission reason</span><input value={actionNotes} maxLength={500} onChange={(event) => setActionNotes(event.target.value)} required /></label><button className="cl-btn-primary" disabled={busy} type="submit">Submit independent count</button></form>}
-        {selected.status !== 'in_progress' && <div className="inventory-medication-current"><label className="cl-admin-field"><span>Resolution notes</span><input value={actionNotes} maxLength={1000} onChange={(event) => setActionNotes(event.target.value)} placeholder="Required for investigation, correction, or closure" /></label><label className="cl-admin-field"><span>Witness session ID (if required)</span><input value={witnessSessionId} onChange={(event) => setWitnessSessionId(event.target.value)} placeholder="Authenticated different user session UUID" /></label></div>}
-        <div className="cl-table-scroll" role="region" aria-label="Controlled count lines" tabIndex={0}><table className="cl-table"><thead><tr><th>Item / lot</th><th>Expected</th><th>Observed</th><th>Variance</th><th>Discrepancy</th><th /></tr></thead><tbody>{selected.lines.map((line) => <tr key={line.lineId}><td><strong>{line.itemCode}</strong><span className="inventory-table-secondary">Lot {line.lotNumber}</span></td><td>{line.expectedQuantity}</td><td>{selected.status === 'in_progress' ? <input aria-label={`Observed quantity for ${line.itemCode} lot ${line.lotNumber}`} inputMode="decimal" value={observations[line.lotId] ?? ''} onChange={(event) => setObservations((current) => ({ ...current, [line.lotId]: event.target.value }))} /> : line.observedQuantity ?? '—'}</td><td>{line.varianceQuantity ?? '—'}</td><td>{line.discrepancyStatus ?? 'None'}</td><td>{line.discrepancyId && line.discrepancyStatus === 'open' && <button className="link-button" type="button" disabled={busy} onClick={() => void investigate(line.discrepancyId!)}>Investigate</button>}{line.discrepancyId && line.discrepancyStatus === 'investigating' && <button className="link-button" type="button" disabled={busy} onClick={() => void correct(line.discrepancyId!)}>Correct</button>}{line.discrepancyId && line.discrepancyStatus === 'corrected' && <button className="link-button" type="button" disabled={busy} onClick={() => void close(line.discrepancyId!)}>Close</button>}</td></tr>)}</tbody></table></div>
+        {selected.status === 'in_progress' && <form className="inventory-medication-link-form" onSubmit={submitCount}><label className="cl-admin-field"><span>Submission reason</span><input value={actionNotes} maxLength={500} disabled={busy || Boolean(pendingCountSubmission)} onChange={(event) => setActionNotes(event.target.value)} required /></label><span className="hint-banner">{pendingCountSubmission ? `Approval requested. The exact count is frozen while a second clinician approves it from their own session.` : 'Request an independent approval. A second clinician approves the exact submitted count from their own session.'}</span><button className="cl-btn-primary" disabled={busy} type="submit">{pendingCountSubmission ? 'Submit approved count' : 'Request independent approval'}</button></form>}
+        {selected.status !== 'in_progress' && <div className="inventory-medication-current"><label className="cl-admin-field"><span>Resolution notes</span><input value={actionNotes} maxLength={1000} disabled={busy || Boolean(pendingCorrection)} onChange={(event) => setActionNotes(event.target.value)} placeholder="Required for investigation, correction, or closure" /></label>{pendingCorrection && <span className="hint-banner">Correction approval requested. The approved notes and idempotency key are frozen until posting.</span>}</div>}
+        <div className="cl-table-scroll" role="region" aria-label="Controlled count lines" tabIndex={0}><table className="cl-table"><thead><tr><th>Item / lot</th><th>Expected</th><th>Observed</th><th>Variance</th><th>Discrepancy</th><th /></tr></thead><tbody>{selected.lines.map((line) => <tr key={line.lineId}><td><strong>{line.itemCode}</strong><span className="inventory-table-secondary">Lot {line.lotNumber}</span></td><td>{line.expectedQuantity}</td><td>{selected.status === 'in_progress' ? <input aria-label={`Observed quantity for ${line.itemCode} lot ${line.lotNumber}`} inputMode="decimal" disabled={busy || Boolean(pendingCountSubmission)} value={observations[line.lotId] ?? ''} onChange={(event) => setObservations((current) => ({ ...current, [line.lotId]: event.target.value }))} /> : line.observedQuantity ?? '—'}</td><td>{line.varianceQuantity ?? '—'}</td><td>{line.discrepancyStatus ?? 'None'}</td><td>{line.discrepancyId && line.discrepancyStatus === 'open' && <button className="link-button" type="button" disabled={busy || Boolean(pendingCorrection)} onClick={() => void investigate(line.discrepancyId!)}>Investigate</button>}{line.discrepancyId && line.discrepancyStatus === 'investigating' && <button className="link-button" type="button" disabled={busy} onClick={() => void correct(line.discrepancyId!)}>{pendingCorrection?.discrepancyId === line.discrepancyId ? 'Post approved correction' : 'Request correction approval'}</button>}{line.discrepancyId && line.discrepancyStatus === 'corrected' && <button className="link-button" type="button" disabled={busy || Boolean(pendingCorrection)} onClick={() => void close(line.discrepancyId!)}>Close</button>}</td></tr>)}</tbody></table></div>
       </section>}
     </section>
   )

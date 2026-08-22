@@ -2867,6 +2867,7 @@ export type InventoryControlledCountSession = {
   submittedBy: string | null
   submittedAt: string | null
   counterUsername: string | null
+  counterAttestationId: string | null
   lines: InventoryControlledCountLine[]
 }
 export type InventoryControlledCountSessionSummary = Omit<
@@ -2876,6 +2877,18 @@ export type InventoryControlledCountSessionSummary = Omit<
   lineCount: number
   discrepancyCount: number
   openDiscrepancyCount: number
+}
+export type InventoryControlledAttestation = {
+  attestationId: string
+  action: 'count_submit' | 'discrepancy_correction' | 'custody_movement'
+  contextId: string | null
+  summary: string
+  requestedBy: string
+  requestedAt: string
+  expiresAt: string
+  status: 'pending' | 'approved' | 'consumed' | 'cancelled' | 'expired'
+  approvedBy: string | null
+  approvedAt: string | null
 }
 export async function getInventoryControlledSubstanceCatalog(
   sessionId: string,
@@ -2925,7 +2938,7 @@ export async function submitInventoryControlledCountSession(
   sessionId: string,
   countSessionId: string,
   input: {
-    counterSessionId: string
+    attestationId: string
     reason: string
     idempotencyKey: string
     observations: { lotId: number; observedQuantity: number }[]
@@ -2936,6 +2949,33 @@ export async function submitInventoryControlledCountSession(
     `/api/inventory/controlled-count-sessions/${countSessionId}/submit`,
     input,
   )
+}
+export async function requestInventoryControlledCountSubmissionAttestation(
+  sessionId: string,
+  countSessionId: string,
+  input: {
+    reason: string
+    idempotencyKey: string
+    observations: { lotId: number; observedQuantity: number }[]
+  },
+): Promise<InventoryControlledAttestation> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/controlled-count-sessions/${countSessionId}/submission-attestations`,
+    input,
+  )
+}
+export async function getPendingInventoryControlledCountAttestations(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryControlledAttestation[]> {
+  return clinicianGet(sessionId, '/api/inventory/controlled-count-attestations/pending', signal)
+}
+export async function approveInventoryControlledCountAttestation(
+  sessionId: string,
+  attestationId: string,
+): Promise<InventoryControlledAttestation> {
+  return clinicianPost(sessionId, `/api/inventory/controlled-count-attestations/${attestationId}/approve`, {})
 }
 export async function investigateInventoryControlledDiscrepancy(
   sessionId: string,
@@ -2951,13 +2991,36 @@ export async function investigateInventoryControlledDiscrepancy(
 export async function correctInventoryControlledDiscrepancy(
   sessionId: string,
   discrepancyId: string,
-  input: { notes: string; idempotencyKey: string; witnessSessionId?: string },
+  input: { notes: string; idempotencyKey: string; attestationId?: string },
 ): Promise<unknown> {
   return clinicianPost(
     sessionId,
     `/api/inventory/controlled-count-discrepancies/${discrepancyId}/corrections`,
     input,
   )
+}
+export async function requestInventoryControlledDiscrepancyCorrectionAttestation(
+  sessionId: string,
+  discrepancyId: string,
+  input: { notes: string; idempotencyKey: string },
+): Promise<InventoryControlledAttestation> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/controlled-count-discrepancies/${discrepancyId}/correction-attestations`,
+    input,
+  )
+}
+export async function getPendingInventoryControlledDiscrepancyCorrectionAttestations(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryControlledAttestation[]> {
+  return clinicianGet(sessionId, '/api/inventory/controlled-count-discrepancy-correction-attestations/pending', signal)
+}
+export async function approveInventoryControlledDiscrepancyCorrectionAttestation(
+  sessionId: string,
+  attestationId: string,
+): Promise<InventoryControlledAttestation> {
+  return clinicianPost(sessionId, `/api/inventory/controlled-count-discrepancy-correction-attestations/${attestationId}/approve`, {})
 }
 export async function closeInventoryControlledDiscrepancy(
   sessionId: string,

@@ -38,6 +38,7 @@ function Add-Check {
 $AdministrationHeaders = $null
 $FrontDeskHeaders = $null
 $ClinicianHeaders = $null
+$InventoryWitnessHeaders = $null
 
 function Get-AdministrationHeaders {
     if ($null -eq $script:AdministrationHeaders) {
@@ -106,6 +107,29 @@ function Get-ClinicianHeaders {
     }
 
     return $script:ClinicianHeaders
+}
+
+function Get-InventoryWitnessHeaders {
+    if ($null -eq $script:InventoryWitnessHeaders) {
+        $loginBody = @{
+            username = "gold-inventory-01"
+            password = "pass"
+        }
+        $login = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/auth/login" `
+            -Method Post `
+            -ContentType "application/json" `
+            -Body ($loginBody | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20
+
+        if ($login.authenticated -ne $true -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
+            throw "Inventory-witness smoke login did not issue an active session."
+        }
+
+        $script:InventoryWitnessHeaders = @{ "X-AvenChart-Session" = $login.sessionId }
+    }
+
+    return $script:InventoryWitnessHeaders
 }
 
 function New-ReceivedProcedureSpecimen {
@@ -11534,18 +11558,25 @@ try {
     $custodyItem = @($custodyInventory.items | Where-Object { $_.itemId -gt 0 }) | Select-Object -First 1
     $custodyPatient = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001" -Method Get -Headers $custodyHeaders -TimeoutSec 20
     $custodyEncounter = [int]$custodyPatient.latestEncounter.id
-    $custodyWitnessSessionId = (Get-ClinicianHeaders)["X-AvenChart-Session"]
+    $custodyWitnessHeaders = Get-InventoryWitnessHeaders
     $custodySuffix = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+    function Invoke-ApprovedControlledCustodyMovement {
+        param([hashtable]$Movement)
+        $attestation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movement-attestations" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body ($Movement | ConvertTo-Json -Depth 5) -TimeoutSec 20
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movement-attestations/$($attestation.attestationId)/approve" -Method Post -Headers $custodyWitnessHeaders -ContentType "application/json" -Body '{}' -TimeoutSec 20 | Out-Null
+        $Movement.attestationId = $attestation.attestationId
+        return Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body ($Movement | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    }
     $custodySource = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-locations" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ facilityId = $custodyInventory.facilities[0].facilityId; locationCode = "CS-S-$custodySuffix"; displayName = "Smoke controlled source"; dualAttestationRequired = $true; active = $true } | ConvertTo-Json) -TimeoutSec 20
     $custodyDestination = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-locations" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ facilityId = $custodyInventory.facilities[0].facilityId; locationCode = "CS-D-$custodySuffix"; displayName = "Smoke controlled destination"; dualAttestationRequired = $false; active = $true } | ConvertTo-Json) -TimeoutSec 20
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($custodyItem.itemId)/controlled-classification" -Method Put -Headers $custodyHeaders -ContentType "application/json" -Body (@{ scheduleCode = "III" } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
-    $receipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "receipt"; itemId = $custodyItem.itemId; lotNumber = "CS-$custodySuffix"; unitCost = 1.25; quantity = 10; destinationLocationId = $custodySource.locationId; reason = "Smoke controlled receipt"; idempotencyKey = "receipt-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
-    $transfer = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "transfer"; lotId = $receipt.lot.lotId; quantity = 2; sourceLocationId = $custodySource.locationId; destinationLocationId = $custodyDestination.locationId; reason = "Smoke controlled transfer"; idempotencyKey = "transfer-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
-    $dispense = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "dispense"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; patientId = "MOD-PAT-0001"; encounter = $custodyEncounter; reason = "Smoke controlled dispense"; idempotencyKey = "dispense-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
-    $administration = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "administration"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; patientId = "MOD-PAT-0001"; encounter = $custodyEncounter; reason = "Smoke controlled administration"; idempotencyKey = "administration-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
-    $return = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "return"; lotId = $receipt.lot.lotId; quantity = 1; destinationLocationId = $custodySource.locationId; patientId = "MOD-PAT-0001"; encounter = $custodyEncounter; reason = "Smoke controlled return"; relatedEventId = $dispense.event.eventId; idempotencyKey = "return-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
-    $waste = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "waste"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; reason = "Smoke controlled waste"; idempotencyKey = "waste-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
-    $correction = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "correction"; lotId = $receipt.lot.lotId; quantity = 1; destinationLocationId = $custodySource.locationId; reason = "Smoke controlled correction"; relatedEventId = $waste.event.eventId; correctionDirection = "increase"; idempotencyKey = "correction-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
+    $receipt = Invoke-ApprovedControlledCustodyMovement @{ action = "receipt"; itemId = $custodyItem.itemId; lotNumber = "CS-$custodySuffix"; unitCost = 1.25; quantity = 10; destinationLocationId = $custodySource.locationId; reason = "Smoke controlled receipt"; idempotencyKey = "receipt-$custodySuffix" }
+    $transfer = Invoke-ApprovedControlledCustodyMovement @{ action = "transfer"; lotId = $receipt.lot.lotId; quantity = 2; sourceLocationId = $custodySource.locationId; destinationLocationId = $custodyDestination.locationId; reason = "Smoke controlled transfer"; idempotencyKey = "transfer-$custodySuffix" }
+    $dispense = Invoke-ApprovedControlledCustodyMovement @{ action = "dispense"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; patientId = "MOD-PAT-0001"; encounter = $custodyEncounter; reason = "Smoke controlled dispense"; idempotencyKey = "dispense-$custodySuffix" }
+    $administration = Invoke-ApprovedControlledCustodyMovement @{ action = "administration"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; patientId = "MOD-PAT-0001"; encounter = $custodyEncounter; reason = "Smoke controlled administration"; idempotencyKey = "administration-$custodySuffix" }
+    $return = Invoke-ApprovedControlledCustodyMovement @{ action = "return"; lotId = $receipt.lot.lotId; quantity = 1; destinationLocationId = $custodySource.locationId; patientId = "MOD-PAT-0001"; encounter = $custodyEncounter; reason = "Smoke controlled return"; relatedEventId = $dispense.event.eventId; idempotencyKey = "return-$custodySuffix" }
+    $waste = Invoke-ApprovedControlledCustodyMovement @{ action = "waste"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; reason = "Smoke controlled waste"; idempotencyKey = "waste-$custodySuffix" }
+    $correction = Invoke-ApprovedControlledCustodyMovement @{ action = "correction"; lotId = $receipt.lot.lotId; quantity = 1; destinationLocationId = $custodySource.locationId; reason = "Smoke controlled correction"; relatedEventId = $waste.event.eventId; correctionDirection = "increase"; idempotencyKey = "correction-$custodySuffix" }
     $custodyHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-lots/$($receipt.lot.lotId)/history" -Method Get -Headers $custodyHeaders -TimeoutSec 20
     $missingIdempotencyRejected = $false
     try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "waste"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; reason = "Missing key" } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $missingIdempotencyRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
@@ -11557,12 +11588,24 @@ try {
     $controlledCountSessionsWithLock = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions?limit=30" -Method Get -Headers $custodyHeaders -TimeoutSec 20
     $controlledCountSummaryWithLock = @($controlledCountSessionsWithLock | Where-Object { $_.sessionId -eq $controlledCount.sessionId }) | Select-Object -First 1
     $countLockRejected = $false
-    try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "waste"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; reason = "Locked count movement"; idempotencyKey = "locked-count-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countLockRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
-    $controlledCountSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)/submit" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ counterSessionId = $custodyWitnessSessionId; reason = "Smoke independently observed variance"; idempotencyKey = "count-submit-$custodySuffix"; observations = @(@{ lotId = $receipt.lot.lotId; observedQuantity = 6 }) } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "waste"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; reason = "Locked count movement"; idempotencyKey = "locked-count-$custodySuffix" } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countLockRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
+    $controlledCountInput = @{ reason = "Smoke independently observed variance"; idempotencyKey = "count-submit-$custodySuffix"; observations = @(@{ lotId = $receipt.lot.lotId; observedQuantity = 6 }) }
+    $controlledCountAttestation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)/submission-attestations" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body ($controlledCountInput | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    $selfApprovalRejected = $false
+    try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-count-attestations/$($controlledCountAttestation.attestationId)/approve" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body '{}' -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $selfApprovalRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
+    $pendingCountAttestations = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-attestations/pending" -Method Get -Headers $custodyWitnessHeaders -TimeoutSec 20
+    $approvedCountAttestation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-attestations/$($controlledCountAttestation.attestationId)/approve" -Method Post -Headers $custodyWitnessHeaders -ContentType "application/json" -Body '{}' -TimeoutSec 20
+    $controlledCountInput.attestationId = $controlledCountAttestation.attestationId
+    $controlledCountSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)/submit" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body ($controlledCountInput | ConvertTo-Json -Depth 5) -TimeoutSec 20
     $countResubmitRejected = $false
-    try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)/submit" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ counterSessionId = $custodyWitnessSessionId; reason = "Retry submitted count"; idempotencyKey = "count-retry-$custodySuffix"; observations = @(@{ lotId = $receipt.lot.lotId; observedQuantity = 6 }) } | ConvertTo-Json -Depth 5) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countResubmitRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
+    try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)/submit" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ attestationId = $controlledCountAttestation.attestationId; reason = "Retry submitted count"; idempotencyKey = "count-retry-$custodySuffix"; observations = @(@{ lotId = $receipt.lot.lotId; observedQuantity = 6 }) } | ConvertTo-Json -Depth 5) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countResubmitRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
     $controlledInvestigation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/investigation" -Method Put -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke count variance investigated" } | ConvertTo-Json) -TimeoutSec 20
-    $controlledCountCorrection = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke approved compensating count correction"; idempotencyKey = "count-correction-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
+    $controlledCorrectionInput = @{ notes = "Smoke approved compensating count correction"; idempotencyKey = "count-correction-$custodySuffix" }
+    $controlledCorrectionAttestation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/correction-attestations" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body ($controlledCorrectionInput | ConvertTo-Json) -TimeoutSec 20
+    $pendingCorrectionAttestations = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancy-correction-attestations/pending" -Method Get -Headers $custodyWitnessHeaders -TimeoutSec 20
+    $approvedCorrectionAttestation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancy-correction-attestations/$($controlledCorrectionAttestation.attestationId)/approve" -Method Post -Headers $custodyWitnessHeaders -ContentType "application/json" -Body '{}' -TimeoutSec 20
+    $controlledCorrectionInput.attestationId = $controlledCorrectionAttestation.attestationId
+    $controlledCountCorrection = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body ($controlledCorrectionInput | ConvertTo-Json) -TimeoutSec 20
     $controlledCountClosed = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/close" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke discrepancy closure" } | ConvertTo-Json) -TimeoutSec 20
     $controlledAsOfReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/as-of" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ asOfDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
     $controlledAsOfExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/controlled-inventory/as-of/$($controlledAsOfReport.run.runId)/export" -Method Get -Headers $custodyHeaders -UseBasicParsing -TimeoutSec 20
@@ -11579,8 +11622,8 @@ try {
     $controlledCountSessionsAfterResolution = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions?limit=30" -Method Get -Headers $custodyHeaders -TimeoutSec 20
     $controlledCountSummaryAfterResolution = @($controlledCountSessionsAfterResolution | Where-Object { $_.sessionId -eq $controlledCount.sessionId }) | Select-Object -First 1
     $countCorrectionRetryRejected = $false
-    try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Retry count correction"; idempotencyKey = "count-correction-retry-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countCorrectionRetryRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
-    $controlledDestruction = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "destruction"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; reason = "Smoke controlled destruction"; idempotencyKey = "destruction-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
+    try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ attestationId = $controlledCorrectionAttestation.attestationId; notes = "Retry count correction"; idempotencyKey = "count-correction-retry-$custodySuffix" } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countCorrectionRetryRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
+    $controlledDestruction = Invoke-ApprovedControlledCustodyMovement @{ action = "destruction"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; reason = "Smoke controlled destruction"; idempotencyKey = "destruction-$custodySuffix" }
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($custodyItem.itemId)/controlled-classification" -Method Put -Headers $custodyHeaders -ContentType "application/json" -Body (@{ scheduleCode = $null } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $custodyActions = @($custodyHistory.events | ForEach-Object { $_.action })
     $custodyPassed = $receipt.event.action -eq "receipt" `
@@ -11588,13 +11631,20 @@ try {
         -and $transfer.counterpartyLot.quantityOnHand -eq 2 `
         -and $correction.lot.quantityOnHand -eq 7 `
         -and @("receipt", "transfer", "dispense", "administration", "return", "waste", "correction" | Where-Object { $_ -notin $custodyActions }).Count -eq 0 `
-        -and $receipt.event.witnessUsername -eq "gold-provider-01" `
+        -and $receipt.event.witnessUsername -eq "gold-inventory-01" `
         -and $null -ne $receipt.event.witnessedAt `
+        -and $null -ne $receipt.event.attestationId `
+        -and $selfApprovalRejected `
+        -and @($pendingCountAttestations | Where-Object { $_.attestationId -eq $controlledCountAttestation.attestationId -and $_.requestedBy -eq "admin" }).Count -eq 1 `
+        -and $approvedCountAttestation.approvedBy -eq "gold-inventory-01" `
+        -and @($pendingCorrectionAttestations | Where-Object { $_.attestationId -eq $controlledCorrectionAttestation.attestationId -and $_.requestedBy -eq "admin" }).Count -eq 1 `
+        -and $approvedCorrectionAttestation.approvedBy -eq "gold-inventory-01" `
         -and $missingIdempotencyRejected `
         -and $missingWitnessRejected `
         -and $generalShortcutRejected `
         -and $controlledCountSubmitted.status -eq "discrepancy_open" `
         -and $controlledCountSubmitted.movementLockActive -eq $false `
+        -and $controlledCountSubmitted.counterAttestationId -eq $controlledCountAttestation.attestationId `
         -and $controlledCountSummaryWithLock.movementLockActive -eq $true `
         -and $controlledCountSummaryWithLock.lineCount -eq 1 `
         -and $controlledCountSubmitted.lines[0].expectedQuantity -eq 7 `
@@ -11603,6 +11653,7 @@ try {
         -and $null -ne $controlledCountSubmitted.lines[0].discrepancyId `
         -and $controlledInvestigation.lines[0].discrepancyStatus -eq "investigating" `
         -and $controlledCountCorrection.event.action -eq "correction" `
+        -and $controlledCountCorrection.event.attestationId -eq $controlledCorrectionAttestation.attestationId `
         -and $controlledCountCorrection.lot.quantityOnHand -eq 6 `
         -and $controlledCountClosed.lines[0].discrepancyStatus -eq "closed" `
         -and $controlledCountSummaryAfterResolution.movementLockActive -eq $false `
@@ -11640,7 +11691,8 @@ try {
         -and @($controlledVarianceReport.lines | Where-Object { $_.discrepancyId -eq $controlledCountSubmitted.lines[0].discrepancyId -and $_.varianceQuantity -eq -1 -and $_.discrepancyStatus -eq "closed" -and $null -ne $_.correctionEventId }).Count -eq 1 `
         -and $controlledDestruction.event.action -eq "destruction" `
         -and $controlledDestruction.lot.quantityOnHand -eq 5 `
-        -and $controlledDestruction.event.witnessUsername -eq "gold-provider-01" `
+        -and $controlledDestruction.event.witnessUsername -eq "gold-inventory-01" `
+        -and $null -ne $controlledDestruction.event.attestationId `
         -and $countLockRejected `
         -and $countResubmitRejected `
         -and $countCorrectionRetryRejected

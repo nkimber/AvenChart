@@ -58,6 +58,7 @@ const accessGroups = [
   [14, 'front', 'Front Office', 10],
   [15, 'back', 'Accounting', 10],
   [16, 'breakglass', 'Emergency Login', 10],
+  [17, 'inventory', 'Inventory Operations', 10],
 ]
 
 const accessUserMemberships = [
@@ -65,6 +66,7 @@ const accessUserMemberships = [
   ['oe-system', 'System Operation User', 'admin', 'Administrators', null],
   ['gold-frontdesk-01', 'Parker Fleming', 'front', 'Front Office', 117],
   ['gold-provider-01', 'Alex Walker', 'clin', 'Clinicians', 101],
+  ['gold-inventory-01', 'Morgan Reyes', 'inventory', 'Inventory Operations', null],
 ]
 
 const accessPermissions = [
@@ -199,6 +201,10 @@ const groupPermissionRules = {
     ['patients', 'trans', 'addonly'],
     ['placeholder', 'filler', 'wsome'],
     ['sensitivities', 'normal', 'addonly'],
+  ],
+  inventory: [
+    ['inventory', 'adjustments', 'write'],
+    ['inventory', 'lots', 'write'],
   ],
   doc: [
     ['acct', 'disc', 'write'],
@@ -1907,6 +1913,7 @@ copyRows('auth_accounts', ['username', 'display_name', 'role', 'staff_id', 'acti
   ['admin', 'Administrator', 'administrator', null, true, demoCredentialSalt, hashDemoPassword('pass')],
   ['gold-frontdesk-01', 'Parker Fleming', 'frontdesk', 117, true, demoCredentialSalt, hashDemoPassword('pass')],
   ['gold-provider-01', 'Alex Walker', 'provider', 101, true, demoCredentialSalt, hashDemoPassword('pass')],
+  ['gold-inventory-01', 'Morgan Reyes', 'inventory_operator', null, true, demoCredentialSalt, hashDemoPassword('pass')],
 ])
 
 copyRows('practice_settings', ['setting_key', 'setting_value', 'value_type', 'updated_at', 'updated_by'], [

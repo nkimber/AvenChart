@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -246,32 +248,96 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
     private static string? NormalizeControlledSchedule(string? value) { var normalized=value?.Trim().ToUpperInvariant(); if (string.IsNullOrEmpty(normalized)) return null; if (normalized is not ("II" or "III" or "IV" or "V")) throw new ArgumentException("Controlled schedule must be II, III, IV, V, or blank to remove the classification."); return normalized; }
     private static async Task<bool> ItemExistsAsync(NpgsqlConnection connection,NpgsqlTransaction transaction,int itemId,CancellationToken cancellationToken){await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="select exists(select 1 from inventory_items where item_id=@id and active=true);";command.Parameters.AddWithValue("id",itemId);return await command.ExecuteScalarAsync(cancellationToken) is true;}
 
-    public async Task<InventoryControlledCustodyMovementResponse> CreateControlledCustodyMovementAsync(InventoryControlledCustodyMovementRequest request, string username, string? witnessUsername, CancellationToken cancellationToken)
+    public async Task<InventoryControlledAttestation> CreateControlledCustodyMovementAttestationAsync(InventoryControlledCustodyMovementRequest request, string username, CancellationToken cancellationToken)
     {
-        var action = request.Action?.Trim().ToLowerInvariant();
-        if (action is not ("receipt" or "transfer" or "dispense" or "administration" or "return" or "waste" or "destruction" or "correction")
-            || request.Quantity <= 0 || string.IsNullOrWhiteSpace(username))
-            throw new ArgumentException("A supported controlled-custody action, positive quantity, and authenticated user are required.");
+        ValidateCustodyMovementRequest(request, username);
+        return await CreateControlledAttestationAsync(
+            "custody_movement",
+            null,
+            CreateCustodyMovementDigest(request),
+            $"Controlled {request.Action.Trim().ToLowerInvariant()} of {request.Quantity.ToString(CultureInfo.InvariantCulture)} unit(s)",
+            username,
+            cancellationToken);
+    }
+
+    public async Task<InventoryControlledAttestation> CreateControlledCountSubmissionAttestationAsync(Guid sessionId, InventoryControlledCountSubmitRequest request, string username, CancellationToken cancellationToken)
+    {
+        ValidateControlledCountSubmissionRequest(sessionId, request, username, requireAttestation: false);
+        return await CreateControlledAttestationAsync(
+            "count_submit",
+            sessionId,
+            CreateCountSubmissionDigest(sessionId, request),
+            $"Controlled count submission for session {sessionId}",
+            username,
+            cancellationToken);
+    }
+
+    public async Task<InventoryControlledAttestation> CreateControlledDiscrepancyCorrectionAttestationAsync(Guid discrepancyId, InventoryControlledDiscrepancyCorrectionRequest request, string username, CancellationToken cancellationToken)
+    {
+        ValidateControlledDiscrepancyCorrectionRequest(discrepancyId, request, username);
+        return await CreateControlledAttestationAsync(
+            "discrepancy_correction",
+            discrepancyId,
+            CreateDiscrepancyCorrectionDigest(discrepancyId, request),
+            $"Controlled discrepancy correction for {discrepancyId}",
+            username,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<InventoryControlledAttestation>> GetPendingControlledAttestationsAsync(string action, string username, CancellationToken cancellationToken)
+    {
+        ValidateAttestationAction(action);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select attestation_id,action,context_id,summary,requested_by,requested_at,expires_at,status,approved_by,approved_at
+            from inventory_controlled_action_attestations
+            where action=@action and status='pending' and expires_at > now() and requested_by <> @username
+            order by requested_at,attestation_id;
+            """;
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("username", username);
+        var result = new List<InventoryControlledAttestation>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) result.Add(ReadControlledAttestation(reader));
+        return result;
+    }
+
+    public async Task<InventoryControlledAttestation> ApproveControlledAttestationAsync(Guid attestationId, string action, string username, CancellationToken cancellationToken)
+    {
+        ValidateAttestationAction(action);
+        if (attestationId == Guid.Empty || string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("A controlled attestation and authenticated approver are required.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update inventory_controlled_action_attestations
+            set status='approved',approved_by=@username,approved_at=now()
+            where attestation_id=@id and action=@action and status='pending' and expires_at > now() and requested_by <> @username
+            returning attestation_id,action,context_id,summary,requested_by,requested_at,expires_at,status,approved_by,approved_at;
+            """;
+        command.Parameters.AddWithValue("id", attestationId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("username", username);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            throw new ArgumentException("The controlled attestation is not pending, has expired, or cannot be self-approved.");
+        return ReadControlledAttestation(reader);
+    }
+
+    public Task<InventoryControlledCustodyMovementResponse> CreateControlledCustodyMovementAsync(InventoryControlledCustodyMovementRequest request, string username, CancellationToken cancellationToken) =>
+        CreateControlledCustodyMovementAsync(request, username, null, cancellationToken);
+
+    private async Task<InventoryControlledCustodyMovementResponse> CreateControlledCustodyMovementAsync(InventoryControlledCustodyMovementRequest request, string username, ControlledAttestationUse? suppliedAttestation, CancellationToken cancellationToken)
+    {
+        ValidateCustodyMovementRequest(request, username);
+        var action = request.Action.Trim().ToLowerInvariant();
 
         var reason = NormalizeOptional(request.Reason);
         var idempotencyKey = NormalizeOptional(request.IdempotencyKey);
-        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 500 || string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 120)
-            throw new ArgumentException("A reason and an idempotency key of 120 characters or fewer are required for controlled custody movements.");
-        if (action == "receipt" && (request.ItemId is null || request.ItemId <= 0 || string.IsNullOrWhiteSpace(request.LotNumber) || request.LotNumber.Trim().Length > 80 || request.UnitCost is null || request.UnitCost < 0 || request.DestinationLocationId is null))
-            throw new ArgumentException("A receipt requires item, lot number, nonnegative unit cost, and destination controlled location.");
-        if (action != "receipt" && (request.LotId is null || request.LotId <= 0))
-            throw new ArgumentException("This controlled custody action requires a source or destination lot.");
-        if (action == "transfer" && (request.SourceLocationId is null || request.DestinationLocationId is null))
-            throw new ArgumentException("A controlled transfer requires source and destination locations.");
-        if (action is "dispense" or "administration" or "return")
-        {
-            if (string.IsNullOrWhiteSpace(request.PatientId) || request.Encounter is null || request.Encounter <= 0)
-                throw new ArgumentException("Controlled dispense, administration, and return require a patient and encounter.");
-        }
-        if (action == "return" && request.RelatedEventId is null)
-            throw new ArgumentException("A controlled return must reference its prior dispense or administration event.");
-        if (action == "correction" && (request.RelatedEventId is null || request.CorrectionDirection?.Trim().ToLowerInvariant() is not ("increase" or "decrease")))
-            throw new ArgumentException("A controlled correction requires a prior custody event and an increase or decrease direction.");
+        var attestation = suppliedAttestation ?? (request.AttestationId is { } attestationId
+            ? new ControlledAttestationUse(attestationId, "custody_movement", null, CreateCustodyMovementDigest(request))
+            : null);
 
         var occurredAt = DateTimeOffset.UtcNow;
         var eventId = Guid.NewGuid();
@@ -282,7 +348,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         {
             duplicate.Transaction = transaction;
             duplicate.CommandText = "select exists(select 1 from inventory_controlled_custody_events where idempotency_key=@key);";
-            duplicate.Parameters.AddWithValue("key", idempotencyKey);
+            duplicate.Parameters.AddWithValue("key", idempotencyKey!);
             if (await duplicate.ExecuteScalarAsync(cancellationToken) is true)
                 throw new ArgumentException("That controlled custody idempotency key has already been used.");
         }
@@ -365,15 +431,22 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
 
         var witnessRequired = sourceLocation?.DualAttestationRequired == true || destinationLocation?.DualAttestationRequired == true;
         await EnsureNoControlledCountLockAsync(connection, transaction, sourceLocation?.LocationId, destinationLocation?.LocationId, cancellationToken);
+        string? witnessUsername = null;
+        Guid? consumedAttestationId = null;
+        if (attestation is not null)
+        {
+            witnessUsername = await ConsumeControlledAttestationAsync(connection, transaction, attestation, username, cancellationToken);
+            consumedAttestationId = attestation.AttestationId;
+        }
         if (witnessRequired && string.IsNullOrWhiteSpace(witnessUsername))
-            throw new ArgumentException("This controlled location requires a separately authenticated witness before the movement can post.");
+            throw new ArgumentException("This controlled location requires a separately approved witness attestation before the movement can post.");
         if (!string.IsNullOrWhiteSpace(witnessUsername) && string.Equals(witnessUsername, username, StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("The controlled-custody witness must be a different authenticated user.");
         var witnessedAt = string.IsNullOrWhiteSpace(witnessUsername) ? (DateTimeOffset?)null : DateTimeOffset.UtcNow;
 
         await InsertControlledCustodyEventAsync(connection, transaction, eventId, action, primaryLot, counterpartyLot, sourceLocation, destinationLocation,
-            request.PatientId?.Trim(), request.Encounter, request.Quantity, quantityDelta, reason, request.RelatedEventId, idempotencyKey,
-            sourceBefore, sourceAfter, destinationBefore, destinationAfter, username, occurredAt, witnessUsername, witnessedAt, cancellationToken);
+            request.PatientId?.Trim(), request.Encounter, request.Quantity, quantityDelta, reason!, request.RelatedEventId, idempotencyKey!,
+            sourceBefore, sourceAfter, destinationBefore, destinationAfter, username, occurredAt, witnessUsername, witnessedAt, consumedAttestationId, cancellationToken);
 
         await InsertTransactionAsync(connection, transaction, Guid.NewGuid(), primaryLot.LotId, action == "transfer" ? eventId : null, $"controlled_{action}", quantityDelta, reason, username, occurredAt, cancellationToken);
         if (counterpartyLot is not null)
@@ -382,8 +455,8 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         await transaction.CommitAsync(cancellationToken);
         var custodyEvent = new InventoryControlledCustodyEvent(eventId, action, primaryLot.LotId, counterpartyLot?.LotId, primaryLot.Item.ItemId, primaryLot.Item.ItemCode,
             primaryLot.Item.ScheduleCode, request.Quantity, quantityDelta, sourceLocation?.LocationId, destinationLocation?.LocationId, request.PatientId?.Trim(), request.Encounter,
-            reason, request.RelatedEventId, sourceBefore, sourceAfter, destinationBefore, destinationAfter, username, occurredAt.ToString("O", CultureInfo.InvariantCulture),
-            witnessUsername, witnessedAt?.ToString("O", CultureInfo.InvariantCulture));
+            reason!, request.RelatedEventId, sourceBefore, sourceAfter, destinationBefore, destinationAfter, username, occurredAt.ToString("O", CultureInfo.InvariantCulture),
+            witnessUsername, witnessedAt?.ToString("O", CultureInfo.InvariantCulture), consumedAttestationId);
         return new InventoryControlledCustodyMovementResponse(custodyEvent, primaryLot.ToInventoryLot(), counterpartyLot?.ToInventoryLot());
     }
 
@@ -398,12 +471,12 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         }
         var events = new List<InventoryControlledCustodyEvent>();
         await using var command = connection.CreateCommand();
-        command.CommandText = "select e.event_id,e.action,e.lot_id,e.counterparty_lot_id,i.item_id,i.item_code,i.controlled_schedule,e.quantity,e.quantity_delta,e.source_location_id,e.destination_location_id,e.patient_id,e.encounter,e.reason,e.related_event_id,e.source_quantity_before,e.source_quantity_after,e.destination_quantity_before,e.destination_quantity_after,e.performed_by,e.occurred_at,e.witness_username,e.witnessed_at from inventory_controlled_custody_events e join inventory_lots l on l.lot_id=e.lot_id join inventory_items i on i.item_id=l.item_id where e.lot_id=@lotId or e.counterparty_lot_id=@lotId order by e.occurred_at desc,e.event_id desc;";
+        command.CommandText = "select e.event_id,e.action,e.lot_id,e.counterparty_lot_id,i.item_id,i.item_code,i.controlled_schedule,e.quantity,e.quantity_delta,e.source_location_id,e.destination_location_id,e.patient_id,e.encounter,e.reason,e.related_event_id,e.source_quantity_before,e.source_quantity_after,e.destination_quantity_before,e.destination_quantity_after,e.performed_by,e.occurred_at,e.witness_username,e.witnessed_at,e.attestation_id from inventory_controlled_custody_events e join inventory_lots l on l.lot_id=e.lot_id join inventory_items i on i.item_id=l.item_id where e.lot_id=@lotId or e.counterparty_lot_id=@lotId order by e.occurred_at desc,e.event_id desc;";
         command.Parameters.AddWithValue("lotId", lotId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            events.Add(new InventoryControlledCustodyEvent(reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.IsDBNull(3) ? null : reader.GetInt32(3), reader.GetInt32(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.IsDBNull(9) ? null : reader.GetGuid(9), reader.IsDBNull(10) ? null : reader.GetGuid(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetInt32(12), reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetGuid(14), reader.IsDBNull(15) ? null : reader.GetDecimal(15), reader.IsDBNull(16) ? null : reader.GetDecimal(16), reader.IsDBNull(17) ? null : reader.GetDecimal(17), reader.IsDBNull(18) ? null : reader.GetDecimal(18), reader.GetString(19), reader.GetFieldValue<DateTimeOffset>(20).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(21) ? null : reader.GetString(21), reader.IsDBNull(22) ? null : reader.GetFieldValue<DateTimeOffset>(22).ToString("O", CultureInfo.InvariantCulture)));
+            events.Add(new InventoryControlledCustodyEvent(reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.IsDBNull(3) ? null : reader.GetInt32(3), reader.GetInt32(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.IsDBNull(9) ? null : reader.GetGuid(9), reader.IsDBNull(10) ? null : reader.GetGuid(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetInt32(12), reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetGuid(14), reader.IsDBNull(15) ? null : reader.GetDecimal(15), reader.IsDBNull(16) ? null : reader.GetDecimal(16), reader.IsDBNull(17) ? null : reader.GetDecimal(17), reader.IsDBNull(18) ? null : reader.GetDecimal(18), reader.GetString(19), reader.GetFieldValue<DateTimeOffset>(20).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(21) ? null : reader.GetString(21), reader.IsDBNull(22) ? null : reader.GetFieldValue<DateTimeOffset>(22).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(23) ? null : reader.GetGuid(23)));
         }
         return new InventoryControlledCustodyLotHistoryResponse(lot.ToInventoryLot(), lot.ControlledLocationId, lot.LocationCode, lot.LocationName, lot.Item.ScheduleCode, events);
     }
@@ -414,23 +487,26 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         if (request.LocationId==Guid.Empty || countType is not ("opening" or "shift" or "cycle" or "closing") || string.IsNullOrWhiteSpace(reason) || reason.Length>500 || string.IsNullOrWhiteSpace(key) || key.Length>120) throw new ArgumentException("Controlled count location, type, reason, and idempotency key are required.");
         var now=DateTimeOffset.UtcNow; var id=Guid.NewGuid(); await using var connection=await dataSource.OpenConnectionAsync(cancellationToken);await using var transaction=await connection.BeginTransactionAsync(cancellationToken);
         var location=await GetControlledLocationAsync(connection,transaction,request.LocationId,cancellationToken) ?? throw new ArgumentException("The controlled count location was not found or is inactive.");
-        await using(var duplicate=connection.CreateCommand()){duplicate.Transaction=transaction;duplicate.CommandText="select exists(select 1 from inventory_controlled_count_sessions where idempotency_key=@key);";duplicate.Parameters.AddWithValue("key",key);if(await duplicate.ExecuteScalarAsync(cancellationToken) is true)throw new ArgumentException("That controlled count idempotency key has already been used.");}
+        await using(var duplicate=connection.CreateCommand()){duplicate.Transaction=transaction;duplicate.CommandText="select exists(select 1 from inventory_controlled_count_sessions where idempotency_key=@key);";duplicate.Parameters.AddWithValue("key",key!);if(await duplicate.ExecuteScalarAsync(cancellationToken) is true)throw new ArgumentException("That controlled count idempotency key has already been used.");}
         await using(var active=connection.CreateCommand()){active.Transaction=transaction;active.CommandText="select exists(select 1 from inventory_controlled_count_sessions where location_id=@location and status='in_progress');";active.Parameters.AddWithValue("location",location.LocationId);if(await active.ExecuteScalarAsync(cancellationToken) is true)throw new ArgumentException("A controlled count is already in progress for this location.");}
         await using(var insert=connection.CreateCommand()){insert.Transaction=transaction;insert.CommandText="insert into inventory_controlled_count_sessions(session_id,location_id,count_type,status,movement_lock_active,reason,idempotency_key,started_by,started_at) values(@id,@location,@type,'in_progress',@lock,@reason,@key,@user,@at);";insert.Parameters.AddWithValue("id",id);insert.Parameters.AddWithValue("location",location.LocationId);insert.Parameters.AddWithValue("type",countType);insert.Parameters.AddWithValue("lock",request.MovementLockActive);insert.Parameters.AddWithValue("reason",reason);insert.Parameters.AddWithValue("key",key);insert.Parameters.AddWithValue("user",username);insert.Parameters.AddWithValue("at",now);await insert.ExecuteNonQueryAsync(cancellationToken);}
         await using(var snapshot=connection.CreateCommand()){snapshot.Transaction=transaction;snapshot.CommandText="insert into inventory_controlled_count_lines(line_id,session_id,lot_id,expected_quantity) select gen_random_uuid(),@session,l.lot_id,l.quantity_on_hand from inventory_lots l join inventory_items i on i.item_id=l.item_id where l.controlled_location_id=@location and l.status='active' and i.active=true and i.controlled_schedule is not null;";snapshot.Parameters.AddWithValue("session",id);snapshot.Parameters.AddWithValue("location",location.LocationId);await snapshot.ExecuteNonQueryAsync(cancellationToken);}
         await transaction.CommitAsync(cancellationToken);return await GetControlledCountSessionAsync(id,cancellationToken);
     }
 
-    public async Task<InventoryControlledCountSession> SubmitControlledCountSessionAsync(Guid sessionId, InventoryControlledCountSubmitRequest request, string username, string counterUsername, CancellationToken cancellationToken)
+    public async Task<InventoryControlledCountSession> SubmitControlledCountSessionAsync(Guid sessionId, InventoryControlledCountSubmitRequest request, string username, CancellationToken cancellationToken)
     {
-        var reason=NormalizeOptional(request.Reason);var key=NormalizeOptional(request.IdempotencyKey);if(sessionId==Guid.Empty || request.CounterSessionId==Guid.Empty || string.IsNullOrWhiteSpace(counterUsername)||string.Equals(username,counterUsername,StringComparison.OrdinalIgnoreCase)||string.IsNullOrWhiteSpace(reason)||reason.Length>500||string.IsNullOrWhiteSpace(key)||key.Length>120||request.Observations is null)throw new ArgumentException("A different authenticated counter, reason, idempotency key, and complete observations are required.");
+        ValidateControlledCountSubmissionRequest(sessionId, request, username);
+        var reason=NormalizeOptional(request.Reason);var key=NormalizeOptional(request.IdempotencyKey);
         var now=DateTimeOffset.UtcNow;await using var connection=await dataSource.OpenConnectionAsync(cancellationToken);await using var transaction=await connection.BeginTransactionAsync(cancellationToken);
+        var submittedObservations = request.Observations!;
         Guid locationId;int lineCount;await using(var session=connection.CreateCommand()){session.Transaction=transaction;session.CommandText="select location_id,(select count(*)::int from inventory_controlled_count_lines where session_id=s.session_id) from inventory_controlled_count_sessions s where s.session_id=@id and s.status='in_progress' for update;";session.Parameters.AddWithValue("id",sessionId);await using var reader=await session.ExecuteReaderAsync(cancellationToken);if(!await reader.ReadAsync(cancellationToken))throw new ArgumentException("The controlled count is not in progress.");locationId=reader.GetGuid(0);lineCount=reader.GetInt32(1);}
-        if(request.Observations.Count!=lineCount||request.Observations.Any(o=>o.LotId<=0||o.ObservedQuantity<0)||request.Observations.Select(o=>o.LotId).Distinct().Count()!=lineCount)throw new ArgumentException("The submitted count must contain one non-negative observation for every snapshotted lot.");
-        await using(var duplicate=connection.CreateCommand()){duplicate.Transaction=transaction;duplicate.CommandText="select exists(select 1 from inventory_controlled_count_sessions where idempotency_key=@key);";duplicate.Parameters.AddWithValue("key",key);if(await duplicate.ExecuteScalarAsync(cancellationToken) is true)throw new ArgumentException("That controlled count idempotency key has already been used.");}
-        foreach(var observation in request.Observations){await using var line=connection.CreateCommand();line.Transaction=transaction;line.CommandText="update inventory_controlled_count_lines set observed_quantity=@observed,variance_quantity=@observed-expected_quantity where session_id=@session and lot_id=@lot;";line.Parameters.AddWithValue("observed",observation.ObservedQuantity);line.Parameters.AddWithValue("session",sessionId);line.Parameters.AddWithValue("lot",observation.LotId);if(await line.ExecuteNonQueryAsync(cancellationToken)!=1)throw new ArgumentException("A submitted observation does not match this count session.");}
+        if(submittedObservations.Count!=lineCount||submittedObservations.Any(o=>o.LotId<=0||o.ObservedQuantity<0)||submittedObservations.Select(o=>o.LotId).Distinct().Count()!=lineCount)throw new ArgumentException("The submitted count must contain one non-negative observation for every snapshotted lot.");
+        await using(var duplicate=connection.CreateCommand()){duplicate.Transaction=transaction;duplicate.CommandText="select exists(select 1 from inventory_controlled_count_sessions where idempotency_key=@key);";duplicate.Parameters.AddWithValue("key",key!);if(await duplicate.ExecuteScalarAsync(cancellationToken) is true)throw new ArgumentException("That controlled count idempotency key has already been used.");}
+        var counterUsername = await ConsumeControlledAttestationAsync(connection, transaction, new ControlledAttestationUse(request.AttestationId!.Value, "count_submit", sessionId, CreateCountSubmissionDigest(sessionId, request)), username, cancellationToken);
+        foreach(var observation in submittedObservations){await using var line=connection.CreateCommand();line.Transaction=transaction;line.CommandText="update inventory_controlled_count_lines set observed_quantity=@observed,variance_quantity=@observed-expected_quantity where session_id=@session and lot_id=@lot;";line.Parameters.AddWithValue("observed",observation.ObservedQuantity);line.Parameters.AddWithValue("session",sessionId);line.Parameters.AddWithValue("lot",observation.LotId);if(await line.ExecuteNonQueryAsync(cancellationToken)!=1)throw new ArgumentException("A submitted observation does not match this count session.");}
         int variances;await using(var count=connection.CreateCommand()){count.Transaction=transaction;count.CommandText="select count(*)::int from inventory_controlled_count_lines where session_id=@session and variance_quantity<>0;";count.Parameters.AddWithValue("session",sessionId);variances=Convert.ToInt32(await count.ExecuteScalarAsync(cancellationToken),CultureInfo.InvariantCulture);}
-        var status=variances==0?"reconciled":"discrepancy_open";await using(var update=connection.CreateCommand()){update.Transaction=transaction;update.CommandText="update inventory_controlled_count_sessions set status=@status,movement_lock_active=false,reason=reason || E'\\nSubmission: ' || @reason,idempotency_key=@key,submitted_by=@user,submitted_at=@at,counter_username=@counter where session_id=@session;";update.Parameters.AddWithValue("status",status);update.Parameters.AddWithValue("reason",reason);update.Parameters.AddWithValue("key",key);update.Parameters.AddWithValue("user",username);update.Parameters.AddWithValue("at",now);update.Parameters.AddWithValue("counter",counterUsername);update.Parameters.AddWithValue("session",sessionId);await update.ExecuteNonQueryAsync(cancellationToken);}
+        var status=variances==0?"reconciled":"discrepancy_open";await using(var update=connection.CreateCommand()){update.Transaction=transaction;update.CommandText="update inventory_controlled_count_sessions set status=@status,movement_lock_active=false,reason=reason || E'\\nSubmission: ' || @reason,idempotency_key=@key,submitted_by=@user,submitted_at=@at,counter_username=@counter,counter_attestation_id=@attestation where session_id=@session;";update.Parameters.AddWithValue("status",status);update.Parameters.AddWithValue("reason",reason!);update.Parameters.AddWithValue("key",key!);update.Parameters.AddWithValue("user",username);update.Parameters.AddWithValue("at",now);update.Parameters.AddWithValue("counter",counterUsername);update.Parameters.AddWithValue("attestation",request.AttestationId!.Value);update.Parameters.AddWithValue("session",sessionId);await update.ExecuteNonQueryAsync(cancellationToken);}
         if(variances>0){await using var discrepancy=connection.CreateCommand();discrepancy.Transaction=transaction;discrepancy.CommandText="insert into inventory_controlled_count_discrepancies(discrepancy_id,session_id,line_id,opened_by,opened_at) select gen_random_uuid(),@session,line_id,@user,@at from inventory_controlled_count_lines where session_id=@session and variance_quantity<>0;";discrepancy.Parameters.AddWithValue("session",sessionId);discrepancy.Parameters.AddWithValue("user",username);discrepancy.Parameters.AddWithValue("at",now);await discrepancy.ExecuteNonQueryAsync(cancellationToken);}
         await transaction.CommitAsync(cancellationToken);return await GetControlledCountSessionAsync(sessionId,cancellationToken);
     }
@@ -438,9 +514,9 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
     public async Task<InventoryControlledCountSession> GetControlledCountSessionAsync(Guid sessionId,CancellationToken cancellationToken)
     {
         await using var connection=await dataSource.OpenConnectionAsync(cancellationToken);Guid locationId;string locationCode,locationName,countType,status,reason,startedBy;bool movementLock;DateTimeOffset startedAt;string? submittedBy,counter;DateTimeOffset? submittedAt;
-        await using(var command=connection.CreateCommand()){command.CommandText="select s.location_id,l.location_code,l.display_name,s.count_type,s.status,s.movement_lock_active,s.reason,s.started_by,s.started_at,s.submitted_by,s.submitted_at,s.counter_username from inventory_controlled_count_sessions s join inventory_controlled_locations l on l.location_id=s.location_id where s.session_id=@id;";command.Parameters.AddWithValue("id",sessionId);await using var reader=await command.ExecuteReaderAsync(cancellationToken);if(!await reader.ReadAsync(cancellationToken))throw new ArgumentException("The controlled count session was not found.");locationId=reader.GetGuid(0);locationCode=reader.GetString(1);locationName=reader.GetString(2);countType=reader.GetString(3);status=reader.GetString(4);movementLock=reader.GetBoolean(5);reason=reader.GetString(6);startedBy=reader.GetString(7);startedAt=reader.GetFieldValue<DateTimeOffset>(8);submittedBy=reader.IsDBNull(9)?null:reader.GetString(9);submittedAt=reader.IsDBNull(10)?null:reader.GetFieldValue<DateTimeOffset>(10);counter=reader.IsDBNull(11)?null:reader.GetString(11);}
+        Guid? counterAttestation;await using(var command=connection.CreateCommand()){command.CommandText="select s.location_id,l.location_code,l.display_name,s.count_type,s.status,s.movement_lock_active,s.reason,s.started_by,s.started_at,s.submitted_by,s.submitted_at,s.counter_username,s.counter_attestation_id from inventory_controlled_count_sessions s join inventory_controlled_locations l on l.location_id=s.location_id where s.session_id=@id;";command.Parameters.AddWithValue("id",sessionId);await using var reader=await command.ExecuteReaderAsync(cancellationToken);if(!await reader.ReadAsync(cancellationToken))throw new ArgumentException("The controlled count session was not found.");locationId=reader.GetGuid(0);locationCode=reader.GetString(1);locationName=reader.GetString(2);countType=reader.GetString(3);status=reader.GetString(4);movementLock=reader.GetBoolean(5);reason=reader.GetString(6);startedBy=reader.GetString(7);startedAt=reader.GetFieldValue<DateTimeOffset>(8);submittedBy=reader.IsDBNull(9)?null:reader.GetString(9);submittedAt=reader.IsDBNull(10)?null:reader.GetFieldValue<DateTimeOffset>(10);counter=reader.IsDBNull(11)?null:reader.GetString(11);counterAttestation=reader.IsDBNull(12)?null:reader.GetGuid(12);}
         var lines=new List<InventoryControlledCountLine>();await using(var command=connection.CreateCommand()){command.CommandText="select c.line_id,c.lot_id,l.lot_number,i.item_code,c.expected_quantity,c.observed_quantity,c.variance_quantity,d.discrepancy_id,d.status from inventory_controlled_count_lines c join inventory_lots l on l.lot_id=c.lot_id join inventory_items i on i.item_id=l.item_id left join inventory_controlled_count_discrepancies d on d.line_id=c.line_id where c.session_id=@session order by i.item_code,l.lot_number,c.line_id;";command.Parameters.AddWithValue("session",sessionId);await using var reader=await command.ExecuteReaderAsync(cancellationToken);while(await reader.ReadAsync(cancellationToken))lines.Add(new(reader.GetGuid(0),reader.GetInt32(1),reader.GetString(2),reader.GetString(3),reader.GetDecimal(4),reader.IsDBNull(5)?null:reader.GetDecimal(5),reader.IsDBNull(6)?null:reader.GetDecimal(6),reader.IsDBNull(7)?null:reader.GetGuid(7),reader.IsDBNull(8)?null:reader.GetString(8)));}
-        return new(sessionId,locationId,locationCode,locationName,countType,status,movementLock,reason,startedBy,startedAt.ToString("O",CultureInfo.InvariantCulture),submittedBy,submittedAt?.ToString("O",CultureInfo.InvariantCulture),counter,lines);
+        return new(sessionId,locationId,locationCode,locationName,countType,status,movementLock,reason,startedBy,startedAt.ToString("O",CultureInfo.InvariantCulture),submittedBy,submittedAt?.ToString("O",CultureInfo.InvariantCulture),counter,counterAttestation,lines);
     }
 
     public async Task<IReadOnlyList<InventoryControlledCountSessionSummary>> GetControlledCountSessionsAsync(int limit, CancellationToken cancellationToken)
@@ -472,11 +548,12 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         await using var connection=await dataSource.OpenConnectionAsync(cancellationToken);await using var command=connection.CreateCommand();command.CommandText="update inventory_controlled_count_discrepancies set status='investigating',investigation_notes=@notes where discrepancy_id=@id and status='open' returning session_id;";command.Parameters.AddWithValue("notes",notes);command.Parameters.AddWithValue("id",discrepancyId);var session=await command.ExecuteScalarAsync(cancellationToken);if(session is null)throw new ArgumentException("The controlled discrepancy was not found or is not open.");return await GetControlledCountSessionAsync((Guid)session,cancellationToken);
     }
 
-    public async Task<InventoryControlledCustodyMovementResponse> CorrectControlledCountDiscrepancyAsync(Guid discrepancyId, InventoryControlledDiscrepancyCorrectionRequest request, string username, string? witnessUsername, CancellationToken cancellationToken)
+    public async Task<InventoryControlledCustodyMovementResponse> CorrectControlledCountDiscrepancyAsync(Guid discrepancyId, InventoryControlledDiscrepancyCorrectionRequest request, string username, CancellationToken cancellationToken)
     {
-        var notes=NormalizeOptional(request.Notes);var key=NormalizeOptional(request.IdempotencyKey);if(discrepancyId==Guid.Empty||string.IsNullOrWhiteSpace(notes)||notes.Length>1000||string.IsNullOrWhiteSpace(key)||key.Length>120)throw new ArgumentException("A controlled discrepancy, correction notes, and idempotency key are required.");
+        ValidateControlledDiscrepancyCorrectionRequest(discrepancyId, request, username);
+        var notes=NormalizeOptional(request.Notes);var key=NormalizeOptional(request.IdempotencyKey);
         int lotId;decimal variance;Guid locationId,relatedEventId;await using(var connection=await dataSource.OpenConnectionAsync(cancellationToken)){await using var command=connection.CreateCommand();command.CommandText="select l.lot_id,c.variance_quantity,l.controlled_location_id,(select e.event_id from inventory_controlled_custody_events e where e.lot_id=l.lot_id or e.counterparty_lot_id=l.lot_id order by e.occurred_at desc,e.event_id desc limit 1) from inventory_controlled_count_discrepancies d join inventory_controlled_count_lines c on c.line_id=d.line_id join inventory_lots l on l.lot_id=c.lot_id where d.discrepancy_id=@id and d.status='investigating' and d.correction_event_id is null;";command.Parameters.AddWithValue("id",discrepancyId);await using var reader=await command.ExecuteReaderAsync(cancellationToken);if(!await reader.ReadAsync(cancellationToken))throw new ArgumentException("The controlled discrepancy was not found or is not ready for correction.");lotId=reader.GetInt32(0);variance=reader.GetDecimal(1);if(reader.IsDBNull(2)||reader.IsDBNull(3))throw new ArgumentException("The controlled discrepancy has no eligible custody lot/event.");locationId=reader.GetGuid(2);relatedEventId=reader.GetGuid(3);}
-        var direction=variance>0?"increase":"decrease";var movement=await CreateControlledCustodyMovementAsync(new("correction",lotId,null,null,null,null,Math.Abs(variance),direction=="decrease"?locationId:null,direction=="increase"?locationId:null,null,null,$"Count discrepancy {discrepancyId}: {notes}",relatedEventId,direction,key,null),username,witnessUsername,cancellationToken);
+        var direction=variance>0?"increase":"decrease";var movement=await CreateControlledCustodyMovementAsync(new("correction",lotId,null,null,null,null,Math.Abs(variance),direction=="decrease"?locationId:null,direction=="increase"?locationId:null,null,null,$"Count discrepancy {discrepancyId}: {notes}",relatedEventId,direction,key,null),username,request.AttestationId is { } attestationId ? new ControlledAttestationUse(attestationId,"discrepancy_correction",discrepancyId,CreateDiscrepancyCorrectionDigest(discrepancyId,request)) : null,cancellationToken);
         await using(var connection=await dataSource.OpenConnectionAsync(cancellationToken)){await using var command=connection.CreateCommand();command.CommandText="update inventory_controlled_count_discrepancies set status='corrected',correction_event_id=@event where discrepancy_id=@id and status='investigating' and correction_event_id is null;";command.Parameters.AddWithValue("event",movement.Event.EventId);command.Parameters.AddWithValue("id",discrepancyId);if(await command.ExecuteNonQueryAsync(cancellationToken)!=1)throw new ArgumentException("The correction posted but the discrepancy was concurrently changed; review the custody event before retrying.");}
         return movement;
     }
@@ -487,6 +564,155 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         await using var connection=await dataSource.OpenConnectionAsync(cancellationToken);await using var command=connection.CreateCommand();command.CommandText="update inventory_controlled_count_discrepancies set status='closed',closed_by=@user,closed_at=now(),investigation_notes=coalesce(investigation_notes,'') || E'\\nClosure: ' || @notes where discrepancy_id=@id and status='corrected' and correction_event_id is not null returning session_id;";command.Parameters.AddWithValue("notes",notes);command.Parameters.AddWithValue("user",username);command.Parameters.AddWithValue("id",discrepancyId);var session=await command.ExecuteScalarAsync(cancellationToken);if(session is null)throw new ArgumentException("The controlled discrepancy was not found or has not been corrected.");return await GetControlledCountSessionAsync((Guid)session,cancellationToken);
     }
 
+    private async Task<InventoryControlledAttestation> CreateControlledAttestationAsync(string action, Guid? contextId, string payloadDigest, string summary, string username, CancellationToken cancellationToken)
+    {
+        ValidateAttestationAction(action);
+        if (string.IsNullOrWhiteSpace(username)) throw new ArgumentException("An authenticated user is required to request a controlled attestation.");
+        var now = DateTimeOffset.UtcNow;
+        var result = new InventoryControlledAttestation(Guid.NewGuid(), action, contextId, summary, username, now.ToString("O", CultureInfo.InvariantCulture), now.AddMinutes(10).ToString("O", CultureInfo.InvariantCulture), "pending", null, null);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into inventory_controlled_action_attestations(attestation_id,action,context_id,payload_digest,summary,requested_by,requested_at,expires_at,status)
+            values(@id,@action,@context,@digest,@summary,@username,@requested,@expires,'pending');
+            """;
+        command.Parameters.AddWithValue("id", result.AttestationId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("context", (object?)contextId ?? DBNull.Value);
+        command.Parameters.AddWithValue("digest", payloadDigest);
+        command.Parameters.AddWithValue("summary", summary);
+        command.Parameters.AddWithValue("username", username);
+        command.Parameters.AddWithValue("requested", now);
+        command.Parameters.AddWithValue("expires", now.AddMinutes(10));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return result;
+    }
+
+    private static async Task<string> ConsumeControlledAttestationAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, ControlledAttestationUse use, string username, CancellationToken cancellationToken)
+    {
+        if (use.AttestationId == Guid.Empty) throw new ArgumentException("A valid independently approved controlled attestation is required.");
+        string action, digest, requestedBy, status, approvedBy;
+        Guid? contextId;
+        DateTimeOffset expiresAt;
+        await using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText = """
+                select action,context_id,payload_digest,requested_by,expires_at,status,approved_by
+                from inventory_controlled_action_attestations
+                where attestation_id=@id
+                for update;
+                """;
+            select.Parameters.AddWithValue("id", use.AttestationId);
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) throw new ArgumentException("The controlled attestation was not found.");
+            action = reader.GetString(0);
+            contextId = reader.IsDBNull(1) ? null : reader.GetGuid(1);
+            digest = reader.GetString(2);
+            requestedBy = reader.GetString(3);
+            expiresAt = reader.GetFieldValue<DateTimeOffset>(4);
+            status = reader.GetString(5);
+            approvedBy = reader.IsDBNull(6) ? string.Empty : reader.GetString(6);
+        }
+        if (!string.Equals(action, use.Action, StringComparison.Ordinal)
+            || contextId != use.ContextId
+            || !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(digest), Encoding.UTF8.GetBytes(use.PayloadDigest))
+            || !string.Equals(requestedBy, username, StringComparison.OrdinalIgnoreCase)
+            || status != "approved"
+            || expiresAt <= DateTimeOffset.UtcNow
+            || string.IsNullOrWhiteSpace(approvedBy)
+            || string.Equals(approvedBy, username, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("The controlled attestation is not an active independent approval for this exact action.");
+
+        await using var consume = connection.CreateCommand();
+        consume.Transaction = transaction;
+        consume.CommandText = """
+            update inventory_controlled_action_attestations
+            set status='consumed',consumed_by=@username,consumed_at=now()
+            where attestation_id=@id and status='approved';
+            """;
+        consume.Parameters.AddWithValue("id", use.AttestationId);
+        consume.Parameters.AddWithValue("username", username);
+        if (await consume.ExecuteNonQueryAsync(cancellationToken) != 1)
+            throw new ArgumentException("The controlled attestation was already used.");
+        return approvedBy;
+    }
+
+    private static InventoryControlledAttestation ReadControlledAttestation(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetString(3), reader.GetString(4),
+        reader.GetFieldValue<DateTimeOffset>(5).ToString("O", CultureInfo.InvariantCulture), reader.GetFieldValue<DateTimeOffset>(6).ToString("O", CultureInfo.InvariantCulture), reader.GetString(7),
+        reader.IsDBNull(8) ? null : reader.GetString(8), reader.IsDBNull(9) ? null : reader.GetFieldValue<DateTimeOffset>(9).ToString("O", CultureInfo.InvariantCulture));
+
+    private static void ValidateAttestationAction(string action)
+    {
+        if (action is not ("custody_movement" or "count_submit" or "discrepancy_correction"))
+            throw new ArgumentException("The controlled attestation action is not supported.");
+    }
+
+    private static void ValidateCustodyMovementRequest(InventoryControlledCustodyMovementRequest request, string username)
+    {
+        var action = request.Action?.Trim().ToLowerInvariant();
+        if (action is not ("receipt" or "transfer" or "dispense" or "administration" or "return" or "waste" or "destruction" or "correction")
+            || request.Quantity <= 0 || string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("A supported controlled-custody action, positive quantity, and authenticated user are required.");
+        var reason = NormalizeOptional(request.Reason);
+        var idempotencyKey = NormalizeOptional(request.IdempotencyKey);
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 500 || string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 120)
+            throw new ArgumentException("A reason and an idempotency key of 120 characters or fewer are required for controlled custody movements.");
+        if (action == "receipt" && (request.ItemId is null || request.ItemId <= 0 || string.IsNullOrWhiteSpace(request.LotNumber) || request.LotNumber.Trim().Length > 80 || request.UnitCost is null || request.UnitCost < 0 || request.DestinationLocationId is null))
+            throw new ArgumentException("A receipt requires item, lot number, nonnegative unit cost, and destination controlled location.");
+        if (action != "receipt" && (request.LotId is null || request.LotId <= 0))
+            throw new ArgumentException("This controlled custody action requires a source or destination lot.");
+        if (action == "transfer" && (request.SourceLocationId is null || request.DestinationLocationId is null))
+            throw new ArgumentException("A controlled transfer requires source and destination locations.");
+        if (action is "dispense" or "administration" or "return")
+        {
+            if (string.IsNullOrWhiteSpace(request.PatientId) || request.Encounter is null || request.Encounter <= 0)
+                throw new ArgumentException("Controlled dispense, administration, and return require a patient and encounter.");
+        }
+        if (action == "return" && request.RelatedEventId is null)
+            throw new ArgumentException("A controlled return must reference its prior dispense or administration event.");
+        if (action == "correction" && (request.RelatedEventId is null || request.CorrectionDirection?.Trim().ToLowerInvariant() is not ("increase" or "decrease")))
+            throw new ArgumentException("A controlled correction requires a prior custody event and an increase or decrease direction.");
+    }
+
+    private static void ValidateControlledCountSubmissionRequest(Guid sessionId, InventoryControlledCountSubmitRequest request, string username, bool requireAttestation = true)
+    {
+        var reason = NormalizeOptional(request.Reason);
+        var key = NormalizeOptional(request.IdempotencyKey);
+        if (sessionId == Guid.Empty || (requireAttestation && (request.AttestationId is null || request.AttestationId == Guid.Empty)) || string.IsNullOrWhiteSpace(username)
+            || string.IsNullOrWhiteSpace(reason) || reason.Length > 500 || string.IsNullOrWhiteSpace(key) || key.Length > 120 || request.Observations is null)
+            throw new ArgumentException("An independently approved count attestation, reason, idempotency key, and complete observations are required.");
+    }
+
+    private static void ValidateControlledDiscrepancyCorrectionRequest(Guid discrepancyId, InventoryControlledDiscrepancyCorrectionRequest request, string username)
+    {
+        var notes = NormalizeOptional(request.Notes);
+        var key = NormalizeOptional(request.IdempotencyKey);
+        if (discrepancyId == Guid.Empty || string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(notes) || notes.Length > 1000 || string.IsNullOrWhiteSpace(key) || key.Length > 120)
+            throw new ArgumentException("A controlled discrepancy, correction notes, and idempotency key are required.");
+    }
+
+    private static string CreateCustodyMovementDigest(InventoryControlledCustodyMovementRequest request) => CreateDigest(
+        request.Action?.Trim().ToLowerInvariant(), request.LotId?.ToString(CultureInfo.InvariantCulture), request.ItemId?.ToString(CultureInfo.InvariantCulture), request.LotNumber?.Trim(),
+        ParseOptionalDate(request.ExpirationDate, "Lot expiration must be an ISO date.")?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), request.UnitCost?.ToString(CultureInfo.InvariantCulture), request.Quantity.ToString(CultureInfo.InvariantCulture),
+        request.SourceLocationId?.ToString("D"), request.DestinationLocationId?.ToString("D"), request.PatientId?.Trim(), request.Encounter?.ToString(CultureInfo.InvariantCulture), NormalizeOptional(request.Reason), request.RelatedEventId?.ToString("D"), request.CorrectionDirection?.Trim().ToLowerInvariant(), NormalizeOptional(request.IdempotencyKey));
+
+    private static string CreateCountSubmissionDigest(Guid sessionId, InventoryControlledCountSubmitRequest request)
+    {
+        var observations = request.Observations?.OrderBy(x => x.LotId).Select(x => $"{x.LotId.ToString(CultureInfo.InvariantCulture)}:{x.ObservedQuantity.ToString(CultureInfo.InvariantCulture)}") ?? Enumerable.Empty<string>();
+        return CreateDigest(new[] { sessionId.ToString("D"), NormalizeOptional(request.Reason), NormalizeOptional(request.IdempotencyKey) }.Concat(observations).ToArray());
+    }
+
+    private static string CreateDiscrepancyCorrectionDigest(Guid discrepancyId, InventoryControlledDiscrepancyCorrectionRequest request) => CreateDigest(discrepancyId.ToString("D"), NormalizeOptional(request.Notes), NormalizeOptional(request.IdempotencyKey));
+
+    private static string CreateDigest(params string?[] fields)
+    {
+        var canonical = JsonSerializer.Serialize(fields);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    private sealed record ControlledAttestationUse(Guid AttestationId, string Action, Guid? ContextId, string PayloadDigest);
     private sealed record ControlledItemState(int ItemId, string ItemCode, string Name, string Unit, string ScheduleCode, decimal ReorderPoint);
     private sealed record ControlledLocationState(Guid LocationId, int FacilityId, string Code, string Name, bool DualAttestationRequired);
     private sealed record ControlledLotState(int LotId, ControlledItemState Item, int FacilityId, string FacilityCode, string FacilityName, string LotNumber, DateOnly? ExpirationDate, decimal QuantityOnHand, decimal UnitCost, string Status, Guid? ControlledLocationId, string? LocationCode, string? LocationName)
@@ -590,10 +816,10 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="select exists(select 1 from inventory_controlled_custody_events where event_id=@event and (lot_id=@lot or counterparty_lot_id=@lot));";command.Parameters.AddWithValue("event",relatedEventId);command.Parameters.AddWithValue("lot",lotId);if(await command.ExecuteScalarAsync(cancellationToken) is not true)throw new ArgumentException("The correction must reference a custody event for the selected lot.");
     }
 
-    private static async Task InsertControlledCustodyEventAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid eventId, string action, ControlledLotState lot, ControlledLotState? counterpartyLot, ControlledLocationState? sourceLocation, ControlledLocationState? destinationLocation, string? patientId, int? encounter, decimal quantity, decimal quantityDelta, string reason, Guid? relatedEventId, string idempotencyKey, decimal? sourceBefore, decimal? sourceAfter, decimal? destinationBefore, decimal? destinationAfter, string username, DateTimeOffset occurredAt, string? witnessUsername, DateTimeOffset? witnessedAt, CancellationToken cancellationToken)
+    private static async Task InsertControlledCustodyEventAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid eventId, string action, ControlledLotState lot, ControlledLotState? counterpartyLot, ControlledLocationState? sourceLocation, ControlledLocationState? destinationLocation, string? patientId, int? encounter, decimal quantity, decimal quantityDelta, string reason, Guid? relatedEventId, string idempotencyKey, decimal? sourceBefore, decimal? sourceAfter, decimal? destinationBefore, decimal? destinationAfter, string username, DateTimeOffset occurredAt, string? witnessUsername, DateTimeOffset? witnessedAt, Guid? attestationId, CancellationToken cancellationToken)
     {
-        await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="insert into inventory_controlled_custody_events(event_id,action,lot_id,counterparty_lot_id,source_location_id,destination_location_id,patient_id,encounter,quantity,quantity_delta,reason,related_event_id,idempotency_key,source_quantity_before,source_quantity_after,destination_quantity_before,destination_quantity_after,performed_by,occurred_at,entered_at,witness_username,witnessed_at) values(@id,@action,@lot,@counterparty,@source,@destination,@patient,@encounter,@quantity,@delta,@reason,@related,@key,@sourceBefore,@sourceAfter,@destinationBefore,@destinationAfter,@user,@occurred,now(),@witness,@witnessedAt);";
-        command.Parameters.AddWithValue("id",eventId);command.Parameters.AddWithValue("action",action);command.Parameters.AddWithValue("lot",lot.LotId);command.Parameters.AddWithValue("counterparty",(object?)counterpartyLot?.LotId??DBNull.Value);command.Parameters.AddWithValue("source",(object?)sourceLocation?.LocationId??DBNull.Value);command.Parameters.AddWithValue("destination",(object?)destinationLocation?.LocationId??DBNull.Value);command.Parameters.AddWithValue("patient",(object?)patientId??DBNull.Value);command.Parameters.AddWithValue("encounter",(object?)encounter??DBNull.Value);command.Parameters.AddWithValue("quantity",quantity);command.Parameters.AddWithValue("delta",quantityDelta);command.Parameters.AddWithValue("reason",reason);command.Parameters.AddWithValue("related",(object?)relatedEventId??DBNull.Value);command.Parameters.AddWithValue("key",idempotencyKey);command.Parameters.AddWithValue("sourceBefore",(object?)sourceBefore??DBNull.Value);command.Parameters.AddWithValue("sourceAfter",(object?)sourceAfter??DBNull.Value);command.Parameters.AddWithValue("destinationBefore",(object?)destinationBefore??DBNull.Value);command.Parameters.AddWithValue("destinationAfter",(object?)destinationAfter??DBNull.Value);command.Parameters.AddWithValue("user",username);command.Parameters.AddWithValue("occurred",occurredAt);command.Parameters.AddWithValue("witness",(object?)witnessUsername??DBNull.Value);command.Parameters.AddWithValue("witnessedAt",(object?)witnessedAt??DBNull.Value);await command.ExecuteNonQueryAsync(cancellationToken);
+        await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="insert into inventory_controlled_custody_events(event_id,action,lot_id,counterparty_lot_id,source_location_id,destination_location_id,patient_id,encounter,quantity,quantity_delta,reason,related_event_id,idempotency_key,source_quantity_before,source_quantity_after,destination_quantity_before,destination_quantity_after,performed_by,occurred_at,entered_at,witness_username,witnessed_at,attestation_id) values(@id,@action,@lot,@counterparty,@source,@destination,@patient,@encounter,@quantity,@delta,@reason,@related,@key,@sourceBefore,@sourceAfter,@destinationBefore,@destinationAfter,@user,@occurred,now(),@witness,@witnessedAt,@attestation);";
+        command.Parameters.AddWithValue("id",eventId);command.Parameters.AddWithValue("action",action);command.Parameters.AddWithValue("lot",lot.LotId);command.Parameters.AddWithValue("counterparty",(object?)counterpartyLot?.LotId??DBNull.Value);command.Parameters.AddWithValue("source",(object?)sourceLocation?.LocationId??DBNull.Value);command.Parameters.AddWithValue("destination",(object?)destinationLocation?.LocationId??DBNull.Value);command.Parameters.AddWithValue("patient",(object?)patientId??DBNull.Value);command.Parameters.AddWithValue("encounter",(object?)encounter??DBNull.Value);command.Parameters.AddWithValue("quantity",quantity);command.Parameters.AddWithValue("delta",quantityDelta);command.Parameters.AddWithValue("reason",reason);command.Parameters.AddWithValue("related",(object?)relatedEventId??DBNull.Value);command.Parameters.AddWithValue("key",idempotencyKey);command.Parameters.AddWithValue("sourceBefore",(object?)sourceBefore??DBNull.Value);command.Parameters.AddWithValue("sourceAfter",(object?)sourceAfter??DBNull.Value);command.Parameters.AddWithValue("destinationBefore",(object?)destinationBefore??DBNull.Value);command.Parameters.AddWithValue("destinationAfter",(object?)destinationAfter??DBNull.Value);command.Parameters.AddWithValue("user",username);command.Parameters.AddWithValue("occurred",occurredAt);command.Parameters.AddWithValue("witness",(object?)witnessUsername??DBNull.Value);command.Parameters.AddWithValue("witnessedAt",(object?)witnessedAt??DBNull.Value);command.Parameters.AddWithValue("attestation",(object?)attestationId??DBNull.Value);await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<InventoryPrescriptionDispenseResponse> DispensePrescriptionAsync(InventoryPrescriptionDispenseRequest request, string username, CancellationToken cancellationToken)

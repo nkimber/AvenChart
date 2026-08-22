@@ -103,7 +103,7 @@ public sealed record InventoryControlledCustodyMovementRequest(
     Guid? RelatedEventId,
     string? CorrectionDirection,
     string? IdempotencyKey,
-    Guid? WitnessSessionId);
+    Guid? AttestationId);
 
 public sealed record InventoryControlledCustodyEvent(
     Guid EventId,
@@ -128,7 +128,8 @@ public sealed record InventoryControlledCustodyEvent(
     string PerformedBy,
     string OccurredAt,
     string? WitnessUsername,
-    string? WitnessedAt);
+    string? WitnessedAt,
+    Guid? AttestationId);
 
 public sealed record InventoryControlledCustodyMovementResponse(
     InventoryControlledCustodyEvent Event,
@@ -145,13 +146,25 @@ public sealed record InventoryControlledCustodyLotHistoryResponse(
 
 public sealed record InventoryControlledCountSessionCreateRequest(Guid LocationId, string CountType, bool MovementLockActive, string Reason, string IdempotencyKey);
 public sealed record InventoryControlledCountObservation(int LotId, decimal ObservedQuantity);
-public sealed record InventoryControlledCountSubmitRequest(Guid CounterSessionId, string Reason, string IdempotencyKey, IReadOnlyList<InventoryControlledCountObservation> Observations);
+public sealed record InventoryControlledCountSubmitRequest(Guid? AttestationId, string Reason, string IdempotencyKey, IReadOnlyList<InventoryControlledCountObservation> Observations);
 public sealed record InventoryControlledCountLine(Guid LineId, int LotId, string LotNumber, string ItemCode, decimal ExpectedQuantity, decimal? ObservedQuantity, decimal? VarianceQuantity, Guid? DiscrepancyId, string? DiscrepancyStatus);
-public sealed record InventoryControlledCountSession(Guid SessionId, Guid LocationId, string LocationCode, string LocationName, string CountType, string Status, bool MovementLockActive, string Reason, string StartedBy, string StartedAt, string? SubmittedBy, string? SubmittedAt, string? CounterUsername, IReadOnlyList<InventoryControlledCountLine> Lines);
+public sealed record InventoryControlledCountSession(Guid SessionId, Guid LocationId, string LocationCode, string LocationName, string CountType, string Status, bool MovementLockActive, string Reason, string StartedBy, string StartedAt, string? SubmittedBy, string? SubmittedAt, string? CounterUsername, Guid? CounterAttestationId, IReadOnlyList<InventoryControlledCountLine> Lines);
 public sealed record InventoryControlledCountSessionSummary(Guid SessionId, Guid LocationId, string LocationCode, string LocationName, string CountType, string Status, bool MovementLockActive, string StartedBy, string StartedAt, string? SubmittedAt, int LineCount, int DiscrepancyCount, int OpenDiscrepancyCount);
 public sealed record InventoryControlledDiscrepancyInvestigationRequest(string Notes);
-public sealed record InventoryControlledDiscrepancyCorrectionRequest(string Notes, string IdempotencyKey, Guid? WitnessSessionId);
+public sealed record InventoryControlledDiscrepancyCorrectionRequest(string Notes, string IdempotencyKey, Guid? AttestationId);
 public sealed record InventoryControlledDiscrepancyCloseRequest(string Notes);
+
+public sealed record InventoryControlledAttestation(
+    Guid AttestationId,
+    string Action,
+    Guid? ContextId,
+    string Summary,
+    string RequestedBy,
+    string RequestedAt,
+    string ExpiresAt,
+    string Status,
+    string? ApprovedBy,
+    string? ApprovedAt);
 
 public sealed record InventoryPrescriptionDispenseRequest(
     string PrescriptionId,
