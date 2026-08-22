@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { getPatientMessages, replyToPatientMessage, type PatientMessageItem } from '../../api.ts'
 import type { PatientOutletContext } from './PatientShell.tsx'
@@ -38,23 +38,41 @@ function statusClass(status?: string | null) {
 export default function PatientMessages() {
   const { session, patientId } = useOutletContext<PatientOutletContext>()
   const [state, setState] = useState<AsyncState<PatientMessageItem[]>>({ status: 'loading' })
+  const messageRequestEpoch = useRef(0)
+  const patientIdRef = useRef(patientId)
+  patientIdRef.current = patientId
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [replyBody, setReplyBody] = useState('')
   const [replying, setReplying] = useState(false)
 
-  function load() {
-    getPatientMessages(session.sessionId, patientId)
+  function load(targetPatientId = patientIdRef.current, signal?: AbortSignal) {
+    const requestEpoch = ++messageRequestEpoch.current
+    setState({ status: 'loading' })
+    getPatientMessages(session.sessionId, targetPatientId, signal)
       .then((data) => {
-        setState({ status: 'ready', data: data.messages.filter((m) => !m.deleted) })
+        if (!signal?.aborted && requestEpoch === messageRequestEpoch.current) {
+          setState({ status: 'ready', data: data.messages.filter((m) => !m.deleted) })
+        }
       })
-      .catch((err) => setState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load.' }))
+      .catch((err) => {
+        if (!signal?.aborted && requestEpoch === messageRequestEpoch.current) {
+          setState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load.' })
+        }
+      })
   }
 
-  useEffect(() => { load() }, [patientId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const controller = new AbortController()
+    setSelectedId(null)
+    load(patientId, controller.signal)
+    return () => controller.abort()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId, session.sessionId])
 
   async function handleReply(e: FormEvent) {
     e.preventDefault()
     if (!selectedId || !replyBody.trim()) return
+    const requestPatientId = patientIdRef.current
     setReplying(true)
     try {
       await replyToPatientMessage(session.sessionId, selectedId, {
@@ -63,7 +81,9 @@ export default function PatientMessages() {
       })
       showToast('Reply sent')
       setReplyBody('')
-      load()
+      if (patientIdRef.current === requestPatientId) {
+        load(requestPatientId)
+      }
     } catch {
       showToast('Could not send reply.', 'error')
     } finally {
