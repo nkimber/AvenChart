@@ -2196,6 +2196,8 @@ try {
     $mergeSourceBody.pubpid = $mergeSourcePubpid
     $mergeSourceBody.preferredName = "Merge Source"
     $mergeSourceBody.email = "merge-source-$suffix@example.test"
+    $mergeSourceBody.duplicateReviewAcknowledged = $true
+    $mergeSourceBody.duplicateReviewReason = "Intentional separate fixture record for merge execution and rollback verification."
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body ($mergeTargetBody | ConvertTo-Json -Depth 5) -TimeoutSec 20 | Out-Null
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body ($mergeSourceBody | ConvertTo-Json -Depth 5) -TimeoutSec 20 | Out-Null
@@ -2365,6 +2367,23 @@ try {
         hipaaAllowEmail = "YES"
     }
 
+    $duplicateRegistrationRejectedStatus = $null
+    try {
+        Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/patients" `
+            -Method Post `
+            -Headers (Get-AdministrationHeaders) `
+            -ContentType "application/json" `
+            -Body ($duplicateRegistrationBody | ConvertTo-Json -Depth 5) `
+            -UseBasicParsing `
+            -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $duplicateRegistrationRejectedStatus = [int]$_.Exception.Response.StatusCode }
+    }
+
+    $duplicateRegistrationBody.duplicateReviewAcknowledged = $true
+    $duplicateRegistrationBody.duplicateReviewReason = "Reviewed the existing chart and confirmed this is an intentional separate smoke registration."
     Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients" `
         -Method Post `
@@ -2389,6 +2408,7 @@ try {
     $duplicateRegistrationPubpid = $null
 
     $duplicateDetectionPassed = $duplicateSearch.totalCandidates -ge 1 `
+        -and $duplicateRegistrationRejectedStatus -eq 400 `
         -and $null -ne $duplicateCandidate `
         -and $duplicateCandidate.matchScore -eq 100 `
         -and (@($duplicateCandidate.matchReasons) -contains "Same first name, last name, and date of birth") `
@@ -2400,6 +2420,7 @@ try {
 
     Add-Check -Name "patient duplicate detection readiness" -Result $(if ($duplicateDetectionPassed) { "passed" } else { "failed" }) -Details @{
         pubpid = $duplicateRegistrationBody.pubpid
+        unacknowledgedRegistrationStatus = $duplicateRegistrationRejectedStatus
         totalCandidates = $duplicateSearch.totalCandidates
         duplicateCandidate = $duplicateCandidate
         chartDuplicateCandidate = $chartDuplicateCandidate

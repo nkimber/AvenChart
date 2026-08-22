@@ -63,6 +63,7 @@ export default function NewPatient() {
     useState<DuplicateCheckState>({ status: "idle" })
   const [separatePatientConfirmed, setSeparatePatientConfirmed] =
     useState(false)
+  const [duplicateReviewReason, setDuplicateReviewReason] = useState("")
   const duplicateRequestId = useRef(0)
 
   function set(patch: Partial<PatientRegistrationInput>) {
@@ -70,6 +71,7 @@ export default function NewPatient() {
       duplicateRequestId.current += 1
       setDuplicateCheck({ status: "idle" })
       setSeparatePatientConfirmed(false)
+      setDuplicateReviewReason("")
     }
     setForm((f) => ({ ...f, ...patch }))
   }
@@ -77,7 +79,13 @@ export default function NewPatient() {
   async function registerPatient() {
     setSaving(true)
     try {
-      const patient = await createPatient(session.sessionId, form)
+      const patient = await createPatient(session.sessionId, {
+        ...form,
+        duplicateReviewAcknowledged: hasDuplicateCandidates,
+        duplicateReviewReason: hasDuplicateCandidates
+          ? duplicateReviewReason.trim()
+          : undefined,
+      })
       showToast("Patient registered.", "success")
       navigate("/clinician/patients/" + patient.canonicalId + "/summary")
     } catch {
@@ -98,6 +106,7 @@ export default function NewPatient() {
       const requestId = ++duplicateRequestId.current
       setDuplicateCheck({ status: "loading" })
       setSeparatePatientConfirmed(false)
+      setDuplicateReviewReason("")
       try {
         const data = await findPatientDuplicateCandidates(
           session.sessionId,
@@ -126,7 +135,7 @@ export default function NewPatient() {
       }
     } else if (
       duplicateCheck.data.candidates.length > 0 &&
-      !separatePatientConfirmed
+      (!separatePatientConfirmed || duplicateReviewReason.trim().length < 10)
     ) {
       return
     }
@@ -412,6 +421,20 @@ export default function NewPatient() {
                     records.
                   </span>
                 </label>
+                <label className="field" htmlFor="np-duplicate-review-reason">
+                  <span className="label">Reason for separate registration *</span>
+                  <textarea
+                    id="np-duplicate-review-reason"
+                    className="input"
+                    rows={3}
+                    minLength={10}
+                    maxLength={500}
+                    value={duplicateReviewReason}
+                    onChange={(event) => setDuplicateReviewReason(event.target.value)}
+                    required
+                  />
+                  <span className="help-text">Record why these records do not represent the patient being registered (10–500 characters).</span>
+                </label>
                 <p className="cl-empty-text">
                   {duplicateCheck.data.candidates.length} of at most{" "}
                   {duplicateCheck.data.limit} candidates are shown from dataset{" "}
@@ -428,7 +451,8 @@ export default function NewPatient() {
             disabled={
               saving ||
               duplicateCheck.status === "loading" ||
-              (hasDuplicateCandidates && !separatePatientConfirmed)
+              (hasDuplicateCandidates &&
+                (!separatePatientConfirmed || duplicateReviewReason.trim().length < 10))
             }
           >
             {saving

@@ -10473,9 +10473,14 @@ export type PatientRegistrationInput = {
   hipaaAllowEmail: string
 }
 
+export type PatientRegistrationSubmission = PatientRegistrationInput & {
+  duplicateReviewAcknowledged?: boolean
+  duplicateReviewReason?: string
+}
+
 export async function createPatient(
   sessionId: string,
-  body: PatientRegistrationInput,
+  body: PatientRegistrationSubmission,
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   return clinicianPost(sessionId, '/api/patients', body, signal)

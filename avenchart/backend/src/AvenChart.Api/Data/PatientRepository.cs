@@ -846,7 +846,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         NpgsqlConnection connection,
         NormalizedDuplicateSearch search,
         int limit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
         if (search.DateOfBirth is null
             && string.IsNullOrWhiteSpace(search.PhoneDigits)
@@ -856,6 +857,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         }
 
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             select
                 p.canonical_id,
@@ -870,7 +872,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.phone_cell,
                 p.email
             from patients p
-            where (@excludePatientId is null
+            where p.merged_into_patient_id is null
+              and (@excludePatientId is null
                    or (lower(p.canonical_id) <> lower(@excludePatientId)
                        and lower(p.pubpid) <> lower(@excludePatientId)
                        and p.legacy_pid::text <> @excludePatientId))
@@ -914,6 +917,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
     public async Task<PatientRegistrationMutationResult> CreatePatientAsync(
         PatientRegistrationRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         var validationIssues = ValidateRegistration(request, out var normalized);
@@ -924,7 +928,47 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
         var metadata = await GetMetadataAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var registrationLock = connection.CreateCommand())
+        {
+            registrationLock.Transaction = transaction;
+            registrationLock.CommandText = "select pg_advisory_xact_lock(873421986);";
+            await registrationLock.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var duplicateSearch = new NormalizedDuplicateSearch(
+            FirstName: normalized.FirstName,
+            LastName: normalized.LastName,
+            DateOfBirth: normalized.DateOfBirth,
+            Phone: normalized.PhoneHome ?? normalized.PhoneCell,
+            PhoneDigits: NormalizePhoneDigits(normalized.PhoneHome ?? normalized.PhoneCell),
+            Email: normalized.Email?.ToLowerInvariant(),
+            ExcludePatientId: null);
+        var duplicateCandidates = await GetDuplicateCandidatesAsync(
+            connection,
+            duplicateSearch,
+            25,
+            cancellationToken,
+            transaction);
+        var duplicateReviewReason = NormalizeString(request.DuplicateReviewReason);
+        if (duplicateCandidates.Count > 0
+            && (!request.DuplicateReviewAcknowledged
+                || duplicateReviewReason is null
+                || duplicateReviewReason.Length is < 10 or > 500))
+        {
+            return new PatientRegistrationMutationResult(
+                null,
+                new[]
+                {
+                    new PatientRegistrationValidationIssue(
+                        "duplicateReview",
+                        "required",
+                        "Possible duplicate records were found. Review them and provide a 10–500 character reason before registering a separate patient.")
+                });
+        }
+
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             insert into patients
                 (canonical_id, legacy_pid, pubpid, first_name, last_name, preferred_name, sex, date_of_birth,
@@ -962,7 +1006,37 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         try
         {
             var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-            var patient = canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+            if (canonicalId is null)
+            {
+                return new PatientRegistrationMutationResult(
+                    null,
+                    new[] { new PatientRegistrationValidationIssue("registration", "failed", "Patient registration did not create a patient record.") });
+            }
+
+            if (duplicateCandidates.Count > 0)
+            {
+                foreach (var candidate in duplicateCandidates)
+                {
+                    await using var reviewAudit = connection.CreateCommand();
+                    reviewAudit.Transaction = transaction;
+                    reviewAudit.CommandText = """
+                        insert into patient_registration_duplicate_reviews
+                            (registered_patient_id, candidate_patient_id, match_score, match_reasons, review_reason, reviewed_by)
+                        values
+                            (@registeredPatientId, @candidatePatientId, @matchScore, @matchReasons, @reviewReason, @reviewedBy);
+                        """;
+                    reviewAudit.Parameters.AddWithValue("registeredPatientId", canonicalId);
+                    reviewAudit.Parameters.AddWithValue("candidatePatientId", candidate.CanonicalId);
+                    reviewAudit.Parameters.AddWithValue("matchScore", candidate.MatchScore);
+                    reviewAudit.Parameters.Add("matchReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(candidate.MatchReasons);
+                    reviewAudit.Parameters.AddWithValue("reviewReason", duplicateReviewReason!);
+                    reviewAudit.Parameters.AddWithValue("reviewedBy", actor.Trim());
+                    await reviewAudit.ExecuteNonQueryAsync(cancellationToken);
+                }
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            var patient = await GetChartSummaryAsync(canonicalId, cancellationToken);
             return new PatientRegistrationMutationResult(patient, Array.Empty<PatientRegistrationValidationIssue>());
         }
         catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
@@ -1024,6 +1098,9 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
                 delete from patient_merge_audit_plans
                 where source_patient_id = @canonicalId or target_patient_id = @canonicalId;
+
+                delete from patient_registration_duplicate_reviews
+                where registered_patient_id = @canonicalId or candidate_patient_id = @canonicalId;
 
                 delete from insurance_records
                 where patient_id = @canonicalId

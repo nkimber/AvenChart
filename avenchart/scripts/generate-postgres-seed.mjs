@@ -329,6 +329,7 @@ drop table if exists patient_portal_message_attachments;
 drop table if exists portal_mailbox_messages;
 drop table if exists messages;
 drop table if exists patient_xml_exchange_audits;
+drop table if exists patient_registration_duplicate_reviews;
 drop table if exists patient_duplicate_review_dispositions;
 drop table if exists document_template_binary_versions;
 drop table if exists document_templates;

@@ -31,6 +31,7 @@ import {
   createInventoryReplenishmentPolicyChangeRequest,
   createInventoryTransaction,
   createInventoryTransfer,
+  createPatient,
   createPatientBinaryDocument,
   createPatientDocument,
   createPatientExternalLinkDocument,
@@ -2295,6 +2296,27 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/patients/duplicates?firstName=Nora&lastName=Kim&dateOfBirth=2002-05-05&phone=%28619%29+555-1004&email=mod-pat-0004%40example.test&excludePatientId=MOD-PAT-9999&limit=10',
       expect.objectContaining({
         headers: { 'X-AvenChart-Session': 'staff-session' },
+      }),
+    )
+  })
+
+  it('posts an explicit, reasoned acknowledgement for a separate patient registration', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ canonicalId: 'TMP-PAT-REG-100', pubpid: 'TMP-PAT-REG-100' }))
+    const registration = {
+      pubpid: 'TMP-PAT-REG-100', firstName: 'Taylor', lastName: 'Register', preferredName: '', sex: 'Female', dateOfBirth: '1991-04-15',
+      street: '', city: '', state: '', postalCode: '', phoneHome: '', phoneCell: '', email: '', maritalStatus: '', occupation: '', race: '', ethnicity: '', hipaaAllowSms: 'NO', hipaaAllowEmail: 'NO',
+      duplicateReviewAcknowledged: true,
+      duplicateReviewReason: 'Reviewed the existing chart and confirmed this is a separate patient.',
+    }
+
+    await createPatient('staff-session', registration)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/patients',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'X-AvenChart-Session': 'staff-session', 'content-type': 'application/json' },
+        body: JSON.stringify(registration),
       }),
     )
   })

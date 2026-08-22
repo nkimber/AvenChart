@@ -537,7 +537,9 @@ public sealed record PatientRegistrationRequest(
     string? PhoneCell,
     string? Email,
     string? HipaaAllowSms,
-    string? HipaaAllowEmail);
+    string? HipaaAllowEmail,
+    bool DuplicateReviewAcknowledged = false,
+    string? DuplicateReviewReason = null);
 
 public sealed record PatientRegistrationMutationResult(
     PatientChartSummary? Patient,

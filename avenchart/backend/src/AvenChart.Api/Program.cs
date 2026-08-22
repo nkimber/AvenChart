@@ -1711,10 +1711,13 @@ patients.MapGet("/{patientId}/administration-history", async (
 
 patients.MapPost("/", async (
         PatientRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         PatientRegistrationRequest request,
         CancellationToken cancellationToken) =>
     {
-        var result = await repository.CreatePatientAsync(request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var result = await repository.CreatePatientAsync(request, session.Username, cancellationToken);
         return result.Patient is null
             ? RegistrationValidationProblem(result.ValidationIssues)
             : Results.Created($"/api/patients/{result.Patient.CanonicalId}", result.Patient);
