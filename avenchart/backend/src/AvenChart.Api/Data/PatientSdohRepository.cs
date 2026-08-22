@@ -243,7 +243,9 @@ public sealed class PatientSdohRepository(AvenChartDbContext dbContext)
     {
         var disabilityScale = JsonSerializer.Deserialize<Dictionary<string, string>>(assessment.DisabilityScaleJson) ?? [];
         var domains = JsonSerializer.Deserialize<Dictionary<string, PatientSdohDomainValue>>(assessment.DomainsJson) ?? [];
-        var goalDueDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(90).ToString("yyyy-MM-dd");
+        // Generated targets are part of this assessment's historical interpretation.
+        // Anchoring them to the assessment date prevents them from drifting forward on every read.
+        var goalDueDate = assessment.AssessmentDate.AddDays(90).ToString("yyyy-MM-dd");
         var generatedGoals = GoalDomainLabels
             .Where(pair => domains.TryGetValue(pair.Key, out var value) && GoalPositiveStatuses.Contains(value.Status))
             .Select(pair => new PatientSdohGeneratedGoal(pair.Key, $"Improve {pair.Value}", goalDueDate))

@@ -2775,7 +2775,7 @@ try {
         -and $createdSdoh.disabilityScale.walk_climb -eq "yes" `
         -and $createdSdoh.disabilityScale.hearing -eq "declined" `
         -and @($createdSdoh.generatedGoals).Count -eq 2 `
-        -and (@($createdSdoh.generatedGoals | Where-Object { $_.domain -eq "food_insecurity" -and $_.description -eq "Improve Food insecurity" }).Count -eq 1) `
+        -and (@($createdSdoh.generatedGoals | Where-Object { $_.domain -eq "food_insecurity" -and $_.description -eq "Improve Food insecurity" -and $_.dueDate -eq "2026-10-23" }).Count -eq 1) `
         -and @($createdSdoh.generatedInterventions).Count -eq 1 `
         -and (@($createdSdoh.generatedInterventions | Where-Object { $_.domain -eq "food_insecurity" -and $_.description -eq "Assistance with application for food pantry program" }).Count -eq 1) `
         -and $updatedSdoh.assessor -eq "Smoke assessor" `
@@ -2791,7 +2791,7 @@ try {
         -and $null -eq $updatedSdoh.disabilityStatusNotes `
         -and $updatedSdoh.disabilityScale.walk_climb -eq "no" `
         -and @($updatedSdoh.generatedGoals).Count -eq 1 `
-        -and (@($updatedSdoh.generatedGoals | Where-Object { $_.domain -eq "transportation_insecurity" -and $_.description -eq "Improve Transportation insecurity" }).Count -eq 1) `
+        -and (@($updatedSdoh.generatedGoals | Where-Object { $_.domain -eq "transportation_insecurity" -and $_.description -eq "Improve Transportation insecurity" -and $_.dueDate -eq "2026-10-23" }).Count -eq 1) `
         -and @($updatedSdoh.generatedInterventions).Count -eq 0 `
         -and $fhirSdoh.resourceType -eq "Bundle" `
         -and (@($fhirSdoh.entry | Where-Object { $_.resource.id -eq "sdoh-$($createdSdoh.assessmentId)-transportation_insecurity" -and $_.resource.subject.reference -eq "Patient/$sdohPatientId" -and $_.resource.code.coding[0].code -eq "transportation_insecurity" -and $_.resource.valueString -eq "sometimes" }).Count -eq 1) `
