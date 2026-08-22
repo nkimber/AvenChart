@@ -79,8 +79,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         DateOnly? fromDate,
         DateOnly? toDate,
         int limit,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         var metadata = await GetMetadataAsync(cancellationToken);
         var normalizedStatus = NormalizeReviewQueueStatus(status);
         var normalizedPatient = NormalizeText(patientId)?.ToLowerInvariant();
@@ -105,12 +107,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                        or lower(p.canonical_id) = @patientFilter
                        or lower(p.pubpid) = @patientFilter
                        or p.legacy_pid::text = @patientFilter)
+                  and p.facility_id = @facilityId
                   and (@fromDate is null or lo.order_date >= @fromDate)
                   and (@toDate is null or lo.order_date <= @toDate)
                   and (@providerFilter is null or lo.provider_id = @providerFilter)
                   and (@labFilter is null or lo.lab_id = @labFilter);
                 """;
-            AddReviewQueueFilterParameters(countCommand, normalizedPatient, providerId, labId, fromDate, toDate);
+            AddReviewQueueFilterParameters(countCommand, normalizedPatient, providerId, labId, fromDate, toDate, facilityId);
 
             await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
             await reader.ReadAsync(cancellationToken);
@@ -153,6 +156,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                    or lower(p.canonical_id) = @patientFilter
                    or lower(p.pubpid) = @patientFilter
                    or p.legacy_pid::text = @patientFilter)
+              and p.facility_id = @facilityId
               and (@fromDate is null or lo.order_date >= @fromDate)
               and (@toDate is null or lo.order_date <= @toDate)
               and (@providerFilter is null or lo.provider_id = @providerFilter)
@@ -163,7 +167,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             order by lr.report_date desc, lr.id desc, p.last_name, p.first_name, p.legacy_pid, lo.id
             limit @limit;
             """;
-        AddReviewQueueFilterParameters(command, normalizedPatient, providerId, labId, fromDate, toDate);
+        AddReviewQueueFilterParameters(command, normalizedPatient, providerId, labId, fromDate, toDate, facilityId);
         command.Parameters.AddWithValue("statusFilter", normalizedStatus);
         command.Parameters.Add("limit", NpgsqlDbType.Integer).Value = safeLimit;
 
@@ -215,8 +219,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     }
 
     public async Task<CriticalLabResultQueueResponse> GetCriticalLabResultQueueAsync(
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -233,8 +239,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             left join critical_lab_result_acknowledgements ack on ack.result_id = lres.id
             where lower(coalesce(lres.abnormal, '')) in ('c', 'critical', 'panic', 'hh', 'll')
               and coalesce(ack.status, 'open') = 'open'
+              and p.facility_id = @facilityId
             order by lres.result_date desc, lres.id desc;
             """;
+        command.Parameters.AddWithValue("facilityId", facilityId);
         var results = new List<CriticalLabResultQueueItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -369,8 +377,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         DateOnly? fromDate,
         DateOnly? toDate,
         int limit,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         var metadata = await GetMetadataAsync(cancellationToken);
         var normalizedStatus = NormalizeOrderQueueStatus(status);
         var normalizedPatient = NormalizeText(patientId)?.ToLowerInvariant();
@@ -404,6 +414,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                            or lower(p.canonical_id) = @patientFilter
                            or lower(p.pubpid) = @patientFilter
                            or p.legacy_pid::text = @patientFilter)
+                      and p.facility_id = @facilityId
                       and (@fromDate is null or lo.order_date >= @fromDate)
                       and (@toDate is null or lo.order_date <= @toDate)
                       and (@providerFilter is null or lo.provider_id = @providerFilter)
@@ -418,7 +429,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     coalesce(sum(case when order_status = 'complete' then 1 else 0 end), 0)::int as completed_orders
                 from order_queue;
                 """;
-            AddReviewQueueFilterParameters(countCommand, normalizedPatient, providerId, labId, fromDate, toDate);
+            AddReviewQueueFilterParameters(countCommand, normalizedPatient, providerId, labId, fromDate, toDate, facilityId);
 
             await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
             await reader.ReadAsync(cancellationToken);
@@ -476,6 +487,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                        or lower(p.canonical_id) = @patientFilter
                        or lower(p.pubpid) = @patientFilter
                        or p.legacy_pid::text = @patientFilter)
+                  and p.facility_id = @facilityId
                   and (@fromDate is null or lo.order_date >= @fromDate)
                   and (@toDate is null or lo.order_date <= @toDate)
                   and (@providerFilter is null or lo.provider_id = @providerFilter)
@@ -492,7 +504,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             order by order_date desc, order_id desc, patient_display_name, legacy_pid
             limit @limit;
             """;
-        AddReviewQueueFilterParameters(command, normalizedPatient, providerId, labId, fromDate, toDate);
+        AddReviewQueueFilterParameters(command, normalizedPatient, providerId, labId, fromDate, toDate, facilityId);
         command.Parameters.AddWithValue("statusFilter", normalizedStatus);
         command.Parameters.Add("limit", NpgsqlDbType.Integer).Value = safeLimit;
 
@@ -910,8 +922,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     public async Task<ProcedureMutationResponse?> CreateOrderAsync(
         ProcedureOrderCreateRequest request,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         if (string.IsNullOrWhiteSpace(request.PatientId)
             || string.IsNullOrWhiteSpace(request.Priority)
             || string.IsNullOrWhiteSpace(request.Status)
@@ -926,7 +940,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken, facilityId);
         if (patient is null)
         {
             return null;
@@ -1185,8 +1199,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     public async Task<ProcedureMutationResponse?> CreateReportAsync(
         ProcedureReportCreateRequest request,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         if (request.OrderId <= 0
             || request.SpecimenId <= 0
             || string.IsNullOrWhiteSpace(request.ReportStatus)
@@ -1198,7 +1214,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var order = await GetOrderMutationContextAsync(connection, request.OrderId, cancellationToken);
+        var order = await GetOrderMutationContextAsync(connection, request.OrderId, cancellationToken, facilityId);
         if (order is null)
         {
             return null;
@@ -1435,8 +1451,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     public async Task<ProcedureReportBulkSignResponse?> BulkSignReportsAsync(
         ProcedureReportBulkSignRequest request,
         string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         var requested = (request.Reports ?? Array.Empty<ProcedureReportBulkSignItem>())
             .Where(item => item.ReportId > 0 && item.ExpectedReviewVersion > 0)
             .GroupBy(item => item.ReportId)
@@ -1458,7 +1476,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             connection,
             transaction,
             requested.Select(item => item.ReportId).ToArray(),
-            cancellationToken);
+            cancellationToken,
+            facilityId);
         if (contexts.Count != requested.Length)
         {
             throw new ArgumentException("One or more selected reports no longer exist.");
@@ -1503,8 +1522,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     public async Task<ProcedureMutationResponse?> CreateSpecimenAsync(
         ProcedureSpecimenCreateRequest request,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         if (request.OrderId <= 0
             || (string.IsNullOrWhiteSpace(request.SpecimenIdentifier) && string.IsNullOrWhiteSpace(request.AccessionIdentifier))
             || !TryReadDateTime(request.CollectedDate, out var collectedDate)
@@ -1514,7 +1535,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var order = await GetOrderMutationContextAsync(connection, request.OrderId, cancellationToken);
+        var order = await GetOrderMutationContextAsync(connection, request.OrderId, cancellationToken, facilityId);
         if (order is null)
         {
             return null;
@@ -1697,8 +1718,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     public async Task<ProcedureMutationResponse?> CreateResultAsync(
         ProcedureResultCreateRequest request,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         if (request.ReportId <= 0
             || string.IsNullOrWhiteSpace(request.ResultCode)
             || string.IsNullOrWhiteSpace(request.ResultText)
@@ -1710,7 +1733,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var report = await GetReportMutationContextAsync(connection, request.ReportId, cancellationToken);
+        var report = await GetReportMutationContextAsync(connection, request.ReportId, cancellationToken, facilityId);
         if (report is null)
         {
             return null;
@@ -1858,18 +1881,21 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private static async Task<ProcedurePatient?> GetPatientAsync(
         NpgsqlConnection connection,
         string patientId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? facilityId = null)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select canonical_id, legacy_pid, pubpid, first_name, last_name, preferred_name
             from patients
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
+            where (@facilityId is null or facility_id = @facilityId)
+              and (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
             limit 1;
             """;
         command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = facilityId is null ? DBNull.Value : facilityId.Value;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -2358,7 +2384,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         IReadOnlyList<int> reportIds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? facilityId = null)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -2366,11 +2393,14 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             select lr.id, lo.patient_id, coalesce(lr.review_status, 'received') as review_status, lr.review_version
             from lab_reports lr
             inner join lab_orders lo on lo.id = lr.order_id
+            inner join patients patient on patient.legacy_pid = lo.pid
             where lr.id = any(@reportIds)
+              and (@facilityId is null or patient.facility_id = @facilityId)
             order by lr.id
             for update;
             """;
         command.Parameters.Add("reportIds", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = reportIds.ToArray();
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = facilityId is null ? DBNull.Value : facilityId.Value;
 
         var contexts = new Dictionary<int, ProcedureReportReviewContext>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2479,16 +2509,20 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private static async Task<ProcedureOrderMutationContext?> GetOrderMutationContextAsync(
         NpgsqlConnection connection,
         int orderId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? facilityId = null)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, patient_id, pid, encounter
-            from lab_orders
-            where id = @id
+            select lab_order.id, lab_order.patient_id, lab_order.pid, lab_order.encounter
+            from lab_orders lab_order
+            inner join patients patient on patient.legacy_pid = lab_order.pid
+            where lab_order.id = @id
+              and (@facilityId is null or patient.facility_id = @facilityId)
             limit 1;
             """;
         command.Parameters.AddWithValue("id", orderId);
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = facilityId is null ? DBNull.Value : facilityId.Value;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -2506,17 +2540,21 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private static async Task<ProcedureReportMutationContext?> GetReportMutationContextAsync(
         NpgsqlConnection connection,
         int reportId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? facilityId = null)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select lr.id, lr.order_id, lo.patient_id, lo.pid
             from lab_reports lr
             inner join lab_orders lo on lo.id = lr.order_id
+            inner join patients patient on patient.legacy_pid = lo.pid
             where lr.id = @id
+              and (@facilityId is null or patient.facility_id = @facilityId)
             limit 1;
             """;
         command.Parameters.AddWithValue("id", reportId);
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = facilityId is null ? DBNull.Value : facilityId.Value;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -2986,13 +3024,23 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         int? providerFilter,
         int? labFilter,
         DateOnly? fromDate,
-        DateOnly? toDate)
+        DateOnly? toDate,
+        int facilityId)
     {
         command.Parameters.Add("patientFilter", NpgsqlDbType.Text).Value = patientFilter is null ? DBNull.Value : patientFilter;
         command.Parameters.Add("providerFilter", NpgsqlDbType.Integer).Value = providerFilter is null ? DBNull.Value : providerFilter.Value;
         command.Parameters.Add("labFilter", NpgsqlDbType.Integer).Value = labFilter is null ? DBNull.Value : labFilter.Value;
         command.Parameters.Add("fromDate", NpgsqlDbType.Date).Value = fromDate is null ? DBNull.Value : fromDate;
         command.Parameters.Add("toDate", NpgsqlDbType.Date).Value = toDate is null ? DBNull.Value : toDate;
+        command.Parameters.AddWithValue("facilityId", facilityId);
+    }
+
+    private static void EnsureFacilityId(int facilityId)
+    {
+        if (facilityId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(facilityId));
+        }
     }
 
     private static ProcedureOrderCounts BuildCounts(IReadOnlyList<ProcedureOrderItem> orders, DateOnly baseDate)

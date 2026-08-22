@@ -221,6 +221,82 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
             cancellationToken);
     }
 
+    public Task<bool> CanAccessLaboratoryOrderAsync(
+        int orderId,
+        int facilityId,
+        CancellationToken cancellationToken) =>
+        CanAccessPatientResourceAsync(
+            """
+            select exists(
+              select 1
+              from lab_orders lab_order
+              join patients patient on patient.legacy_pid=lab_order.pid
+              where lab_order.id=@resourceId::integer
+                and patient.facility_id=@facility
+                and patient.merged_into_patient_id is null);
+            """,
+            orderId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            facilityId,
+            cancellationToken);
+
+    public Task<bool> CanAccessLaboratoryReportAsync(
+        int reportId,
+        int facilityId,
+        CancellationToken cancellationToken) =>
+        CanAccessPatientResourceAsync(
+            """
+            select exists(
+              select 1
+              from lab_reports report
+              join lab_orders lab_order on lab_order.id=report.order_id
+              join patients patient on patient.legacy_pid=lab_order.pid
+              where report.id=@resourceId::integer
+                and patient.facility_id=@facility
+                and patient.merged_into_patient_id is null);
+            """,
+            reportId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            facilityId,
+            cancellationToken);
+
+    public Task<bool> CanAccessLaboratoryResultAsync(
+        int resultId,
+        int facilityId,
+        CancellationToken cancellationToken) =>
+        CanAccessPatientResourceAsync(
+            """
+            select exists(
+              select 1
+              from lab_results result
+              join lab_reports report on report.id=result.report_id
+              join lab_orders lab_order on lab_order.id=report.order_id
+              join patients patient on patient.legacy_pid=lab_order.pid
+              where result.id=@resourceId::integer
+                and patient.facility_id=@facility
+                and patient.merged_into_patient_id is null);
+            """,
+            resultId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            facilityId,
+            cancellationToken);
+
+    public Task<bool> CanAccessLaboratorySpecimenAsync(
+        int specimenId,
+        int facilityId,
+        CancellationToken cancellationToken) =>
+        CanAccessPatientResourceAsync(
+            """
+            select exists(
+              select 1
+              from lab_specimens specimen
+              join lab_orders lab_order on lab_order.id=specimen.order_id
+              join patients patient on patient.legacy_pid=lab_order.pid
+              where specimen.id=@resourceId::integer
+                and patient.facility_id=@facility
+                and patient.merged_into_patient_id is null);
+            """,
+            specimenId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            facilityId,
+            cancellationToken);
+
     public async Task<AuthAccessContextGrantResponse> GetPrincipalGrantAsync(
         string username,
         CancellationToken cancellationToken)

@@ -5855,6 +5855,7 @@ documents.MapDelete("/{documentId:int}", (int documentId) =>
 
 var procedures = app.MapGroup("/api/procedures").WithTags("Procedures");
 RequireAccessPermission(procedures, "patients", "lab", "view");
+procedures.AddEndpointFilter(ProcedureFacilityScopeFilter());
 
 procedures.MapGet("/lab-provider-address-book", async (
         ProcedureRepository repository,
@@ -5995,6 +5996,7 @@ procedures.MapDelete("/order-catalog/{itemId:int}", async (
 
 procedures.MapGet("/report-review-queue", async (
         ProcedureRepository repository,
+        HttpContext httpContext,
         string? status,
         string? patientId,
         int? providerId,
@@ -6012,6 +6014,7 @@ procedures.MapGet("/report-review-queue", async (
             fromDate,
             toDate,
             limit ?? 25,
+            RequireStaffAccessContext(httpContext).FacilityId,
             cancellationToken);
         return Results.Ok(queue);
     })
@@ -6019,8 +6022,11 @@ procedures.MapGet("/report-review-queue", async (
 
 procedures.MapGet("/critical-result-queue", async (
         ProcedureRepository repository,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
-    Results.Ok(await repository.GetCriticalLabResultQueueAsync(cancellationToken)))
+    Results.Ok(await repository.GetCriticalLabResultQueueAsync(
+        RequireStaffAccessContext(httpContext).FacilityId,
+        cancellationToken)))
     .WithName("GetCriticalLabResultQueue")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "view"));
 
@@ -6048,6 +6054,7 @@ procedures.MapGet("/reports/{reportId:int}/review-history", async (
 
 procedures.MapGet("/order-queue", async (
         ProcedureRepository repository,
+        HttpContext httpContext,
         string? status,
         string? patientId,
         int? providerId,
@@ -6065,6 +6072,7 @@ procedures.MapGet("/order-queue", async (
             fromDate,
             toDate,
             limit.GetValueOrDefault(50),
+            RequireStaffAccessContext(httpContext).FacilityId,
             cancellationToken);
         return Results.Ok(queue);
     })
@@ -6083,11 +6091,15 @@ procedures.MapGet("/{patientId}", async (
 procedures.MapPost("/orders", async (
         ProcedureRepository repository,
         ProcedureOrderCreateRequest request,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         try
         {
-            var mutation = await repository.CreateOrderAsync(request, cancellationToken);
+            var mutation = await repository.CreateOrderAsync(
+                request,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return mutation is null
                 ? Results.BadRequest("Procedure order could not be created from the supplied patient, encounter, and order details.")
                 : Results.Created($"/api/procedures/orders/{mutation.Id}", mutation);
@@ -6164,9 +6176,13 @@ procedures.MapPut("/orders/{orderId:int}", async (
 procedures.MapPost("/reports", async (
         ProcedureRepository repository,
         ProcedureReportCreateRequest request,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateReportAsync(request, cancellationToken);
+        var mutation = await repository.CreateReportAsync(
+            request,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return mutation is null
             ? Results.BadRequest("Procedure report could not be created from the supplied order and report details.")
             : Results.Created($"/api/procedures/reports/{mutation.Id}", mutation);
@@ -6301,7 +6317,11 @@ procedures.MapPut("/reports/bulk-sign", async (
         try
         {
             var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-            var mutation = await repository.BulkSignReportsAsync(request, session.Username, cancellationToken);
+            var mutation = await repository.BulkSignReportsAsync(
+                request,
+                session.Username,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return mutation is null
                 ? Results.BadRequest("Procedure reports could not be bulk signed from the supplied review details.")
                 : Results.Ok(mutation);
@@ -6318,9 +6338,13 @@ procedures.MapPut("/reports/bulk-sign", async (
 procedures.MapPost("/specimens", async (
         ProcedureRepository repository,
         ProcedureSpecimenCreateRequest request,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateSpecimenAsync(request, cancellationToken);
+        var mutation = await repository.CreateSpecimenAsync(
+            request,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return mutation is null
             ? Results.BadRequest("Procedure specimen could not be created from the supplied order and specimen details.")
             : Results.Created($"/api/procedures/specimens/{mutation.Id}", mutation);
@@ -6358,9 +6382,13 @@ procedures.MapGet("/specimens/{specimenId:int}/lifecycle-history", async (
 procedures.MapPost("/results", async (
         ProcedureRepository repository,
         ProcedureResultCreateRequest request,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateResultAsync(request, cancellationToken);
+        var mutation = await repository.CreateResultAsync(
+            request,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return mutation is null
             ? Results.BadRequest("Procedure result could not be created from the supplied report and result details.")
             : Results.Created($"/api/procedures/results/{mutation.Id}", mutation);
@@ -10311,6 +10339,75 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 appointmentId,
                 accessContext.FacilityId,
                 context.HttpContext.RequestAborted);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        return await next(context);
+    };
+}
+
+static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> ProcedureFacilityScopeFilter()
+{
+    return async (context, next) =>
+    {
+        var routeValues = context.HttpContext.Request.RouteValues;
+        var accessContext = RequireStaffAccessContext(context.HttpContext);
+        var accessContextService = context.HttpContext.RequestServices
+            .GetRequiredService<StaffAccessContextService>();
+        var cancellationToken = context.HttpContext.RequestAborted;
+
+        if (routeValues.TryGetValue("patientId", out var patientRouteValue))
+        {
+            var patientId = patientRouteValue?.ToString();
+            PhiAuditResourceContext.Set(context.HttpContext, "Patient", patientId);
+            var allowed = await accessContextService.CanAccessPatientAsync(
+                patientId,
+                accessContext.FacilityId,
+                cancellationToken);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        if (routeValues.TryGetValue("orderId", out var orderRouteValue)
+            && int.TryParse(orderRouteValue?.ToString(), out var orderId))
+        {
+            PhiAuditResourceContext.Set(context.HttpContext, "LaboratoryOrder", orderId.ToString(CultureInfo.InvariantCulture));
+            var allowed = await accessContextService.CanAccessLaboratoryOrderAsync(
+                orderId,
+                accessContext.FacilityId,
+                cancellationToken);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        if (routeValues.TryGetValue("reportId", out var reportRouteValue)
+            && int.TryParse(reportRouteValue?.ToString(), out var reportId))
+        {
+            PhiAuditResourceContext.Set(context.HttpContext, "LaboratoryReport", reportId.ToString(CultureInfo.InvariantCulture));
+            var allowed = await accessContextService.CanAccessLaboratoryReportAsync(
+                reportId,
+                accessContext.FacilityId,
+                cancellationToken);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        if (routeValues.TryGetValue("resultId", out var resultRouteValue)
+            && int.TryParse(resultRouteValue?.ToString(), out var resultId))
+        {
+            PhiAuditResourceContext.Set(context.HttpContext, "LaboratoryResult", resultId.ToString(CultureInfo.InvariantCulture));
+            var allowed = await accessContextService.CanAccessLaboratoryResultAsync(
+                resultId,
+                accessContext.FacilityId,
+                cancellationToken);
+            return allowed ? await next(context) : Results.NotFound();
+        }
+
+        if (routeValues.TryGetValue("specimenId", out var specimenRouteValue)
+            && int.TryParse(specimenRouteValue?.ToString(), out var specimenId))
+        {
+            PhiAuditResourceContext.Set(context.HttpContext, "LaboratorySpecimen", specimenId.ToString(CultureInfo.InvariantCulture));
+            var allowed = await accessContextService.CanAccessLaboratorySpecimenAsync(
+                specimenId,
+                accessContext.FacilityId,
+                cancellationToken);
             return allowed ? await next(context) : Results.NotFound();
         }
 
