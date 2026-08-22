@@ -17,6 +17,8 @@ public sealed record EncounterClinicalAlertsResponse(
 public sealed record EncounterClinicalAlertAcknowledgementItem(
     string RuleKey,
     string Title,
+    long RuleRevisionId,
+    int AllergyStateVersion,
     string AcknowledgedAt,
     string AcknowledgedBy,
     string? ReopenedAt,

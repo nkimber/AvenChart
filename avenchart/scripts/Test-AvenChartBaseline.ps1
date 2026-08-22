@@ -8857,15 +8857,77 @@ catch {
 
 try {
     $administrationHeaders = Get-AdministrationHeaders
-    $acknowledgedAlerts = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1009011/alerts/ALLERGY_REVIEW/acknowledge" -Method Post -Headers $administrationHeaders -TimeoutSec 20
-    $acknowledgementHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1009011/alerts/history" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $allergyReviewEncounter = 1009011
+    $alertEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    if ([string]::IsNullOrWhiteSpace($alertEncounterDetail.patientId)) { throw "The allergy-review encounter does not identify a patient." }
+
+    $acknowledgedAlerts = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts/ALLERGY_REVIEW/acknowledge" -Method Post -Headers $administrationHeaders -TimeoutSec 20
+    $acknowledgementHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts/history" -Method Get -Headers $administrationHeaders -TimeoutSec 20
     $acknowledgementEntry = $acknowledgementHistory.acknowledgements | Where-Object { $_.ruleKey -eq "ALLERGY_REVIEW" -and $_.acknowledgedBy -eq "admin" -and $null -eq $_.reopenedAt } | Select-Object -First 1
-    $reopenedAlerts = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1009011/alerts/ALLERGY_REVIEW/reopen" -Method Post -Headers $administrationHeaders -TimeoutSec 20
-    $reopenedHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1009011/alerts/history" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+
+    $allergyRuleCatalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $allergyRule = $allergyRuleCatalog.rules | Where-Object { $_.key -eq "ALLERGY_REVIEW" } | Select-Object -First 1
+    $allergyRuleHistoryBeforeRevision = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/ALLERGY_REVIEW/history" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $allergyRuleRevisionBefore = $allergyRuleHistoryBeforeRevision.revisions | Select-Object -First 1
+    if ($null -eq $allergyRule -or $null -eq $allergyRuleRevisionBefore) { throw "The allergy-review rule or its revision history was not found." }
+    Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/ALLERGY_REVIEW" `
+        -Method Put `
+        -Headers $administrationHeaders `
+        -ContentType "application/json" `
+        -Body (@{ title = $allergyRule.title; triggerType = $allergyRule.triggerType; targetType = $allergyRule.targetType; severity = $allergyRule.severity; message = $allergyRule.message; sequence = $allergyRule.sequence; active = $allergyRule.active } | ConvertTo-Json) `
+        -TimeoutSec 20 | Out-Null
+    $allergyRuleHistoryAfterRevision = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/ALLERGY_REVIEW/history" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $allergyRuleRevisionAfter = $allergyRuleHistoryAfterRevision.revisions | Select-Object -First 1
+    $alertsAfterRuleRevision = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $reappearedAfterRuleRevision = $alertsAfterRuleRevision.alerts | Where-Object { $_.key -eq "ALLERGY_REVIEW" } | Select-Object -First 1
+    $acknowledgedAfterRuleRevision = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts/ALLERGY_REVIEW/acknowledge" -Method Post -Headers $administrationHeaders -TimeoutSec 20
+    $acknowledgementHistoryAfterRuleRevision = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts/history" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $acknowledgementAfterRuleRevision = $acknowledgementHistoryAfterRuleRevision.acknowledgements | Where-Object { $_.ruleKey -eq "ALLERGY_REVIEW" -and $_.ruleRevisionId -eq $allergyRuleRevisionAfter.revisionId -and $null -eq $_.reopenedAt } | Select-Object -First 1
+
+    $stateBindingAllergy = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/clinical-lists/allergies" `
+        -Method Post `
+        -Headers $administrationHeaders `
+        -ContentType "application/json" `
+        -Body (@{ patientId = $alertEncounterDetail.patientId; title = "Clinical alert state-binding smoke allergen"; dateTime = "2026-06-18 09:00:00"; comments = "Verifies acknowledgement invalidation when allergy state changes."; reaction = "Rash"; severity = "mild"; listOptionId = "state-binding-smoke" } | ConvertTo-Json) `
+        -TimeoutSec 20
+    $alertsWithActiveAllergy = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $stateBindingDeactivation = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$($stateBindingAllergy.id)/deactivate" `
+        -Method Put `
+        -Headers $administrationHeaders `
+        -ContentType "application/json" `
+        -Body (@{ comments = "Complete clinical alert state-binding smoke check." } | ConvertTo-Json) `
+        -TimeoutSec 20
+    $inactiveStateBindingAllergy = $stateBindingDeactivation.detail.allergies | Where-Object { $_.id -eq $stateBindingAllergy.id -and $_.activity -eq 0 } | Select-Object -First 1
+    $alertsAfterAllergyStateChange = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $reappearedAfterStateChange = $alertsAfterAllergyStateChange.alerts | Where-Object { $_.key -eq "ALLERGY_REVIEW" } | Select-Object -First 1
+
+    $reacknowledgedAlerts = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts/ALLERGY_REVIEW/acknowledge" -Method Post -Headers $administrationHeaders -TimeoutSec 20
+    $reacknowledgementHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts/history" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $reacknowledgementAfterStateChange = $reacknowledgementHistory.acknowledgements | Where-Object { $_.ruleKey -eq "ALLERGY_REVIEW" -and $_.ruleRevisionId -eq $allergyRuleRevisionAfter.revisionId -and $_.allergyStateVersion -gt $acknowledgementAfterRuleRevision.allergyStateVersion -and $null -eq $_.reopenedAt } | Select-Object -First 1
+    $reopenedAlerts = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts/ALLERGY_REVIEW/reopen" -Method Post -Headers $administrationHeaders -TimeoutSec 20
+    $reopenedHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts/history" -Method Get -Headers $administrationHeaders -TimeoutSec 20
     $reopenedHistoryEntry = $reopenedHistory.acknowledgements | Where-Object { $_.ruleKey -eq "ALLERGY_REVIEW" -and $_.reopenedBy -eq "admin" -and $null -ne $_.reopenedAt } | Select-Object -First 1
     $reopenedAllergyReview = $reopenedAlerts.alerts | Where-Object { $_.key -eq "ALLERGY_REVIEW" } | Select-Object -First 1
-    $acknowledgementPassed = $acknowledgedAlerts.alerts.Count -eq 0 -and $null -ne $acknowledgementEntry -and $null -ne $reopenedAllergyReview -and $null -ne $reopenedHistoryEntry
-    Add-Check -Name "encounter clinical alert acknowledgement lifecycle" -Result $(if ($acknowledgementPassed) { "passed" } else { "failed" }) -Details @{ encounter = 1009011; acknowledgedCount = $acknowledgedAlerts.alerts.Count; acknowledgementRecorded = $null -ne $acknowledgementEntry; reopened = $null -ne $reopenedAllergyReview; reopenRecorded = $null -ne $reopenedHistoryEntry }
+    $acknowledgementPassed = $acknowledgedAlerts.alerts.Count -eq 0 `
+        -and $null -ne $acknowledgementEntry `
+        -and $acknowledgementEntry.ruleRevisionId -gt 0 `
+        -and $acknowledgementEntry.allergyStateVersion -gt 0 `
+        -and $acknowledgementEntry.ruleRevisionId -eq $allergyRuleRevisionBefore.revisionId `
+        -and $allergyRuleRevisionAfter.revisionId -gt $allergyRuleRevisionBefore.revisionId `
+        -and $null -ne $reappearedAfterRuleRevision `
+        -and $acknowledgedAfterRuleRevision.alerts.Count -eq 0 `
+        -and $null -ne $acknowledgementAfterRuleRevision `
+        -and $alertsWithActiveAllergy.alerts.Count -eq 0 `
+        -and $null -ne $inactiveStateBindingAllergy `
+        -and $null -ne $reappearedAfterStateChange `
+        -and $reacknowledgedAlerts.alerts.Count -eq 0 `
+        -and $null -ne $reacknowledgementAfterStateChange `
+        -and $null -ne $reopenedAllergyReview `
+        -and $null -ne $reopenedHistoryEntry
+    Add-Check -Name "encounter clinical alert acknowledgement lifecycle" -Result $(if ($acknowledgementPassed) { "passed" } else { "failed" }) -Details @{ encounter = $allergyReviewEncounter; patientId = $alertEncounterDetail.patientId; acknowledgement = $acknowledgementEntry; ruleRevisionBefore = $allergyRuleRevisionBefore.revisionId; ruleRevisionAfter = $allergyRuleRevisionAfter.revisionId; reappearedAfterRuleRevision = $null -ne $reappearedAfterRuleRevision; alertCountWithActiveAllergy = $alertsWithActiveAllergy.alerts.Count; stateBindingAllergyId = $stateBindingAllergy.id; reappearedAfterStateChange = $null -ne $reappearedAfterStateChange; reacknowledgement = $reacknowledgementAfterStateChange; reopened = $null -ne $reopenedAllergyReview; reopenRecorded = $null -ne $reopenedHistoryEntry }
 }
 catch {
     Add-Check -Name "encounter clinical alert acknowledgement lifecycle" -Result "failed" -Details $_.Exception.Message
