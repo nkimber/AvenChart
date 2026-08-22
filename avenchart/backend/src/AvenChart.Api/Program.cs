@@ -2245,6 +2245,14 @@ appointments.MapPut("/{appointmentId}", async (
         {
             return Results.BadRequest(new { error = exception.Message });
         }
+        catch (AppointmentConcurrencyException)
+        {
+            return Results.Conflict(new { error = "This appointment changed since it was loaded. Refresh it before saving again." });
+        }
+        catch (AppointmentMutationNotAllowedException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
     })
     .WithName("UpdateAppointment")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
@@ -2264,6 +2272,10 @@ appointments.MapPut("/{appointmentId}/status", async (
         {
             return Results.BadRequest(new { error = exception.Message });
         }
+        catch (AppointmentConcurrencyException)
+        {
+            return Results.Conflict(new { error = "This appointment changed since it was loaded. Refresh it before applying another status." });
+        }
     })
     .WithName("UpdateAppointmentStatus")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
@@ -2272,10 +2284,22 @@ appointments.MapPost("/{appointmentId}/recurrence-exceptions/{occurrenceDate}/re
         AppointmentRepository repository,
         string appointmentId,
         string occurrenceDate,
+        AppointmentRecurrenceExceptionRequest request,
         CancellationToken cancellationToken) =>
     {
-        var appointment = await repository.RestoreRecurrenceExceptionAsync(appointmentId, occurrenceDate, cancellationToken);
-        return appointment is null ? Results.NotFound() : Results.Ok(appointment);
+        try
+        {
+            var appointment = await repository.RestoreRecurrenceExceptionAsync(appointmentId, occurrenceDate, request, cancellationToken);
+            return appointment is null ? Results.NotFound() : Results.Ok(appointment);
+        }
+        catch (AppointmentConcurrencyException)
+        {
+            return Results.Conflict(new { error = "This appointment series changed since it was loaded. Refresh it before restoring an occurrence." });
+        }
+        catch (AppointmentMutationNotAllowedException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
     })
     .WithName("RestoreAppointmentOccurrence")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
@@ -2287,10 +2311,21 @@ appointments.MapPost("/{appointmentId}/occurrences/{occurrenceDate}/reschedule",
         AppointmentOccurrenceRescheduleRequest request,
         CancellationToken cancellationToken) =>
     {
-        var appointment = await repository.RescheduleOccurrenceAsync(appointmentId, occurrenceDate, request, cancellationToken);
-        return appointment is null
-            ? Results.BadRequest("Appointment occurrence could not be rescheduled from the supplied date, time, and duration.")
-            : Results.Created($"/api/appointments/{appointment.Id}", appointment);
+        try
+        {
+            var appointment = await repository.RescheduleOccurrenceAsync(appointmentId, occurrenceDate, request, cancellationToken);
+            return appointment is null
+                ? Results.BadRequest("Appointment occurrence could not be rescheduled from the supplied date, time, and duration.")
+                : Results.Created($"/api/appointments/{appointment.Id}", appointment);
+        }
+        catch (AppointmentConcurrencyException)
+        {
+            return Results.Conflict(new { error = "This appointment series changed since it was loaded. Refresh it before rescheduling an occurrence." });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
     .WithName("RescheduleAppointmentOccurrence")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
@@ -2298,10 +2333,22 @@ appointments.MapPost("/{appointmentId}/occurrences/{occurrenceDate}/reschedule",
 appointments.MapDelete("/{appointmentId}", async (
         AppointmentRepository repository,
         string appointmentId,
+        int expectedVersion,
         CancellationToken cancellationToken) =>
     {
-        var deleted = await repository.DeleteAsync(appointmentId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
+        try
+        {
+            var deleted = await repository.DeleteAsync(appointmentId, expectedVersion, cancellationToken);
+            return deleted ? Results.NoContent() : Results.NotFound();
+        }
+        catch (AppointmentConcurrencyException)
+        {
+            return Results.Conflict(new { error = "This appointment series changed since it was loaded. Refresh it before cancelling an occurrence." });
+        }
+        catch (AppointmentMutationNotAllowedException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
     })
     .WithName("DeleteAppointment")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));

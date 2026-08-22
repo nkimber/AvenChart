@@ -27,6 +27,7 @@ vi.mock('../../api.ts', async (importOriginal) => {
 
 const appointment: AppointmentListItem = {
   id: 'appointment-1',
+  rowVersion: 1,
   seriesRootId: 'appointment-1',
   isRecurringSeries: false,
   isVirtualOccurrence: false,

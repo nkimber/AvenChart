@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { CalendarPlus, Pencil } from 'lucide-react'
 import {
-  deleteAppointment,
   getAppointmentSchedulingOptions,
   rescheduleAppointmentOccurrence,
   restoreAppointmentOccurrence,
@@ -95,14 +94,14 @@ export default function PatientAppointments() {
   // Switching charts must immediately replace the appointment list with a fresh request.
   useEffect(() => { load() }, [patientId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function handleStatusChange(apptId: string, status: string) {
+  async function handleStatusChange(appointment: AppointmentListItem, status: string) {
     if (isCancelledAppointment(status)) {
-      await cancelAppointment(apptId)
+      await cancelAppointment(appointment)
       return
     }
-    setUpdatingId(apptId)
+    setUpdatingId(appointment.id)
     try {
-      await updateAppointmentStatus(session.sessionId, apptId, status)
+      await updateAppointmentStatus(session.sessionId, appointment.id, status, appointment.rowVersion)
       showToast(`Status updated to "${getAppointmentStatus(status).label}"`)
       load()
     } catch {
@@ -171,6 +170,7 @@ export default function PatientAppointments() {
       recurrenceDays: editingAppointment.recurrenceDays,
       recurrenceEndDate: editingAppointment.recurrenceEndDate ?? null,
       recurrenceExdates: editingAppointment.recurrenceExdates,
+      expectedVersion: editingAppointment.rowVersion,
     }
 
     setSaving(true)
@@ -203,6 +203,7 @@ export default function PatientAppointments() {
       room: rescheduleForm.room || null,
       status: rescheduleForm.status || null,
       comments: rescheduleForm.comments || null,
+      expectedVersion: reschedulingAppointment.rowVersion,
     }
 
     setSaving(true)
@@ -222,7 +223,7 @@ export default function PatientAppointments() {
   async function handleOccurrenceRestore(appointment: AppointmentListItem, occurrenceDate: string) {
     setRestoringDate(occurrenceDate)
     try {
-      await restoreAppointmentOccurrence(session.sessionId, appointment.id, occurrenceDate)
+      await restoreAppointmentOccurrence(session.sessionId, appointment.id, occurrenceDate, appointment.rowVersion)
       showToast(`Occurrence on ${occurrenceDate} restored.`, 'success')
       setEditingAppointment(null)
       setEditForm(null)
@@ -234,11 +235,11 @@ export default function PatientAppointments() {
     }
   }
 
-  async function cancelAppointment(id: string) {
+  async function cancelAppointment(appointment: AppointmentListItem) {
     if (!window.confirm('Cancel this appointment?')) return
-    setUpdatingId(id)
+    setUpdatingId(appointment.id)
     try {
-      await updateAppointmentStatus(session.sessionId, id, 'x')
+      await updateAppointmentStatus(session.sessionId, appointment.id, 'x', appointment.rowVersion)
       showToast('Appointment cancelled.', 'success')
       load()
     } catch {
@@ -248,28 +249,14 @@ export default function PatientAppointments() {
     }
   }
 
-  async function restoreAppointment(id: string) {
-    setUpdatingId(id)
+  async function restoreAppointment(appointment: AppointmentListItem) {
+    setUpdatingId(appointment.id)
     try {
-      await updateAppointmentStatus(session.sessionId, id, '-')
+      await updateAppointmentStatus(session.sessionId, appointment.id, '-', appointment.rowVersion)
       showToast('Appointment restored to scheduled.', 'success')
       load()
     } catch {
       showToast('Could not restore appointment.', 'error')
-    } finally {
-      setUpdatingId(null)
-    }
-  }
-
-  async function deleteAppointmentPermanently(id: string) {
-    if (!window.confirm('Permanently delete this appointment? This cannot be undone.')) return
-    setUpdatingId(id)
-    try {
-      await deleteAppointment(session.sessionId, id)
-      showToast('Appointment deleted.', 'success')
-      load()
-    } catch {
-      showToast('Could not delete appointment.', 'error')
     } finally {
       setUpdatingId(null)
     }
@@ -485,7 +472,7 @@ export default function PatientAppointments() {
                   <td className="cl-td-muted">{appointment.providerName ?? '—'}</td>
                   <td className="cl-td-muted">{appointment.facilityName ?? '—'}</td>
                   <td>
-                    <select className="cl-status-select" value={getAppointmentStatus(appointment.status).apiValue} disabled={updatingId === appointment.id} onChange={(event) => handleStatusChange(appointment.id, event.target.value)} aria-label={`Appointment status on ${appointment.date}`}>
+                    <select className="cl-status-select" value={getAppointmentStatus(appointment.status).apiValue} disabled={updatingId === appointment.id} onChange={(event) => handleStatusChange(appointment, event.target.value)} aria-label={`Appointment status on ${appointment.date}`}>
                       {getAppointmentStatusOptions(appointment.status).map((status) => <option key={status.apiValue} value={status.apiValue}>{status.label}</option>)}
                     </select>
                   </td>
@@ -493,9 +480,8 @@ export default function PatientAppointments() {
                     <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => openEditor(appointment)} aria-label={`Edit appointment on ${appointment.date}`}><Pencil size={13} /> Edit</button>
                     {appointment.isRecurringSeries && <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => openRescheduler(appointment)} style={{ marginLeft: 6 }}>Reschedule</button>}
                     {isCancelledAppointment(appointment.status)
-                      ? <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => restoreAppointment(appointment.id)} style={{ marginLeft: 6 }}>Restore</button>
-                      : <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => cancelAppointment(appointment.id)} style={{ marginLeft: 6 }}>Cancel</button>}
-                    <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => deleteAppointmentPermanently(appointment.id)} style={{ marginLeft: 6 }}>Delete</button>
+                      ? <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => restoreAppointment(appointment)} style={{ marginLeft: 6 }}>Restore</button>
+                      : <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => cancelAppointment(appointment)} style={{ marginLeft: 6 }}>Cancel</button>}
                   </td>
                 </tr>
               ))}

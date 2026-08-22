@@ -53,6 +53,7 @@ const patient: PatientListItem = {
 
 const createdAppointment: AppointmentListItem = {
   id: 'appointment-1',
+  rowVersion: 1,
   seriesRootId: 'appointment-1',
   isRecurringSeries: false,
   isVirtualOccurrence: false,

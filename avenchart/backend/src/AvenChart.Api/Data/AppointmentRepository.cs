@@ -9,6 +9,10 @@ using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
 
+public sealed class AppointmentConcurrencyException : Exception;
+
+public sealed class AppointmentMutationNotAllowedException(string message) : Exception(message);
+
 public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 {
     private const int MaximumSearchLimit = 500;
@@ -38,6 +42,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.CommandText = $$"""
             select
                 a.id,
+                a.row_version,
                 p.canonical_id as patient_id,
                 p.legacy_pid,
                 p.pubpid,
@@ -197,6 +202,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             select
                 a.id,
+                a.row_version,
                 p.canonical_id as patient_id,
                 p.legacy_pid,
                 p.pubpid,
@@ -329,6 +335,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
         var detail = new AppointmentDetail(
             Id: responseId,
+            RowVersion: reader.GetInt32(reader.GetOrdinal("row_version")),
             SeriesRootId: occurrenceReference.RootAppointmentId,
             IsRecurringSeries: recurrenceType > 0,
             IsVirtualOccurrence: isVirtualOccurrence,
@@ -1134,20 +1141,22 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var rootAppointmentId = ParseOccurrenceReference(appointmentId).RootAppointmentId;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var currentStatus = await GetStatusForUpdateAsync(connection, transaction, rootAppointmentId, cancellationToken);
-        if (currentStatus is null)
+        var current = await GetMutationStateForUpdateAsync(connection, transaction, rootAppointmentId, cancellationToken);
+        if (current is null)
         {
             return null;
         }
 
+        EnsureExpectedVersion(current.RowVersion, request.ExpectedVersion);
         var nextStatus = NormalizeAppointmentStatus(request.Status);
-        EnsureValidAppointmentStatusTransition(currentStatus, nextStatus);
+        EnsureValidAppointmentStatusTransition(current.Status, nextStatus);
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             update appointments
             set status = @status,
-                title = coalesce(@title, title)
+                title = coalesce(@title, title),
+                row_version = row_version + 1
             where id = @appointmentId
             returning id;
             """;
@@ -1175,17 +1184,21 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var rootAppointmentId = ParseOccurrenceReference(appointmentId).RootAppointmentId;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var currentStatus = await GetStatusForUpdateAsync(connection, transaction, rootAppointmentId, cancellationToken);
-        if (currentStatus is null)
+        var current = await GetMutationStateForUpdateAsync(connection, transaction, rootAppointmentId, cancellationToken);
+        if (current is null)
         {
             return null;
         }
 
+        EnsureExpectedVersion(current.RowVersion, request.ExpectedVersion);
+        EnsureSchedulingFactsRemainMutable(current.Status);
+
         var requestedStatus = request.Status is null ? null : NormalizeAppointmentStatus(request.Status);
         if (requestedStatus is not null)
         {
-            EnsureValidAppointmentStatusTransition(currentStatus, requestedStatus);
+            EnsureValidAppointmentStatusTransition(current.Status, requestedStatus);
         }
+        await EnsurePatientActiveForSchedulingAsync(connection, transaction, current.PatientId, cancellationToken);
         await ValidateActiveSchedulingReferencesAsync(
             connection,
             request.ProviderId,
@@ -1215,7 +1228,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 repeat_on_frequency = @repeatOnFrequency,
                 recurrence_end_date = @recurrenceEndDate,
                 recurrence_days = @recurrenceDays,
-                recurrence_exdates = @recurrenceExdates
+                recurrence_exdates = @recurrenceExdates,
+                row_version = row_version + 1
             where id = @appointmentId
             returning id;
             """;
@@ -1248,7 +1262,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return updatedId is null ? null : await GetByIdAsync(updatedId, cancellationToken);
     }
 
-    public async Task<bool> DeleteAsync(string appointmentId, CancellationToken cancellationToken)
+    public async Task<bool> DeleteAsync(
+        string appointmentId,
+        int expectedVersion,
+        CancellationToken cancellationToken)
     {
         var occurrenceReference = ParseOccurrenceReference(appointmentId);
         if (occurrenceReference.OccurrenceDate is not null)
@@ -1256,20 +1273,18 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             return await AddRecurrenceExceptionAsync(
                 occurrenceReference.RootAppointmentId,
                 occurrenceReference.OccurrenceDate.Value,
+                expectedVersion,
                 cancellationToken);
         }
 
-        var rootAppointmentId = occurrenceReference.RootAppointmentId;
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "delete from appointments where id = @appointmentId;";
-        command.Parameters.AddWithValue("appointmentId", rootAppointmentId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        throw new AppointmentMutationNotAllowedException(
+            "Appointments are retained as scheduling evidence. Cancel the appointment instead of deleting it.");
     }
 
     public async Task<AppointmentDetail?> RestoreRecurrenceExceptionAsync(
         string appointmentId,
         string occurrenceDateText,
+        AppointmentRecurrenceExceptionRequest request,
         CancellationToken cancellationToken)
     {
         if (!DateOnly.TryParse(occurrenceDateText, out var occurrenceDate))
@@ -1281,9 +1296,13 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var rootAppointmentId = occurrenceReference.RootAppointmentId;
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var readCommand = connection.CreateCommand();
+        readCommand.Transaction = transaction;
         readCommand.CommandText = """
-            select appointment_date,
+            select patient_id,
+                row_version,
+                appointment_date,
                 recurrence_type,
                 repeat_frequency,
                 repeat_unit,
@@ -1295,7 +1314,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 recurrence_exdates
             from appointments
             where id = @appointmentId
-            limit 1;
+            limit 1
+            for update;
             """;
         readCommand.Parameters.AddWithValue("appointmentId", rootAppointmentId);
 
@@ -1305,6 +1325,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        EnsureExpectedVersion(reader.GetInt32(reader.GetOrdinal("row_version")), request.ExpectedVersion);
+        var patientId = reader.GetString(reader.GetOrdinal("patient_id"));
         var appointmentDate = ReadDate(reader, "appointment_date");
         var recurrenceType = ReadRecurrenceType(reader);
         var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
@@ -1344,10 +1366,13 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var normalizedExdates = NormalizeRecurrenceExdates(updatedExdates);
 
         await reader.DisposeAsync();
+        await EnsurePatientActiveForSchedulingAsync(connection, transaction, patientId, cancellationToken);
         await using var updateCommand = connection.CreateCommand();
+        updateCommand.Transaction = transaction;
         updateCommand.CommandText = """
             update appointments
-            set recurrence_exdates = @recurrenceExdates
+            set recurrence_exdates = @recurrenceExdates,
+                row_version = row_version + 1
             where id = @appointmentId;
             """;
         updateCommand.Parameters.AddWithValue("appointmentId", rootAppointmentId);
@@ -1355,9 +1380,13 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             ? DBNull.Value
             : (object)normalizedExdates;
 
-        return await updateCommand.ExecuteNonQueryAsync(cancellationToken) > 0
-            ? await GetByIdAsync(rootAppointmentId, cancellationToken)
-            : null;
+        if (await updateCommand.ExecuteNonQueryAsync(cancellationToken) == 0)
+        {
+            return null;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return await GetByIdAsync(rootAppointmentId, cancellationToken);
     }
 
     public async Task<AppointmentDetail?> RescheduleOccurrenceAsync(
@@ -1383,6 +1412,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         readCommand.CommandText = """
             select id,
                 patient_id,
+                row_version,
                 pid,
                 provider_id,
                 facility_id,
@@ -1405,7 +1435,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 recurrence_exdates
             from appointments
             where id = @appointmentId
-            limit 1;
+            limit 1
+            for update;
             """;
         readCommand.Parameters.AddWithValue("appointmentId", rootAppointmentId);
 
@@ -1417,6 +1448,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 return null;
             }
 
+            EnsureExpectedVersion(reader.GetInt32(reader.GetOrdinal("row_version")), request.ExpectedVersion);
             var appointmentDate = ReadDate(reader, "appointment_date");
             var recurrenceType = ReadRecurrenceType(reader);
             var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
@@ -1474,7 +1506,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         updateCommand.Transaction = transaction;
         updateCommand.CommandText = """
             update appointments
-            set recurrence_exdates = @recurrenceExdates
+            set recurrence_exdates = @recurrenceExdates,
+                row_version = row_version + 1
             where id = @appointmentId;
             """;
         updateCommand.Parameters.AddWithValue("appointmentId", rootAppointmentId);
@@ -1586,12 +1619,16 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     private async Task<bool> AddRecurrenceExceptionAsync(
         string rootAppointmentId,
         DateOnly occurrenceDate,
+        int expectedVersion,
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var readCommand = connection.CreateCommand();
+        readCommand.Transaction = transaction;
         readCommand.CommandText = """
-            select appointment_date,
+            select row_version,
+                appointment_date,
                 recurrence_type,
                 repeat_frequency,
                 repeat_unit,
@@ -1603,7 +1640,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 recurrence_exdates
             from appointments
             where id = @appointmentId
-            limit 1;
+            limit 1
+            for update;
             """;
         readCommand.Parameters.AddWithValue("appointmentId", rootAppointmentId);
 
@@ -1613,6 +1651,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             return false;
         }
 
+        EnsureExpectedVersion(reader.GetInt32(reader.GetOrdinal("row_version")), expectedVersion);
         var appointmentDate = ReadDate(reader, "appointment_date");
         var recurrenceType = ReadRecurrenceType(reader);
         var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
@@ -1647,16 +1686,24 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
         await reader.DisposeAsync();
         await using var updateCommand = connection.CreateCommand();
+        updateCommand.Transaction = transaction;
         updateCommand.CommandText = """
             update appointments
-            set recurrence_exdates = @recurrenceExdates
+            set recurrence_exdates = @recurrenceExdates,
+                row_version = row_version + 1
             where id = @appointmentId;
             """;
         updateCommand.Parameters.AddWithValue("appointmentId", rootAppointmentId);
         updateCommand.Parameters.Add("recurrenceExdates", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(normalizedExdates)
             ? DBNull.Value
             : (object)normalizedExdates;
-        return await updateCommand.ExecuteNonQueryAsync(cancellationToken) > 0;
+        if (await updateCommand.ExecuteNonQueryAsync(cancellationToken) == 0)
+        {
+            return false;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -1878,6 +1925,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
         return new AppointmentListItem(
             Id: reader.GetString(reader.GetOrdinal("id")),
+            RowVersion: reader.GetInt32(reader.GetOrdinal("row_version")),
             SeriesRootId: reader.GetString(reader.GetOrdinal("id")),
             IsRecurringSeries: recurrenceType > 0,
             IsVirtualOccurrence: false,
@@ -2771,7 +2819,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     private static bool IsActiveAppointmentStatus(string? status) =>
         !string.Equals(status, "x", StringComparison.OrdinalIgnoreCase);
 
-    private static async Task<string?> GetStatusForUpdateAsync(
+    private static async Task<AppointmentMutationState?> GetMutationStateForUpdateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string appointmentId,
@@ -2779,9 +2827,38 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "select coalesce(status, '-') from appointments where id=@appointmentId for update;";
+        command.CommandText = """
+            select coalesce(status, '-') as status, row_version, patient_id
+            from appointments
+            where id = @appointmentId
+            for update;
+            """;
         command.Parameters.AddWithValue("appointmentId", appointmentId);
-        return (string?)await command.ExecuteScalarAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new AppointmentMutationState(
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetInt32(reader.GetOrdinal("row_version")),
+                reader.GetString(reader.GetOrdinal("patient_id")))
+            : null;
+    }
+
+    private static void EnsureExpectedVersion(int currentVersion, int expectedVersion)
+    {
+        if (expectedVersion <= 0 || expectedVersion != currentVersion)
+        {
+            throw new AppointmentConcurrencyException();
+        }
+    }
+
+    private static void EnsureSchedulingFactsRemainMutable(string? status)
+    {
+        var normalized = NormalizeAppointmentStatus(status);
+        if (normalized is "<" or "?" or "x")
+        {
+            throw new AppointmentMutationNotAllowedException(
+                "Completed, no-show, and cancelled appointments retain their scheduling facts. Restore a cancelled or no-show appointment before editing it.");
+        }
     }
 
     private static string NormalizeAppointmentStatus(string? value)
@@ -3389,6 +3466,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         int? FacilityId);
 
     private sealed record AppointmentOccurrenceReference(string RootAppointmentId, DateOnly? OccurrenceDate);
+
+    private sealed record AppointmentMutationState(string Status, int RowVersion, string PatientId);
 
     private sealed record ProviderOverlapSummary(int Count, IReadOnlyList<string> AppointmentIds);
 

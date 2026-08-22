@@ -24,6 +24,7 @@ function board(date: string, patientDisplayName: string): FlowBoardResponse {
       label: 'Scheduled',
       items: [{
         appointmentId: `${date}-appointment`,
+        rowVersion: 1,
         patientId: 'patient-1',
         patientDisplayName,
         startTime: '09:00:00',
@@ -67,7 +68,7 @@ function renderFlowBoard() {
 describe('FlowBoard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(updateAppointmentStatus).mockResolvedValue(undefined)
+    vi.mocked(updateAppointmentStatus).mockResolvedValue({} as never)
   })
 
   it('keeps an obsolete date response from replacing the selected day', async () => {

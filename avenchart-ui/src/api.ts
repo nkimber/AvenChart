@@ -2371,6 +2371,7 @@ export async function updatePatientPortalAccountReset(
 
 export type AppointmentListItem = {
   id: string
+  rowVersion: number
   seriesRootId: string
   isRecurringSeries: boolean
   isVirtualOccurrence: boolean
@@ -2589,12 +2590,13 @@ export async function updateAppointmentStatus(
   sessionId: string,
   appointmentId: string,
   status: string,
+  expectedVersion: number,
   signal?: AbortSignal,
-): Promise<void> {
-  await clinicianPut(
+): Promise<AppointmentListItem> {
+  return clinicianPut(
     sessionId,
     `/api/appointments/${appointmentId}/status`,
-    { status },
+    { status, expectedVersion },
     signal,
   )
 }
@@ -2620,6 +2622,7 @@ export type AppointmentUpdateInput = {
   recurrenceDays?: number[] | null
   recurrenceEndDate?: string | null
   recurrenceExdates?: string[] | null
+  expectedVersion: number
 }
 
 export async function updateAppointment(
@@ -2648,6 +2651,7 @@ export type AppointmentOccurrenceRescheduleInput = {
   room?: string | null
   status?: string | null
   comments?: string | null
+  expectedVersion: number
 }
 
 export async function rescheduleAppointmentOccurrence(
@@ -2669,12 +2673,13 @@ export async function restoreAppointmentOccurrence(
   sessionId: string,
   appointmentId: string,
   occurrenceDate: string,
+  expectedVersion: number,
   signal?: AbortSignal,
 ): Promise<AppointmentListItem> {
   return clinicianPost(
     sessionId,
     `/api/appointments/${encodeURIComponent(appointmentId)}/recurrence-exceptions/${encodeURIComponent(occurrenceDate)}/restore`,
-    undefined,
+    { expectedVersion },
     signal,
   )
 }
@@ -2682,13 +2687,19 @@ export async function restoreAppointmentOccurrence(
 export async function deleteAppointment(
   sessionId: string,
   appointmentId: string,
+  expectedVersion: number,
   signal?: AbortSignal,
 ): Promise<void> {
-  await clinicianDelete(sessionId, `/api/appointments/${appointmentId}`, signal)
+  await clinicianDelete(
+    sessionId,
+    `/api/appointments/${appointmentId}?expectedVersion=${encodeURIComponent(expectedVersion)}`,
+    signal,
+  )
 }
 
 export type FlowBoardItem = {
   appointmentId: string
+  rowVersion: number
   patientId: string
   patientDisplayName: string
   startTime: string

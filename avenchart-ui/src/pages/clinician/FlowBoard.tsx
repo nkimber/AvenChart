@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { getAppointmentFlowBoard, updateAppointmentStatus, type FlowBoardResponse } from '../../api.ts'
+import { getAppointmentFlowBoard, updateAppointmentStatus, type FlowBoardItem, type FlowBoardResponse } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import { getAppointmentStatus } from '../../domain/appointmentStatus.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
@@ -47,11 +47,11 @@ export default function FlowBoard() {
     return () => activeRequest.current?.abort()
   }, [load])
 
-  async function advance(appointmentId: string, status: string) {
+  async function advance(appointment: FlowBoardItem, status: string) {
     if (updating) return
-    setUpdating(appointmentId)
+    setUpdating(appointment.appointmentId)
     try {
-      await updateAppointmentStatus(session.sessionId, appointmentId, status)
+      await updateAppointmentStatus(session.sessionId, appointment.appointmentId, status, appointment.rowVersion)
       showToast(`Appointment marked ${getAppointmentStatus(status).label.toLowerCase()}.`, 'success')
       await load()
     } catch {
@@ -113,17 +113,17 @@ export default function FlowBoard() {
                   {['scheduled', 'arrived', 'in-room'].includes(lane.key) && (
                     <div className="flow-actions">
                       {lane.key === 'scheduled' && (
-                        <button className="cl-btn-secondary" type="button" disabled={updating === item.appointmentId} onClick={() => advance(item.appointmentId, '@')}>
+                        <button className="cl-btn-secondary" type="button" disabled={updating === item.appointmentId} onClick={() => advance(item, '@')}>
                           Arrive
                         </button>
                       )}
                       {lane.key === 'arrived' && (
-                        <button className="cl-btn-primary" type="button" disabled={updating === item.appointmentId} onClick={() => advance(item.appointmentId, '>')}>
+                        <button className="cl-btn-primary" type="button" disabled={updating === item.appointmentId} onClick={() => advance(item, '>')}>
                           Room
                         </button>
                       )}
                       {lane.key === 'in-room' && (
-                        <button className="cl-btn-primary" type="button" disabled={updating === item.appointmentId} onClick={() => advance(item.appointmentId, '<')}>
+                        <button className="cl-btn-primary" type="button" disabled={updating === item.appointmentId} onClick={() => advance(item, '<')}>
                           Complete
                         </button>
                       )}

@@ -436,6 +436,113 @@ try {
     }
     $CompletedScenarios.Add("patient-administration-aggregate-concurrency")
 
+    $appointmentMarker = "resilience-appointment-$([Guid]::NewGuid().ToString('N'))"
+    $appointmentCreateResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/appointments/" `
+        -Headers $authenticatedHeaders `
+        -Body (@{
+            patientId = "MOD-PAT-0001"
+            providerId = $null
+            title = $appointmentMarker
+            date = "2031-01-14"
+            startTime = "09:00"
+            durationMinutes = 30
+            facilityId = $null
+            billingLocationId = $null
+            categoryId = $null
+            room = $null
+            comments = "Versioned scheduling aggregate verification"
+            recurrenceType = 0
+            repeatFrequency = $null
+            repeatUnit = $null
+            repeatOnNum = $null
+            repeatOnDay = $null
+            repeatOnFrequency = $null
+            recurrenceDays = @()
+            recurrenceEndDate = $null
+            recurrenceExdates = @()
+            enforceConflictPolicy = $false
+        } | ConvertTo-Json -Depth 5)
+    if ([int]$appointmentCreateResponse.StatusCode -ne 201) {
+        throw "Could not create the isolated appointment aggregate for concurrency verification. HTTP $($appointmentCreateResponse.StatusCode): $(Get-HttpResponseContent -Response $appointmentCreateResponse)"
+    }
+    $appointmentCreated = (Get-HttpResponseContent -Response $appointmentCreateResponse) | ConvertFrom-Json
+    $appointmentUpdateBody = @{
+        providerId = $appointmentCreated.providerId
+        title = "$appointmentMarker updated"
+        date = $appointmentCreated.date
+        startTime = $appointmentCreated.startTime
+        durationMinutes = $appointmentCreated.durationMinutes
+        facilityId = $appointmentCreated.facilityId
+        billingLocationId = $appointmentCreated.billingLocationId
+        categoryId = $appointmentCreated.categoryId
+        room = $appointmentCreated.room
+        status = $appointmentCreated.status
+        comments = $appointmentCreated.comments
+        recurrenceType = $appointmentCreated.recurrenceType
+        repeatFrequency = $appointmentCreated.repeatFrequency
+        repeatUnit = $appointmentCreated.repeatUnit
+        repeatOnNum = $appointmentCreated.repeatOnNum
+        repeatOnDay = $appointmentCreated.repeatOnDay
+        repeatOnFrequency = $appointmentCreated.repeatOnFrequency
+        recurrenceDays = @($appointmentCreated.recurrenceDays)
+        recurrenceEndDate = $appointmentCreated.recurrenceEndDate
+        recurrenceExdates = @($appointmentCreated.recurrenceExdates)
+        expectedVersion = $appointmentCreated.rowVersion
+    } | ConvertTo-Json -Depth 5
+    $appointmentUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/appointments/$($appointmentCreated.id)" `
+        -Headers $authenticatedHeaders `
+        -Body $appointmentUpdateBody
+    $staleAppointmentUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/appointments/$($appointmentCreated.id)" `
+        -Headers $authenticatedHeaders `
+        -Body $appointmentUpdateBody
+    if ([int]$appointmentUpdateResponse.StatusCode -ne 200 -or [int]$staleAppointmentUpdateResponse.StatusCode -ne 409) {
+        throw "Appointment facts must be version-bound instead of silently overwriting a later save."
+    }
+    $appointmentUpdated = (Get-HttpResponseContent -Response $appointmentUpdateResponse) | ConvertFrom-Json
+    $appointmentArrivedResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/appointments/$($appointmentCreated.id)/status" `
+        -Headers $authenticatedHeaders `
+        -Body (@{ status = "@"; title = $null; expectedVersion = $appointmentUpdated.rowVersion } | ConvertTo-Json)
+    $staleAppointmentStatusResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/appointments/$($appointmentCreated.id)/status" `
+        -Headers $authenticatedHeaders `
+        -Body (@{ status = ">"; title = $null; expectedVersion = $appointmentUpdated.rowVersion } | ConvertTo-Json)
+    if ([int]$appointmentArrivedResponse.StatusCode -ne 200 -or [int]$staleAppointmentStatusResponse.StatusCode -ne 409) {
+        throw "Appointment status transitions must reject stale state."
+    }
+    $appointmentArrived = (Get-HttpResponseContent -Response $appointmentArrivedResponse) | ConvertFrom-Json
+    $appointmentRoomedResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/appointments/$($appointmentCreated.id)/status" `
+        -Headers $authenticatedHeaders `
+        -Body (@{ status = ">"; title = $null; expectedVersion = $appointmentArrived.rowVersion } | ConvertTo-Json)
+    $appointmentCompletedResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/appointments/$($appointmentCreated.id)/status" `
+        -Headers $authenticatedHeaders `
+        -Body (@{ status = "<"; title = $null; expectedVersion = ($appointmentArrived.rowVersion + 1) } | ConvertTo-Json)
+    $appointmentTerminalEdit = $appointmentUpdateBody | ConvertFrom-Json
+    $appointmentTerminalEdit.expectedVersion = $appointmentArrived.rowVersion + 2
+    $terminalAppointmentUpdateResponse = Invoke-Http `
+        -Method "PUT" `
+        -Path "/api/appointments/$($appointmentCreated.id)" `
+        -Headers $authenticatedHeaders `
+        -Body ($appointmentTerminalEdit | ConvertTo-Json -Depth 5)
+    if ([int]$appointmentRoomedResponse.StatusCode -ne 200 -or
+        [int]$appointmentCompletedResponse.StatusCode -ne 200 -or
+        [int]$terminalAppointmentUpdateResponse.StatusCode -ne 409) {
+        throw "Completed appointments must retain their scheduling facts and reject later generic edits."
+    }
+    $CompletedScenarios.Add("appointment-aggregate-concurrency")
+
     Invoke-DatabaseScalar -Sql "delete from avenchart_integer_counters where counter_key = 'test.atomic-integer-allocation';" | Out-Null
     $postgresContainerId = (docker compose ps -q postgres).Trim()
     if ([string]::IsNullOrWhiteSpace($postgresContainerId)) {

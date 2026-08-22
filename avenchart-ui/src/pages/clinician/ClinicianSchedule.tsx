@@ -83,11 +83,11 @@ export default function ClinicianSchedule() {
     setSearchParams({ date }, { replace: true })
   }
 
-  async function handleStatusChange(apptId: string, status: string) {
+  async function handleStatusChange(appointment: AppointmentListItem, status: string) {
     const requestDate = selectedDateRef.current
-    setUpdatingId(apptId)
+    setUpdatingId(appointment.id)
     try {
-      await updateAppointmentStatus(session.sessionId, apptId, status)
+      await updateAppointmentStatus(session.sessionId, appointment.id, status, appointment.rowVersion)
       showToast(`Status updated to "${getAppointmentStatus(status).label}"`)
       if (selectedDateRef.current === requestDate) {
         load(requestDate)
@@ -230,7 +230,7 @@ export default function ClinicianSchedule() {
                       className="cl-status-select"
                       value={getAppointmentStatus(appt.status).apiValue}
                       disabled={updatingId === appt.id}
-                      onChange={(e) => handleStatusChange(appt.id, e.target.value)}
+                      onChange={(e) => handleStatusChange(appt, e.target.value)}
                       aria-label={`Status for ${appt.patientDisplayName}`}
                     >
                       {getAppointmentStatusOptions(appt.status).map((status) => (

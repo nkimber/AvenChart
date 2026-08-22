@@ -17,7 +17,7 @@ public sealed class FlowBoardRepository(NpgsqlDataSource dataSource)
             : await GetBaseDateAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select a.id, p.canonical_id, p.first_name || ' ' || p.last_name, a.start_time, a.title, a.room,
+            select a.id, a.row_version, p.canonical_id, p.first_name || ' ' || p.last_name, a.start_time, a.title, a.room,
               s.first_name || ' ' || s.last_name, f.name, a.status
             from appointments a
             join patients p on p.legacy_pid = a.pid
@@ -35,12 +35,12 @@ public sealed class FlowBoardRepository(NpgsqlDataSource dataSource)
         {
             while (await reader.ReadAsync(cancellationToken))
             {
-                var status = reader.IsDBNull(8) ? null : reader.GetString(8);
+                var status = reader.IsDBNull(9) ? null : reader.GetString(9);
                 var flowStatus = ToFlowStatus(status);
                 lanes[flowStatus].Add(new FlowBoardItem(
-                    reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetFieldValue<TimeOnly>(3).ToString("HH:mm", CultureInfo.InvariantCulture),
-                    reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6),
-                    reader.IsDBNull(7) ? null : reader.GetString(7), status, flowStatus));
+                    reader.GetString(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3), reader.GetFieldValue<TimeOnly>(4).ToString("HH:mm", CultureInfo.InvariantCulture),
+                    reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7),
+                    reader.IsDBNull(8) ? null : reader.GetString(8), status, flowStatus));
             }
         }
         var metadata = await GetMetadataAsync(connection, cancellationToken);

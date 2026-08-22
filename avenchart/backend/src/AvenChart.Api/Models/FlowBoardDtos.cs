@@ -16,6 +16,7 @@ public sealed record FlowBoardLane(
 
 public sealed record FlowBoardItem(
     string AppointmentId,
+    int RowVersion,
     string PatientId,
     string PatientDisplayName,
     string StartTime,

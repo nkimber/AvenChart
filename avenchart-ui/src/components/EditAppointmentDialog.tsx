@@ -113,6 +113,7 @@ export function EditAppointmentDialog({
       room: form.room || null,
       status: form.status || null,
       comments: form.comments || null,
+      expectedVersion: appointment.rowVersion,
     }
 
     try {

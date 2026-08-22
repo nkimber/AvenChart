@@ -30,6 +30,7 @@ public sealed record AppointmentSchedulingFacilityOption(
 
 public sealed record AppointmentListItem(
     string Id,
+    int RowVersion,
     string SeriesRootId,
     bool IsRecurringSeries,
     bool IsVirtualOccurrence,
@@ -81,6 +82,7 @@ public sealed record AppointmentListItem(
 
 public sealed record AppointmentDetail(
     string Id,
+    int RowVersion,
     string SeriesRootId,
     bool IsRecurringSeries,
     bool IsVirtualOccurrence,
@@ -311,7 +313,8 @@ public sealed record AppointmentUpdateRequest(
     int? RepeatOnFrequency,
     IReadOnlyList<int>? RecurrenceDays,
     string? RecurrenceEndDate,
-    IReadOnlyList<string>? RecurrenceExdates);
+    IReadOnlyList<string>? RecurrenceExdates,
+    int ExpectedVersion);
 
 public sealed record AppointmentOccurrenceRescheduleRequest(
     int? ProviderId,
@@ -324,8 +327,12 @@ public sealed record AppointmentOccurrenceRescheduleRequest(
     int? CategoryId,
     string? Room,
     string? Status,
-    string? Comments);
+    string? Comments,
+    int ExpectedVersion);
 
 public sealed record AppointmentStatusUpdateRequest(
     string Status,
-    string? Title);
+    string? Title,
+    int ExpectedVersion);
+
+public sealed record AppointmentRecurrenceExceptionRequest(int ExpectedVersion);

@@ -85,9 +85,16 @@ export default function SchedulingOperations() {
   }, [session.sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function promoteWaitlist(appointmentId: string) {
+    const appointment = state.status === "ready"
+      ? state.appointments.find((candidate) => candidate.id === appointmentId)
+      : undefined;
+    if (!appointment) {
+      showToast("The appointment is no longer in the current scheduling view. Refresh and try again.", "error");
+      return;
+    }
     setWorkingId(appointmentId);
     try {
-      await updateAppointmentStatus(session.sessionId, appointmentId, "~");
+      await updateAppointmentStatus(session.sessionId, appointmentId, "~", appointment.rowVersion);
       showToast("Waitlist request promoted to pending.", "success");
       load();
     } catch {
