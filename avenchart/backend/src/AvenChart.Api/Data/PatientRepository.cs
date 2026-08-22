@@ -15,14 +15,23 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 {
     private const int MaximumSearchLimit = 100;
 
-    public async Task<PatientSearchResponse> SearchAsync(string? search, int limit, CancellationToken cancellationToken)
+    public async Task<PatientSearchResponse> SearchAsync(
+        string? search,
+        int limit,
+        int facilityId,
+        CancellationToken cancellationToken)
     {
+        if (facilityId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(facilityId));
+        }
+
         var safeLimit = Math.Clamp(limit, 1, MaximumSearchLimit);
         var normalizedSearch = NormalizeSearch(search);
         var metadata = await GetMetadataAsync(cancellationToken);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var totalMatches = await CountMatchesAsync(connection, normalizedSearch, cancellationToken);
+        var totalMatches = await CountMatchesAsync(connection, normalizedSearch, facilityId, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -58,11 +67,13 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             left join facilities f on f.id = p.facility_id
             left join staff s on s.id = p.provider_id
             left join lateral ({CountsSql("p.legacy_pid")}) counts on true
-            where {PatientSearchPredicate}
+            where p.facility_id=@facility
+              and {PatientSearchPredicate}
             order by p.last_name, p.first_name, p.canonical_id
             limit @limit;
             """;
         command.Parameters.AddWithValue("limit", safeLimit);
+        command.Parameters.AddWithValue("facility", facilityId);
         AddSearchParameter(command, normalizedSearch);
 
         var patients = new List<PatientListItem>();
@@ -344,20 +355,25 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
     public async Task<string?> GetMergedIntoPatientIdAsync(
         string patientId,
+        int facilityId,
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select merged_into_patient_id
-            from patients
-            where (lower(canonical_id) = lower(@patientId)
-                   or lower(pubpid) = lower(@patientId)
-                   or legacy_pid::text = @patientId)
-              and merged_into_patient_id is not null
+            select source.merged_into_patient_id
+            from patients source
+            join patients target on target.canonical_id=source.merged_into_patient_id
+            where (lower(source.canonical_id) = lower(@patientId)
+                   or lower(source.pubpid) = lower(@patientId)
+                   or source.legacy_pid::text = @patientId)
+              and source.facility_id=@facility
+              and target.facility_id=@facility
+              and source.merged_into_patient_id is not null
             limit 1;
             """;
         command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.AddWithValue("facility", facilityId);
         return (string?)await command.ExecuteScalarAsync(cancellationToken);
     }
 
@@ -940,8 +956,14 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     public async Task<PatientRegistrationMutationResult> CreatePatientAsync(
         PatientRegistrationRequest request,
         string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        if (facilityId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(facilityId));
+        }
+
         var validationIssues = ValidateRegistration(request, out var normalized);
         if (validationIssues.Count > 0)
         {
@@ -1002,7 +1024,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                  @firstName, @lastName, @preferredName, @sex, @dateOfBirth,
                  null, 'registered via modernized patient workspace', @street, @city, @state, @postalCode,
                  @email, @phoneHome, @phoneHome, @phoneCell, @hipaaAllowSms, @hipaaAllowEmail,
-                 @maritalStatus, @occupation, null, null, false, @registrationDate)
+                 @maritalStatus, @occupation, null, @facility, false, @registrationDate)
             returning canonical_id;
             """;
         command.Parameters.AddWithValue("canonicalId", normalized.Pubpid);
@@ -1023,6 +1045,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("hipaaAllowEmail", NpgsqlDbType.Text).Value = normalized.HipaaAllowEmail;
         command.Parameters.Add("maritalStatus", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.MaritalStatus);
         command.Parameters.Add("occupation", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Occupation);
+        command.Parameters.AddWithValue("facility", facilityId);
         command.Parameters.Add("registrationDate", NpgsqlDbType.Date).Value = metadata.BaseDate;
 
         try
@@ -2942,11 +2965,16 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             provider.FacilityName is null ? DBNull.Value : provider.FacilityName;
     }
 
-    private static async Task<int> CountMatchesAsync(NpgsqlConnection connection, string? normalizedSearch, CancellationToken cancellationToken)
+    private static async Task<int> CountMatchesAsync(
+        NpgsqlConnection connection,
+        string? normalizedSearch,
+        int facilityId,
+        CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = $"select count(*) from patients p where {PatientSearchPredicate};";
+        command.CommandText = $"select count(*) from patients p where p.facility_id=@facility and {PatientSearchPredicate};";
         AddSearchParameter(command, normalizedSearch);
+        command.Parameters.AddWithValue("facility", facilityId);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(result);
     }

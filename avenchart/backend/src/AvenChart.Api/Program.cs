@@ -1549,6 +1549,7 @@ externalLaboratory.MapPost("/fhir-r4", async (
 
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
 RequireAccessPermission(patients, "patients", "demo", "view");
+patients.AddEndpointFilter(PatientFacilityScopeFilter());
 
 var clinicalWorkflows = app.MapGroup("/api/clinical-workflows").WithTags("Clinical Workflows");
 RequireAccessPermission(clinicalWorkflows, "patients", "med", "view");
@@ -1606,11 +1607,16 @@ clinicalWorkflows.MapGet("/authorization-work-queue", async (
 
 patients.MapGet("/", async (
         PatientRepository repository,
+        HttpContext httpContext,
         string? search,
         int? limit,
         CancellationToken cancellationToken) =>
     {
-        var response = await repository.SearchAsync(search, limit ?? 25, cancellationToken);
+        var response = await repository.SearchAsync(
+            search,
+            limit ?? 25,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return Results.Ok(response);
     })
     .WithName("SearchPatients");
@@ -2301,7 +2307,11 @@ patients.MapPost("/", async (
         CancellationToken cancellationToken) =>
     {
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var result = await repository.CreatePatientAsync(request, session.Username, cancellationToken);
+        var result = await repository.CreatePatientAsync(
+            request,
+            session.Username,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return result.Patient is null
             ? RegistrationValidationProblem(result.ValidationIssues)
             : Results.Created($"/api/patients/{result.Patient.CanonicalId}", result.Patient);
@@ -2311,6 +2321,7 @@ patients.MapPost("/", async (
 
 patients.MapGet("/{canonicalId}", async (
         PatientRepository repository,
+        HttpContext httpContext,
         string canonicalId,
         CancellationToken cancellationToken) =>
     {
@@ -2320,7 +2331,10 @@ patients.MapGet("/{canonicalId}", async (
             return Results.Ok(patient);
         }
 
-        var mergedIntoPatientId = await repository.GetMergedIntoPatientIdAsync(canonicalId, cancellationToken);
+        var mergedIntoPatientId = await repository.GetMergedIntoPatientIdAsync(
+            canonicalId,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return string.IsNullOrWhiteSpace(mergedIntoPatientId)
             ? Results.NotFound()
             : Results.Problem(
@@ -10130,6 +10144,40 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 cancellationToken: context.HttpContext.RequestAborted);
             throw;
         }
+    };
+}
+
+static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> PatientFacilityScopeFilter()
+{
+    return async (context, next) =>
+    {
+        var routeValues = context.HttpContext.Request.RouteValues;
+        var patientIdentifier = routeValues.TryGetValue("patientId", out var patientId)
+            ? patientId?.ToString()
+            : routeValues.TryGetValue("canonicalId", out var canonicalId)
+                ? canonicalId?.ToString()
+                : null;
+        var insuranceId = routeValues.TryGetValue("insuranceId", out var insurance)
+            ? insurance?.ToString()
+            : null;
+        if (string.IsNullOrWhiteSpace(patientIdentifier) && string.IsNullOrWhiteSpace(insuranceId))
+        {
+            return await next(context);
+        }
+
+        var accessContext = RequireStaffAccessContext(context.HttpContext);
+        var accessContextService = context.HttpContext.RequestServices
+            .GetRequiredService<StaffAccessContextService>();
+        var authorized = string.IsNullOrWhiteSpace(patientIdentifier)
+            ? await accessContextService.CanAccessInsuranceAsync(
+                insuranceId,
+                accessContext.FacilityId,
+                context.HttpContext.RequestAborted)
+            : await accessContextService.CanAccessPatientAsync(
+                patientIdentifier,
+                accessContext.FacilityId,
+                context.HttpContext.RequestAborted);
+        return authorized ? await next(context) : Results.NotFound();
     };
 }
 

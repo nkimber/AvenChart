@@ -79,6 +79,70 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
             purpose));
     }
 
+    /// <summary>
+    /// Tests whether a patient identifier resolves to a patient owned by the
+    /// facility already selected and granted for the request. A false result is
+    /// intentionally indistinguishable from a missing patient at the route
+    /// boundary to avoid confirming cross-facility identities.
+    /// </summary>
+    public async Task<bool> CanAccessPatientAsync(
+        string? patientIdentifier,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedIdentifier = patientIdentifier?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedIdentifier)
+            || normalizedIdentifier.Length > 128
+            || facilityId <= 0)
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select exists(
+              select 1
+              from patients
+              where facility_id=@facility
+                and (lower(canonical_id)=lower(@patientIdentifier)
+                     or lower(pubpid)=lower(@patientIdentifier)
+                     or legacy_pid::text=@patientIdentifier));
+            """;
+        command.Parameters.AddWithValue("facility", facilityId);
+        command.Parameters.AddWithValue("patientIdentifier", normalizedIdentifier);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    public async Task<bool> CanAccessInsuranceAsync(
+        string? insuranceId,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedInsuranceId = insuranceId?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedInsuranceId)
+            || normalizedInsuranceId.Length > 128
+            || facilityId <= 0)
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select exists(
+              select 1
+              from insurance_records insurance
+              join patients patient on patient.canonical_id=insurance.patient_id
+              where insurance.id=@insuranceId
+                and patient.facility_id=@facility
+                and patient.merged_into_patient_id is null);
+            """;
+        command.Parameters.AddWithValue("insuranceId", normalizedInsuranceId);
+        command.Parameters.AddWithValue("facility", facilityId);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
     public async Task<AuthAccessContextGrantResponse> GetPrincipalGrantAsync(
         string username,
         CancellationToken cancellationToken)
