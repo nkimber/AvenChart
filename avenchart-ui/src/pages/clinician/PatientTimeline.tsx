@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { CalendarClock, FileText, FlaskConical, Pill } from 'lucide-react'
 import {
@@ -96,29 +96,41 @@ export default function PatientTimeline() {
   const [labs, setLabs] = useState<ProcedureReportQueueItem[]>([])
   const [prescriptions, setPrescriptions] = useState<PrescriptionListItem[]>([])
   const [activeKinds, setActiveKinds] = useState<Set<EventKind>>(new Set(ALL_KINDS))
+  const timelineRequestEpoch = useRef(0)
 
-  useEffect(() => {
+  function load(targetPatientId: string, signal?: AbortSignal) {
+    const requestEpoch = ++timelineRequestEpoch.current
     setLoading(true)
     setError(null)
-    Promise.all([
-      searchEncounters(session.sessionId, { patientId, limit: 100 }),
-      searchAppointments(session.sessionId, { patientId, limit: 100 }),
-      getProcedureReportQueue(session.sessionId, { limit: 100 }),
-      getClinicalLists(session.sessionId, patientId),
+    void Promise.all([
+      searchEncounters(session.sessionId, { patientId: targetPatientId, limit: 100 }, signal),
+      searchAppointments(session.sessionId, { patientId: targetPatientId, limit: 100 }, signal),
+      getProcedureReportQueue(session.sessionId, { limit: 100 }, signal),
+      getClinicalLists(session.sessionId, targetPatientId, signal),
     ])
       .then(([enc, appt, labData, lists]) => {
-        setEncounters(enc.encounters)
-        setAppointments(appt.appointments)
-        setLabs(labData.reports.filter((r) => r.patientId === patientId))
-        setPrescriptions(lists.prescriptions)
-        setLoading(false)
+        if (!signal?.aborted && requestEpoch === timelineRequestEpoch.current) {
+          setEncounters(enc.encounters)
+          setAppointments(appt.appointments)
+          setLabs(labData.reports.filter((r) => r.patientId === targetPatientId))
+          setPrescriptions(lists.prescriptions)
+          setLoading(false)
+        }
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Could not load timeline.')
-        setLoading(false)
+        if (!signal?.aborted && requestEpoch === timelineRequestEpoch.current) {
+          setError(err instanceof Error ? err.message : 'Could not load timeline.')
+          setLoading(false)
+        }
       })
+  }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    load(patientId, controller.signal)
+    return () => controller.abort()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientId])
+  }, [patientId, session.sessionId])
 
   const events = useMemo(
     () => toEvents(encounters, appointments, labs, prescriptions).filter((e) => activeKinds.has(e.kind)),

@@ -40,7 +40,6 @@ export default function PatientMessages() {
   const [state, setState] = useState<AsyncState<PatientMessageItem[]>>({ status: 'loading' })
   const messageRequestEpoch = useRef(0)
   const patientIdRef = useRef(patientId)
-  patientIdRef.current = patientId
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [replyBody, setReplyBody] = useState('')
   const [replying, setReplying] = useState(false)
@@ -60,6 +59,10 @@ export default function PatientMessages() {
         }
       })
   }
+
+  useEffect(() => {
+    patientIdRef.current = patientId
+  }, [patientId])
 
   useEffect(() => {
     const controller = new AbortController()
