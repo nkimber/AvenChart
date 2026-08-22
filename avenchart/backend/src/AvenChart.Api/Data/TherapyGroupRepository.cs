@@ -372,8 +372,8 @@ public sealed class TherapyGroupRepository(
             "existing")).ToList();
     }
 
-    // Encounter creation remains explicit SQL/orchestration because EncounterRepository owns a
-    // separate governed workflow and connection boundary.
+    // Encounter creation reuses the session transaction so an encounter and its durable
+    // therapy-session link either commit together or both roll back.
     public async Task<TherapyGroupSessionEncounterResponse> CreateSessionEncountersAsync(
         Guid groupId,
         Guid sessionId,
@@ -445,7 +445,9 @@ public sealed class TherapyGroupRepository(
                 continue;
             }
 
-            var encounter = await encounterRepository.CreateAsync(
+            var encounterId = await encounterRepository.CreateInTransactionAsync(
+                connection,
+                transaction,
                 new EncounterCreateRequest(
                     participant.PatientId,
                     request.ProviderId,
@@ -460,7 +462,7 @@ public sealed class TherapyGroupRepository(
                     request.BillingNote,
                     null),
                 cancellationToken);
-            if (encounter is null)
+            if (encounterId is null)
             {
                 results.Add(new TherapyGroupSessionEncounterItem(
                     sessionId,
@@ -481,7 +483,7 @@ public sealed class TherapyGroupRepository(
                 """;
             insertCommand.Parameters.AddWithValue("sessionId", sessionId);
             insertCommand.Parameters.AddWithValue("patientId", participant.PatientId);
-            insertCommand.Parameters.AddWithValue("encounterId", encounter.Encounter);
+            insertCommand.Parameters.AddWithValue("encounterId", encounterId.Value);
             insertCommand.Parameters.AddWithValue("createdAt", DateTimeOffset.UtcNow);
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
             results.Add(new TherapyGroupSessionEncounterItem(
@@ -489,7 +491,7 @@ public sealed class TherapyGroupRepository(
                 participant.PatientId,
                 participant.LegacyPid,
                 participant.DisplayName,
-                encounter.Encounter,
+                encounterId.Value,
                 "created"));
         }
 

@@ -793,7 +793,15 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
         -Method "PUT" `
         -Path "/api/encounters/$($encounterState.encounter)" `
         -Headers $authenticatedHeaders `
-        -Body '{"reason":"EF encounter state updated","sensitivity":"restricted","referralSource":"EF regression","externalId":"EF-ENC-STATE-UPDATED","posCode":12,"billingNote":"Updated atomically with audit"}'
+        -Body (@{
+            reason = "EF encounter state updated"
+            sensitivity = "restricted"
+            referralSource = "EF regression"
+            externalId = "EF-ENC-STATE-UPDATED"
+            posCode = 12
+            billingNote = "Updated atomically with audit"
+            expectedVersion = $encounterState.rowVersion
+        } | ConvertTo-Json)
     $encounterVitalsResponse = Invoke-Http `
         -Method "POST" `
         -Path "/api/encounters/$($encounterState.encounter)/vitals" `
@@ -833,7 +841,7 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
         $encounterAudit.events.action -notcontains "summary-updated" -or
         $encounterAudit.events.action -notcontains "archived" -or
         $encounterAudit.events.action -notcontains "restored" -or
-        [int]$encounterVersions[0] -ne 4 -or
+        [int]$encounterVersions[0] -ne 5 -or
         [int]$encounterVersions[1] -ne 3 -or
         $vitalsDefault -notlike "nextval*vitals_id_seq*") {
         throw "EF-backed encounter state returned unexpected data, versions, or sequence defaults."
@@ -1240,6 +1248,28 @@ where actual.column_default = 'nextval(''' || expected.sequence_name || '''::reg
         throw "EF-backed therapy-group aggregate returned unexpected state."
     }
     $CompletedScenarios.Add("ef-core-therapy-group-aggregate")
+
+    $therapyEncounterResponse = Invoke-Http `
+        -Method "POST" `
+        -Path "/api/therapy-groups/$($therapyGroup.id)/sessions/$($therapySession.id)/encounters" `
+        -Headers $authenticatedHeaders `
+        -Body '{}'
+    if ([int]$therapyEncounterResponse.StatusCode -ne 200) {
+        throw "Atomic therapy encounter creation returned HTTP $($therapyEncounterResponse.StatusCode). Body: $(Get-HttpResponseContent -Response $therapyEncounterResponse)"
+    }
+    $therapyEncounterResult = (Get-HttpResponseContent -Response $therapyEncounterResponse) | ConvertFrom-Json
+    $therapyCreatedEncounter = @($therapyEncounterResult.encounters | Where-Object {
+        $_.patientId -eq "MOD-PAT-0001" -and $_.status -eq "created"
+    }) | Select-Object -First 1
+    if ($null -eq $therapyCreatedEncounter) {
+        throw "Atomic therapy encounter creation did not report a created participant encounter."
+    }
+    $therapyMappingCount = [int](Invoke-DatabaseScalar -Sql "select count(*) from therapy_group_session_encounters where session_id = '$($therapySession.id)' and patient_id = 'MOD-PAT-0001' and encounter_id = $($therapyCreatedEncounter.encounter);")
+    $therapyEncounterCount = [int](Invoke-DatabaseScalar -Sql "select count(*) from encounters where encounter = $($therapyCreatedEncounter.encounter) and patient_id = 'MOD-PAT-0001';")
+    if ($therapyMappingCount -ne 1 -or $therapyEncounterCount -ne 1) {
+        throw "Therapy encounter creation did not persist the encounter and session link as one durable result."
+    }
+    $CompletedScenarios.Add("therapy-encounter-link-atomicity")
 
     $referralCreateResponse = Invoke-Http `
         -Method "POST" `

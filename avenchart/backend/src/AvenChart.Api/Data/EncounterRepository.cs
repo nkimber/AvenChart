@@ -257,6 +257,26 @@ public sealed class EncounterRepository(
 
     public async Task<EncounterDetail?> CreateAsync(EncounterCreateRequest request, CancellationToken cancellationToken)
     {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var encounter = await CreateCoreAsync(connection, null, request, cancellationToken);
+        return encounter is null
+            ? null
+            : await GetByEncounterAsync(encounter.Value, cancellationToken);
+    }
+
+    internal Task<int?> CreateInTransactionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        EncounterCreateRequest request,
+        CancellationToken cancellationToken) =>
+        CreateCoreAsync(connection, transaction, request, cancellationToken);
+
+    private static async Task<int?> CreateCoreAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        EncounterCreateRequest request,
+        CancellationToken cancellationToken)
+    {
         var patientId = Normalize(request.PatientId);
         var reason = NormalizeText(request.Reason);
         if (patientId is null || reason is null || !TryParseDateTime(request.DateTime, out var encounterDateTime))
@@ -264,8 +284,8 @@ public sealed class EncounterRepository(
             return null;
         }
 
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             with selected_patient as (
                 select canonical_id, legacy_pid, provider_id as patient_provider_id, facility_id as patient_facility_id
@@ -375,9 +395,7 @@ public sealed class EncounterRepository(
         AddNullableText(command, "sourceAppointmentId", NormalizeText(request.SourceAppointmentId));
 
         var encounter = await command.ExecuteScalarAsync(cancellationToken);
-        return encounter is null || encounter is DBNull
-            ? null
-            : await GetByEncounterAsync(Convert.ToInt32(encounter), cancellationToken);
+        return encounter is null || encounter is DBNull ? null : Convert.ToInt32(encounter);
     }
 
     public async Task<EncounterAuditHistoryResponse?> GetAuditHistoryAsync(int encounter, CancellationToken cancellationToken)
