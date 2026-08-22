@@ -306,6 +306,36 @@ public sealed record ProcedureReportReviewHistoryResponse(
 
 public sealed record CriticalLabResultAcknowledgementRequest(
     int ExpectedVersion,
+    string OwnerUsername,
+    string DueAt,
+    string Reason);
+
+public sealed record CriticalLabResultFollowUpOwnershipRequest(
+    int ExpectedVersion,
+    string OwnerUsername,
+    string DueAt,
+    string Reason);
+
+public sealed record CriticalLabResultFollowUpCommunicationRequest(
+    int ExpectedVersion,
+    string Recipient,
+    string Channel,
+    string Outcome,
+    string Detail);
+
+public sealed record CriticalLabResultFollowUpActionRequest(
+    int ExpectedVersion,
+    string Action,
+    string Detail);
+
+public sealed record CriticalLabResultFollowUpEscalationRequest(
+    int ExpectedVersion,
+    string EscalatedTo,
+    string DueAt,
+    string Reason);
+
+public sealed record CriticalLabResultFollowUpClosureRequest(
+    int ExpectedVersion,
     string Reason);
 
 public sealed record CriticalLabResultQueueItem(
@@ -322,11 +352,51 @@ public sealed record CriticalLabResultQueueItem(
     string AcknowledgementStatus,
     int AcknowledgementVersion,
     string? AcknowledgedBy,
-    string? AcknowledgedAt);
+    string? AcknowledgedAt,
+    string FollowUpStatus,
+    int FollowUpVersion,
+    int ResultContentVersion,
+    string? OwnerUsername,
+    string? OwnerDisplayName,
+    string? DueAt,
+    bool IsOverdue,
+    int CommunicationCount,
+    int ClinicalActionCount,
+    string? AcceptedBy,
+    string? AcceptedAt,
+    string? ClosedBy,
+    string? ClosedAt);
 
 public sealed record CriticalLabResultQueueResponse(
     int TotalOpen,
+    int OverdueCount,
     IReadOnlyList<CriticalLabResultQueueItem> Results);
+
+public sealed record CriticalLabResultFollowUpEventItem(
+    long EventId,
+    string Action,
+    string? PreviousStatus,
+    string CurrentStatus,
+    int PriorVersion,
+    int ResultingVersion,
+    int ResultContentVersion,
+    string Actor,
+    string? OwnerUsername,
+    string? DueAt,
+    string? Recipient,
+    string? CommunicationChannel,
+    string? CommunicationOutcome,
+    string Detail,
+    string OccurredAt);
+
+public sealed record CriticalLabResultFollowUpHistoryResponse(
+    int ResultId,
+    string Status,
+    int Version,
+    int ResultContentVersion,
+    string? OwnerUsername,
+    string? DueAt,
+    IReadOnlyList<CriticalLabResultFollowUpEventItem> Events);
 
 public sealed record ProcedureReportReviewEventItem(
     long EventId,

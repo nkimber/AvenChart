@@ -1836,6 +1836,105 @@ export type ProcedureReportReviewQueueResponse = {
   reports: ProcedureReportReviewQueueItem[]
 }
 
+export type CriticalLabResultQueueItem = {
+  resultId: number
+  reportId: number
+  patientId: string
+  patientDisplayName: string
+  code?: string | null
+  text?: string | null
+  result?: string | null
+  units?: string | null
+  abnormal?: string | null
+  resultDate: string
+  acknowledgementStatus: string
+  acknowledgementVersion: number
+  acknowledgedBy?: string | null
+  acknowledgedAt?: string | null
+  followUpStatus: 'open' | 'accepted' | 'actioned' | 'closed' | string
+  followUpVersion: number
+  resultContentVersion: number
+  ownerUsername?: string | null
+  ownerDisplayName?: string | null
+  dueAt?: string | null
+  isOverdue: boolean
+  communicationCount: number
+  clinicalActionCount: number
+  acceptedBy?: string | null
+  acceptedAt?: string | null
+  closedBy?: string | null
+  closedAt?: string | null
+}
+
+export type CriticalLabResultQueueResponse = {
+  totalOpen: number
+  overdueCount: number
+  results: CriticalLabResultQueueItem[]
+}
+
+export type CriticalLabResultAcknowledgementInput = {
+  expectedVersion: number
+  ownerUsername: string
+  dueAt: string
+  reason: string
+}
+
+export type CriticalLabResultFollowUpOwnershipInput = CriticalLabResultAcknowledgementInput
+
+export type CriticalLabResultFollowUpCommunicationInput = {
+  expectedVersion: number
+  recipient: string
+  channel: string
+  outcome: string
+  detail: string
+}
+
+export type CriticalLabResultFollowUpActionInput = {
+  expectedVersion: number
+  action: string
+  detail: string
+}
+
+export type CriticalLabResultFollowUpEscalationInput = {
+  expectedVersion: number
+  escalatedTo: string
+  dueAt: string
+  reason: string
+}
+
+export type CriticalLabResultFollowUpClosureInput = {
+  expectedVersion: number
+  reason: string
+}
+
+export type CriticalLabResultFollowUpEventItem = {
+  eventId: number
+  action: string
+  previousStatus?: string | null
+  currentStatus: string
+  priorVersion: number
+  resultingVersion: number
+  resultContentVersion: number
+  actor: string
+  ownerUsername?: string | null
+  dueAt?: string | null
+  recipient?: string | null
+  communicationChannel?: string | null
+  communicationOutcome?: string | null
+  detail: string
+  occurredAt: string
+}
+
+export type CriticalLabResultFollowUpHistoryResponse = {
+  resultId: number
+  status: string
+  version: number
+  resultContentVersion: number
+  ownerUsername?: string | null
+  dueAt?: string | null
+  events: CriticalLabResultFollowUpEventItem[]
+}
+
 export type ProcedureOrderQueueItem = {
   orderId: number
   patientId: string
@@ -7130,6 +7229,127 @@ export async function getProcedureReportReviewQueue(
   })
   if (!response.ok) {
     throw new Error(procedureApiError('Procedure report review queue load', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getCriticalLabResultQueue(
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<CriticalLabResultQueueResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/critical-result-queue`, {
+    headers: buildAvenChartSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(procedureApiError('Critical result follow-up queue load', response.status))
+  }
+
+  return response.json()
+}
+
+async function mutateCriticalLabResultFollowUp(
+  resultId: number,
+  path: string,
+  method: 'POST' | 'PUT',
+  input: object,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/procedures/results/${encodeURIComponent(String(resultId))}/critical-follow-up/${path}`,
+    {
+      method,
+      headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
+      body: JSON.stringify(input),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(procedureApiError('Critical result follow-up update', response.status))
+  }
+}
+
+export async function acceptCriticalLabResultFollowUp(
+  resultId: number,
+  input: CriticalLabResultAcknowledgementInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/procedures/results/${encodeURIComponent(String(resultId))}/critical-acknowledgement`,
+    {
+      method: 'PUT',
+      headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
+      body: JSON.stringify(input),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(procedureApiError('Critical result follow-up acceptance', response.status))
+  }
+}
+
+export function transferCriticalLabResultFollowUpOwnership(
+  resultId: number,
+  input: CriticalLabResultFollowUpOwnershipInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
+  return mutateCriticalLabResultFollowUp(resultId, 'ownership', 'PUT', input, sessionId, signal)
+}
+
+export function recordCriticalLabResultCommunication(
+  resultId: number,
+  input: CriticalLabResultFollowUpCommunicationInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
+  return mutateCriticalLabResultFollowUp(resultId, 'communications', 'POST', input, sessionId, signal)
+}
+
+export function recordCriticalLabResultClinicalAction(
+  resultId: number,
+  input: CriticalLabResultFollowUpActionInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
+  return mutateCriticalLabResultFollowUp(resultId, 'clinical-actions', 'POST', input, sessionId, signal)
+}
+
+export function escalateCriticalLabResultFollowUp(
+  resultId: number,
+  input: CriticalLabResultFollowUpEscalationInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
+  return mutateCriticalLabResultFollowUp(resultId, 'escalations', 'POST', input, sessionId, signal)
+}
+
+export function closeCriticalLabResultFollowUp(
+  resultId: number,
+  input: CriticalLabResultFollowUpClosureInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
+  return mutateCriticalLabResultFollowUp(resultId, 'closure', 'PUT', input, sessionId, signal)
+}
+
+export async function getCriticalLabResultFollowUpHistory(
+  resultId: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<CriticalLabResultFollowUpHistoryResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/procedures/results/${encodeURIComponent(String(resultId))}/critical-follow-up/history`,
+    {
+      headers: buildAvenChartSessionHeaders(sessionId),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(procedureApiError('Critical result follow-up history load', response.status))
   }
 
   return response.json()

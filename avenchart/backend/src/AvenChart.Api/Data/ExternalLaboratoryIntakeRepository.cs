@@ -477,6 +477,57 @@ public sealed class ExternalLaboratoryIntakeRepository(
         history.Parameters.AddWithValue("expectedVersion", priorVersion);
         history.Parameters.AddWithValue("resultingVersion", nextVersion);
         await history.ExecuteNonQueryAsync(cancellationToken);
+
+        await using var followUp = connection.CreateCommand();
+        followUp.Transaction = transaction;
+        followUp.CommandText = """
+            with target as (
+              select result_id, status as previous_status, version as prior_version
+              from critical_lab_result_follow_ups
+              where result_id=@resultId
+              for update
+            ), reopened as (
+              update critical_lab_result_follow_ups follow_up
+              set status='open',
+                  version=follow_up.version+1,
+                  result_content_version=coalesce((
+                    select max(version_no)
+                    from procedure_result_versions
+                    where result_id=follow_up.result_id), 0)+1,
+                  owner_username=null,
+                  due_at=null,
+                  accepted_by=null,
+                  accepted_at=null,
+                  closed_by=null,
+                  closed_at=null,
+                  closure_reason=null
+              from target
+              where follow_up.result_id=target.result_id
+                and follow_up.version=target.prior_version
+              returning target.previous_status,
+                        target.prior_version,
+                        follow_up.version as resulting_version,
+                        follow_up.result_content_version
+            )
+            insert into critical_lab_result_follow_up_events(
+              result_id,action,previous_status,current_status,prior_version,resulting_version,
+              result_content_version,actor,detail,occurred_at)
+            select @resultId,
+                   'reopened-after-result-correction',
+                   previous_status,
+                   'open',
+                   prior_version,
+                   resulting_version,
+                   result_content_version,
+                   @actor,
+                   @reason,
+                   current_timestamp
+            from reopened;
+            """;
+        followUp.Parameters.AddWithValue("resultId", resultId);
+        followUp.Parameters.AddWithValue("actor", $"external-laboratory:{sourceId}");
+        followUp.Parameters.AddWithValue("reason", "A corrected critical external laboratory result requires a fresh accountable follow-up.");
+        await followUp.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertIngestionAsync(

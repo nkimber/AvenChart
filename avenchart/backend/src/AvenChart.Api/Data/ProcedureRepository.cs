@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Data.Common;
+using AvenChart.Api.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -19,16 +20,31 @@ public sealed class ProcedureReportReviewConflictException(
     public string CurrentStatus { get; } = currentStatus;
 }
 
+public sealed class CriticalLabResultFollowUpConflictException(
+    int expectedVersion,
+    int currentVersion,
+    string currentStatus)
+    : Exception($"The critical-result follow-up changed after it was loaded (expected version {expectedVersion}; current version {currentVersion}).")
+{
+    public int ExpectedVersion { get; } = expectedVersion;
+    public int CurrentVersion { get; } = currentVersion;
+    public string CurrentStatus { get; } = currentStatus;
+}
+
 public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 {
     private const int MaximumReviewQueueLimit = 100;
 
-    public async Task<ProcedureResultsResponse?> GetForPatientAsync(string patientId, CancellationToken cancellationToken)
+    public async Task<ProcedureResultsResponse?> GetForPatientAsync(
+        string patientId,
+        CancellationToken cancellationToken,
+        int? facilityId = null)
     {
+        if (facilityId is not null) EnsureFacilityId(facilityId.Value);
         var metadata = await GetMetadataAsync(cancellationToken);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var patient = await GetPatientAsync(connection, patientId, cancellationToken);
+        var patient = await GetPatientAsync(connection, patientId, cancellationToken, facilityId);
         if (patient is null)
         {
             return null;
@@ -231,16 +247,43 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                    lres.code, lres.text, lres.result, lres.units, lres.abnormal, lres.result_date,
                    coalesce(ack.status, 'open') as acknowledgement_status,
                    coalesce(ack.version, 1) as acknowledgement_version,
-                   ack.acknowledged_by, ack.acknowledged_at
+                   ack.acknowledged_by, ack.acknowledged_at,
+                   coalesce(follow_up.status, 'open') as follow_up_status,
+                   coalesce(follow_up.version, 1) as follow_up_version,
+                   coalesce(follow_up.result_content_version, ack.result_content_version, coalesce((
+                     select max(version.version_no)
+                     from procedure_result_versions version
+                     where version.result_id=lres.id), 0) + 1) as result_content_version,
+                   follow_up.owner_username,
+                   owner.display_name as owner_display_name,
+                   follow_up.due_at,
+                   coalesce(follow_up.due_at < current_timestamp
+                     and follow_up.status in ('accepted', 'actioned'), false) as is_overdue,
+                   coalesce((
+                     select count(*)
+                     from critical_lab_result_follow_up_events event
+                     where event.result_id=lres.id
+                       and event.action='communication-recorded'
+                       and event.result_content_version=follow_up.result_content_version), 0) as communication_count,
+                   coalesce((
+                     select count(*)
+                     from critical_lab_result_follow_up_events event
+                     where event.result_id=lres.id
+                       and event.action='clinical-action-recorded'
+                       and event.result_content_version=follow_up.result_content_version), 0) as clinical_action_count,
+                   follow_up.accepted_by, follow_up.accepted_at, follow_up.closed_by, follow_up.closed_at
             from lab_results lres
             inner join lab_reports lr on lr.id = lres.report_id
             inner join lab_orders lo on lo.id = lr.order_id
             inner join patients p on p.legacy_pid = lo.pid
             left join critical_lab_result_acknowledgements ack on ack.result_id = lres.id
-            where lower(coalesce(lres.abnormal, '')) in ('c', 'critical', 'panic', 'hh', 'll')
-              and coalesce(ack.status, 'open') = 'open'
+            left join critical_lab_result_follow_ups follow_up on follow_up.result_id = lres.id
+            left join auth_accounts owner on lower(owner.username) = lower(follow_up.owner_username)
+            where (lower(coalesce(lres.abnormal, '')) in ('c', 'critical', 'panic', 'hh', 'll')
+                   or coalesce(follow_up.status, '') = 'open')
+              and coalesce(follow_up.status, 'open') <> 'closed'
               and p.facility_id = @facilityId
-            order by lres.result_date desc, lres.id desc;
+            order by (follow_up.due_at is null), follow_up.due_at, lres.result_date, lres.id;
             """;
         command.Parameters.AddWithValue("facilityId", facilityId);
         var results = new List<CriticalLabResultQueueItem>();
@@ -254,66 +297,162 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 ReadNullableString(reader, "units"), ReadNullableString(reader, "abnormal"),
                 reader.GetDateTime(reader.GetOrdinal("result_date")).ToString("yyyy-MM-dd HH:mm"),
                 reader.GetString(reader.GetOrdinal("acknowledgement_status")), reader.GetInt32(reader.GetOrdinal("acknowledgement_version")),
-                ReadNullableString(reader, "acknowledged_by"), ReadNullableDateTime(reader, "acknowledged_at")));
+                ReadNullableString(reader, "acknowledged_by"), ReadNullableDateTime(reader, "acknowledged_at"),
+                reader.GetString(reader.GetOrdinal("follow_up_status")), reader.GetInt32(reader.GetOrdinal("follow_up_version")),
+                reader.GetInt32(reader.GetOrdinal("result_content_version")), ReadNullableString(reader, "owner_username"),
+                ReadNullableString(reader, "owner_display_name"), ReadNullableDateTime(reader, "due_at"),
+                reader.GetBoolean(reader.GetOrdinal("is_overdue")), Convert.ToInt32(reader.GetValue(reader.GetOrdinal("communication_count"))),
+                Convert.ToInt32(reader.GetValue(reader.GetOrdinal("clinical_action_count"))),
+                ReadNullableString(reader, "accepted_by"), ReadNullableDateTime(reader, "accepted_at"),
+                ReadNullableString(reader, "closed_by"), ReadNullableDateTime(reader, "closed_at")));
         }
-        return new CriticalLabResultQueueResponse(results.Count, results);
+        return new CriticalLabResultQueueResponse(results.Count, results.Count(result => result.IsOverdue), results);
     }
 
     public async Task<bool> AcknowledgeCriticalLabResultAsync(
-        int resultId, CriticalLabResultAcknowledgementRequest request, string actor, CancellationToken cancellationToken)
+        int resultId,
+        CriticalLabResultAcknowledgementRequest request,
+        string actor,
+        int facilityId,
+        CancellationToken cancellationToken)
     {
-        if (resultId <= 0 || request.ExpectedVersion <= 0 || !HasBoundedReason(request.Reason) || string.IsNullOrWhiteSpace(actor)) return false;
+        var owner = RequireCriticalFollowUpText(request.OwnerUsername, "Owner username", 200);
+        var dueAt = RequireFutureCriticalFollowUpDueAt(request.DueAt);
+        var reason = RequireCriticalFollowUpText(request.Reason, "Acknowledgement reason", 500);
+        return await TransitionCriticalFollowUpAsync(
+            resultId, request.ExpectedVersion, actor, facilityId, "accepted", "accepted",
+            owner, dueAt, reason, null, null, null, acknowledge: true, close: false, cancellationToken: cancellationToken);
+    }
+
+    public async Task<bool> TransferCriticalLabResultFollowUpAsync(
+        int resultId,
+        CriticalLabResultFollowUpOwnershipRequest request,
+        string actor,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        var owner = RequireCriticalFollowUpText(request.OwnerUsername, "Owner username", 200);
+        var dueAt = RequireFutureCriticalFollowUpDueAt(request.DueAt);
+        var reason = RequireCriticalFollowUpText(request.Reason, "Ownership-transfer reason", 500);
+        return await TransitionCriticalFollowUpAsync(
+            resultId, request.ExpectedVersion, actor, facilityId, "ownership-transferred", null,
+            owner, dueAt, reason, null, null, null, acknowledge: false, close: false, cancellationToken: cancellationToken);
+    }
+
+    public async Task<bool> RecordCriticalLabResultCommunicationAsync(
+        int resultId,
+        CriticalLabResultFollowUpCommunicationRequest request,
+        string actor,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        var recipient = RequireCriticalFollowUpText(request.Recipient, "Communication recipient", 240);
+        var channel = RequireCriticalFollowUpText(request.Channel, "Communication channel", 80);
+        var outcome = RequireCriticalFollowUpText(request.Outcome, "Communication outcome", 120);
+        var detail = RequireCriticalFollowUpText(request.Detail, "Communication detail", 500);
+        return await TransitionCriticalFollowUpAsync(
+            resultId, request.ExpectedVersion, actor, facilityId, "communication-recorded", null,
+            null, null, detail, recipient, channel, outcome, acknowledge: false, close: false, cancellationToken: cancellationToken);
+    }
+
+    public async Task<bool> RecordCriticalLabResultClinicalActionAsync(
+        int resultId,
+        CriticalLabResultFollowUpActionRequest request,
+        string actor,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        var action = RequireCriticalFollowUpText(request.Action, "Clinical action", 200);
+        var detail = RequireCriticalFollowUpText(request.Detail, "Clinical-action detail", 500);
+        return await TransitionCriticalFollowUpAsync(
+            resultId, request.ExpectedVersion, actor, facilityId, "clinical-action-recorded", "actioned",
+            null, null, $"{action}: {detail}", null, null, null, acknowledge: false, close: false, cancellationToken: cancellationToken);
+    }
+
+    public async Task<bool> EscalateCriticalLabResultFollowUpAsync(
+        int resultId,
+        CriticalLabResultFollowUpEscalationRequest request,
+        string actor,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        var owner = RequireCriticalFollowUpText(request.EscalatedTo, "Escalation owner", 200);
+        var dueAt = RequireFutureCriticalFollowUpDueAt(request.DueAt);
+        var reason = RequireCriticalFollowUpText(request.Reason, "Escalation reason", 500);
+        return await TransitionCriticalFollowUpAsync(
+            resultId, request.ExpectedVersion, actor, facilityId, "escalated", null,
+            owner, dueAt, reason, null, null, null, acknowledge: false, close: false, cancellationToken: cancellationToken);
+    }
+
+    public async Task<bool> CloseCriticalLabResultFollowUpAsync(
+        int resultId,
+        CriticalLabResultFollowUpClosureRequest request,
+        string actor,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        var reason = RequireCriticalFollowUpText(request.Reason, "Closure reason", 500);
+        return await TransitionCriticalFollowUpAsync(
+            resultId, request.ExpectedVersion, actor, facilityId, "closed", "closed",
+            null, null, reason, null, null, null, acknowledge: false, close: true, cancellationToken: cancellationToken);
+    }
+
+    public async Task<CriticalLabResultFollowUpHistoryResponse?> GetCriticalLabResultFollowUpHistoryAsync(
+        int resultId,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        if (resultId <= 0) return null;
+        EnsureFacilityId(facilityId);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
         command.CommandText = """
-            insert into critical_lab_result_acknowledgements (
-              result_id, status, version, result_content_version,
-              acknowledged_by, acknowledged_at, acknowledgement_reason)
-            select
-              result.id,
-              'acknowledged',
-              2,
-              coalesce((
-                select max(version.version_no)
-                from procedure_result_versions version
-                where version.result_id=result.id), 0)+1,
-              @actor,
-              @occurredAt,
-              @reason
-            from lab_results result
-            where result.id=@resultId
-              and lower(coalesce(result.abnormal, '')) in ('c', 'critical', 'panic', 'hh', 'll')
-            on conflict (result_id) do update set
-              status = 'acknowledged',
-              version = critical_lab_result_acknowledgements.version + 1,
-              result_content_version = excluded.result_content_version,
-              acknowledged_by = excluded.acknowledged_by,
-              acknowledged_at = excluded.acknowledged_at,
-              acknowledgement_reason = excluded.acknowledgement_reason
-            where critical_lab_result_acknowledgements.status = 'open' and critical_lab_result_acknowledgements.version = @expectedVersion
-            returning version, result_content_version;
+            select follow_up.status, follow_up.version, follow_up.result_content_version,
+                   follow_up.owner_username as current_owner_username, follow_up.due_at as current_due_at,
+                   event.event_id, event.action, event.previous_status, event.current_status,
+                   event.prior_version, event.resulting_version, event.result_content_version,
+                   event.actor, event.owner_username as event_owner_username, event.due_at as event_due_at, event.recipient,
+                   event.communication_channel, event.communication_outcome, event.detail, event.occurred_at
+            from critical_lab_result_follow_ups follow_up
+            inner join lab_results result on result.id=follow_up.result_id
+            inner join lab_reports report on report.id=result.report_id
+            inner join lab_orders orders on orders.id=report.order_id
+            inner join patients patient on patient.legacy_pid=orders.pid
+            left join critical_lab_result_follow_up_events event on event.result_id=follow_up.result_id
+            where follow_up.result_id=@resultId and patient.facility_id=@facilityId
+            order by event.occurred_at desc nulls last, event.event_id desc nulls last;
             """;
-        var occurredAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
-        command.Parameters.AddWithValue("resultId", resultId); command.Parameters.AddWithValue("actor", actor.Trim()); command.Parameters.AddWithValue("reason", request.Reason.Trim()); command.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion); command.Parameters.AddWithValue("occurredAt", occurredAt);
-        int acknowledgementVersion;
-        int resultContentVersion;
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        command.Parameters.AddWithValue("resultId", resultId);
+        command.Parameters.AddWithValue("facilityId", facilityId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var history = new List<CriticalLabResultFollowUpEventItem>();
+        var status = reader.GetString(reader.GetOrdinal("status"));
+        var version = reader.GetInt32(reader.GetOrdinal("version"));
+        var resultContentVersion = reader.GetInt32(reader.GetOrdinal("result_content_version"));
+        var owner = ReadNullableString(reader, "current_owner_username");
+        var dueAt = ReadNullableDateTime(reader, "current_due_at");
+        do
         {
-            if (!await reader.ReadAsync(cancellationToken)) return false;
-            acknowledgementVersion = reader.GetInt32(0);
-            resultContentVersion = reader.GetInt32(1);
+            if (reader.IsDBNull(reader.GetOrdinal("event_id"))) continue;
+            history.Add(new CriticalLabResultFollowUpEventItem(
+                reader.GetInt64(reader.GetOrdinal("event_id")), reader.GetString(reader.GetOrdinal("action")),
+                ReadNullableString(reader, "previous_status"), reader.GetString(reader.GetOrdinal("current_status")),
+                reader.GetInt32(reader.GetOrdinal("prior_version")), reader.GetInt32(reader.GetOrdinal("resulting_version")),
+                reader.GetInt32(reader.GetOrdinal("result_content_version")), reader.GetString(reader.GetOrdinal("actor")),
+                ReadNullableString(reader, "event_owner_username"), ReadNullableDateTime(reader, "event_due_at"),
+                ReadNullableString(reader, "recipient"), ReadNullableString(reader, "communication_channel"),
+                ReadNullableString(reader, "communication_outcome"), reader.GetString(reader.GetOrdinal("detail")),
+                reader.GetDateTime(reader.GetOrdinal("occurred_at")).ToString("yyyy-MM-dd HH:mm")));
         }
-        await using var history = connection.CreateCommand(); history.Transaction = transaction;
-        history.CommandText = "insert into critical_lab_result_acknowledgement_events (result_id, action, previous_status, current_status, actor, reason, expected_version, resulting_version, result_content_version, occurred_at) values (@resultId, 'acknowledged', 'open', 'acknowledged', @actor, @reason, @expectedVersion, @resultingVersion, @resultContentVersion, @occurredAt);";
-        history.Parameters.AddWithValue("resultId", resultId); history.Parameters.AddWithValue("actor", actor.Trim()); history.Parameters.AddWithValue("reason", request.Reason.Trim()); history.Parameters.AddWithValue("expectedVersion", request.ExpectedVersion); history.Parameters.AddWithValue("resultingVersion", acknowledgementVersion); history.Parameters.AddWithValue("resultContentVersion", resultContentVersion); history.Parameters.AddWithValue("occurredAt", occurredAt); await history.ExecuteNonQueryAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken); return true;
+        while (await reader.ReadAsync(cancellationToken));
+        return new CriticalLabResultFollowUpHistoryResponse(resultId, status, version, resultContentVersion, owner, dueAt, history);
     }
 
     public async Task<ProcedureReportReviewHistoryResponse?> GetReportReviewHistoryAsync(
         int reportId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? facilityId = null)
     {
         if (reportId <= 0)
         {
@@ -329,11 +468,15 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                    event.resulting_version, event.content_revision, event.content_checksum,
                    event.occurred_at
             from lab_reports lr
+            inner join lab_orders lo on lo.id=lr.order_id
+            inner join patients patient on patient.legacy_pid=lo.pid
             left join lab_report_review_events event on event.report_id = lr.id
             where lr.id = @reportId
+              and (@facilityId is null or patient.facility_id=@facilityId)
             order by event.occurred_at desc nulls last, event.id desc nulls last;
             """;
         command.Parameters.AddWithValue("reportId", reportId);
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = facilityId is null ? DBNull.Value : facilityId.Value;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -1773,8 +1916,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         int resultId,
         ProcedureResultUpdateRequest request,
         string actor,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         if (resultId <= 0
             || string.IsNullOrWhiteSpace(request.ResultCode)
             || string.IsNullOrWhiteSpace(request.ResultText)
@@ -1786,7 +1931,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var result = await GetResultMutationContextAsync(connection, resultId, cancellationToken);
+        var result = await GetResultMutationContextAsync(connection, resultId, facilityId, cancellationToken);
         if (result is null)
         {
             return null;
@@ -2240,6 +2385,57 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("actor", actor.Trim());
         command.Parameters.AddWithValue("reason", reason);
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        await using var followUp = connection.CreateCommand();
+        followUp.Transaction = transaction;
+        followUp.CommandText = """
+            with target as (
+              select result_id, status as previous_status, version as prior_version
+              from critical_lab_result_follow_ups
+              where result_id=@resultId
+              for update
+            ), reopened as (
+              update critical_lab_result_follow_ups follow_up
+              set status='open',
+                  version=follow_up.version+1,
+                  result_content_version=coalesce((
+                    select max(version.version_no)
+                    from procedure_result_versions version
+                    where version.result_id=follow_up.result_id), 0)+1,
+                  owner_username=null,
+                  due_at=null,
+                  accepted_by=null,
+                  accepted_at=null,
+                  closed_by=null,
+                  closed_at=null,
+                  closure_reason=null
+              from target
+              where follow_up.result_id=target.result_id
+                and follow_up.version=target.prior_version
+              returning target.previous_status,
+                        target.prior_version,
+                        follow_up.version as resulting_version,
+                        follow_up.result_content_version
+            )
+            insert into critical_lab_result_follow_up_events(
+              result_id,action,previous_status,current_status,prior_version,resulting_version,
+              result_content_version,actor,detail,occurred_at)
+            select @resultId,
+                   'reopened-after-result-correction',
+                   previous_status,
+                   'open',
+                   prior_version,
+                   resulting_version,
+                   result_content_version,
+                   @actor,
+                   @reason,
+                   current_timestamp
+            from reopened;
+            """;
+        followUp.Parameters.AddWithValue("resultId", resultId);
+        followUp.Parameters.AddWithValue("actor", actor.Trim());
+        followUp.Parameters.AddWithValue("reason", reason);
+        await followUp.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task ReopenReportReviewAfterResultCorrectionAsync(
@@ -2610,6 +2806,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private static async Task<ProcedureResultMutationContext?> GetResultMutationContextAsync(
         NpgsqlConnection connection,
         int resultId,
+        int facilityId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -2618,10 +2815,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             from lab_results lrs
             inner join lab_reports lr on lr.id = lrs.report_id
             inner join lab_orders lo on lo.id = lr.order_id
+            inner join patients patient on patient.legacy_pid=lo.pid
             where lrs.id = @id
+              and patient.facility_id=@facilityId
             limit 1;
             """;
         command.Parameters.AddWithValue("id", resultId);
+        command.Parameters.AddWithValue("facilityId", facilityId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -2997,6 +3197,380 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             Active: reader.GetBoolean(reader.GetOrdinal("active")));
     }
 
+    private async Task<bool> TransitionCriticalFollowUpAsync(
+        int resultId,
+        int expectedVersion,
+        string actor,
+        int facilityId,
+        string action,
+        string? requestedStatus,
+        string? requestedOwner,
+        DateTime? requestedDueAt,
+        string detail,
+        string? recipient,
+        string? communicationChannel,
+        string? communicationOutcome,
+        bool acknowledge,
+        bool close,
+        CancellationToken cancellationToken)
+    {
+        if (resultId <= 0 || expectedVersion <= 0 || string.IsNullOrWhiteSpace(actor))
+        {
+            return false;
+        }
+
+        EnsureFacilityId(facilityId);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var current = await EnsureCriticalFollowUpStateForUpdateAsync(
+            connection, transaction, resultId, facilityId, cancellationToken);
+        if (current is null)
+        {
+            return false;
+        }
+
+        if (current.Version != expectedVersion || !CriticalLabResultFollowUpLifecycle.AllowsAction(current.Status, action))
+        {
+            throw new CriticalLabResultFollowUpConflictException(expectedVersion, current.Version, current.Status);
+        }
+
+        var nextStatus = requestedStatus ?? current.Status;
+        var nextOwner = requestedOwner is null
+            ? current.OwnerUsername
+            : await ResolveActiveFacilityStaffUsernameAsync(
+                connection, transaction, requestedOwner, facilityId, cancellationToken);
+        var nextDueAt = requestedDueAt ?? current.DueAt;
+        if (nextStatus is "accepted" or "actioned" or "closed"
+            && (string.IsNullOrWhiteSpace(nextOwner) || nextDueAt is null))
+        {
+            throw new ArgumentException("Critical-result follow-up requires a named active owner and an explicit due time.");
+        }
+
+        if (close && !await HasCurrentCriticalFollowUpClosureEvidenceAsync(
+                connection, transaction, resultId, current.ResultContentVersion, cancellationToken))
+        {
+            throw new ArgumentException(
+                "Record at least one communication and one clinical action for the current result content before closing follow-up.");
+        }
+
+        var occurredAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        var nextVersion = current.Version + 1;
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = """
+                update critical_lab_result_follow_ups
+                set status=@status,
+                    version=@version,
+                    owner_username=@ownerUsername,
+                    due_at=@dueAt,
+                    accepted_by=case when @action='accepted' then @actor else accepted_by end,
+                    accepted_at=case when @action='accepted' then @occurredAt else accepted_at end,
+                    closed_by=case when @close then @actor else null end,
+                    closed_at=case when @close then @occurredAt else null end,
+                    closure_reason=case when @close then @detail else null end
+                where result_id=@resultId and version=@expectedVersion;
+                """;
+            update.Parameters.AddWithValue("status", nextStatus);
+            update.Parameters.AddWithValue("version", nextVersion);
+            update.Parameters.Add("ownerUsername", NpgsqlDbType.Text).Value = (object?)nextOwner ?? DBNull.Value;
+            update.Parameters.Add("dueAt", NpgsqlDbType.Timestamp).Value = (object?)nextDueAt ?? DBNull.Value;
+            update.Parameters.AddWithValue("action", action);
+            update.Parameters.AddWithValue("actor", actor.Trim());
+            update.Parameters.Add("occurredAt", NpgsqlDbType.Timestamp).Value = occurredAt;
+            update.Parameters.AddWithValue("close", close);
+            update.Parameters.AddWithValue("detail", detail);
+            update.Parameters.AddWithValue("resultId", resultId);
+            update.Parameters.AddWithValue("expectedVersion", expectedVersion);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new CriticalLabResultFollowUpConflictException(expectedVersion, current.Version, current.Status);
+            }
+        }
+
+        await InsertCriticalFollowUpEventAsync(
+            connection, transaction, resultId, action, current.Status, nextStatus, current.Version, nextVersion,
+            current.ResultContentVersion, actor.Trim(), nextOwner, nextDueAt, recipient, communicationChannel,
+            communicationOutcome, detail, occurredAt, cancellationToken);
+
+        if (acknowledge)
+        {
+            await RecordCriticalAcknowledgementAsync(
+                connection, transaction, resultId, current.ResultContentVersion, actor.Trim(), detail, occurredAt,
+                cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    private static async Task<CriticalFollowUpState?> EnsureCriticalFollowUpStateForUpdateAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int resultId,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        await using (var result = connection.CreateCommand())
+        {
+            result.Transaction = transaction;
+            result.CommandText = """
+                select lab_result.id
+                from lab_results lab_result
+                inner join lab_reports report on report.id=lab_result.report_id
+                inner join lab_orders orders on orders.id=report.order_id
+                inner join patients patient on patient.legacy_pid=orders.pid
+                where lab_result.id=@resultId
+                  and patient.facility_id=@facilityId
+                  and (lower(coalesce(lab_result.abnormal, '')) in ('c', 'critical', 'panic', 'hh', 'll')
+                       or exists (
+                           select 1
+                           from critical_lab_result_follow_ups follow_up
+                           where follow_up.result_id=lab_result.id
+                             and follow_up.status='open'))
+                for update of lab_result;
+                """;
+            result.Parameters.AddWithValue("resultId", resultId);
+            result.Parameters.AddWithValue("facilityId", facilityId);
+            if (await result.ExecuteScalarAsync(cancellationToken) is null)
+            {
+                return null;
+            }
+        }
+
+        int contentVersion;
+        await using (var version = connection.CreateCommand())
+        {
+            version.Transaction = transaction;
+            version.CommandText = """
+                select coalesce(max(version_no), 0) + 1
+                from procedure_result_versions
+                where result_id=@resultId;
+                """;
+            version.Parameters.AddWithValue("resultId", resultId);
+            contentVersion = Convert.ToInt32(await version.ExecuteScalarAsync(cancellationToken));
+        }
+
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                insert into critical_lab_result_follow_ups(result_id,status,version,result_content_version)
+                values(@resultId,'open',1,@contentVersion)
+                on conflict (result_id) do nothing;
+                """;
+            insert.Parameters.AddWithValue("resultId", resultId);
+            insert.Parameters.AddWithValue("contentVersion", contentVersion);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var state = connection.CreateCommand();
+        state.Transaction = transaction;
+        state.CommandText = """
+            select status, version, result_content_version, owner_username, due_at
+            from critical_lab_result_follow_ups
+            where result_id=@resultId
+            for update;
+            """;
+        state.Parameters.AddWithValue("resultId", resultId);
+        await using var reader = await state.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("The critical-result follow-up record could not be locked.");
+        }
+        return new CriticalFollowUpState(
+            reader.GetString(0), reader.GetInt32(1), reader.GetInt32(2),
+            reader.IsDBNull(3) ? null : reader.GetString(3),
+            reader.IsDBNull(4) ? null : reader.GetDateTime(4));
+    }
+
+    private static async Task<string> ResolveActiveFacilityStaffUsernameAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string requestedUsername,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select account.username
+            from auth_accounts account
+            inner join staff member on member.id=account.staff_id
+            where account.active=true
+              and member.active=true
+              and member.facility_id=@facilityId
+              and lower(account.username)=lower(@username)
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("facilityId", facilityId);
+        command.Parameters.AddWithValue("username", requestedUsername);
+        return (await command.ExecuteScalarAsync(cancellationToken))?.ToString()
+            ?? throw new ArgumentException("The critical-result owner must be an active staff user in the selected facility.");
+    }
+
+    private static async Task<bool> HasCurrentCriticalFollowUpClosureEvidenceAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int resultId,
+        int resultContentVersion,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select count(*) filter (where action='communication-recorded') > 0
+               and count(*) filter (where action='clinical-action-recorded') > 0
+            from critical_lab_result_follow_up_events
+            where result_id=@resultId and result_content_version=@resultContentVersion;
+            """;
+        command.Parameters.AddWithValue("resultId", resultId);
+        command.Parameters.AddWithValue("resultContentVersion", resultContentVersion);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task InsertCriticalFollowUpEventAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int resultId,
+        string action,
+        string previousStatus,
+        string currentStatus,
+        int priorVersion,
+        int resultingVersion,
+        int resultContentVersion,
+        string actor,
+        string? ownerUsername,
+        DateTime? dueAt,
+        string? recipient,
+        string? communicationChannel,
+        string? communicationOutcome,
+        string detail,
+        DateTime occurredAt,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into critical_lab_result_follow_up_events(
+              result_id,action,previous_status,current_status,prior_version,resulting_version,
+              result_content_version,actor,owner_username,due_at,recipient,communication_channel,
+              communication_outcome,detail,occurred_at)
+            values(@resultId,@action,@previousStatus,@currentStatus,@priorVersion,@resultingVersion,
+                   @resultContentVersion,@actor,@ownerUsername,@dueAt,@recipient,@communicationChannel,
+                   @communicationOutcome,@detail,@occurredAt);
+            """;
+        command.Parameters.AddWithValue("resultId", resultId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("previousStatus", previousStatus);
+        command.Parameters.AddWithValue("currentStatus", currentStatus);
+        command.Parameters.AddWithValue("priorVersion", priorVersion);
+        command.Parameters.AddWithValue("resultingVersion", resultingVersion);
+        command.Parameters.AddWithValue("resultContentVersion", resultContentVersion);
+        command.Parameters.AddWithValue("actor", actor);
+        command.Parameters.Add("ownerUsername", NpgsqlDbType.Text).Value = (object?)ownerUsername ?? DBNull.Value;
+        command.Parameters.Add("dueAt", NpgsqlDbType.Timestamp).Value = (object?)dueAt ?? DBNull.Value;
+        command.Parameters.Add("recipient", NpgsqlDbType.Text).Value = (object?)recipient ?? DBNull.Value;
+        command.Parameters.Add("communicationChannel", NpgsqlDbType.Text).Value = (object?)communicationChannel ?? DBNull.Value;
+        command.Parameters.Add("communicationOutcome", NpgsqlDbType.Text).Value = (object?)communicationOutcome ?? DBNull.Value;
+        command.Parameters.AddWithValue("detail", detail);
+        command.Parameters.Add("occurredAt", NpgsqlDbType.Timestamp).Value = occurredAt;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task RecordCriticalAcknowledgementAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int resultId,
+        int resultContentVersion,
+        string actor,
+        string reason,
+        DateTime occurredAt,
+        CancellationToken cancellationToken)
+    {
+        string? previousStatus = null;
+        var priorVersion = 1;
+        await using (var current = connection.CreateCommand())
+        {
+            current.Transaction = transaction;
+            current.CommandText = "select status, version from critical_lab_result_acknowledgements where result_id=@resultId for update;";
+            current.Parameters.AddWithValue("resultId", resultId);
+            await using var reader = await current.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                previousStatus = reader.GetString(0);
+                priorVersion = reader.GetInt32(1);
+            }
+        }
+
+        var resultingVersion = previousStatus is null ? 2 : priorVersion + 1;
+        await using (var acknowledgement = connection.CreateCommand())
+        {
+            acknowledgement.Transaction = transaction;
+            acknowledgement.CommandText = """
+                insert into critical_lab_result_acknowledgements(
+                  result_id,status,version,result_content_version,acknowledged_by,acknowledged_at,acknowledgement_reason)
+                values(@resultId,'acknowledged',@resultingVersion,@resultContentVersion,@actor,@occurredAt,@reason)
+                on conflict(result_id) do update set
+                  status='acknowledged',
+                  version=excluded.version,
+                  result_content_version=excluded.result_content_version,
+                  acknowledged_by=excluded.acknowledged_by,
+                  acknowledged_at=excluded.acknowledged_at,
+                  acknowledgement_reason=excluded.acknowledgement_reason;
+                """;
+            acknowledgement.Parameters.AddWithValue("resultId", resultId);
+            acknowledgement.Parameters.AddWithValue("resultingVersion", resultingVersion);
+            acknowledgement.Parameters.AddWithValue("resultContentVersion", resultContentVersion);
+            acknowledgement.Parameters.AddWithValue("actor", actor);
+            acknowledgement.Parameters.Add("occurredAt", NpgsqlDbType.Timestamp).Value = occurredAt;
+            acknowledgement.Parameters.AddWithValue("reason", reason);
+            await acknowledgement.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using var history = connection.CreateCommand();
+        history.Transaction = transaction;
+        history.CommandText = """
+            insert into critical_lab_result_acknowledgement_events(
+              result_id,action,previous_status,current_status,actor,reason,expected_version,
+              resulting_version,result_content_version,occurred_at)
+            values(@resultId,'acknowledged-follow-up-accepted',@previousStatus,'acknowledged',@actor,@reason,
+                   @priorVersion,@resultingVersion,@resultContentVersion,@occurredAt);
+            """;
+        history.Parameters.AddWithValue("resultId", resultId);
+        history.Parameters.Add("previousStatus", NpgsqlDbType.Text).Value = (object?)previousStatus ?? DBNull.Value;
+        history.Parameters.AddWithValue("actor", actor);
+        history.Parameters.AddWithValue("reason", reason);
+        history.Parameters.AddWithValue("priorVersion", priorVersion);
+        history.Parameters.AddWithValue("resultingVersion", resultingVersion);
+        history.Parameters.AddWithValue("resultContentVersion", resultContentVersion);
+        history.Parameters.Add("occurredAt", NpgsqlDbType.Timestamp).Value = occurredAt;
+        await history.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static string RequireCriticalFollowUpText(string? value, string label, int maximumLength)
+    {
+        var normalized = NormalizeText(value);
+        if (normalized is null || normalized.Length < 3 || normalized.Length > maximumLength)
+        {
+            throw new ArgumentException($"{label} must contain between 3 and {maximumLength} characters.");
+        }
+        return normalized;
+    }
+
+    private static DateTime RequireFutureCriticalFollowUpDueAt(string? value)
+    {
+        if (!DateTime.TryParse(value, out var dueAt))
+        {
+            throw new ArgumentException("Critical-result follow-up due time is required and must be a valid date and time.");
+        }
+        var normalized = DateTime.SpecifyKind(dueAt, DateTimeKind.Unspecified);
+        if (normalized <= DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified))
+        {
+            throw new ArgumentException("Critical-result follow-up due time must be in the future.");
+        }
+        return normalized;
+    }
+
     private static string NormalizeReviewQueueStatus(string? status)
     {
         var normalized = NormalizeText(status)?.ToLowerInvariant();
@@ -3148,6 +3722,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         int ReviewVersion);
 
     private sealed record ProcedureResultMutationContext(int Id, int ReportId, string PatientId, int LegacyPid);
+
+    private sealed record CriticalFollowUpState(
+        string Status,
+        int Version,
+        int ResultContentVersion,
+        string? OwnerUsername,
+        DateTime? DueAt);
 
     private sealed record OrderCatalogImportValues(
         string VendorFormat,

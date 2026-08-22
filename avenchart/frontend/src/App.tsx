@@ -119,6 +119,7 @@ import {
   getProcedureOrderCatalog,
   getProcedureOrderQueue,
   getProcedureReportReviewQueue,
+  getCriticalLabResultQueue,
   getProcedureResults,
   getOperationalReports,
   getInventory,
@@ -171,6 +172,7 @@ import {
   createProcedureReport,
   createProcedureSpecimen,
   createProcedureResult,
+  acceptCriticalLabResultFollowUp,
   assignProcedureReportReviewer,
   createPatient,
   createInventoryTransaction,
@@ -232,6 +234,10 @@ import {
   signEncounter,
   signEncounterDocument,
   signProcedureReport,
+  closeCriticalLabResultFollowUp,
+  escalateCriticalLabResultFollowUp,
+  recordCriticalLabResultClinicalAction,
+  recordCriticalLabResultCommunication,
   reopenProcedureReportReview,
   approveClinicalPrescriptionRefillRequest,
   routeClinicalPrescriptionToPharmacy,
@@ -281,6 +287,7 @@ import {
   updateProcedureLabProvider,
   updateProcedureOrderCatalogItem,
   updateProcedureOrderStatus,
+  transferCriticalLabResultFollowUpOwnership,
   validateAppointmentAvailability,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
@@ -476,6 +483,14 @@ import {
   type ProcedureReportReviewQueueResponse,
   type ProcedureReportSignInput,
   type ProcedureReportUpdateInput,
+  type CriticalLabResultAcknowledgementInput,
+  type CriticalLabResultFollowUpActionInput,
+  type CriticalLabResultFollowUpClosureInput,
+  type CriticalLabResultFollowUpCommunicationInput,
+  type CriticalLabResultFollowUpEscalationInput,
+  type CriticalLabResultFollowUpOwnershipInput,
+  type CriticalLabResultQueueItem,
+  type CriticalLabResultQueueResponse,
   type ProcedureSpecimenCreateInput,
   type ProcedureSpecimenItem,
   type ProcedureResultCreateInput,
@@ -832,6 +847,11 @@ function App() {
   const [procedureReportReviewQueueFromDate, setProcedureReportReviewQueueFromDate] = useState('')
   const [procedureReportReviewQueueToDate, setProcedureReportReviewQueueToDate] = useState('')
   const [procedureReportReviewQueueRefreshKey, setProcedureReportReviewQueueRefreshKey] = useState(0)
+  const [criticalLabResultQueue, setCriticalLabResultQueue] = useState<CriticalLabResultQueueResponse | null>(null)
+  const [criticalLabResultQueueStatus, setCriticalLabResultQueueStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [criticalLabResultQueueError, setCriticalLabResultQueueError] = useState<string | null>(null)
+  const [criticalLabResultQueueRefreshKey, setCriticalLabResultQueueRefreshKey] = useState(0)
 
   useEffect(() => {
     if (!avenChartSessionId) {
@@ -1715,6 +1735,40 @@ function App() {
     procedureOrderQueueRefreshKey,
     avenChartSessionId,
   ])
+
+  useEffect(() => {
+    if (activeModule !== 'reports') {
+      return
+    }
+    if (!avenChartSessionId) {
+      setCriticalLabResultQueue(null)
+      setCriticalLabResultQueueStatus('idle')
+      setCriticalLabResultQueueError(null)
+      return
+    }
+
+    const controller = new AbortController()
+
+    async function loadCriticalLabResultQueue() {
+      setCriticalLabResultQueueStatus('loading')
+      setCriticalLabResultQueueError(null)
+      try {
+        const result = await getCriticalLabResultQueue(avenChartSessionId, controller.signal)
+        setCriticalLabResultQueue(result)
+        setCriticalLabResultQueueStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setCriticalLabResultQueueStatus('error')
+          setCriticalLabResultQueueError(
+            loadError instanceof Error ? loadError.message : 'Critical result follow-up queue failed',
+          )
+        }
+      }
+    }
+
+    void loadCriticalLabResultQueue()
+    return () => controller.abort()
+  }, [activeModule, avenChartSessionId, criticalLabResultQueueRefreshKey])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -4247,6 +4301,83 @@ function App() {
     }
   }
 
+  async function runCriticalLabResultFollowUpMutation(
+    mutation: (sessionId: string) => Promise<void>,
+    fallbackMessage: string,
+  ) {
+    setCriticalLabResultQueueStatus('loading')
+    setCriticalLabResultQueueError(null)
+    try {
+      await mutation(getActiveProcedureSessionId())
+      setCriticalLabResultQueueRefreshKey((current) => current + 1)
+    } catch (mutationError) {
+      setCriticalLabResultQueueStatus('error')
+      const message = mutationError instanceof Error ? mutationError.message : fallbackMessage
+      setCriticalLabResultQueueError(message)
+      throw mutationError
+    }
+  }
+
+  function handleCriticalLabResultFollowUpAcceptance(
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultAcknowledgementInput,
+  ) {
+    return runCriticalLabResultFollowUpMutation(
+      (sessionId) => acceptCriticalLabResultFollowUp(result.resultId, input, sessionId),
+      'Critical result follow-up acceptance failed',
+    )
+  }
+
+  function handleCriticalLabResultFollowUpOwnership(
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpOwnershipInput,
+  ) {
+    return runCriticalLabResultFollowUpMutation(
+      (sessionId) => transferCriticalLabResultFollowUpOwnership(result.resultId, input, sessionId),
+      'Critical result follow-up ownership transfer failed',
+    )
+  }
+
+  function handleCriticalLabResultCommunication(
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpCommunicationInput,
+  ) {
+    return runCriticalLabResultFollowUpMutation(
+      (sessionId) => recordCriticalLabResultCommunication(result.resultId, input, sessionId),
+      'Critical result communication record failed',
+    )
+  }
+
+  function handleCriticalLabResultClinicalAction(
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpActionInput,
+  ) {
+    return runCriticalLabResultFollowUpMutation(
+      (sessionId) => recordCriticalLabResultClinicalAction(result.resultId, input, sessionId),
+      'Critical result clinical action record failed',
+    )
+  }
+
+  function handleCriticalLabResultEscalation(
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpEscalationInput,
+  ) {
+    return runCriticalLabResultFollowUpMutation(
+      (sessionId) => escalateCriticalLabResultFollowUp(result.resultId, input, sessionId),
+      'Critical result escalation failed',
+    )
+  }
+
+  function handleCriticalLabResultClosure(
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpClosureInput,
+  ) {
+    return runCriticalLabResultFollowUpMutation(
+      (sessionId) => closeCriticalLabResultFollowUp(result.resultId, input, sessionId),
+      'Critical result follow-up closure failed',
+    )
+  }
+
   async function handleProcedureReportCreate(input: ProcedureReportCreateInput) {
     setProcedureStatus('loading')
     setProcedureError(null)
@@ -6537,6 +6668,16 @@ function App() {
             onOrderQueueFromDateChange={setProcedureOrderQueueFromDate}
             onOrderQueueToDateChange={setProcedureOrderQueueToDate}
             onOrderQueueTransmit={handleProcedureOrderTransmit}
+            criticalQueue={criticalLabResultQueue}
+            criticalQueueStatus={criticalLabResultQueueStatus}
+            criticalQueueError={criticalLabResultQueueError}
+            defaultCriticalOwner={avenChartSession?.username ?? ''}
+            onCriticalFollowUpAccept={handleCriticalLabResultFollowUpAcceptance}
+            onCriticalFollowUpOwnership={handleCriticalLabResultFollowUpOwnership}
+            onCriticalFollowUpCommunication={handleCriticalLabResultCommunication}
+            onCriticalFollowUpClinicalAction={handleCriticalLabResultClinicalAction}
+            onCriticalFollowUpEscalation={handleCriticalLabResultEscalation}
+            onCriticalFollowUpClose={handleCriticalLabResultClosure}
             reviewQueue={procedureReportReviewQueue}
             reviewQueueStatus={procedureReportReviewQueueStatus}
             reviewQueueError={procedureReportReviewQueueError}
@@ -21498,6 +21639,16 @@ function ReportsWorkspace({
   onOrderQueueFromDateChange,
   onOrderQueueToDateChange,
   onOrderQueueTransmit,
+  criticalQueue,
+  criticalQueueStatus,
+  criticalQueueError,
+  defaultCriticalOwner,
+  onCriticalFollowUpAccept,
+  onCriticalFollowUpOwnership,
+  onCriticalFollowUpCommunication,
+  onCriticalFollowUpClinicalAction,
+  onCriticalFollowUpEscalation,
+  onCriticalFollowUpClose,
   reviewQueue,
   reviewQueueStatus,
   reviewQueueError,
@@ -21559,6 +21710,34 @@ function ReportsWorkspace({
   onOrderQueueFromDateChange: (fromDate: string) => void
   onOrderQueueToDateChange: (toDate: string) => void
   onOrderQueueTransmit: (order: ProcedureOrderQueueItem) => Promise<void>
+  criticalQueue: CriticalLabResultQueueResponse | null
+  criticalQueueStatus: 'idle' | 'loading' | 'ready' | 'error'
+  criticalQueueError: string | null
+  defaultCriticalOwner: string
+  onCriticalFollowUpAccept: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultAcknowledgementInput,
+  ) => Promise<void>
+  onCriticalFollowUpOwnership: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpOwnershipInput,
+  ) => Promise<void>
+  onCriticalFollowUpCommunication: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpCommunicationInput,
+  ) => Promise<void>
+  onCriticalFollowUpClinicalAction: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpActionInput,
+  ) => Promise<void>
+  onCriticalFollowUpEscalation: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpEscalationInput,
+  ) => Promise<void>
+  onCriticalFollowUpClose: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpClosureInput,
+  ) => Promise<void>
   reviewQueue: ProcedureReportReviewQueueResponse | null
   reviewQueueStatus: 'idle' | 'loading' | 'ready' | 'error'
   reviewQueueError: string | null
@@ -21804,6 +21983,19 @@ function ReportsWorkspace({
               onFromDateChange={onOrderQueueFromDateChange}
               onToDateChange={onOrderQueueToDateChange}
               onTransmitOrder={onOrderQueueTransmit}
+            />
+
+            <CriticalLabResultFollowUpPanel
+              queue={criticalQueue}
+              status={criticalQueueStatus}
+              error={criticalQueueError}
+              defaultOwner={defaultCriticalOwner}
+              onAccept={onCriticalFollowUpAccept}
+              onTransferOwnership={onCriticalFollowUpOwnership}
+              onRecordCommunication={onCriticalFollowUpCommunication}
+              onRecordClinicalAction={onCriticalFollowUpClinicalAction}
+              onEscalate={onCriticalFollowUpEscalation}
+              onClose={onCriticalFollowUpClose}
             />
 
             <ProcedureReportReviewQueuePanel
@@ -22755,6 +22947,319 @@ function ProcedureOrderQueuePanel({
         {status !== 'loading' && orders.length === 0 && <div className="timeline-placeholder">No matching orders</div>}
       </div>
     </section>
+  )
+}
+
+function formatCriticalLabFollowUpStatus(status?: string | null) {
+  switch ((status ?? '').toLowerCase()) {
+    case 'open':
+      return 'Unassigned'
+    case 'accepted':
+      return 'Accepted follow-up'
+    case 'actioned':
+      return 'Action documented'
+    case 'closed':
+      return 'Closed'
+    default:
+      return status || 'Unassigned'
+  }
+}
+
+function CriticalLabResultFollowUpPanel({
+  queue,
+  status,
+  error,
+  defaultOwner,
+  onAccept,
+  onTransferOwnership,
+  onRecordCommunication,
+  onRecordClinicalAction,
+  onEscalate,
+  onClose,
+}: {
+  queue: CriticalLabResultQueueResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  defaultOwner: string
+  onAccept: (result: CriticalLabResultQueueItem, input: CriticalLabResultAcknowledgementInput) => Promise<void>
+  onTransferOwnership: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpOwnershipInput,
+  ) => Promise<void>
+  onRecordCommunication: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpCommunicationInput,
+  ) => Promise<void>
+  onRecordClinicalAction: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpActionInput,
+  ) => Promise<void>
+  onEscalate: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpEscalationInput,
+  ) => Promise<void>
+  onClose: (result: CriticalLabResultQueueItem, input: CriticalLabResultFollowUpClosureInput) => Promise<void>
+}) {
+  const results = queue?.results ?? []
+
+  return (
+    <section className="info-panel report-review-queue-panel" aria-label="Critical result follow-up worklist">
+      <div className="panel-heading">
+        <HeartPulse size={17} />
+        <h3>Critical Result Follow-up</h3>
+      </div>
+      <p className="form-help-text">
+        Every outstanding critical result is shown. Acceptance records a named owner and an explicit due time; it is not
+        proof that a recipient has been reached or care is complete.
+      </p>
+      <div className="review-queue-metrics" aria-label="Critical result follow-up counts">
+        <span>{queue?.totalOpen ?? 0} outstanding</span>
+        <span>{queue?.overdueCount ?? 0} overdue</span>
+      </div>
+      {status === 'error' && <div className="status-banner error">{error}</div>}
+      <div className="review-queue-list">
+        {results.map((result) => (
+          <CriticalLabResultFollowUpCard
+            key={result.resultId}
+            result={result}
+            defaultOwner={defaultOwner}
+            onAccept={onAccept}
+            onTransferOwnership={onTransferOwnership}
+            onRecordCommunication={onRecordCommunication}
+            onRecordClinicalAction={onRecordClinicalAction}
+            onEscalate={onEscalate}
+            onClose={onClose}
+          />
+        ))}
+        {status === 'loading' && <div className="timeline-placeholder">Loading critical-result follow-up worklist</div>}
+        {status !== 'loading' && results.length === 0 && (
+          <div className="timeline-placeholder">No outstanding critical-result follow-up</div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function CriticalLabResultFollowUpCard({
+  result,
+  defaultOwner,
+  onAccept,
+  onTransferOwnership,
+  onRecordCommunication,
+  onRecordClinicalAction,
+  onEscalate,
+  onClose,
+}: {
+  result: CriticalLabResultQueueItem
+  defaultOwner: string
+  onAccept: (result: CriticalLabResultQueueItem, input: CriticalLabResultAcknowledgementInput) => Promise<void>
+  onTransferOwnership: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpOwnershipInput,
+  ) => Promise<void>
+  onRecordCommunication: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpCommunicationInput,
+  ) => Promise<void>
+  onRecordClinicalAction: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpActionInput,
+  ) => Promise<void>
+  onEscalate: (
+    result: CriticalLabResultQueueItem,
+    input: CriticalLabResultFollowUpEscalationInput,
+  ) => Promise<void>
+  onClose: (result: CriticalLabResultQueueItem, input: CriticalLabResultFollowUpClosureInput) => Promise<void>
+}) {
+  const [ownerUsername, setOwnerUsername] = useState(result.ownerUsername ?? defaultOwner)
+  const [dueAt, setDueAt] = useState('')
+  const [reason, setReason] = useState('')
+  const [recipient, setRecipient] = useState('')
+  const [channel, setChannel] = useState('Telephone')
+  const [outcome, setOutcome] = useState('Reached')
+  const [communicationDetail, setCommunicationDetail] = useState('')
+  const [clinicalAction, setClinicalAction] = useState('')
+  const [clinicalActionDetail, setClinicalActionDetail] = useState('')
+  const [escalationOwner, setEscalationOwner] = useState(result.ownerUsername ?? defaultOwner)
+  const [escalationDueAt, setEscalationDueAt] = useState('')
+  const [escalationReason, setEscalationReason] = useState('')
+  const [closureReason, setClosureReason] = useState('')
+  const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [mutationError, setMutationError] = useState<string | null>(null)
+  const isOpen = result.followUpStatus.toLowerCase() === 'open'
+  const canClose = result.communicationCount > 0 && result.clinicalActionCount > 0
+
+  async function runMutation(mutation: () => Promise<void>) {
+    setMutationStatus('saving')
+    setMutationError(null)
+    try {
+      await mutation()
+      setMutationStatus('saved')
+    } catch (error) {
+      setMutationStatus('error')
+      setMutationError(error instanceof Error ? error.message : 'Critical-result follow-up update failed')
+    }
+  }
+
+  return (
+    <article className="review-queue-card">
+      <div className="review-queue-card-main">
+        <div>
+          <p className="eyebrow">Critical result #{result.resultId} / Report #{result.reportId}</p>
+          <h4>{result.text || result.code || 'Unspecified laboratory result'}</h4>
+          <p>
+            {result.patientDisplayName} / {result.patientId} / {result.result || 'No value'} {result.units || ''}
+          </p>
+        </div>
+        <span className={`status-pill${result.isOverdue ? ' warning' : ''}`}>
+          {result.isOverdue ? 'Overdue / ' : ''}{formatCriticalLabFollowUpStatus(result.followUpStatus)}
+        </span>
+      </div>
+      <div className="review-queue-card-grid">
+        <Field label="Flag" value={result.abnormal || 'Critical'} />
+        <Field label="Reported" value={result.resultDate} />
+        <Field label="Owner" value={result.ownerDisplayName || result.ownerUsername || 'Unassigned'} />
+        <Field label="Due" value={result.dueAt || 'Not set'} />
+        <Field label="Communications" value={result.communicationCount} />
+        <Field label="Clinical actions" value={result.clinicalActionCount} />
+        <Field label="Content revision" value={result.resultContentVersion} />
+        <Field label="Follow-up version" value={result.followUpVersion} />
+      </div>
+
+      {isOpen ? (
+        <form
+          className="mutation-form compact-form"
+          aria-label={`Accept critical result ${result.resultId}`}
+          onSubmit={(event) => {
+            event.preventDefault()
+            void runMutation(() => onAccept(result, {
+              expectedVersion: result.followUpVersion,
+              ownerUsername,
+              dueAt,
+              reason,
+            }))
+          }}
+        >
+          <h5>Accept accountable follow-up</h5>
+          <label>
+            Owner username
+            <input required minLength={3} value={ownerUsername} onChange={(event) => setOwnerUsername(event.target.value)} />
+          </label>
+          <label>
+            Due time
+            <input required type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
+          </label>
+          <label>
+            Acceptance reason
+            <textarea required minLength={3} value={reason} onChange={(event) => setReason(event.target.value)} />
+          </label>
+          <button type="submit" disabled={mutationStatus === 'saving'}>
+            <UserCheck size={15} />
+            {mutationStatus === 'saving' ? 'Saving' : 'Accept follow-up'}
+          </button>
+        </form>
+      ) : (
+        <details className="review-queue-notes">
+          <summary>Record follow-up evidence and escalation</summary>
+          <p className="form-help-text">
+            These entries document local evidence only. They do not send a message or prove external delivery or receipt.
+          </p>
+          <div className="critical-follow-up-actions">
+            <form
+              className="mutation-form compact-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void runMutation(() => onTransferOwnership(result, {
+                  expectedVersion: result.followUpVersion,
+                  ownerUsername,
+                  dueAt,
+                  reason,
+                }))
+              }}
+            >
+              <h5>Transfer ownership</h5>
+              <label>Owner username<input required minLength={3} value={ownerUsername} onChange={(event) => setOwnerUsername(event.target.value)} /></label>
+              <label>Due time<input required type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} /></label>
+              <label>Reason<textarea required minLength={3} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+              <button type="submit" disabled={mutationStatus === 'saving'}>Save owner</button>
+            </form>
+            <form
+              className="mutation-form compact-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void runMutation(() => onRecordCommunication(result, {
+                  expectedVersion: result.followUpVersion,
+                  recipient,
+                  channel,
+                  outcome,
+                  detail: communicationDetail,
+                }))
+              }}
+            >
+              <h5>Record communication</h5>
+              <label>Recipient<input required minLength={3} value={recipient} onChange={(event) => setRecipient(event.target.value)} /></label>
+              <label>Channel<input required minLength={3} value={channel} onChange={(event) => setChannel(event.target.value)} /></label>
+              <label>Outcome<input required minLength={3} value={outcome} onChange={(event) => setOutcome(event.target.value)} /></label>
+              <label>Detail<textarea required minLength={3} value={communicationDetail} onChange={(event) => setCommunicationDetail(event.target.value)} /></label>
+              <button type="submit" disabled={mutationStatus === 'saving'}>Record communication</button>
+            </form>
+            <form
+              className="mutation-form compact-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void runMutation(() => onRecordClinicalAction(result, {
+                  expectedVersion: result.followUpVersion,
+                  action: clinicalAction,
+                  detail: clinicalActionDetail,
+                }))
+              }}
+            >
+              <h5>Record clinical action</h5>
+              <label>Action<input required minLength={3} value={clinicalAction} onChange={(event) => setClinicalAction(event.target.value)} /></label>
+              <label>Detail<textarea required minLength={3} value={clinicalActionDetail} onChange={(event) => setClinicalActionDetail(event.target.value)} /></label>
+              <button type="submit" disabled={mutationStatus === 'saving'}>Record action</button>
+            </form>
+            <form
+              className="mutation-form compact-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void runMutation(() => onEscalate(result, {
+                  expectedVersion: result.followUpVersion,
+                  escalatedTo: escalationOwner,
+                  dueAt: escalationDueAt,
+                  reason: escalationReason,
+                }))
+              }}
+            >
+              <h5>Escalate / transfer coverage</h5>
+              <label>Escalation owner<input required minLength={3} value={escalationOwner} onChange={(event) => setEscalationOwner(event.target.value)} /></label>
+              <label>Revised due time<input required type="datetime-local" value={escalationDueAt} onChange={(event) => setEscalationDueAt(event.target.value)} /></label>
+              <label>Reason<textarea required minLength={3} value={escalationReason} onChange={(event) => setEscalationReason(event.target.value)} /></label>
+              <button type="submit" disabled={mutationStatus === 'saving'}>Escalate</button>
+            </form>
+            <form
+              className="mutation-form compact-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void runMutation(() => onClose(result, {
+                  expectedVersion: result.followUpVersion,
+                  reason: closureReason,
+                }))
+              }}
+            >
+              <h5>Close follow-up</h5>
+              <label>Closure reason<textarea required minLength={3} value={closureReason} onChange={(event) => setClosureReason(event.target.value)} /></label>
+              <button type="submit" disabled={mutationStatus === 'saving' || !canClose}>
+                Close after documented communication and action
+              </button>
+              {!canClose && <p className="form-help-text">Record one communication and one clinical action for this result revision before closure.</p>}
+            </form>
+          </div>
+        </details>
+      )}
+      {mutationStatus === 'saved' && <p className="save-note">Saved. Refreshing the worklist.</p>}
+      {mutationError && <p className="save-note error">{mutationError}</p>}
+    </article>
   )
 }
 

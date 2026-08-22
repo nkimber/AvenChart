@@ -6136,19 +6136,164 @@ procedures.MapPut("/results/{resultId:int}/critical-acknowledgement", async (
         int resultId, CriticalLabResultAcknowledgementRequest request, CancellationToken cancellationToken) =>
     {
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        return await repository.AcknowledgeCriticalLabResultAsync(resultId, request, session.Username, cancellationToken)
-            ? Results.Ok(new { acknowledged = true })
-            : Results.Conflict(new { error = "The critical result is no longer open at the supplied version." });
+        try
+        {
+            return await repository.AcknowledgeCriticalLabResultAsync(
+                    resultId, request, session.Username, RequireStaffAccessContext(httpContext).FacilityId, cancellationToken)
+                ? Results.Ok(new { accepted = true })
+                : Results.NotFound();
+        }
+        catch (CriticalLabResultFollowUpConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, exception.ExpectedVersion, exception.CurrentVersion, exception.CurrentStatus });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
-    .WithName("AcknowledgeCriticalLabResult")
+    .WithName("AcceptCriticalLabResultFollowUp")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
+
+procedures.MapPut("/results/{resultId:int}/critical-follow-up/ownership", async (
+        ProcedureRepository repository, AuthRepository authRepository, HttpContext httpContext,
+        int resultId, CriticalLabResultFollowUpOwnershipRequest request, CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        try
+        {
+            return await repository.TransferCriticalLabResultFollowUpAsync(
+                    resultId, request, session.Username, RequireStaffAccessContext(httpContext).FacilityId, cancellationToken)
+                ? Results.Ok(new { updated = true })
+                : Results.NotFound();
+        }
+        catch (CriticalLabResultFollowUpConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, exception.ExpectedVersion, exception.CurrentVersion, exception.CurrentStatus });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("TransferCriticalLabResultFollowUpOwnership")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
+
+procedures.MapPost("/results/{resultId:int}/critical-follow-up/communications", async (
+        ProcedureRepository repository, AuthRepository authRepository, HttpContext httpContext,
+        int resultId, CriticalLabResultFollowUpCommunicationRequest request, CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        try
+        {
+            return await repository.RecordCriticalLabResultCommunicationAsync(
+                    resultId, request, session.Username, RequireStaffAccessContext(httpContext).FacilityId, cancellationToken)
+                ? Results.Ok(new { recorded = true })
+                : Results.NotFound();
+        }
+        catch (CriticalLabResultFollowUpConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, exception.ExpectedVersion, exception.CurrentVersion, exception.CurrentStatus });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("RecordCriticalLabResultCommunication")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
+
+procedures.MapPost("/results/{resultId:int}/critical-follow-up/clinical-actions", async (
+        ProcedureRepository repository, AuthRepository authRepository, HttpContext httpContext,
+        int resultId, CriticalLabResultFollowUpActionRequest request, CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        try
+        {
+            return await repository.RecordCriticalLabResultClinicalActionAsync(
+                    resultId, request, session.Username, RequireStaffAccessContext(httpContext).FacilityId, cancellationToken)
+                ? Results.Ok(new { recorded = true })
+                : Results.NotFound();
+        }
+        catch (CriticalLabResultFollowUpConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, exception.ExpectedVersion, exception.CurrentVersion, exception.CurrentStatus });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("RecordCriticalLabResultClinicalAction")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
+
+procedures.MapPost("/results/{resultId:int}/critical-follow-up/escalations", async (
+        ProcedureRepository repository, AuthRepository authRepository, HttpContext httpContext,
+        int resultId, CriticalLabResultFollowUpEscalationRequest request, CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        try
+        {
+            return await repository.EscalateCriticalLabResultFollowUpAsync(
+                    resultId, request, session.Username, RequireStaffAccessContext(httpContext).FacilityId, cancellationToken)
+                ? Results.Ok(new { escalated = true })
+                : Results.NotFound();
+        }
+        catch (CriticalLabResultFollowUpConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, exception.ExpectedVersion, exception.CurrentVersion, exception.CurrentStatus });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("EscalateCriticalLabResultFollowUp")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
+
+procedures.MapPut("/results/{resultId:int}/critical-follow-up/closure", async (
+        ProcedureRepository repository, AuthRepository authRepository, HttpContext httpContext,
+        int resultId, CriticalLabResultFollowUpClosureRequest request, CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        try
+        {
+            return await repository.CloseCriticalLabResultFollowUpAsync(
+                    resultId, request, session.Username, RequireStaffAccessContext(httpContext).FacilityId, cancellationToken)
+                ? Results.Ok(new { closed = true })
+                : Results.NotFound();
+        }
+        catch (CriticalLabResultFollowUpConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message, exception.ExpectedVersion, exception.CurrentVersion, exception.CurrentStatus });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("CloseCriticalLabResultFollowUp")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
+
+procedures.MapGet("/results/{resultId:int}/critical-follow-up/history", async (
+        ProcedureRepository repository, HttpContext httpContext, int resultId, CancellationToken cancellationToken) =>
+    (await repository.GetCriticalLabResultFollowUpHistoryAsync(
+        resultId, RequireStaffAccessContext(httpContext).FacilityId, cancellationToken)) is { } history
+        ? Results.Ok(history)
+        : Results.NotFound())
+    .WithName("GetCriticalLabResultFollowUpHistory")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "view"));
 
 procedures.MapGet("/reports/{reportId:int}/review-history", async (
         ProcedureRepository repository,
+        HttpContext httpContext,
         int reportId,
         CancellationToken cancellationToken) =>
     {
-        var history = await repository.GetReportReviewHistoryAsync(reportId, cancellationToken);
+        var history = await repository.GetReportReviewHistoryAsync(
+            reportId,
+            cancellationToken,
+            RequireStaffAccessContext(httpContext).FacilityId);
         return history is null ? Results.NotFound() : Results.Ok(history);
     })
     .WithName("GetProcedureReportReviewHistory");
@@ -6181,10 +6326,14 @@ procedures.MapGet("/order-queue", async (
 
 procedures.MapGet("/{patientId}", async (
         ProcedureRepository repository,
+        HttpContext httpContext,
         string patientId,
         CancellationToken cancellationToken) =>
     {
-        var procedureResults = await repository.GetForPatientAsync(patientId, cancellationToken);
+        var procedureResults = await repository.GetForPatientAsync(
+            patientId,
+            cancellationToken,
+            RequireStaffAccessContext(httpContext).FacilityId);
         return procedureResults is null ? Results.NotFound() : Results.Ok(procedureResults);
     })
     .WithName("GetProcedureResultsForPatient");
@@ -6513,6 +6662,7 @@ procedures.MapPut("/results/{resultId:int}", async (
             resultId,
             request,
             session.Username,
+            RequireStaffAccessContext(httpContext).FacilityId,
             cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
