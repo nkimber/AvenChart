@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom'
 import { CalendarPlus, ChevronLeft, ChevronRight, Pencil } from 'lucide-react'
 import { searchAppointments, updateAppointmentStatus, type AppointmentListItem } from '../../api.ts'
@@ -43,20 +43,34 @@ export default function ClinicianSchedule() {
       : isoDate(new Date())
   })
   const [apptState, setApptState] = useState<AsyncState<AppointmentListItem[]>>({ status: 'loading' })
+  const appointmentRequestEpoch = useRef(0)
+  const selectedDateRef = useRef(selectedDate)
+  selectedDateRef.current = selectedDate
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [newAppointmentOpen, setNewAppointmentOpen] = useState(false)
   const [editingAppointment, setEditingAppointment] = useState<AppointmentListItem | null>(null)
 
   useEffect(() => {
-    load()
+    const controller = new AbortController()
+    load(selectedDate, controller.signal)
+    return () => controller.abort()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate])
+  }, [selectedDate, session.sessionId])
 
-  function load() {
+  function load(date = selectedDateRef.current, signal?: AbortSignal) {
+    const requestEpoch = ++appointmentRequestEpoch.current
     setApptState({ status: 'loading' })
-    searchAppointments(session.sessionId, { fromDate: selectedDate, toDate: selectedDate, limit: 50 })
-      .then((data) => setApptState({ status: 'ready', data: data.appointments }))
-      .catch((err) => setApptState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load.' }))
+    searchAppointments(session.sessionId, { fromDate: date, toDate: date, limit: 50 }, signal)
+      .then((data) => {
+        if (!signal?.aborted && requestEpoch === appointmentRequestEpoch.current) {
+          setApptState({ status: 'ready', data: data.appointments })
+        }
+      })
+      .catch((err) => {
+        if (!signal?.aborted && requestEpoch === appointmentRequestEpoch.current) {
+          setApptState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load.' })
+        }
+      })
   }
 
   function changeDay(delta: number) {
@@ -70,11 +84,14 @@ export default function ClinicianSchedule() {
   }
 
   async function handleStatusChange(apptId: string, status: string) {
+    const requestDate = selectedDateRef.current
     setUpdatingId(apptId)
     try {
       await updateAppointmentStatus(session.sessionId, apptId, status)
       showToast(`Status updated to "${getAppointmentStatus(status).label}"`)
-      load()
+      if (selectedDateRef.current === requestDate) {
+        load(requestDate)
+      }
     } catch {
       showToast('Could not update status.', 'error')
     } finally {

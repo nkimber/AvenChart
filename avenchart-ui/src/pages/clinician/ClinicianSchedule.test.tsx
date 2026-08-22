@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -80,6 +80,14 @@ function renderSchedule() {
   )
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((complete) => {
+    resolve = complete
+  })
+  return { promise, resolve }
+}
+
 describe('ClinicianSchedule appointment editing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -150,5 +158,31 @@ describe('ClinicianSchedule appointment editing', () => {
       expect.objectContaining({ title: 'Office visit', date: '2030-04-17' }),
     ))
     expect(updateAppointment).not.toHaveBeenCalled()
+  })
+
+  it('keeps appointments from the most recently selected date when an earlier request resolves late', async () => {
+    const firstDate = deferred<{ totalMatches: number; appointments: AppointmentListItem[] }>()
+    const secondDateAppointment: AppointmentListItem = {
+      ...appointment,
+      id: 'appointment-2',
+      date: '2030-04-18',
+      patientDisplayName: 'Blair Morgan',
+      pubpid: 'P0002',
+    }
+    vi.mocked(searchAppointments)
+      .mockReturnValueOnce(firstDate.promise)
+      .mockResolvedValueOnce({ totalMatches: 1, appointments: [secondDateAppointment] })
+    renderSchedule()
+
+    fireEvent.change(screen.getByLabelText('Select date'), { target: { value: '2030-04-18' } })
+    expect(await screen.findByRole('button', { name: 'Edit appointment for Blair Morgan at 09:00' })).toBeInTheDocument()
+
+    await act(async () => {
+      firstDate.resolve({ totalMatches: 1, appointments: [appointment] })
+      await firstDate.promise
+    })
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Edit appointment for Alex Rivera at 09:00' })).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Edit appointment for Blair Morgan at 09:00' })).toBeInTheDocument()
   })
 })
