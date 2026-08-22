@@ -1160,6 +1160,22 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 delete from clinical_list_audit_events
                 where patient_id = @canonicalId;
 
+                delete from immunizations
+                where patient_id = @canonicalId
+                   or pid = (select legacy_pid from patients where canonical_id = @canonicalId);
+
+                delete from problems
+                where patient_id = @canonicalId
+                   or pid = (select legacy_pid from patients where canonical_id = @canonicalId);
+
+                delete from allergies
+                where patient_id = @canonicalId
+                   or pid = (select legacy_pid from patients where canonical_id = @canonicalId);
+
+                delete from medications
+                where patient_id = @canonicalId
+                   or pid = (select legacy_pid from patients where canonical_id = @canonicalId);
+
                 delete from prescription_refill_request_lifecycle
                 where patient_id = @canonicalId
                    or pid = (select legacy_pid from patients where canonical_id = @canonicalId);

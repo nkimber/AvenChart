@@ -3902,7 +3902,8 @@ clinicalLists.MapPost("/allergies", async (
             ? Results.BadRequest("Allergy could not be created from the supplied patient, title, and date.")
             : Results.Created($"/api/clinical-lists/allergies/{mutation.Id}", mutation);
     })
-    .WithName("CreateClinicalAllergy");
+    .WithName("CreateClinicalAllergy")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPost("/problems", async (
         ClinicalListStateRepository repository,
@@ -3918,7 +3919,8 @@ clinicalLists.MapPost("/problems", async (
             ? Results.BadRequest("Problem could not be created from the supplied patient, title, and date.")
             : Results.Created($"/api/clinical-lists/problems/{mutation.Id}", mutation);
     })
-    .WithName("CreateClinicalProblem");
+    .WithName("CreateClinicalProblem")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPut("/problems/{problemId}/deactivate", async (
         ClinicalListStateRepository repository,
@@ -3936,14 +3938,16 @@ clinicalLists.MapPut("/problems/{problemId}/deactivate", async (
         var mutation = await repository.DeactivateProblemAsync(problemId, request, session.Username, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("DeactivateClinicalProblem");
+    .WithName("DeactivateClinicalProblem")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapDelete("/problems/{problemId}", () =>
         Results.Conflict(new
         {
             error = "Clinical problems are retained as part of the longitudinal record. Use the deactivation workflow with a clinical reason instead."
         }))
-    .WithName("RejectClinicalProblemDeletion");
+    .WithName("RejectClinicalProblemDeletion")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPost("/medications", async (
         ClinicalListStateRepository repository,
@@ -3959,7 +3963,8 @@ clinicalLists.MapPost("/medications", async (
             ? Results.BadRequest("Medication could not be created from the supplied patient, title, and date.")
             : Results.Created($"/api/clinical-lists/medications/{mutation.Id}", mutation);
     })
-    .WithName("CreateClinicalMedication");
+    .WithName("CreateClinicalMedication")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPut("/medications/{medicationId}/deactivate", async (
         ClinicalListStateRepository repository,
@@ -3979,7 +3984,8 @@ clinicalLists.MapPut("/medications/{medicationId}/deactivate", async (
             _ => Results.Conflict(new { error = "The medication changed after it was loaded. Refresh and try again." })
         };
     })
-    .WithName("DeactivateClinicalMedication");
+    .WithName("DeactivateClinicalMedication")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPut("/medications/{medicationId}/restore", async (
         ClinicalListStateRepository repository,
@@ -3999,7 +4005,8 @@ clinicalLists.MapPut("/medications/{medicationId}/restore", async (
             _ => Results.Conflict(new { error = "The medication changed after it was loaded. Refresh and try again." })
         };
     })
-    .WithName("RestoreClinicalMedication");
+    .WithName("RestoreClinicalMedication")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPut("/medications/{medicationId}", async (
         ClinicalListStateRepository repository,
@@ -4019,7 +4026,8 @@ clinicalLists.MapPut("/medications/{medicationId}", async (
             _ => Results.Conflict(new { error = "The medication changed after it was loaded. Refresh and try again." })
         };
     })
-    .WithName("UpdateClinicalMedication");
+    .WithName("UpdateClinicalMedication")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapGet("/medications/{medicationId}/lifecycle-history", async (
         ClinicalListStateRepository repository,
@@ -4057,14 +4065,16 @@ clinicalLists.MapPut("/allergies/{allergyId}/deactivate", async (
         var mutation = await repository.DeactivateAllergyAsync(allergyId, request, session.Username, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("DeactivateClinicalAllergy");
+    .WithName("DeactivateClinicalAllergy")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapDelete("/allergies/{allergyId}", () =>
         Results.Conflict(new
         {
             error = "Clinical allergies are retained as part of the longitudinal record. Use the deactivation workflow with a clinical reason instead."
         }))
-    .WithName("RejectClinicalAllergyDeletion");
+    .WithName("RejectClinicalAllergyDeletion")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapGet("/problems/{problemId}/audit-history", async (
         ClinicalListStateRepository repository,
@@ -4090,7 +4100,8 @@ clinicalLists.MapPost("/prescriptions", async (
             ? Results.BadRequest("Prescription could not be created from the supplied patient, drug, dose, and start date.")
             : Results.Created($"/api/clinical-lists/prescriptions/{mutation.Id}", mutation);
     })
-    .WithName("CreateClinicalPrescription");
+    .WithName("CreateClinicalPrescription")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPut("/prescriptions/{prescriptionId}", async (
         ClinicalListRepository repository,
@@ -4133,7 +4144,8 @@ clinicalLists.MapPut("/prescriptions/{prescriptionId}", async (
             _ => Results.Problem("The prescription update did not produce an authoritative result.")
         };
     })
-    .WithName("UpdateClinicalPrescription");
+    .WithName("UpdateClinicalPrescription")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPut("/prescriptions/{prescriptionId}/deactivate", async (
         ClinicalListRepository repository,
@@ -4147,7 +4159,8 @@ clinicalLists.MapPut("/prescriptions/{prescriptionId}/deactivate", async (
         var mutation = await repository.DeactivatePrescriptionAsync(prescriptionId, request, session.Username, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("DeactivateClinicalPrescription");
+    .WithName("DeactivateClinicalPrescription")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPut("/prescriptions/{prescriptionId}/refill", async (
         ClinicalListRepository repository,
@@ -4168,7 +4181,8 @@ clinicalLists.MapPut("/prescriptions/{prescriptionId}/refill", async (
             return Results.Conflict(new { error = exception.Message });
         }
     })
-    .WithName("RefillClinicalPrescription");
+    .WithName("RefillClinicalPrescription")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPut("/prescriptions/{prescriptionId}/route-pharmacy", async (
         ClinicalListRepository repository,
@@ -4193,7 +4207,8 @@ clinicalLists.MapPut("/prescriptions/{prescriptionId}/route-pharmacy", async (
             return Results.Conflict(new { error = exception.Message });
         }
     })
-    .WithName("RouteClinicalPrescriptionToPharmacy");
+    .WithName("RouteClinicalPrescriptionToPharmacy")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapGet("/prescriptions/{prescriptionId}/audit-history", async (
         ClinicalListRepository repository,
@@ -4231,7 +4246,8 @@ clinicalLists.MapPut("/prescription-refill-requests/{messageId:int}/approve", as
             return Results.Conflict(new { error = exception.Message });
         }
     })
-    .WithName("ApproveClinicalPrescriptionRefillRequest");
+    .WithName("ApproveClinicalPrescriptionRefillRequest")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPut("/prescription-refill-requests/{messageId:int}/decision", async (
         ClinicalListRepository repository,
@@ -4259,14 +4275,16 @@ clinicalLists.MapPut("/prescription-refill-requests/{messageId:int}/decision", a
             return Results.BadRequest(new { error = exception.Message });
         }
     })
-    .WithName("DecideClinicalPrescriptionRefillRequest");
+    .WithName("DecideClinicalPrescriptionRefillRequest")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapDelete("/prescriptions/{prescriptionId}", () =>
         Results.Conflict(new
         {
             error = "Prescriptions and their audit trail are retained as part of the longitudinal record. Use the deactivation workflow with a clinical reason instead."
         }))
-    .WithName("RejectClinicalPrescriptionDeletion");
+    .WithName("RejectClinicalPrescriptionDeletion")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPost("/immunizations", async (
         ClinicalListStateRepository repository,
@@ -4282,7 +4300,8 @@ clinicalLists.MapPost("/immunizations", async (
             ? Results.BadRequest("Immunization could not be created from the supplied patient, vaccine, and administered date.")
             : Results.Created($"/api/clinical-lists/immunizations/{mutation.Id}", mutation);
     })
-    .WithName("CreateClinicalImmunization");
+    .WithName("CreateClinicalImmunization")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapPut("/immunizations/{immunizationId:int}/entered-in-error", async (
         ClinicalListStateRepository repository,
@@ -4300,14 +4319,16 @@ clinicalLists.MapPut("/immunizations/{immunizationId:int}/entered-in-error", asy
         var mutation = await repository.MarkImmunizationEnteredInErrorAsync(immunizationId, request, session.Username, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("MarkClinicalImmunizationEnteredInError");
+    .WithName("MarkClinicalImmunizationEnteredInError")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapDelete("/immunizations/{immunizationId:int}", () =>
         Results.Conflict(new
         {
             error = "Immunization records are retained as part of the longitudinal record. Mark an incorrect record entered in error with a clinical reason instead."
         }))
-    .WithName("RejectClinicalImmunizationDeletion");
+    .WithName("RejectClinicalImmunizationDeletion")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 clinicalLists.MapGet("/immunizations/{immunizationKey}/audit-history", async (
         ClinicalListStateRepository repository,
