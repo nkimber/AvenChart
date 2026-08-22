@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { getAppointmentFlowBoard, updateAppointmentStatus, type FlowBoardResponse } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
@@ -17,19 +17,35 @@ export default function FlowBoard() {
   const [date, setDate] = useState(today)
   const [board, setBoard] = useState<FlowBoardResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState<string | null>(null)
+  const activeRequest = useRef<AbortController | null>(null)
 
-  function load(selectedDate = date) {
+  const load = useCallback(async (selectedDate = date) => {
+    activeRequest.current?.abort()
+    const controller = new AbortController()
+    activeRequest.current = controller
+    setLoading(true)
+    setBoard(null)
     setError(null)
-    getAppointmentFlowBoard(session.sessionId, selectedDate)
-      .then(setBoard)
-      .catch(() => setError('Could not load the flow board.'))
-  }
+    try {
+      const data = await getAppointmentFlowBoard(session.sessionId, selectedDate, controller.signal)
+      if (controller.signal.aborted || activeRequest.current !== controller) return
+      if (data.date !== selectedDate) throw new Error('The flow board response did not match the selected date.')
+      setBoard(data)
+      setLoading(false)
+    } catch {
+      if (controller.signal.aborted || activeRequest.current !== controller) return
+      setBoard(null)
+      setError('Could not load the flow board. Retry the page.')
+      setLoading(false)
+    }
+  }, [date, session.sessionId])
 
   useEffect(() => {
-    load()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    void load()
+    return () => activeRequest.current?.abort()
+  }, [load])
 
   async function advance(appointmentId: string, status: string) {
     if (updating) return
@@ -37,7 +53,7 @@ export default function FlowBoard() {
     try {
       await updateAppointmentStatus(session.sessionId, appointmentId, status)
       showToast(`Appointment marked ${getAppointmentStatus(status).label.toLowerCase()}.`, 'success')
-      load()
+      await load()
     } catch {
       showToast('Could not update appointment status.', 'error')
     } finally {
@@ -58,14 +74,20 @@ export default function FlowBoard() {
           value={date}
           onChange={(event) => {
             setDate(event.target.value)
-            load(event.target.value)
           }}
           aria-label="Select flow-board date"
         />
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
-      {!board && !error && (
+      {error && (
+        <div className="error-banner" role="alert">
+          <p>{error}</p>
+          <button className="cl-btn-secondary" type="button" onClick={() => { void load() }}>
+            Retry
+          </button>
+        </div>
+      )}
+      {loading && !error && (
         <div className="cl-card">
           <div className="skeleton-list">
             {[0, 1, 2].map((item) => <div key={item} className="skeleton-row" style={{ height: 70 }} />)}
