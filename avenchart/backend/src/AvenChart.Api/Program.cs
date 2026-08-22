@@ -2681,12 +2681,24 @@ var appointments = app.MapGroup("/api/appointments").WithTags("Appointments");
 RequireAccessPermission(appointments, "patients", "appt", "view");
 appointments.AddEndpointFilter(ClinicalResourceFacilityScopeFilter());
 
-appointments.MapGet("/flow-board", async (FlowBoardRepository repository, string? date, CancellationToken cancellationToken) =>
-    Results.Ok(await repository.GetAsync(date, cancellationToken)))
+appointments.MapGet("/flow-board", async (
+        FlowBoardRepository repository,
+        HttpContext httpContext,
+        string? date,
+        CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetAsync(
+        date,
+        RequireStaffAccessContext(httpContext).FacilityId,
+        cancellationToken)))
     .WithName("GetAppointmentFlowBoard");
 
-appointments.MapGet("/scheduling-options", async (AppointmentRepository repository, CancellationToken cancellationToken) =>
-    Results.Ok(await repository.GetSchedulingOptionsAsync(cancellationToken)))
+appointments.MapGet("/scheduling-options", async (
+        AppointmentRepository repository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetSchedulingOptionsAsync(
+        RequireStaffAccessContext(httpContext).FacilityId,
+        cancellationToken)))
     .WithName("GetAppointmentSchedulingOptions");
 
 appointments.MapGet("/", async (
@@ -2696,6 +2708,7 @@ appointments.MapGet("/", async (
         string? fromDate,
         string? toDate,
         int? limit,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         var response = await repository.SearchAsync(
@@ -2703,6 +2716,7 @@ appointments.MapGet("/", async (
             fromDate ?? from,
             toDate,
             limit ?? 25,
+            RequireStaffAccessContext(httpContext).FacilityId,
             cancellationToken);
         return Results.Ok(response);
     })
@@ -2710,9 +2724,12 @@ appointments.MapGet("/", async (
 
 appointments.MapGet("/waitlist", async (
         AppointmentRepository repository,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var response = await repository.GetWaitlistAsync(cancellationToken);
+        var response = await repository.GetWaitlistAsync(
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return Results.Ok(response);
     })
     .WithName("GetAppointmentWaitlist");
@@ -2769,11 +2786,16 @@ appointments.MapPost("/{appointmentId}/reminders/dispatch/retry", async (
 
 appointments.MapGet("/reminders/dispatch-history", async (
         AppointmentRepository repository,
+        HttpContext httpContext,
         string? appointmentId,
         int? limit,
         CancellationToken cancellationToken) =>
     {
-        var history = await repository.GetReminderDispatchHistoryAsync(appointmentId, limit ?? 10, cancellationToken);
+        var history = await repository.GetReminderDispatchHistoryAsync(
+            appointmentId,
+            limit ?? 10,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken);
         return Results.Ok(history);
     })
     .WithName("GetAppointmentReminderDispatchHistory");
@@ -2791,11 +2813,15 @@ appointments.MapGet("/{appointmentId}", async (
 appointments.MapPost("/", async (
         AppointmentRepository repository,
         AppointmentCreateRequest request,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         try
         {
-            var appointment = await repository.CreateAsync(request, cancellationToken);
+            var appointment = await repository.CreateAsync(
+                request,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return appointment is null
                 ? Results.BadRequest("Appointment could not be created from the supplied patient, date, time, and duration.")
                 : Results.Created($"/api/appointments/{appointment.Id}", appointment);
@@ -2819,12 +2845,23 @@ appointments.MapPost("/", async (
 appointments.MapPost("/availability/validate", async (
         AppointmentRepository repository,
         AppointmentAvailabilityValidationRequest request,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var validation = await repository.ValidateAvailabilityAsync(request, cancellationToken);
-        return validation is null
-            ? Results.BadRequest("Appointment availability could not be validated from the supplied patient, date, time, and duration.")
-            : Results.Ok(validation);
+        try
+        {
+            var validation = await repository.ValidateAvailabilityAsync(
+                request,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
+            return validation is null
+                ? Results.BadRequest("Appointment availability could not be validated from the supplied patient, date, time, and duration.")
+                : Results.Ok(validation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
     .WithName("ValidateAppointmentAvailability")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
@@ -2833,11 +2870,16 @@ appointments.MapPut("/{appointmentId}", async (
         AppointmentRepository repository,
         string appointmentId,
         AppointmentUpdateRequest request,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         try
         {
-            var appointment = await repository.UpdateAsync(appointmentId, request, cancellationToken);
+            var appointment = await repository.UpdateAsync(
+                appointmentId,
+                request,
+                RequireStaffAccessContext(httpContext).FacilityId,
+                cancellationToken);
             return appointment is null
                 ? Results.BadRequest("Appointment could not be updated from the supplied date, time, and duration.")
                 : Results.Ok(appointment);
@@ -2960,13 +3002,20 @@ encounters.AddEndpointFilter(ClinicalResourceFacilityScopeFilter());
 
 encounters.MapGet("/", async (
         EncounterRepository repository,
+        HttpContext httpContext,
         string? patientId,
         string? from,
         int? limit,
         bool? archived,
         CancellationToken cancellationToken) =>
     {
-        var response = await repository.SearchAsync(patientId, from, limit ?? 25, cancellationToken, archived == true);
+        var response = await repository.SearchAsync(
+            patientId,
+            from,
+            limit ?? 25,
+            RequireStaffAccessContext(httpContext).FacilityId,
+            cancellationToken,
+            archived == true);
         return Results.Ok(response);
     })
     .WithName("SearchEncounters");

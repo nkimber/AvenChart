@@ -22,16 +22,22 @@ public sealed class EncounterRepository(
         string? patientId,
         string? from,
         int limit,
+        int facilityId,
         CancellationToken cancellationToken,
         bool archived = false)
     {
+        if (facilityId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(facilityId));
+        }
+
         var safeLimit = Math.Clamp(limit, 1, MaximumSearchLimit);
         var metadata = await GetMetadataAsync(cancellationToken);
         var normalizedPatientId = Normalize(patientId);
         var fromDate = ParseDateOrDefault(from, new DateOnly(metadata.BaseDate.Year, 1, 1));
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var totalMatches = await CountMatchesAsync(connection, normalizedPatientId, fromDate, archived, cancellationToken);
+        var totalMatches = await CountMatchesAsync(connection, normalizedPatientId, fromDate, facilityId, archived, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -68,7 +74,7 @@ public sealed class EncounterRepository(
             order by e.encounter_date desc, e.encounter desc
             limit @limit;
             """;
-        AddSearchParameters(command, normalizedPatientId, fromDate);
+        AddSearchParameters(command, normalizedPatientId, fromDate, facilityId);
         command.Parameters.AddWithValue("limit", safeLimit);
 
         var encounters = new List<EncounterListItem>();
@@ -777,6 +783,7 @@ public sealed class EncounterRepository(
         NpgsqlConnection connection,
         string? normalizedPatientId,
         DateOnly fromDate,
+        int facilityId,
         bool archived,
         CancellationToken cancellationToken)
     {
@@ -788,23 +795,29 @@ public sealed class EncounterRepository(
             where {EncounterSearchPredicate}
               and e.archived_at is {(archived ? "not" : string.Empty)} null;
             """;
-        AddSearchParameters(command, normalizedPatientId, fromDate);
+        AddSearchParameters(command, normalizedPatientId, fromDate, facilityId);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(result);
     }
 
     private const string EncounterSearchPredicate = """
-        (@patientId is null
+        p.facility_id = @facilityId
+        and (@patientId is null
          or lower(p.canonical_id) = @patientId
          or lower(p.pubpid) = @patientId
          or p.legacy_pid::text = @patientId)
         and e.encounter_date >= @fromDate
         """;
 
-    private static void AddSearchParameters(NpgsqlCommand command, string? patientId, DateOnly fromDate)
+    private static void AddSearchParameters(
+        NpgsqlCommand command,
+        string? patientId,
+        DateOnly fromDate,
+        int facilityId)
     {
         command.Parameters.Add("patientId", NpgsqlDbType.Text).Value = patientId is null ? DBNull.Value : patientId;
         command.Parameters.Add("fromDate", NpgsqlDbType.Date).Value = fromDate;
+        command.Parameters.AddWithValue("facilityId", facilityId);
     }
 
     private static EncounterListItem ReadListItem(DbDataReader reader) => new(

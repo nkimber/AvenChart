@@ -28,8 +28,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         string? from,
         string? to,
         int limit,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         var safeLimit = Math.Clamp(limit, 1, MaximumSearchLimit);
         var metadata = await GetMetadataAsync(cancellationToken);
         var normalizedPatientId = Normalize(patientId);
@@ -105,7 +107,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             where {{AppointmentSearchPredicate}}
             order by a.appointment_date, a.start_time, a.id
             """;
-        AddSearchParameters(command, normalizedPatientId, fromDate, toDate);
+        AddSearchParameters(command, normalizedPatientId, fromDate, toDate, facilityId);
 
         var expandedAppointments = new List<AppointmentListItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -138,8 +140,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     }
 
     public async Task<AppointmentSchedulingOptionsResponse> GetSchedulingOptionsAsync(
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
 
         await using var providersCommand = connection.CreateCommand();
@@ -154,8 +158,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             where s.active = true
               and s.calendar = true
               and s.username <> ''
+              and s.facility_id = @facilityId
             order by s.last_name, s.first_name, s.id;
             """;
+        providersCommand.Parameters.AddWithValue("facilityId", facilityId);
 
         var providers = new List<AppointmentSchedulingProviderOption>();
         await using (var reader = await providersCommand.ExecuteReaderAsync(cancellationToken))
@@ -174,9 +180,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         facilitiesCommand.CommandText = """
             select id, name, code
             from facilities
-            where inactive = false
+            where id = @facilityId
+              and inactive = false
             order by name, id;
             """;
+        facilitiesCommand.Parameters.AddWithValue("facilityId", facilityId);
 
         var facilities = new List<AppointmentSchedulingFacilityOption>();
         await using (var reader = await facilitiesCommand.ExecuteReaderAsync(cancellationToken))
@@ -406,8 +414,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
     public async Task<AppointmentDetail?> CreateAsync(
         AppointmentCreateRequest request,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
+        EnsureRequestedFacilityMatchesAccessContext(request.FacilityId, facilityId);
         if (!DateOnly.TryParse(request.Date, out var appointmentDate)
             || !TimeOnly.TryParse(request.StartTime, out var startTime)
             || request.DurationMinutes <= 0)
@@ -421,12 +432,18 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             connection,
             transaction,
             request.PatientId,
-            cancellationToken);
+            cancellationToken,
+            facilityId);
         await ValidateActiveSchedulingReferencesAsync(
             connection,
             request.ProviderId,
-            request.FacilityId,
+            facilityId,
             request.BillingLocationId,
+            cancellationToken);
+        await EnsureProviderBelongsToFacilityAsync(
+            connection,
+            request.ProviderId ?? patient.ProviderId,
+            facilityId,
             cancellationToken);
 
         if (request.EnforceConflictPolicy)
@@ -447,9 +464,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                     Date: request.Date,
                     StartTime: request.StartTime,
                     DurationMinutes: request.DurationMinutes,
-                    FacilityId: request.FacilityId,
+                    FacilityId: facilityId,
                     Room: request.Room,
                     ExcludeAppointmentId: null),
+                facilityId,
                 cancellationToken);
             if (validation is null)
             {
@@ -468,9 +486,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             with patient_match as (
                 select canonical_id, legacy_pid, provider_id, facility_id
                 from patients
-                where lower(canonical_id) = lower(@patientId)
-                   or lower(pubpid) = lower(@patientId)
-                   or legacy_pid::text = @patientId
+                where facility_id = @facilityId
+                  and (lower(canonical_id) = lower(@patientId)
+                       or lower(pubpid) = lower(@patientId)
+                       or legacy_pid::text = @patientId)
                 limit 1
             )
             insert into appointments (
@@ -503,8 +522,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 canonical_id,
                 legacy_pid,
                 coalesce((select id from staff where id = @providerId), provider_id),
-                coalesce((select id from facilities where id = @facilityId), facility_id),
-                coalesce((select id from facilities where id = @billingLocationId), (select id from facilities where id = @facilityId), facility_id),
+                @facilityId,
+                coalesce((select id from facilities where id = @billingLocationId), @facilityId),
                 @appointmentDate,
                 @startTime,
                 @durationMinutes,
@@ -529,7 +548,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("id", appointmentId);
         command.Parameters.AddWithValue("patientId", request.PatientId.Trim());
         command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null ? DBNull.Value : request.ProviderId.Value;
-        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = request.FacilityId is null ? DBNull.Value : request.FacilityId.Value;
+        command.Parameters.AddWithValue("facilityId", facilityId);
         command.Parameters.Add("billingLocationId", NpgsqlDbType.Integer).Value = request.BillingLocationId is null ? DBNull.Value : request.BillingLocationId.Value;
         command.Parameters.Add("appointmentDate", NpgsqlDbType.Date).Value = appointmentDate;
         command.Parameters.Add("startTime", NpgsqlDbType.Time).Value = startTime;
@@ -555,8 +574,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return insertedId is null ? null : await GetByIdAsync(insertedId, cancellationToken);
     }
 
-    public async Task<AppointmentWaitlistResponse> GetWaitlistAsync(CancellationToken cancellationToken)
+    public async Task<AppointmentWaitlistResponse> GetWaitlistAsync(
+        int facilityId,
+        CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         var metadata = await GetMetadataAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -602,9 +624,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             ) m on true
             where a.status = '^'
               and a.appointment_date >= @baseDate
+              and p.facility_id = @facilityId
             order by a.appointment_date, a.start_time, p.last_name, p.first_name, a.id;
             """;
         command.Parameters.Add("baseDate", NpgsqlDbType.Date).Value = metadata.BaseDate;
+        command.Parameters.AddWithValue("facilityId", facilityId);
 
         var items = new List<AppointmentWaitlistItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -869,8 +893,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     public async Task<AppointmentReminderDispatchHistoryResponse> GetReminderDispatchHistoryAsync(
         string? appointmentId,
         int limit,
+        int facilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(facilityId);
         var metadata = await GetMetadataAsync(cancellationToken);
         var safeLimit = Math.Clamp(limit, 1, 50);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -904,11 +930,17 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
               retry_of_dispatch_id,
               coalesce(retry_attempt, 0) as retry_attempt
             from appointment_reminder_dispatch_audit
-            where (@appointmentId is null or appointment_id = @appointmentId)
+            where exists (
+                    select 1
+                    from patients patient
+                    where patient.legacy_pid = appointment_reminder_dispatch_audit.legacy_pid
+                      and patient.facility_id = @facilityId)
+              and (@appointmentId is null or appointment_id = @appointmentId)
             order by created_at desc, audit_id
             limit @limit;
             """;
         command.Parameters.Add("appointmentId", NpgsqlDbType.Text).Value = NormalizeText(appointmentId) ?? (object)DBNull.Value;
+        command.Parameters.AddWithValue("facilityId", facilityId);
         command.Parameters.AddWithValue("limit", safeLimit);
 
         var entries = new List<AppointmentReminderDispatchResponse>();
@@ -954,8 +986,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
     public async Task<AppointmentAvailabilityValidationResponse?> ValidateAvailabilityAsync(
         AppointmentAvailabilityValidationRequest request,
+        int accessFacilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(accessFacilityId);
+        EnsureRequestedFacilityMatchesAccessContext(request.FacilityId, accessFacilityId);
         if (!DateOnly.TryParse(request.Date, out var appointmentDate)
             || !TimeOnly.TryParse(request.StartTime, out var startTime)
             || request.DurationMinutes <= 0)
@@ -977,9 +1012,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             with patient_match as (
                 select canonical_id, legacy_pid, pubpid, first_name, last_name, provider_id, facility_id
                 from patients
-                where lower(canonical_id) = lower(@patientId)
-                   or lower(pubpid) = lower(@patientId)
-                   or legacy_pid::text = @patientId
+                where facility_id = @accessFacilityId
+                  and (lower(canonical_id) = lower(@patientId)
+                       or lower(pubpid) = lower(@patientId)
+                       or legacy_pid::text = @patientId)
                 limit 1
             ),
             selected as (
@@ -990,7 +1026,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                     first_name,
                     last_name,
                     coalesce(@providerId, provider_id) as provider_id,
-                    coalesce(@facilityId, facility_id) as facility_id
+                    @accessFacilityId as facility_id
                 from patient_match
             )
             select
@@ -1007,11 +1043,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 (facilities.id is not null and facilities.inactive = false) as facility_active
             from selected
             left join staff on staff.id = selected.provider_id
+              and staff.facility_id = @accessFacilityId
             left join facilities on facilities.id = selected.facility_id;
             """;
         command.Parameters.AddWithValue("patientId", request.PatientId.Trim());
         command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null ? DBNull.Value : request.ProviderId.Value;
-        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = request.FacilityId is null ? DBNull.Value : request.FacilityId.Value;
+        command.Parameters.AddWithValue("accessFacilityId", accessFacilityId);
 
         string? patientCanonicalId = null;
         int? legacyPid = null;
@@ -1172,8 +1209,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     public async Task<AppointmentDetail?> UpdateAsync(
         string appointmentId,
         AppointmentUpdateRequest request,
+        int accessFacilityId,
         CancellationToken cancellationToken)
     {
+        EnsureFacilityId(accessFacilityId);
+        EnsureRequestedFacilityMatchesAccessContext(request.FacilityId, accessFacilityId);
         if (!DateOnly.TryParse(request.Date, out var appointmentDate)
             || !TimeOnly.TryParse(request.StartTime, out var startTime)
             || request.DurationMinutes <= 0)
@@ -1202,8 +1242,13 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         await ValidateActiveSchedulingReferencesAsync(
             connection,
             request.ProviderId,
-            request.FacilityId,
+            accessFacilityId,
             request.BillingLocationId,
+            cancellationToken);
+        await EnsureProviderBelongsToFacilityAsync(
+            connection,
+            request.ProviderId,
+            accessFacilityId,
             cancellationToken);
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -1872,7 +1917,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     }
 
     private const string AppointmentSearchPredicate = """
-        (@patientId is null
+        p.facility_id = @facilityId
+        and (@patientId is null
          or lower(p.canonical_id) = @patientId
          or lower(p.pubpid) = @patientId
          or p.legacy_pid::text = @patientId)
@@ -1891,11 +1937,31 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         NpgsqlCommand command,
         string? patientId,
         DateOnly fromDate,
-        DateOnly? toDate)
+        DateOnly? toDate,
+        int facilityId)
     {
         command.Parameters.Add("patientId", NpgsqlDbType.Text).Value = patientId is null ? DBNull.Value : patientId;
         command.Parameters.Add("fromDate", NpgsqlDbType.Date).Value = fromDate;
         command.Parameters.Add("toDate", NpgsqlDbType.Date).Value = toDate is null ? DBNull.Value : toDate.Value;
+        command.Parameters.AddWithValue("facilityId", facilityId);
+    }
+
+    private static void EnsureFacilityId(int facilityId)
+    {
+        if (facilityId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(facilityId));
+        }
+    }
+
+    private static void EnsureRequestedFacilityMatchesAccessContext(
+        int? requestedFacilityId,
+        int accessFacilityId)
+    {
+        if (requestedFacilityId is not null && requestedFacilityId != accessFacilityId)
+        {
+            throw new ArgumentException("Appointments may be scheduled only for the selected facility.");
+        }
     }
 
     private static AppointmentListItem ReadListItem(DbDataReader reader, DateOnly baseDate)
@@ -2582,24 +2648,55 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             cancellationToken);
     }
 
+    private static async Task EnsureProviderBelongsToFacilityAsync(
+        NpgsqlConnection connection,
+        int? providerId,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        if (providerId is null)
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select exists(
+                select 1
+                from staff
+                where id = @providerId
+                  and facility_id = @facilityId
+                  and active = true);
+            """;
+        command.Parameters.AddWithValue("providerId", providerId.Value);
+        command.Parameters.AddWithValue("facilityId", facilityId);
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new ArgumentException("The selected provider is not active at the selected facility.");
+        }
+    }
+
     private static async Task<SchedulingPatient> EnsurePatientActiveForSchedulingAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         string patientId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? accessFacilityId = null)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             select canonical_id, legacy_pid, provider_id, facility_id, lifecycle_status, deceased_date, merged_into_patient_id
             from patients
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
+            where (@accessFacilityId is null or facility_id = @accessFacilityId)
+              and (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
             limit 1
             for update;
             """;
         command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.Add("accessFacilityId", NpgsqlDbType.Integer).Value = accessFacilityId is null ? DBNull.Value : accessFacilityId.Value;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {

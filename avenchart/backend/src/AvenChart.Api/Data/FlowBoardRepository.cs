@@ -9,8 +9,16 @@ namespace AvenChart.Api.Data;
 
 public sealed class FlowBoardRepository(NpgsqlDataSource dataSource)
 {
-    public async Task<FlowBoardResponse> GetAsync(string? date, CancellationToken cancellationToken)
+    public async Task<FlowBoardResponse> GetAsync(
+        string? date,
+        int facilityId,
+        CancellationToken cancellationToken)
     {
+        if (facilityId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(facilityId));
+        }
+
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var requestedDate = DateOnly.TryParse(date, CultureInfo.InvariantCulture, out var parsedDate)
             ? parsedDate
@@ -24,9 +32,11 @@ public sealed class FlowBoardRepository(NpgsqlDataSource dataSource)
             left join staff s on s.id = a.provider_id
             left join facilities f on f.id = a.facility_id
             where a.appointment_date = @date
+              and p.facility_id = @facilityId
             order by a.start_time, a.id;
             """;
         command.Parameters.AddWithValue("date", requestedDate);
+        command.Parameters.AddWithValue("facilityId", facilityId);
         var lanes = new Dictionary<string, List<FlowBoardItem>>(StringComparer.OrdinalIgnoreCase)
         {
             ["scheduled"] = [], ["arrived"] = [], ["in-room"] = [], ["complete"] = [], ["other"] = [],
