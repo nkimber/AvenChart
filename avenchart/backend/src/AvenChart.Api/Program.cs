@@ -6316,10 +6316,20 @@ procedures.MapDelete("/orders/{orderId:int}", async (
         int orderId,
         CancellationToken cancellationToken) =>
     {
-        var deleted = await repository.DeleteOrderCascadeAsync(orderId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
+        var deletion = await repository.DeleteOrderCascadeAsync(
+            orderId,
+            cancellationToken);
+        return deletion switch
+        {
+            ProcedureRepository.ProcedureOrderDeletionDisposition.NotFound =>
+                Results.NotFound(),
+            _ => Results.Conflict(new
+            {
+                error = "Laboratory orders are retained to preserve specimens, results, acknowledgements, and audit evidence. Use an approved cancellation workflow when one is available."
+            })
+        };
     })
-    .WithName("DeleteProcedureOrderCascade")
+    .WithName("RejectProcedureOrderCascadeDeletion")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 var integrations = app.MapGroup("/api/integrations").WithTags("Integrations");

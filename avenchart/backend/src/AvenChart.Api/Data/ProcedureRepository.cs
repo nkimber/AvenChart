@@ -1741,63 +1741,28 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new ProcedureMutationResponse(result.Id, detail);
     }
 
-    public async Task<bool> DeleteOrderCascadeAsync(int orderId, CancellationToken cancellationToken)
+    public async Task<ProcedureOrderDeletionDisposition> DeleteOrderCascadeAsync(
+        int orderId,
+        CancellationToken cancellationToken)
     {
         if (orderId <= 0)
         {
-            return false;
+            return ProcedureOrderDeletionDisposition.NotFound;
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var order = await GetOrderMutationContextAsync(connection, orderId, cancellationToken);
         if (order is null)
         {
-            return false;
+            return ProcedureOrderDeletionDisposition.NotFound;
         }
 
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await using (var specimenCommand = connection.CreateCommand())
-        {
-            specimenCommand.Transaction = transaction;
-            specimenCommand.CommandText = "delete from lab_specimens where order_id = @orderId;";
-            specimenCommand.Parameters.AddWithValue("orderId", order.Id);
-            await specimenCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await using (var resultCommand = connection.CreateCommand())
-        {
-            resultCommand.Transaction = transaction;
-            resultCommand.CommandText = """
-                delete from lab_results
-                where report_id in (
-                    select id
-                    from lab_reports
-                    where order_id = @orderId
-                );
-                """;
-            resultCommand.Parameters.AddWithValue("orderId", order.Id);
-            await resultCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await using (var reportCommand = connection.CreateCommand())
-        {
-            reportCommand.Transaction = transaction;
-            reportCommand.CommandText = "delete from lab_reports where order_id = @orderId;";
-            reportCommand.Parameters.AddWithValue("orderId", order.Id);
-            await reportCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await using (var orderCommand = connection.CreateCommand())
-        {
-            orderCommand.Transaction = transaction;
-            orderCommand.CommandText = "delete from lab_orders where id = @orderId;";
-            orderCommand.Parameters.AddWithValue("orderId", order.Id);
-            await orderCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await transaction.CommitAsync(cancellationToken);
-        return true;
+        // An order can acquire specimens, reports, results, acknowledgements,
+        // review history, and external-laboratory provenance. A cascade cannot
+        // preserve that clinical record or its audit evidence. No cancellation
+        // workflow is approved yet, so reject deletion rather than silently
+        // interpreting a DELETE as a clinical-status transition.
+        return ProcedureOrderDeletionDisposition.RetentionRequired;
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -2971,6 +2936,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+
+    public enum ProcedureOrderDeletionDisposition
+    {
+        NotFound,
+        RetentionRequired
+    }
 
     private sealed record ProcedurePatient(
         string PatientId,
