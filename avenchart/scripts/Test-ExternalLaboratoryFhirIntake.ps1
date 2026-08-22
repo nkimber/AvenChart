@@ -117,16 +117,17 @@ try {
         throw "The synthetic administrator session was not issued."
     }
     $staffHeaders = New-AvenChartStaffAccessContextHeaders -Login $login
+    $facilityGrantId = [int]$staffHeaders["X-AvenChart-Facility-Id"]
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $sourceId = "synthetic-fhir-lab-$marker"
     $apiKey = "synthetic-fhir-laboratory-key-" + [Guid]::NewGuid().ToString("N") + [Guid]::NewGuid().ToString("N")
     $null = Invoke-Json "$ApiBaseUrl/api/integrations/laboratory-sources" "Post" @{
-        sourceId = $sourceId; displayName = "Synthetic FHIR Laboratory $marker"; apiKey = $apiKey
+        sourceId = $sourceId; displayName = "Synthetic FHIR Laboratory $marker"; apiKey = $apiKey; facilityIds = @($facilityGrantId)
     }
 
     $options = Invoke-Json "$ApiBaseUrl/api/appointments/scheduling-options"
     $provider = @($options.providers | Select-Object -First 1)
-    $facility = @($options.facilities | Select-Object -First 1)
+    $facility = @($options.facilities | Where-Object { $_.id -eq $facilityGrantId } | Select-Object -First 1)
     $catalog = Invoke-Json "$ApiBaseUrl/api/procedures/order-catalog"
     $catalogItem = @($catalog.items | Where-Object { $_.active -and $_.itemType -eq "ord" -and $_.code } | Select-Object -First 1)
     if ($provider.Count -ne 1 -or $facility.Count -ne 1 -or $catalogItem.Count -ne 1) {

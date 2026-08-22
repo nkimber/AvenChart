@@ -59,22 +59,26 @@ public sealed class ExternalLaboratoryIntakeRepository(NpgsqlDataSource dataSour
         }
 
         var context = await ResolveClinicalContextAsync(connection, transaction, bundle, cancellationToken);
-        if (context is null)
+        var rejectionReason = context is null
+            ? "The FHIR laboratory bundle did not resolve to the referenced patient, order, and received specimen."
+            : !source.FacilityIds.Contains(context.FacilityId)
+                ? "The authenticated external laboratory source is not authorized for the facility that owns the referenced order."
+                : null;
+        if (rejectionReason is not null)
         {
             var ingestionId = Guid.NewGuid();
-            const string reason = "The FHIR laboratory bundle did not resolve to the referenced patient, order, and received specimen.";
             await InsertIngestionAsync(
                 connection, transaction, ingestionId, source.SourceId, messageId, rawPayload, payloadHash,
-                "rejected", reason, null, null, null, null, 0, 0, cancellationToken);
+                "rejected", rejectionReason, context?.PatientId, context?.OrderId, context?.SpecimenId, null, 0, 0, cancellationToken);
             await InsertIngestionEventAsync(connection, transaction, ingestionId, "received", "Authenticated FHIR R4 laboratory message received.", cancellationToken);
-            await InsertIngestionEventAsync(connection, transaction, ingestionId, "rejected", reason, cancellationToken);
+            await InsertIngestionEventAsync(connection, transaction, ingestionId, "rejected", rejectionReason, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new ExternalLaboratoryIntakeReceipt(
                 ingestionId, source.SourceId, messageId, "rejected", Duplicate: false,
-                Conflict: false, Rejected: true, reason, null, 0, 0, DateTimeOffset.UtcNow.ToString("O"));
+                Conflict: false, Rejected: true, rejectionReason, null, 0, 0, DateTimeOffset.UtcNow.ToString("O"));
         }
 
-        var report = await GetOrCreateReportAsync(connection, transaction, source, bundle, context, cancellationToken);
+        var report = await GetOrCreateReportAsync(connection, transaction, source, bundle, context!, cancellationToken);
         var created = 0;
         var updated = 0;
         foreach (var observation in bundle.Observations)
@@ -159,10 +163,11 @@ public sealed class ExternalLaboratoryIntakeRepository(NpgsqlDataSource dataSour
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            select patient.canonical_id, orders.id, specimens.id,
+            select patient.canonical_id, orders.id, specimens.id, encounters.facility_id,
                    coalesce(nullif(btrim(specimens.accession_identifier), ''), nullif(btrim(specimens.specimen_identifier), ''), concat('Specimen ', specimens.id))
             from patients patient
             inner join lab_orders orders on orders.id=@orderId and orders.pid=patient.legacy_pid
+            inner join encounters on encounters.encounter=orders.encounter and encounters.pid=orders.pid and encounters.facility_id is not null
             inner join lab_specimens specimens on specimens.id=@specimenId and specimens.order_id=orders.id and specimens.specimen_status='received'
             where patient.canonical_id=@patientReference or patient.pubpid=@patientReference
             for update of patient,orders,specimens;
@@ -172,7 +177,7 @@ public sealed class ExternalLaboratoryIntakeRepository(NpgsqlDataSource dataSour
         command.Parameters.AddWithValue("specimenId", bundle.SpecimenId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
-        return new ExternalClinicalContext(reader.GetString(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetString(3));
+        return new ExternalClinicalContext(reader.GetString(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetString(4));
     }
 
     private static async Task<ExternalReportContext> GetOrCreateReportAsync(
@@ -535,7 +540,7 @@ public sealed class ExternalLaboratoryIntakeRepository(NpgsqlDataSource dataSour
     private static bool IsCritical(string? abnormal) => abnormal?.Trim().ToLowerInvariant() is "critical" or "panic" or "hh" or "ll";
 
     private sealed record ExternalIngestionRow(Guid IngestionId, byte[] PayloadHash, string Status, string? RejectionReason, int? ReportId, int CreatedResultCount, int UpdatedResultCount);
-    private sealed record ExternalClinicalContext(string PatientId, int OrderId, int SpecimenId, string SpecimenIdentifier);
+    private sealed record ExternalClinicalContext(string PatientId, int OrderId, int SpecimenId, int FacilityId, string SpecimenIdentifier);
     private sealed record ExternalReportContext(int ReportId, bool Existing, DateTime CollectedAt, DateTime ReportedAt, string Status, string ReviewStatus, int ReviewVersion, string SpecimenIdentifier)
     {
         public bool Matches(ExternalLaboratoryFhirBundle bundle) =>

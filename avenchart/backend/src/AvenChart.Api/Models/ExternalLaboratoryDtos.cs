@@ -6,9 +6,12 @@ namespace AvenChart.Api.Models;
 public sealed record ExternalLaboratorySourceCreateRequest(
     string SourceId,
     string DisplayName,
-    string ApiKey);
+    string ApiKey,
+    IReadOnlyList<int>? FacilityIds);
 
 public sealed record ExternalLaboratorySourceDeactivateRequest(string Reason);
+
+public sealed record ExternalLaboratorySourceFacilityGrantUpdateRequest(IReadOnlyList<int>? FacilityIds);
 
 public sealed record ExternalLaboratorySourceItem(
     string SourceId,
@@ -18,11 +21,13 @@ public sealed record ExternalLaboratorySourceItem(
     string CreatedBy,
     string? DeactivatedAt,
     string? DeactivatedBy,
-    string? DeactivationReason);
+    string? DeactivationReason,
+    IReadOnlyList<int> FacilityIds);
 
 public sealed record ExternalLaboratorySourceAuthentication(
     string SourceId,
-    string DisplayName);
+    string DisplayName,
+    IReadOnlyList<int> FacilityIds);
 
 public sealed record ExternalLaboratoryIntakeReceipt(
     Guid IngestionId,

@@ -38,6 +38,7 @@ try {
     }
 
     $headers = New-AvenChartStaffAccessContextHeaders -Login $login
+    $facilityId = [int]$headers["X-AvenChart-Facility-Id"]
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $sourceId = "synthetic-lab-$marker"
     $apiKey = "synthetic-laboratory-key-" + [Guid]::NewGuid().ToString("N") + [Guid]::NewGuid().ToString("N")
@@ -46,11 +47,12 @@ try {
             sourceId = $sourceId
             displayName = "Synthetic Laboratory $marker"
             apiKey = $apiKey
+            facilityIds = @($facilityId)
         } | ConvertTo-Json) -TimeoutSec 20
 
     $sourceProperties = @($source.PSObject.Properties.Name)
     Add-Check "Source creation returns no credential material" (
-        $source.sourceId -eq $sourceId -and $source.active -eq $true -and
+        $source.sourceId -eq $sourceId -and $source.active -eq $true -and $source.facilityIds -contains $facilityId -and
         $sourceProperties -notcontains "apiKey" -and $sourceProperties -notcontains "apiKeyHash" -and
         $sourceProperties -notcontains "apiKeySalt"
     ) @{ sourceId = $source.sourceId; properties = $sourceProperties }
@@ -60,7 +62,7 @@ try {
     $listedSource = @($listedSources | Where-Object { $_.sourceId -eq $sourceId } | Select-Object -First 1)
     $listedProperties = if ($listedSource.Count -eq 1) { @($listedSource[0].PSObject.Properties.Name) } else { @() }
     Add-Check "Source registry exposes governed metadata only" (
-        $listedSource.Count -eq 1 -and $listedSource[0].active -eq $true -and
+        $listedSource.Count -eq 1 -and $listedSource[0].active -eq $true -and $listedSource[0].facilityIds -contains $facilityId -and
         $listedProperties -notcontains "apiKey" -and $listedProperties -notcontains "apiKeyHash" -and
         $listedProperties -notcontains "apiKeySalt"
     ) @{ sourceCount = $listedSource.Count; properties = $listedProperties }

@@ -5831,12 +5831,14 @@ integrations.MapPost("/laboratory-sources", async (
         ExternalLaboratorySourceCreateRequest request,
         ExternalLaboratorySourceRepository repository,
         AuthRepository authRepository,
+        StaffAccessContextService accessContextService,
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
         try
         {
             var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            await EnsureExternalLaboratorySourceFacilityScopeAsync(session, request.FacilityIds, accessContextService, cancellationToken);
             var source = await repository.CreateSourceAsync(request, session.Username, cancellationToken);
             return Results.Created($"/api/integrations/laboratory-sources/{source.SourceId}", source);
         }
@@ -5853,6 +5855,32 @@ integrations.MapPost("/laboratory-sources", async (
         }
     })
     .WithName("CreateExternalLaboratorySource");
+
+integrations.MapPut("/laboratory-sources/{sourceId}/facilities", async (
+        string sourceId,
+        ExternalLaboratorySourceFacilityGrantUpdateRequest request,
+        ExternalLaboratorySourceRepository repository,
+        AuthRepository authRepository,
+        StaffAccessContextService accessContextService,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            await EnsureExternalLaboratorySourceFacilityScopeAsync(session, request.FacilityIds, accessContextService, cancellationToken);
+            var source = await repository.ReplaceFacilityGrantsAsync(sourceId, request, session.Username, cancellationToken);
+            return source is null ? Results.NotFound() : Results.Ok(source);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("ReplaceExternalLaboratorySourceFacilityGrants");
 
 integrations.MapPost("/laboratory-sources/{sourceId}/deactivate", async (
         string sourceId,
@@ -9486,6 +9514,25 @@ static bool IsExternalLaboratoryFhirContentType(string? contentType)
     var mediaType = contentType.Split(';', 2, StringSplitOptions.TrimEntries)[0];
     return string.Equals(mediaType, "application/fhir+json", StringComparison.OrdinalIgnoreCase)
         || string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase);
+}
+
+static async Task EnsureExternalLaboratorySourceFacilityScopeAsync(
+    AuthSessionResponse session,
+    IReadOnlyList<int>? requestedFacilityIds,
+    StaffAccessContextService accessContextService,
+    CancellationToken cancellationToken)
+{
+    var requested = (requestedFacilityIds ?? []).Distinct().OrderBy(id => id).ToArray();
+    if (requested.Length == 0 || requested.Any(id => id <= 0))
+    {
+        throw new ArgumentException("At least one valid facility grant is required for an external laboratory source.");
+    }
+    var available = await accessContextService.GetAvailableAsync(session.Username, cancellationToken);
+    var permitted = available.Facilities.Select(facility => facility.FacilityId).ToHashSet();
+    if (requested.Any(id => !permitted.Contains(id)))
+    {
+        throw new ArgumentException("A laboratory source may be granted only to facilities available to the authenticated administrator.");
+    }
 }
 
 static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
