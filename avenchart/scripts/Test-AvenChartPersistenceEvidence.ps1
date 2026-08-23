@@ -132,13 +132,70 @@ limit 100;
         $executionMilliseconds -le $MaxQueryMilliseconds
     ) @{ executionMilliseconds = $executionMilliseconds; maxQueryMilliseconds = $MaxQueryMilliseconds }
 
+    $baseDate = Invoke-PostgresScalar -Sql 'select base_date from dataset_metadata limit 1;'
+    $parsedBaseDate = [DateOnly]::MinValue
+    if (-not [DateOnly]::TryParse($baseDate, [ref]$parsedBaseDate)) {
+        throw "Synthetic dataset base date '$baseDate' is invalid."
+    }
+    $flowBoardFacilityId = [int](Invoke-PostgresScalar -Sql @"
+select p.facility_id
+from appointments a
+join patients p on p.legacy_pid = a.pid
+where a.appointment_date = '$baseDate'
+group by p.facility_id
+order by count(*) desc, p.facility_id
+limit 1;
+"@)
+    $flowBoardAppointmentCount = [int](Invoke-PostgresScalar -Sql @"
+select count(*)
+from appointments a
+join patients p on p.legacy_pid = a.pid
+where a.appointment_date = '$baseDate'
+  and p.facility_id = $flowBoardFacilityId;
+"@)
+    Add-Check 'Synthetic flow-board fixture has representative appointments' (
+        $flowBoardAppointmentCount -ge 10
+    ) @{ facilityId = $flowBoardFacilityId; baseDate = $baseDate; appointments = $flowBoardAppointmentCount }
+
+    $flowBoardPlanJson = docker compose exec -T postgres psql -X -U avenchart -d avenchart -t -A -v ON_ERROR_STOP=1 -c @"
+explain (analyze, buffers, format json)
+select a.id, a.row_version, p.canonical_id, p.first_name || ' ' || p.last_name,
+  a.start_time, a.title, a.room, s.first_name || ' ' || s.last_name, f.name, a.status
+from appointments a
+join patients p on p.legacy_pid = a.pid
+left join staff s on s.id = a.provider_id
+left join facilities f on f.id = a.facility_id
+where a.appointment_date = '$baseDate'
+  and p.facility_id = $flowBoardFacilityId
+order by a.start_time, a.id;
+"@
+    if ($LASTEXITCODE -ne 0) {
+        throw 'PostgreSQL plan capture failed for the facility-scoped flow board.'
+    }
+
+    $flowBoardPlanDocument = ($flowBoardPlanJson -join "`n") | ConvertFrom-Json
+    $flowBoardNodes = @(Find-PlanNodes -Node $flowBoardPlanDocument[0].Plan)
+    $appointmentIndexNode = @($flowBoardNodes | Where-Object {
+        $_.'Index Name' -eq 'idx_appointments_date_start_id'
+    } | Select-Object -First 1)
+    $flowBoardExecutionMilliseconds = [double]$flowBoardPlanDocument[0].'Execution Time'
+    Add-Check 'Facility-scoped flow board uses the appointment date access path' (
+        $appointmentIndexNode.Count -eq 1
+    ) @{ nodeType = $appointmentIndexNode[0].'Node Type'; indexName = $appointmentIndexNode[0].'Index Name' }
+    Add-Check 'Facility-scoped flow board remains within the synthetic query guardrail' (
+        $flowBoardExecutionMilliseconds -le $MaxQueryMilliseconds
+    ) @{ executionMilliseconds = $flowBoardExecutionMilliseconds; maxQueryMilliseconds = $MaxQueryMilliseconds }
+
     [ordered]@{
         status = $status
         completedAt = (Get-Date).ToUniversalTime().ToString('o')
-        fixture = @{ facilityId = $facilityId; activePatientCount = $activePatientCount }
+        fixture = @{
+            patientSearch = @{ facilityId = $facilityId; activePatientCount = $activePatientCount }
+            flowBoard = @{ facilityId = $flowBoardFacilityId; baseDate = $baseDate; appointments = $flowBoardAppointmentCount }
+        }
         queryGuardrailMilliseconds = $MaxQueryMilliseconds
         checks = $checks
-        plan = $planDocument[0]
+        plans = @{ patientSearch = $planDocument[0]; flowBoard = $flowBoardPlanDocument[0] }
     } | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $ResultPath -Encoding utf8
     Write-Host "Persistence evidence result: $ResultPath"
 }
