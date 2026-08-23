@@ -6632,6 +6632,7 @@ function App() {
             error={flowError}
             onDateChange={setFlowDate}
             onStatusChange={handleFlowStatusChange}
+            onRetry={() => setFlowRefreshKey((current) => current + 1)}
           />
         )}
         {activeModule === 'reports' && (
@@ -21497,6 +21498,7 @@ function FlowBoardWorkspace({
   error,
   onDateChange,
   onStatusChange,
+  onRetry,
 }: {
   board: FlowBoardResponse | null
   date: string
@@ -21504,6 +21506,7 @@ function FlowBoardWorkspace({
   error: string | null
   onDateChange: (date: string) => void
   onStatusChange: (appointmentId: string, status: string) => void | Promise<void>
+  onRetry: () => void
 }) {
   const totalAppointments = board?.lanes.reduce((total, lane) => total + lane.items.length, 0) ?? 0
   const queuedAppointments = board?.lanes.find((lane) => lane.key === 'scheduled')?.items.length ?? 0
@@ -21542,8 +21545,13 @@ function FlowBoardWorkspace({
         </label>
       </header>
 
-      {status === 'loading' && <div className="workspace-status">Refreshing clinic flowâ€¦</div>}
-      {error && <div className="workspace-error">{error}</div>}
+      {status === 'loading' && <div className="workspace-status" role="status">Refreshing clinic flowâ€¦</div>}
+      {error && (
+        <div className="workspace-error" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={onRetry}>Retry flow board</button>
+        </div>
+      )}
 
       {board && (
         <>
