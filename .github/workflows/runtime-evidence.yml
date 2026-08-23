@@ -71,6 +71,10 @@ jobs:
         working-directory: avenchart
         shell: pwsh
         run: ./scripts/Test-AvenChartOperationalReadiness.ps1
+      - name: Capture persistence query-plan evidence
+        working-directory: avenchart
+        shell: pwsh
+        run: ./scripts/Test-AvenChartPersistenceEvidence.ps1
       - name: Run modern UI browser evidence in Chromium
         working-directory: avenchart-ui
         run: |
