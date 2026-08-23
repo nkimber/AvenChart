@@ -4559,7 +4559,12 @@ function rememberDefaultStaffAccessContext(
     return
   }
 
-  selectedStaffAccessContexts.set(sessionId, { facilityId, purposeOfUse })
+  // A restored session describes the server default, not necessarily the
+  // clinician's current in-browser choice. Do not silently reset a deliberate
+  // facility/purpose switch when a workspace refreshes its session details.
+  if (!selectedStaffAccessContexts.has(sessionId)) {
+    selectedStaffAccessContexts.set(sessionId, { facilityId, purposeOfUse })
+  }
 }
 
 export function selectStaffAccessContext(

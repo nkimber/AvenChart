@@ -136,6 +136,7 @@ import {
   login,
   loginPatientPortal,
   logout,
+  selectStaffAccessContext,
   completePatientDocumentOcr,
   disposePatientDocumentRetention,
   createBillingClaimStatus,
@@ -303,6 +304,7 @@ import {
   type AuthAuditResponse,
   type AuthLoginResponse,
   type AuthSessionResponse,
+  type StaffAccessContext,
   type AppointmentDetail,
   type AppointmentAvailabilityValidationResponse,
   type AppointmentCreateInput,
@@ -529,6 +531,11 @@ type EncounterProcedureResultSetInput = {
 const secureMessagePageSize = 20
 const staffSessionStorageKey = 'avenchart.staff-session-id'
 
+type StaffAccessSelection = {
+  facilityId: number
+  purposeOfUse: string
+}
+
 type SecureMessageFolderKey = 'inbox' | 'sent' | 'all' | 'deleted'
 
 const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemented?: ModuleId }> = [
@@ -620,7 +627,18 @@ function staffSessionFromLogin(result: AuthLoginResponse): AuthSessionResponse {
     endedAt: null,
     failureReason: null,
     sessionSource: 'avenchart',
+    accessContext: result.accessContext,
   }
+}
+
+function defaultStaffAccessSelection(
+  accessContext: StaffAccessContext | null | undefined,
+): StaffAccessSelection | null {
+  const facilityId = accessContext?.defaultFacilityId
+  const purposeOfUse = accessContext?.defaultPurposeOfUse?.trim()
+  return facilityId && facilityId > 0 && purposeOfUse
+    ? { facilityId, purposeOfUse }
+    : null
 }
 
 function getDefaultPatientPortalReportSectionIds(report: PatientPortalMedicalReportResponse | null): string[] {
@@ -804,6 +822,8 @@ function App() {
   const [administrationRefreshKey, setAdministrationRefreshKey] = useState(0)
   const [avenChartSessionId, setLegacyEhrSessionId] = useState<string | null>(null)
   const [avenChartSession, setLegacyEhrSession] = useState<AuthSessionResponse | null>(null)
+  const [staffAccessSelection, setStaffAccessSelection] = useState<StaffAccessSelection | null>(null)
+  const [staffAccessScopeRevision, setStaffAccessScopeRevision] = useState(0)
   const [staffLoginUsername, setStaffLoginUsername] = useState('admin')
   const [staffLoginPassword, setStaffLoginPassword] = useState('pass')
   const [staffLoginStatus, setStaffLoginStatus] =
@@ -852,6 +872,108 @@ function App() {
     useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [criticalLabResultQueueError, setCriticalLabResultQueueError] = useState<string | null>(null)
   const [criticalLabResultQueueRefreshKey, setCriticalLabResultQueueRefreshKey] = useState(0)
+
+  function clearStaffWorkspaceDataForAccessScopeChange() {
+    // A facility or purpose switch is a protected-resource boundary. Remove
+    // prior-scope content before any replacement request can render, including
+    // selections that could otherwise be reused by a mutation form.
+    setQuery('')
+    setSearchResult(null)
+    setSelectedPatientId(null)
+    setChart(null)
+    setSearchStatus('idle')
+    setChartStatus('idle')
+    setProviderAssignmentOptions(null)
+    setProviderAssignmentOptionsStatus('idle')
+    setCareTeamOptions(null)
+    setCareTeamOptionsStatus('idle')
+    setPatientError(null)
+
+    setAppointmentPatientId('')
+    setAppointmentResult(null)
+    setSelectedAppointmentId(null)
+    setAppointmentDetail(null)
+    setAppointmentStatus('idle')
+    setAppointmentDetailStatus('idle')
+    setAppointmentError(null)
+    setAppointmentWaitlist(null)
+    setAppointmentWaitlistStatus('idle')
+    setAppointmentWaitlistError(null)
+    setAppointmentReminderDispatch(null)
+    setAppointmentReminderDispatchHistory(null)
+    setAppointmentReminderTemplates(null)
+    setAppointmentReminderTemplateStatus('idle')
+    setAppointmentReminderTemplateError(null)
+    setAppointmentReminderDispatchStatus('idle')
+    setAppointmentReminderDispatchError(null)
+
+    setEncounterPatientId('')
+    setEncounterResult(null)
+    setSelectedEncounter(null)
+    setEncounterDetail(null)
+    setEncounterStatus('idle')
+    setEncounterDetailStatus('idle')
+    setEncounterError(null)
+    setEncounterSoapNoteTemplates(null)
+    setEncounterSoapNoteTemplateStatus('idle')
+    setEncounterSoapNoteTemplateError(null)
+
+    setClinicalPatientId('')
+    setClinicalLists(null)
+    setClinicalStatus('idle')
+    setClinicalError(null)
+
+    setMessagePatientId('')
+    setPatientMessages(null)
+    setMessageStatus('idle')
+    setMessageError(null)
+
+    setDocumentPatientId('')
+    setPatientDocuments(null)
+    setDocumentStatus('idle')
+    setDocumentError(null)
+    setDocumentOcrQueue(null)
+    setDocumentRoutingQueue(null)
+    setDocumentRetentionPolicy(null)
+
+    setProcedurePatientId('')
+    setProcedureResults(null)
+    setProcedureStatus('idle')
+    setProcedureError(null)
+
+    setBillingPatientId('')
+    setPatientBilling(null)
+    setBillingStatus('idle')
+    setBillingError(null)
+
+    setInventory(null)
+    setInventoryStatus('idle')
+    setInventoryError(null)
+    setFlowBoard(null)
+    setFlowStatus('idle')
+    setFlowError(null)
+    setAdministrationDirectory(null)
+    setAdministrationStatus('idle')
+    setAdministrationError(null)
+    setOperationalReports(null)
+    setReportsStatus('idle')
+    setReportsError(null)
+    setProcedureLabProviders(null)
+    setProcedureLabProvidersStatus('idle')
+    setProcedureLabProvidersError(null)
+    setProcedureOrderCatalog(null)
+    setProcedureOrderCatalogStatus('idle')
+    setProcedureOrderCatalogError(null)
+    setProcedureOrderQueue(null)
+    setProcedureOrderQueueStatus('idle')
+    setProcedureOrderQueueError(null)
+    setProcedureReportReviewQueue(null)
+    setProcedureReportReviewQueueStatus('idle')
+    setProcedureReportReviewQueueError(null)
+    setCriticalLabResultQueue(null)
+    setCriticalLabResultQueueStatus('idle')
+    setCriticalLabResultQueueError(null)
+  }
 
   useEffect(() => {
     if (!avenChartSessionId) {
@@ -907,7 +1029,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [query, avenChartSessionId])
+  }, [query, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (!avenChartSessionId) {
@@ -933,7 +1055,7 @@ function App() {
 
     loadProviderAssignmentOptions()
     return () => controller.abort()
-  }, [avenChartSessionId])
+  }, [avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (!selectedPatientId || !avenChartSessionId) {
@@ -962,7 +1084,7 @@ function App() {
 
     loadChart()
     return () => controller.abort()
-  }, [selectedPatientId, avenChartSessionId])
+  }, [selectedPatientId, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (!selectedPatientId || !avenChartSessionId) {
@@ -989,7 +1111,7 @@ function App() {
 
     loadCareTeamOptions()
     return () => controller.abort()
-  }, [selectedPatientId, avenChartSessionId])
+  }, [selectedPatientId, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'calendar') {
@@ -1059,7 +1181,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, appointmentPatientId, appointmentFromDate, appointmentRefreshKey, avenChartSessionId])
+  }, [activeModule, appointmentPatientId, appointmentFromDate, appointmentRefreshKey, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'calendar') {
@@ -1095,7 +1217,7 @@ function App() {
 
     loadAppointmentReminderTemplates()
     return () => controller.abort()
-  }, [activeModule, avenChartSessionId])
+  }, [activeModule, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'calendar') {
@@ -1128,7 +1250,7 @@ function App() {
 
     loadAppointmentWaitlist()
     return () => controller.abort()
-  }, [activeModule, appointmentRefreshKey, avenChartSessionId])
+  }, [activeModule, appointmentRefreshKey, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'calendar' || !selectedAppointmentId || !avenChartSessionId) {
@@ -1154,7 +1276,7 @@ function App() {
 
     loadAppointmentDetail()
     return () => controller.abort()
-  }, [activeModule, selectedAppointmentId, avenChartSessionId])
+  }, [activeModule, selectedAppointmentId, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'calendar' || !selectedAppointmentId || !avenChartSessionId) {
@@ -1176,7 +1298,7 @@ function App() {
 
     loadReminderDispatchHistory()
     return () => controller.abort()
-  }, [activeModule, selectedAppointmentId, avenChartSessionId, appointmentRefreshKey])
+  }, [activeModule, selectedAppointmentId, avenChartSessionId, appointmentRefreshKey, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'encounters') {
@@ -1240,7 +1362,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, encounterPatientId, encounterFromDate, encounterRefreshKey, encounterShowArchived, avenChartSessionId])
+  }, [activeModule, encounterPatientId, encounterFromDate, encounterRefreshKey, encounterShowArchived, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'encounters') {
@@ -1276,7 +1398,7 @@ function App() {
 
     loadEncounterSoapNoteTemplates()
     return () => controller.abort()
-  }, [activeModule, avenChartSessionId])
+  }, [activeModule, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'encounters' || selectedEncounter === null || !avenChartSessionId) {
@@ -1307,7 +1429,7 @@ function App() {
 
     loadEncounterDetail()
     return () => controller.abort()
-  }, [activeModule, selectedEncounter, encounterIncludeArchivedDocuments, avenChartSessionId])
+  }, [activeModule, selectedEncounter, encounterIncludeArchivedDocuments, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'lists') {
@@ -1342,7 +1464,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, clinicalPatientId, clinicalRefreshKey, avenChartSessionId])
+  }, [activeModule, clinicalPatientId, clinicalRefreshKey, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'messages') {
@@ -1377,7 +1499,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, messagePatientId, messageRefreshKey, avenChartSessionId])
+  }, [activeModule, messagePatientId, messageRefreshKey, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'documents') {
@@ -1426,7 +1548,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, documentPatientId, documentIncludeArchived, documentRefreshKey, avenChartSessionId])
+  }, [activeModule, documentPatientId, documentIncludeArchived, documentRefreshKey, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'procedures') {
@@ -1460,7 +1582,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, procedurePatientId, procedureRefreshKey, avenChartSessionId])
+  }, [activeModule, procedurePatientId, procedureRefreshKey, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'fees') {
@@ -1494,7 +1616,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, billingPatientId, avenChartSessionId])
+  }, [activeModule, billingPatientId, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'inventory') {
@@ -1528,7 +1650,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, inventoryRefreshKey, avenChartSessionId])
+  }, [activeModule, inventoryRefreshKey, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'flow') {
@@ -1566,7 +1688,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, flowDate, flowRefreshKey, avenChartSessionId])
+  }, [activeModule, flowDate, flowRefreshKey, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'admin') {
@@ -1598,7 +1720,7 @@ function App() {
 
     loadAdministrationDirectory()
     return () => controller.abort()
-  }, [activeModule, administrationRefreshKey, avenChartSessionId])
+  }, [activeModule, administrationRefreshKey, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -1632,7 +1754,7 @@ function App() {
 
     loadOperationalReports()
     return () => controller.abort()
-  }, [activeModule, avenChartSessionId])
+  }, [activeModule, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -1671,7 +1793,7 @@ function App() {
 
     loadProcedureLabProviders()
     return () => controller.abort()
-  }, [activeModule, procedureLabProvidersIncludeInactive, avenChartSessionId])
+  }, [activeModule, procedureLabProvidersIncludeInactive, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'reports' && activeModule !== 'procedures') {
@@ -1706,7 +1828,7 @@ function App() {
 
     loadProcedureOrderCatalog()
     return () => controller.abort()
-  }, [activeModule, avenChartSessionId])
+  }, [activeModule, avenChartSessionId, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -1764,6 +1886,7 @@ function App() {
     procedureOrderQueueToDate,
     procedureOrderQueueRefreshKey,
     avenChartSessionId,
+    staffAccessScopeRevision,
   ])
 
   useEffect(() => {
@@ -1802,7 +1925,7 @@ function App() {
 
     void loadCriticalLabResultQueue()
     return () => controller.abort()
-  }, [activeModule, avenChartSessionId, criticalLabResultQueueRefreshKey])
+  }, [activeModule, avenChartSessionId, criticalLabResultQueueRefreshKey, staffAccessScopeRevision])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -1862,6 +1985,7 @@ function App() {
     procedureReportReviewQueueToDate,
     procedureReportReviewQueueRefreshKey,
     avenChartSessionId,
+    staffAccessScopeRevision,
   ])
 
   const selectedFromList = useMemo(
@@ -1870,6 +1994,9 @@ function App() {
   )
 
   const activePatient = chart ?? selectedFromList
+  const availableStaffAccessContext = avenChartSession?.accessContext ?? null
+  const activeStaffAccessScope =
+    staffAccessSelection ?? defaultStaffAccessSelection(availableStaffAccessContext)
 
   useEffect(() => {
     if (forceEntryChooser) {
@@ -1904,6 +2031,7 @@ function App() {
         if (session.authenticated && session.sessionId) {
           setLegacyEhrSessionId(session.sessionId)
           setLegacyEhrSession(session)
+          setStaffAccessSelection(defaultStaffAccessSelection(session.accessContext))
           setEntryMode('staff')
           setStaffLoginStatus('authenticated')
           setStaffLoginMessage(`Signed in as ${session.displayName}`)
@@ -1927,15 +2055,22 @@ function App() {
   }, [entryMode, forceEntryChooser, avenChartSessionId])
 
   function activateLegacyEhrSession(sessionId: string, session?: AuthSessionResponse) {
+    const isNewSession = avenChartSessionId !== sessionId
     setLegacyEhrSessionId(sessionId)
     window.sessionStorage.setItem(staffSessionStorageKey, sessionId)
     if (session) {
       setLegacyEhrSession(session)
+      if (isNewSession || !staffAccessSelection) {
+        setStaffAccessSelection(defaultStaffAccessSelection(session.accessContext))
+      }
     } else {
       void getCurrentSession(sessionId)
         .then((currentSession) => {
           if (currentSession.authenticated) {
             setLegacyEhrSession(currentSession)
+            if (isNewSession || !staffAccessSelection) {
+              setStaffAccessSelection(defaultStaffAccessSelection(currentSession.accessContext))
+            }
           }
         })
         .catch(() => {
@@ -1951,11 +2086,40 @@ function App() {
   function clearLegacyEhrSession(nextEntryMode: EntryMode = 'staff-login') {
     setLegacyEhrSessionId(null)
     setLegacyEhrSession(null)
+    setStaffAccessSelection(null)
     setAdministrationDirectory(null)
     setAdministrationStatus('idle')
     setAdministrationError(null)
     window.sessionStorage.removeItem(staffSessionStorageKey)
     setEntryMode(nextEntryMode)
+  }
+
+  function changeStaffAccessScope(facilityId: number, purposeOfUse: string) {
+    const accessContext = avenChartSession?.accessContext
+    if (!avenChartSessionId || !accessContext) {
+      setStaffLoginMessage('The active session does not supply an authorized access context.')
+      return
+    }
+
+    const facility = accessContext.facilities.find((candidate) => candidate.facilityId === facilityId)
+    const normalizedPurpose = purposeOfUse.trim()
+    if (!facility || !accessContext.purposes.includes(normalizedPurpose)) {
+      setStaffLoginMessage('Only facilities and purposes returned for this session can be selected.')
+      return
+    }
+
+    if (
+      staffAccessSelection?.facilityId === facilityId &&
+      staffAccessSelection.purposeOfUse === normalizedPurpose
+    ) {
+      return
+    }
+
+    selectStaffAccessContext(avenChartSessionId, facilityId, normalizedPurpose)
+    clearStaffWorkspaceDataForAccessScopeChange()
+    setStaffAccessSelection({ facilityId, purposeOfUse: normalizedPurpose })
+    setStaffAccessScopeRevision((current) => current + 1)
+    setStaffLoginMessage(`Access scope changed to ${facility.name} for ${normalizedPurpose}.`)
   }
 
   async function handleStaffLogin(event: FormEvent<HTMLFormElement>) {
@@ -6348,7 +6512,7 @@ function App() {
         </nav>
       </aside>
 
-      <main className="workspace">
+      <main className="workspace" key={staffAccessScopeRevision}>
         <header className="workspace-header">
           <div>
             <p className="eyebrow">{moduleEyebrow(activeModule)}</p>
@@ -6359,6 +6523,41 @@ function App() {
               <UserCheck size={16} />
               <span>{avenChartSession?.displayName ?? avenChartSession?.username ?? 'Signed in'}</span>
             </div>
+            {availableStaffAccessContext && activeStaffAccessScope && (
+              <div className="access-scope-control" aria-label="Active staff access scope">
+                <Building2 size={16} aria-hidden="true" />
+                <label>
+                  <span>Facility</span>
+                  <select
+                    aria-label="Active facility"
+                    value={activeStaffAccessScope.facilityId}
+                    onChange={(event) =>
+                      changeStaffAccessScope(Number(event.target.value), activeStaffAccessScope.purposeOfUse)}
+                  >
+                    {availableStaffAccessContext.facilities.map((facility) => (
+                      <option key={facility.facilityId} value={facility.facilityId}>
+                        {facility.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Purpose</span>
+                  <select
+                    aria-label="Purpose of use"
+                    value={activeStaffAccessScope.purposeOfUse}
+                    onChange={(event) =>
+                      changeStaffAccessScope(activeStaffAccessScope.facilityId, event.target.value)}
+                  >
+                    {availableStaffAccessContext.purposes.map((purpose) => (
+                      <option key={purpose} value={purpose}>
+                        {purpose}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
             <div className="dataset-chip">
               <Activity size={16} />
               <span>{datasetVersion ?? 'v1'} gold dataset</span>

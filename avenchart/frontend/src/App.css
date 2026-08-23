@@ -1099,6 +1099,43 @@
   color: #2e4655;
 }
 
+.access-scope-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 8px;
+  border: 1px solid #b8d5d1;
+  border-radius: 6px;
+  background: #edf8f6;
+  color: #164f4a;
+}
+
+.access-scope-control label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #164f4a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.access-scope-control select {
+  min-height: 28px;
+  max-width: 150px;
+  border: 1px solid #7eb2ab;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #173c3a;
+  font: inherit;
+  font-weight: 700;
+}
+
+.access-scope-control select:focus-visible {
+  outline: 3px solid #0f766e;
+  outline-offset: 2px;
+}
+
 .portal-pill.compact {
   min-height: 28px;
   padding-inline: 9px;
