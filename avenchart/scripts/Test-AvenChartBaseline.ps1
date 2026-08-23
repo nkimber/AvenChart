@@ -3423,7 +3423,10 @@ try {
     $appointmentMutationExpectedVersion = $cancelledAppointment.rowVersion
     $appointmentMutationPassed = $createdAppointment.status -eq "-" -and $cancelledAppointment.status -eq "x" -and $cancelledAppointment.title -eq "Smoke Appointment Mutation Cancelled"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentMutationId?expectedVersion=$appointmentMutationExpectedVersion" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    # Scheduled appointments are retained as clinical-operational evidence.
+    # The cancellation itself is the completed lifecycle outcome; attempting
+    # to delete the root appointment would incorrectly assert that retention
+    # protections are a smoke-test failure.
     $appointmentMutationId = $null
 
     Add-Check -Name "appointment mutation lifecycle" -Result $(if ($appointmentMutationPassed) { "passed" } else { "failed" }) -Details @{
