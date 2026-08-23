@@ -1197,10 +1197,14 @@ function App() {
     }
 
     const controller = new AbortController()
+    // Encounter selection is owned by the active patient/date search. Clear
+    // the prior detail before a new query so it cannot be edited out of scope.
+    setEncounterResult(null)
+    setSelectedEncounter(null)
+    setEncounterDetail(null)
+    setEncounterStatus('loading')
+    setEncounterError(null)
     const timeout = window.setTimeout(async () => {
-      setEncounterStatus('loading')
-      setEncounterError(null)
-
       try {
         const result = await searchEncounters(
           encounterPatientId,
@@ -1223,6 +1227,9 @@ function App() {
         }
       } catch (searchError) {
         if (!controller.signal.aborted) {
+          setEncounterResult(null)
+          setSelectedEncounter(null)
+          setEncounterDetail(null)
           setEncounterStatus('error')
           setEncounterError(searchError instanceof Error ? searchError.message : 'Encounter search failed')
         }
