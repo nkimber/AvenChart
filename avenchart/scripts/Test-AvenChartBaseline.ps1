@@ -38,6 +38,9 @@ function Add-Check {
 
 $AdministrationHeaders = $null
 $AdministrationLogin = $null
+$AdministrationFacilityIds = $null
+$AdministrationDefaultFacilityId = $null
+$AdministrationPurposes = $null
 $OriginalAdministrationGrant = $null
 $FrontDeskHeaders = $null
 $ClinicianHeaders = $null
@@ -45,16 +48,16 @@ $InventoryWitnessHeaders = $null
 
 function Get-AdministrationHeaders {
     param(
-        [int]$FacilityId = 11,
+        [int]$FacilityId,
         [ValidateSet("treatment", "payment", "healthcare-operations")]
         [string]$PurposeOfUse = "healthcare-operations"
     )
 
-    if ($null -eq $script:AdministrationHeaders) {
-        $loginBody = @{
-            username = "admin"
-            password = "pass"
-        }
+    $loginBody = @{
+        username = "admin"
+        password = "pass"
+    }
+    if ($null -eq $script:AdministrationLogin) {
         $login = Invoke-RestMethod `
             -Uri "$ApiBaseUrl/api/auth/login" `
             -Method Post `
@@ -73,49 +76,67 @@ function Get-AdministrationHeaders {
             -Headers $bootstrapHeaders `
             -TimeoutSec 20
         $grantedFacilityIds = @($grant.facilities | ForEach-Object { [int]$_.facilityId } | Sort-Object -Unique)
-        if ($grantedFacilityIds -notcontains $FacilityId) {
-            $originalDefaultFacility = @($grant.facilities | Where-Object { $_.isDefault -eq $true } | Select-Object -First 1)
-            if ($originalDefaultFacility.Count -ne 1) {
-                throw "The administrator access-context grant did not identify exactly one default facility."
-            }
-            $script:OriginalAdministrationGrant = @{
-                FacilityIds = $grantedFacilityIds
-                DefaultFacilityId = [int]$originalDefaultFacility[0].facilityId
-                Purposes = @($grant.purposes)
-            }
-            Invoke-RestMethod `
-                -Uri "$ApiBaseUrl/api/administration/access-context-grants/admin" `
-                -Method Put `
-                -Headers $bootstrapHeaders `
-                -ContentType "application/json" `
-                -Body (@{
-                    facilityIds = @($grantedFacilityIds + $FacilityId | Sort-Object -Unique)
-                    defaultFacilityId = $script:OriginalAdministrationGrant.DefaultFacilityId
-                    purposes = @($grant.purposes)
-                } | ConvertTo-Json -Depth 5) `
-                -TimeoutSec 20 | Out-Null
+        $originalDefaultFacility = @($grant.facilities | Where-Object { $_.isDefault -eq $true } | Select-Object -First 1)
+        if ($originalDefaultFacility.Count -ne 1) {
+            throw "The administrator access-context grant did not identify exactly one default facility."
+        }
+        $script:AdministrationLogin = $login
+        $script:AdministrationFacilityIds = $grantedFacilityIds
+        $script:AdministrationDefaultFacilityId = [int]$originalDefaultFacility[0].facilityId
+        $script:AdministrationPurposes = @($grant.purposes)
+        $script:AdministrationHeaders = New-AvenChartStaffAccessContextHeaders `
+            -Login $login `
+            -FacilityId $script:AdministrationDefaultFacilityId `
+            -PurposeOfUse $PurposeOfUse
+    }
 
-            $login = Invoke-RestMethod `
-                -Uri "$ApiBaseUrl/api/auth/login" `
-                -Method Post `
-                -ContentType "application/json" `
-                -Body ($loginBody | ConvertTo-Json -Depth 5) `
-                -TimeoutSec 20
-            if ($login.authenticated -ne $true -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
-                throw "Administration smoke login did not refresh after its facility grants changed."
+    $selectedFacilityId = if ($FacilityId -gt 0) {
+        $FacilityId
+    }
+    else {
+        $script:AdministrationDefaultFacilityId
+    }
+    if ($script:AdministrationFacilityIds -notcontains $selectedFacilityId) {
+        if ($null -eq $script:OriginalAdministrationGrant) {
+            $script:OriginalAdministrationGrant = @{
+                FacilityIds = @($script:AdministrationFacilityIds)
+                DefaultFacilityId = $script:AdministrationDefaultFacilityId
+                Purposes = @($script:AdministrationPurposes)
             }
         }
 
+        Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/administration/access-context-grants/admin" `
+            -Method Put `
+            -Headers $script:AdministrationHeaders `
+            -ContentType "application/json" `
+            -Body (@{
+                facilityIds = @($script:AdministrationFacilityIds + $selectedFacilityId | Sort-Object -Unique)
+                defaultFacilityId = $script:AdministrationDefaultFacilityId
+                purposes = @($script:AdministrationPurposes)
+            } | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20 | Out-Null
+
+        $login = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/auth/login" `
+            -Method Post `
+            -ContentType "application/json" `
+            -Body ($loginBody | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20
+        if ($login.authenticated -ne $true -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
+            throw "Administration smoke login did not refresh after its facility grants changed."
+        }
         $script:AdministrationLogin = $login
+        $script:AdministrationFacilityIds = @($script:AdministrationFacilityIds + $selectedFacilityId | Sort-Object -Unique)
         $script:AdministrationHeaders = New-AvenChartStaffAccessContextHeaders `
             -Login $login `
-            -FacilityId $FacilityId `
+            -FacilityId $script:AdministrationDefaultFacilityId `
             -PurposeOfUse $PurposeOfUse
     }
 
     return New-AvenChartStaffAccessContextHeaders `
         -Login $script:AdministrationLogin `
-        -FacilityId $FacilityId `
+        -FacilityId $selectedFacilityId `
         -PurposeOfUse $PurposeOfUse
 }
 

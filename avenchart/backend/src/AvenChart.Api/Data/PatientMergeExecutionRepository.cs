@@ -49,6 +49,17 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
         .Select(table => table.Name)
         .ToHashSet(StringComparer.Ordinal);
 
+    // These rows are materialized, patient-keyed cache/state rather than
+    // independently authored record content. Moving the source allergies
+    // advances both state rows through the database trigger, which invalidates
+    // stale acknowledgements and keeps the state safe for execution and
+    // manifest-bounded rollback. They must therefore be accounted for without
+    // treating a source row as an unsupported record to move.
+    private static readonly HashSet<string> DerivedPatientStateTableNames =
+    [
+        "patient_allergy_review_states"
+    ];
+
     private static readonly string[] OneToOneTables =
     [
         "patient_employers",
@@ -261,7 +272,11 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
 
         // Npgsql permits one active command per connection. Dispose the schema reader
         // before counting dependencies using the same transactional connection.
-        foreach (var table in discovered.Where(table => !SupportedTableNames.Contains(table.TableName) && table.TableName != "patient_care_teams" && table.TableName != "patient_care_team_members"))
+        foreach (var table in discovered.Where(table =>
+                     !SupportedTableNames.Contains(table.TableName)
+                     && !DerivedPatientStateTableNames.Contains(table.TableName)
+                     && table.TableName != "patient_care_teams"
+                     && table.TableName != "patient_care_team_members"))
         {
             var count = await CountRowsAsync(connection, transaction, table.TableName, table.HasPatientId, table.HasPid, source, cancellationToken);
             if (count > 0)
