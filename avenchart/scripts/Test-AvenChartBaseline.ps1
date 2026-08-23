@@ -1179,28 +1179,29 @@ try {
         }
     }
 
-    $authorityHistoryResponse = Invoke-RestMethod `
+    # The history endpoints intentionally return JSON arrays.  Keep this
+    # assertion aligned with the public transport contract rather than the
+    # superseded { events: [...] } test-harness envelope.
+    $authorityHistory = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-authorities/$($authority.authorityId)/history" `
         -Method Get `
         -Headers $disclosureHeaders `
         -TimeoutSec 20
-    $authorityHistory = @($authorityHistoryResponse.events)
-    $requestHistoryResponse = Invoke-RestMethod `
+    $requestHistory = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests/$($firstDisclosureRequest.requestId)/history" `
         -Method Get `
         -Headers $disclosureHeaders `
         -TimeoutSec 20
-    $requestHistory = @($requestHistoryResponse.events)
-    $authorityList = @(Invoke-RestMethod `
+    $authorityList = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-authorities" `
         -Method Get `
         -Headers $disclosureHeaders `
-        -TimeoutSec 20)
-    $requestList = @(Invoke-RestMethod `
+        -TimeoutSec 20
+    $requestList = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests" `
         -Method Get `
         -Headers $disclosureHeaders `
-        -TimeoutSec 20)
+        -TimeoutSec 20
 
     $disclosurePassed = $unauthenticatedDisclosureStatus -eq 401 `
         -and $disclosurePolicy.revision -eq "local-disclosure-authority-v1" `
@@ -1237,6 +1238,10 @@ try {
         staleDecisionStatus = $staleDisclosureDecisionStatus
         approvalAfterRevocationStatus = $approvalAfterRevocationStatus
         unauthenticatedStatus = $unauthenticatedDisclosureStatus
+        authorityActions = @($authorityHistory.action)
+        requestActions = @($requestHistory.action)
+        authorityListed = @($authorityList | Where-Object { $_.authorityId -eq $authority.authorityId }).Count
+        requestListed = @($requestList | Where-Object { $_.authorityId -eq $authority.authorityId }).Count
     }
 }
 catch {
