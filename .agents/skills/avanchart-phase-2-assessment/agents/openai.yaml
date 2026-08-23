@@ -1,0 +1,3 @@
+interface:
+  display_name: "AvenChart Phase 2 Assessment"
+  short_description: "Run evidence-led AvenChart codebase assessments"

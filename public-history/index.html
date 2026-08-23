@@ -40,7 +40,7 @@
         <div class="current-phase" aria-label="Current program phase">
           <span>Current phase</span>
           <strong>02 · Assessment</strong>
-          <small>In progress</small>
+          <small>Full assessment underway</small>
         </div>
       </div>
 
@@ -65,15 +65,18 @@
             </div>
           </div>
 
-          <div class="phase-tab-group is-current" aria-labelledby="phase-two-nav-label">
+          <div class="phase-tab-group is-current has-seven-tabs" aria-labelledby="phase-two-nav-label">
             <div class="phase-tab-heading">
               <span id="phase-two-nav-label">Phase 02</span>
               <strong>Assessment and planning</strong>
-              <small>In progress · setup</small>
+              <small>Calibration accepted · assessment underway</small>
             </div>
             <div class="phase-tab-links">
               <a class="workbench-tab" href="#phase-2-overview" data-workbench-view="phase-2-overview">Overview</a>
+              <a class="workbench-tab" href="#phase-2-iterations" data-workbench-view="phase-2-iterations">Iterations</a>
+              <a class="workbench-tab" href="#phase-2-readiness" data-workbench-view="phase-2-readiness">Readiness</a>
               <a class="workbench-tab" href="#phase-2-assessment" data-workbench-view="phase-2-assessment">Assessment framework</a>
+              <a class="workbench-tab" href="#phase-2-reddit-challenge" data-workbench-view="phase-2-reddit-challenge">Reddit challenge</a>
               <a class="workbench-tab" href="#phase-2-findings" data-workbench-view="phase-2-findings">Findings register</a>
               <a class="workbench-tab" href="#phase-2-recommendations" data-workbench-view="phase-2-recommendations">Recommendations</a>
             </div>
@@ -158,7 +161,7 @@
                 evidence and converted into ordered, measurable recommendations.
               </p>
               <dl class="roadmap-facts">
-                <div><dt>Current work</dt><dd>Baseline preservation and assessment setup</dd></div>
+                <div><dt>Current work</dt><dd>Full read-only assessment; first identity and access packet validated</dd></div>
                 <div><dt>Outcome</dt><dd>Prioritized, dependency-aware improvement roadmap</dd></div>
               </dl>
             </li>
@@ -435,10 +438,43 @@
           </div>
           <aside class="phase-status-stamp is-current" aria-label="Phase 2 status">
             <span>Phase 02 status</span>
-            <strong>In progress</strong>
-            <p>Assessment setup and baseline preservation</p>
-            <time datetime="2026-08-20">Started August 20, 2026</time>
+            <strong>Iteration 02 in review</strong>
+            <p>Implementation gains are recorded; material Phase 2 findings and every gate remain open</p>
+            <time datetime="2026-08-23">Updated August 23, 2026</time>
           </aside>
+        </section>
+
+        <section class="register-status" aria-labelledby="phase-two-progress-heading">
+            <div class="register-count"><strong>10</strong><span>full packets</span></div>
+          <div>
+            <p class="eyebrow">Assessment progress</p>
+            <h2 id="phase-two-progress-heading">Ten clinical, engineering, and operational packets have been assessed.</h2>
+            <p>
+              COV-002 established seven identity, authorization, session, browser, and PHI-audit findings. COV-003
+              added eight independently checked findings across registration, demographics, merge, lifecycle, patient
+              chart context, and SDOH. COV-004 added eleven across clinical-list authorization, encounter signatures and
+              locks, retained clinical evidence, stale writes, vitals, alerts, medications, prescriptions, and orders.
+              COV-005 added eight findings across appointment concurrency, message history, recall closure, therapy
+              integrity, workflow provenance, and the therapy UI. COV-006 added six across critical classification,
+              correction concurrency, follow-up closure, specimen lineage, portal release context, and critical-work
+              actionability; it also broadened three existing root findings rather than counting duplicate symptoms.
+              COV-007 added nine across controlled reconciliation and attestation, synthetic financial outcomes, payment
+              allocation, report source/governance, background-run recovery, collections visibility, and configuration
+              approval; it broadened seven existing roots and falsified the suspected duplicate-active-count race.
+              COV-010 added four conditional contract and integration findings across OpenAPI, FHIR, idempotency, and
+              transport delivery while broadening FHIR scope, audit, merged-source, and provenance roots. COV-011 added
+              two conditional clinician-interface and recovery findings while broadening response-ownership and
+              verification-governance roots. The residual packet reconciled portal, reference-interface, host/data,
+              recovery, deployment, release, documentation, and external-laboratory scope evidence. A tenth runtime
+              packet exercised the local PostgreSQL environment, migration interruption, backup/restore, browser gates,
+              identity scope, FHIR, integration replay, dependencies, and the existing Azure demo. It promoted FHIR
+              conformance to a required blocker and added the absent external-laboratory apply path as a new blocker.
+              All twelve target-policy defaults are now approved. Independent accessibility and qualified specialist
+              evidence, recommendation acceptance, current production-topology proof, and explicit gate closure remain
+              outstanding. Implementation authorization has not been granted.
+            </p>
+          </div>
+          <span class="status-pill is-setup">Ten packets recorded · implementation gates open</span>
         </section>
 
         <section class="charter-section" aria-labelledby="phase-two-charter-heading">
@@ -510,6 +546,212 @@
         </section>
       </section>
 
+      <section id="phase-2-iterations" class="workbench-panel" data-workbench-panel="phase-2-iterations" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 02 · Iterative assessment</p>
+          <h1>Reassess delivery without rewriting the baseline.</h1>
+          <p>
+            Phase 2 remains the evidence check on Phase 3 delivery. Each iteration compares a specific implementation
+            target with the fixed Phase 1 baseline, records what improved and what remains, and leaves the original
+            assessment intact. An iteration never closes a gate on its own.
+          </p>
+        </div>
+
+        <section class="register-status" aria-labelledby="iteration-status-heading">
+          <div class="register-count"><strong>02</strong><span>iterations recorded</span></div>
+          <div>
+            <p class="eyebrow">Current result</p>
+            <h2 id="iteration-status-heading">Iteration 2 found real progress and meaningful remaining work.</h2>
+            <p>
+              The reassessment reviewed the current implementation at <code>af0f321f6eb</code> against the immutable
+              Phase 1 snapshot. API composition, formatter governance, core FHIR response mechanics, hybrid EF/SQL
+              use, and scheduled runtime evidence improved. Production identity and browser-origin fences, SMART/US
+              Core interoperability, broad workflow hotspots, and full-suite verification stability remain open.
+            </p>
+          </div>
+          <span class="status-pill is-setup">Not converged · gates open</span>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="iteration-ledger-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Iteration ledger</p>
+              <h2 id="iteration-ledger-heading">A durable comparison record for Phase 2 and Phase 3.</h2>
+            </div>
+            <p>
+              The detailed repository records preserve commands, limits, findings, counterevidence, and specialist
+              needs. Future iterations will be added here only when their evidence changes a meaningful disposition.
+            </p>
+          </div>
+          <div class="data-table-scroll">
+            <table class="workbench-table">
+              <thead><tr><th scope="col">Iteration</th><th scope="col">Comparison</th><th scope="col">What changed</th><th scope="col">Outcome</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">01 · Baseline synthesis<br /><time datetime="2026-08-21">August 21, 2026</time></th><td>Fixed Phase 1 experiment at <code>phase-1-experimental</code></td><td>Full assessment, canonical findings, specialist validation plan, and seven proposed recommendation packets.</td><td>64 findings recorded; implementation gates left open.</td></tr>
+                <tr><th scope="row">02 · Current implementation reassessment<br /><time datetime="2026-08-23">August 23, 2026</time></th><td>Same fixed baseline; implementation target <code>af0f321f6eb</code></td><td>Host decomposition, formatting gate, FHIR core behavior, hybrid persistence, and runtime evidence improved. Production trust boundaries, SMART/US Core, workflow hotspots, and test isolation remain.</td><td>Not converged. Existing recommendations are refined; no gate is closed.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="charter-section" aria-labelledby="iteration-rule-heading">
+          <div class="section-side-heading">
+            <p class="eyebrow">Loop rule</p>
+            <h2 id="iteration-rule-heading">Phase 3 delivers; Phase 2 independently checks the result.</h2>
+            <p>
+              This prevents a delivery claim from becoming its own acceptance evidence. Findings can be resolved,
+              narrowed, retained, or superseded only through the evidence and specialist rules that apply to them.
+            </p>
+          </div>
+          <dl class="charter-ledger">
+            <div><dt>Fixed comparison</dt><dd>Every iteration retains the Phase 1 snapshot and does not recalculate its history or coverage estimate.</dd></div>
+            <div><dt>Review target</dt><dd>Each record names the exact later revision, delivery evidence, and covered quality surfaces.</dd></div>
+            <div><dt>Meaningful result</dt><dd>A changed finding disposition, new material condition, validated behavior, or altered recommendation sequence.</dd></div>
+            <div><dt>Convergence</dt><dd>Only the program owner may declare it after residual findings and required specialist/current-environment evidence have an accepted disposition.</dd></div>
+          </dl>
+        </section>
+
+        <section class="principle-band" aria-labelledby="iteration-source-heading">
+          <div>
+            <p class="eyebrow">Source record</p>
+            <h2 id="iteration-source-heading">The workbench summarizes; the repository preserves the evidence.</h2>
+          </div>
+          <ul>
+            <li><a href="https://github.com/nkimber/AvenChart/blob/main/docs/phase-2/iterations/README.md">Open the Phase 2 iteration register</a>.</li>
+            <li><a href="https://github.com/nkimber/AvenChart/blob/main/docs/phase-2/iterations/iteration-002-current-implementation-reassessment.md">Open the Iteration 2 evidence record</a>.</li>
+            <li><a href="https://github.com/nkimber/AvenChart/blob/main/docs/phase-2/phase-2-exit-gate.md">Review the still-open Phase 2 exit gate</a>.</li>
+          </ul>
+        </section>
+      </section>
+
+      <section id="phase-2-readiness" class="workbench-panel" data-workbench-panel="phase-2-readiness" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 02 · Calibration accepted</p>
+          <h1>Make the assessment repeatable before making it large.</h1>
+          <p>
+            The operating contract is now established. Every reviewer will assess the same fixed baseline against the
+            same production-oriented quality bar, use the same evidence and record formats, and preserve the boundary
+            between analysis and implementation. Four representative pilot reviews and independent verifier challenges
+            demonstrated that the method produces consistent conclusions while preserving counterevidence and uncertainty.
+          </p>
+        </div>
+
+        <section class="charter-section" aria-labelledby="readiness-decisions-heading">
+          <div class="section-side-heading">
+            <p class="eyebrow">Approved defaults</p>
+            <h2 id="readiness-decisions-heading">The reviewers know what they are optimizing for.</h2>
+            <p>
+              These decisions constrain the review without predetermining its findings. Later exceptions require a
+              recorded decision and rationale.
+            </p>
+          </div>
+          <dl class="charter-ledger">
+            <div><dt>Target bar</dt><dd>A future production-capable US ambulatory EHR; production use remains prohibited</dd></div>
+            <div><dt>Required lenses</dt><dd>Privacy and security, accessibility, interoperability, safety, operations, and certification readiness</dd></div>
+            <div><dt>Technology posture</dt><dd>ASP.NET Core, PostgreSQL, EF Core, React, TypeScript, and Azure remain rebuttable constraints</dd></div>
+            <div><dt>Data-access posture</dt><dd>EF Core and parameterized SQL are judged by fitness, evidence, and consequence—not adoption percentage</dd></div>
+            <div><dt>Decision authority</dt><dd>The program owner approves scope, risks, recommendations, launch, and the Phase 3 roadmap</dd></div>
+            <div><dt>Specialist boundary</dt><dd>Agents do not declare clinical safety, legal compliance, accessibility conformance, or certification</dd></div>
+            <div><dt>Mutation boundary</dt><dd>Product code, migrations, infrastructure, and tests remain unchanged during Phase 2 analysis</dd></div>
+            <div><dt>Baseline</dt><dd>The exact commit referenced by <code>phase-1-experimental</code></dd></div>
+          </dl>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="readiness-package-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Operating package</p>
+              <h2 id="readiness-package-heading">A maintained operating package makes the method durable.</h2>
+            </div>
+            <p>
+              The maintained source is under <code>docs/phase-2</code>. The workbench summarizes the contract; the
+              repository artifacts carry the complete instructions, templates, decisions, and evolving evidence.
+            </p>
+          </div>
+          <div class="deliverable-grid">
+            <article><span>Ready</span><h3>Operating manual</h3><p>Scope, sequence, evidence levels, mutation boundary, specialist rules, and launch gate.</p></article>
+            <article><span>Ready</span><h3>Quality standard</h3><p>Decision hierarchy, production safeguards, project targets, technology principles, and rating anchors.</p></article>
+            <article><span>Ready</span><h3>Coverage matrix</h3><p>Nineteen initial solution surfaces, applicable domains, proposed reviewers, status, and completion controls.</p></article>
+            <article><span>Ready</span><h3>Evidence records</h3><p>Canonical scorecard, finding, recommendation, and decision structures with stable identifiers.</p></article>
+            <article><span>Ready</span><h3>Agent operating model</h3><p>Coordinator ownership, seven read-only specialist roles, bounded packets, and independent verification.</p></article>
+            <article><span>Accepted</span><h3>Calibration evidence</h3><p>Four independently reviewed slices, verifier narrowings, rubric revisions, inventory reconciliation, and launch decision.</p></article>
+          </div>
+        </section>
+
+        <section class="phase-process" aria-labelledby="agent-model-heading">
+          <div class="phase-process-heading">
+            <p class="eyebrow">Review operating model</p>
+            <h2 id="agent-model-heading">Specialists gather evidence; the coordinator preserves one standard.</h2>
+          </div>
+          <ol class="process-steps">
+            <li><span>01</span><div><h3>Coordinate</h3><p>The primary reviewer owns scope, baseline, coverage, canonical IDs, synthesis, and decisions presented to the owner.</p></div></li>
+            <li><span>02</span><div><h3>Specialize</h3><p>Read-only agents inspect architecture, data, security, clinical safety, frontend accessibility, and quality operations.</p></div></li>
+            <li><span>03</span><div><h3>Corroborate</h3><p>An independent verifier attempts to reproduce or falsify blocker, high, systemic, clinical-safety, and disputed findings.</p></div></li>
+            <li><span>04</span><div><h3>Validate</h3><p>Qualified people decide clinical, legal, privacy, accessibility, certification, and high-risk operational questions.</p></div></li>
+            <li><span>05</span><div><h3>Decide</h3><p>The program owner accepts the launch, risks, recommendations, exceptions, and final Phase 3 sequence.</p></div></li>
+          </ol>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="calibration-pilot-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Calibration pilot</p>
+              <h2 id="calibration-pilot-heading">Four slices test the review contract.</h2>
+            </div>
+            <p>
+              Independent reviewers examine the same material without seeing each other’s conclusions. The pilot tests
+              coverage, evidence quality, severity agreement, specialist escalation, and synthesis cost—not the quality
+              of the whole application.
+            </p>
+          </div>
+          <div class="data-table-scroll">
+            <table class="workbench-table">
+              <thead><tr><th scope="col">Pilot</th><th scope="col">System trace</th><th scope="col">Independent review</th><th scope="col">Required human validation</th><th scope="col">Status</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">A · Identity and PHI</th><td>Sign-in, authorization, practice scope, patient-data request, persistence, audit, and failure</td><td>Security/privacy and architecture</td><td>Security/privacy specialist for non-engineering claims</td><td>Accepted · validation routed</td></tr>
+                <tr><th scope="row">B · Encounter lifecycle</th><td>Creation, coding, SOAP versioning, forms, concurrency, correction, audit, and recovery</td><td>Clinical safety and data</td><td>Clinician or clinical informaticist</td><td>Accepted · validation routed</td></tr>
+                <tr><th scope="row">C · Critical lab result</th><td>Classification, presentation, acknowledgement, communication, follow-up, retry, audit, and recovery</td><td>Clinical safety and quality operations</td><td>Practicing clinician</td><td>Accepted · validation routed</td></tr>
+                <tr><th scope="row">D · Accessibility</th><td>Clinician and portal workflows across keyboard, semantics, focus, errors, recovery, and responsive behavior</td><td>Two independent frontend/accessibility passes</td><td>Accessibility specialist and users with disabilities before conformance claims</td><td>Accepted · validation routed</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="principle-band" aria-labelledby="readiness-authority-heading">
+          <div>
+            <p class="eyebrow">Source of truth</p>
+            <h2 id="readiness-authority-heading">The method belongs to the repository.</h2>
+          </div>
+          <ul>
+            <li><code>docs/phase-2</code> contains the approved manual, quality standard, matrix, templates, decisions, agent model, pilot, and external feedback records.</li>
+            <li><code>.agents/skills/avanchart-phase-2-assessment</code> turns the contract into a reusable review workflow.</li>
+            <li><code>.codex/agents</code> defines seven project-scoped, read-only specialist and verifier roles.</li>
+            <li>Changing a reviewer prompt does not change the approved quality bar; governance changes belong in the decision log.</li>
+          </ul>
+        </section>
+
+        <section class="phase-exit-gate" aria-labelledby="phase-two-launch-heading">
+          <div>
+            <p class="eyebrow">Full-assessment launch gate</p>
+            <h2 id="phase-two-launch-heading">Calibration accepted; assessment authorized.</h2>
+            <p>
+              Decision P2-D008 authorizes the full matrix review under the fixed baseline, read-only product boundary,
+              bounded specialist model, evidence contract, and human-validation rules.
+            </p>
+          </div>
+          <div class="exit-gate-checks">
+            <label><input type="checkbox" checked disabled /> Phase 1 baseline is immutable and reproducible.</label>
+            <label><input type="checkbox" checked disabled /> Target quality bar and technology posture are approved.</label>
+            <label><input type="checkbox" checked disabled /> Quality standard, evidence rules, and record templates exist.</label>
+            <label><input type="checkbox" checked disabled /> Initial coverage inventory and read-only specialist roles exist.</label>
+            <label><input type="checkbox" checked disabled /> Human decision and specialist-validation boundaries exist.</label>
+            <label><input type="checkbox" checked disabled /> Four calibration slices are complete and independently compared.</label>
+            <label><input type="checkbox" checked disabled /> Pilot changes and initial coverage inventory are reconciled.</label>
+            <label><input type="checkbox" checked disabled /> The program owner has approved the full Phase 2 launch.</label>
+          </div>
+        </section>
+      </section>
+
       <section id="phase-2-assessment" class="workbench-panel" data-workbench-panel="phase-2-assessment" tabindex="-1" hidden>
         <div class="panel-introduction">
           <p class="eyebrow">Phase 02 · Assessment framework</p>
@@ -533,18 +775,18 @@
             </p>
           </div>
           <div class="assessment-domain-grid">
-            <article><div><span>01</span><small>Not assessed</small></div><h3>Architecture and boundaries</h3><p>Project responsibilities, dependency direction, modularity, coupling, cohesion, and cross-cutting ownership.</p><ul><li>Dependency and flow maps</li><li>Boundary violations</li><li>Change-impact sampling</li></ul></article>
-            <article><div><span>02</span><small>Not assessed</small></div><h3>Code structure and readability</h3><p>Naming, file and method size, organization, duplication, complexity, conventions, and human traceability.</p><ul><li>Complexity and duplication scans</li><li>Representative code tracing</li><li>Convention consistency</li></ul></article>
-            <article><div><span>03</span><small>Not assessed</small></div><h3>Domain correctness and clinical safety</h3><p>Business invariants, lifecycle rules, error states, clinical consequences, and protection against unsafe ambiguity.</p><ul><li>Workflow-to-code tracing</li><li>Invariant and edge-case tests</li><li>Safety-critical failure review</li></ul></article>
-            <article><div><span>04</span><small>Not assessed</small></div><h3>Data and persistence</h3><p>Schema quality, transaction boundaries, consistency, concurrency, ORM and SQL use, migrations, retention, and recovery.</p><ul><li>Query and transaction review</li><li>Migration replay</li><li>Concurrency scenarios</li></ul></article>
-            <article><div><span>05</span><small>Not assessed</small></div><h3>Security, privacy, and access control</h3><p>Identity, authorization, secrets, input trust, auditability, sensitive-data handling, isolation, and misuse resistance.</p><ul><li>Trust-boundary mapping</li><li>Authorization-path sampling</li><li>Secret and data-flow review</li></ul></article>
-            <article><div><span>06</span><small>Not assessed</small></div><h3>Performance and scalability</h3><p>Latency, query behavior, allocation, payload size, contention, caching, background work, and expected operating limits.</p><ul><li>Representative measurements</li><li>Hot-path and query analysis</li><li>Load-shape assumptions</li></ul></article>
-            <article><div><span>07</span><small>Not assessed</small></div><h3>APIs and integrations</h3><p>Contract clarity, validation, versioning, failure handling, idempotency, interoperability, and external dependency risk.</p><ul><li>Contract inventory</li><li>Error-response review</li><li>Retry and reconciliation paths</li></ul></article>
-            <article><div><span>08</span><small>Not assessed</small></div><h3>Frontend and accessibility</h3><p>Information architecture, interaction consistency, state management, responsiveness, keyboard use, semantics, and inclusion.</p><ul><li>Workflow walkthroughs</li><li>Automated and manual accessibility</li><li>Failure and recovery states</li></ul></article>
-            <article><div><span>09</span><small>Not assessed</small></div><h3>Testing and quality controls</h3><p>Test purpose, coverage by risk, reliability, isolation, realism, maintainability, regression power, and release confidence.</p><ul><li>Suite classification</li><li>Mutation and failure sampling</li><li>Flake and runtime review</li></ul></article>
-            <article><div><span>10</span><small>Not assessed</small></div><h3>Observability and operations</h3><p>Logs, metrics, traces, health, alerts, configuration, deployment, rollback, backup, incident response, and supportability.</p><ul><li>Operational walkthrough</li><li>Failure injection</li><li>Recovery evidence</li></ul></article>
-            <article><div><span>11</span><small>Not assessed</small></div><h3>Dependencies and supply chain</h3><p>Currency, support horizon, vulnerabilities, licensing, reproducibility, provenance, build integrity, and upgrade friction.</p><ul><li>Dependency inventory</li><li>Support and license checks</li><li>Clean-build reproduction</li></ul></article>
-            <article><div><span>12</span><small>Not assessed</small></div><h3>Documentation and developer experience</h3><p>Setup, mental model, decision records, local feedback, troubleshooting, contribution flow, and ownership clarity.</p><ul><li>Clean-checkout onboarding</li><li>Task completion sampling</li><li>Documentation accuracy</li></ul></article>
+            <article><div><span>01</span><small>In assessment</small></div><h3>Architecture and boundaries</h3><p>Project responsibilities, dependency direction, modularity, coupling, cohesion, and cross-cutting ownership.</p><ul><li>Dependency and flow maps</li><li>Boundary violations</li><li>Change-impact sampling</li></ul></article>
+            <article><div><span>02</span><small>In assessment</small></div><h3>Code structure and readability</h3><p>Naming, file and method size, organization, duplication, complexity, conventions, and human traceability.</p><ul><li>Complexity and duplication scans</li><li>Representative code tracing</li><li>Convention consistency</li></ul></article>
+            <article><div><span>03</span><small>In assessment</small></div><h3>Domain correctness and clinical safety</h3><p>Business invariants, lifecycle rules, error states, clinical consequences, and protection against unsafe ambiguity.</p><ul><li>Workflow-to-code tracing</li><li>Invariant and edge-case tests</li><li>Safety-critical failure review</li></ul></article>
+            <article><div><span>04</span><small>In assessment</small></div><h3>Data and persistence</h3><p>Schema quality, transaction boundaries, consistency, concurrency, ORM and SQL use, migrations, retention, and recovery.</p><ul><li>Query and transaction review</li><li>Migration replay</li><li>Concurrency scenarios</li></ul></article>
+            <article><div><span>05</span><small>In assessment</small></div><h3>Security, privacy, and access control</h3><p>Identity, authorization, secrets, input trust, auditability, sensitive-data handling, isolation, and misuse resistance.</p><ul><li>Trust-boundary mapping</li><li>Authorization-path sampling</li><li>Secret and data-flow review</li></ul></article>
+            <article><div><span>06</span><small>In assessment</small></div><h3>Performance and scalability</h3><p>Latency, query behavior, allocation, payload size, contention, caching, background work, and expected operating limits.</p><ul><li>Representative measurements</li><li>Hot-path and query analysis</li><li>Load-shape assumptions</li></ul></article>
+            <article><div><span>07</span><small>In assessment</small></div><h3>APIs and integrations</h3><p>Contract clarity, validation, versioning, failure handling, idempotency, interoperability, and external dependency risk.</p><ul><li>Contract inventory</li><li>Error-response review</li><li>Retry and reconciliation paths</li></ul></article>
+            <article><div><span>08</span><small>In assessment</small></div><h3>Frontend and accessibility</h3><p>Information architecture, interaction consistency, state management, responsiveness, keyboard use, semantics, and inclusion.</p><ul><li>Workflow walkthroughs</li><li>Automated and manual accessibility</li><li>Failure and recovery states</li></ul></article>
+            <article><div><span>09</span><small>In assessment</small></div><h3>Testing and quality controls</h3><p>Test purpose, coverage by risk, reliability, isolation, realism, maintainability, regression power, and release confidence.</p><ul><li>Suite classification</li><li>Mutation and failure sampling</li><li>Flake and runtime review</li></ul></article>
+            <article><div><span>10</span><small>In assessment</small></div><h3>Observability and operations</h3><p>Logs, metrics, traces, health, alerts, configuration, deployment, rollback, backup, incident response, and supportability.</p><ul><li>Operational walkthrough</li><li>Failure injection</li><li>Recovery evidence</li></ul></article>
+            <article><div><span>11</span><small>In assessment</small></div><h3>Dependencies and supply chain</h3><p>Currency, support horizon, vulnerabilities, licensing, reproducibility, provenance, build integrity, and upgrade friction.</p><ul><li>Dependency inventory</li><li>Support and license checks</li><li>Clean-build reproduction</li></ul></article>
+            <article><div><span>12</span><small>In assessment</small></div><h3>Documentation and developer experience</h3><p>Setup, mental model, decision records, local feedback, troubleshooting, contribution flow, and ownership clarity.</p><ul><li>Clean-checkout onboarding</li><li>Task completion sampling</li><li>Documentation accuracy</li></ul></article>
           </div>
         </section>
 
@@ -593,6 +835,327 @@
         </section>
       </section>
 
+      <section id="phase-2-reddit-challenge" class="workbench-panel" data-workbench-panel="phase-2-reddit-challenge" tabindex="-1" hidden>
+        <div class="panel-introduction">
+          <p class="eyebrow">Phase 02 · Continuous external challenge</p>
+          <h1>Turn public criticism into testable engineering questions.</h1>
+          <p>
+            Reddit discussions can expose assumptions and blind spots that an internal review misses. This intake
+            separates useful technical claims from tone, repetition, speculation, and promotion, then routes the
+            retained challenges through the same evidence, specialist, verification, finding, and recommendation
+            controls as the rest of Phase 2.
+          </p>
+        </div>
+
+        <section class="register-status challenge-status" aria-labelledby="reddit-challenge-status-heading">
+          <div class="register-count"><strong>3</strong><span>verified packets</span></div>
+          <div>
+            <p class="eyebrow">Current intake</p>
+            <h2 id="reddit-challenge-status-heading">All three challenge packets have been independently verified.</h2>
+            <p>
+              Architecture and human traceability produced three findings. EF Core and SQL fitness produced three
+              narrower persistence findings without supporting a blanket move to EF. Independent evidence and
+              modernization claims produced two evidence-governance findings and one program-accounting opportunity.
+            </p>
+          </div>
+          <span class="status-pill is-setup">Packets 1–3 verified</span>
+        </section>
+
+        <section class="charter-section challenge-source" aria-labelledby="reddit-source-heading">
+          <div class="section-side-heading">
+            <p class="eyebrow">EXT-S001 · First source</p>
+            <h2 id="reddit-source-heading">A .NET reality check for the Phase 1 experiment.</h2>
+            <p>
+              The post described the autonomous reimplementation, disclosed the limits of the 86% estimate, and
+              invited experienced .NET developers to critique the result.
+            </p>
+            <a class="challenge-source-link" href="https://www.reddit.com/r/dotnet/comments/1vsvfbz/i_used_coding_agents_to_reimplement_a_large_php/">
+              Read the original Reddit thread
+            </a>
+          </div>
+          <dl class="charter-ledger">
+            <div><dt>Platform</dt><dd>Reddit · <code>r/dotnet</code></dd></div>
+            <div><dt>Published</dt><dd>August 19, 2026</dd></div>
+            <div><dt>Captured</dt><dd>August 21, 2026</dd></div>
+            <div><dt>Visible scope</dt><dd>27 displayed comments; substantive visible and collapsed branches reviewed</dd></div>
+            <div><dt>Assessment baseline</dt><dd><code>phase-1-experimental</code></dd></div>
+            <div><dt>Current state</dt><dd>All three packets evidence-complete and independently verified</dd></div>
+          </dl>
+        </section>
+
+        <section class="phase-process" aria-labelledby="external-feedback-flow-heading">
+          <div class="phase-process-heading">
+            <p class="eyebrow">Repeatable intake</p>
+            <h2 id="external-feedback-flow-heading">From a public comment to a defensible response.</h2>
+          </div>
+          <ol class="process-steps challenge-process-steps">
+            <li><span>01</span><div><h3>Capture</h3><p>Record the stable source, publication and access dates, visible scope, and limitations.</p></div></li>
+            <li><span>02</span><div><h3>Triage</h3><p>Separate technical substance from tone, promotion, repetition, and unsupported prediction.</p></div></li>
+            <li><span>03</span><div><h3>Map</h3><p>Connect retained claims to existing coverage IDs, quality domains, and evidence levels.</p></div></li>
+            <li><span>04</span><div><h3>Challenge</h3><p>Assign bounded questions to the relevant read-only specialist and require counterevidence.</p></div></li>
+            <li><span>05</span><div><h3>Verify</h3><p>Independently corroborate, narrow, dispute, or fail to reproduce material conclusions.</p></div></li>
+            <li><span>06</span><div><h3>Reconcile</h3><p>Link supported conditions to canonical findings, recommendations, and a published response.</p></div></li>
+          </ol>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="reddit-challenges-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Retained criticism</p>
+              <h2 id="reddit-challenges-heading">The first seven evidence questions.</h2>
+            </div>
+            <p>
+              These paraphrases preserve the useful argument without reproducing unnecessary hostility. Initial
+              observations do not become findings until reach, consequence, counterevidence, and confidence are assessed.
+            </p>
+          </div>
+          <div class="data-table-scroll">
+            <table class="workbench-table challenge-table">
+              <thead>
+                <tr><th scope="col">Challenge</th><th scope="col">Evidence question</th><th scope="col">Coverage</th><th scope="col">Status</th></tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">C01 · Concentrated responsibilities</th><td>Do the 8,911-line startup file and multi-thousand-line repositories mix ownership, obscure execution paths, or enlarge change blast radius?</td><td>COV-001, 008, 018</td><td>Corroborated</td></tr>
+                <tr><th scope="row">C02 · API boundaries</th><td>Does the Minimal API organization hide business rules or cross-cutting behavior, and what is the simplest framework-aligned boundary supported by evidence?</td><td>COV-001, 010</td><td>Partially corroborated</td></tr>
+                <tr><th scope="row">C03 · EF Core and SQL</th><td>For each persistence category, which mechanism is clearer, safer, observable, testable, performant, and proportionate to the requirement?</td><td>COV-008, 009</td><td>Partially corroborated</td></tr>
+                <tr><th scope="row">C04 · Human maintainability</th><td>Do formatting, analyzer, naming, DTO organization, and navigation failures materially hinder comprehension and safe contribution?</td><td>COV-001, 015, 018</td><td>Structural portion corroborated</td></tr>
+                <tr><th scope="row">C05 · Independent evidence</th><td>Did agent-generated implementation and tests create correlated blind spots, and what independent evidence supports the 86% estimate and high-risk behavior?</td><td>COV-014 plus workflow rows</td><td>Corroborated · causation narrowed</td></tr>
+                <tr><th scope="row">C06 · Feedback-loop speed</th><td>Do early calibration, bounded packets, independent challenge, stopping conditions, and synthesis prevent mistakes from scaling unattended?</td><td>Assessment governance</td><td>Partially corroborated</td></tr>
+                <tr><th scope="row">C07 · Modernization claims</th><td>Can generation, assessment, remediation, specialist validation, operationalization, residual risk, and ownership cost be reported separately?</td><td>Cross-domain synthesis</td><td>Partially corroborated · opportunity retained</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="reddit-packet-one-outcome-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Packet 01 · Verified outcome</p>
+              <h2 id="reddit-packet-one-outcome-heading">The criticism was useful—and more specific than “large files are bad.”</h2>
+            </div>
+            <p>
+              A read-only architecture specialist and an independent verifier traced different request paths against
+              the fixed Phase 1 baseline. They agreed on the conditions, severity, counterevidence, and limits.
+            </p>
+          </div>
+          <div class="deliverable-grid">
+            <article><span>Medium · cross-cutting</span><h3>P2-01-F001 · API change hotspot</h3><p>Host composition, 606 endpoint mappings, response policy, shared filters, and capability-specific workflow rules converge in <code>Program.cs</code>.</p></article>
+            <article><span>Medium · repeated</span><h3>P2-02-F001 · Broad repository ownership</h3><p>Representative patient, portal, document, and billing repositories combine persistence with validation, workflow, mapping, and delivery responsibilities.</p></article>
+            <article><span>Low · repeated</span><h3>P2-02-F002 · Formatting governance</h3><p>The SDK formatter reports 5,284 whitespace diagnostics across 20 C# files, while CI and contributor guidance provide no C# formatting or analyzer gate.</p></article>
+          </div>
+          <div class="principle-band">
+            <div><p class="eyebrow">Important narrowing</p><h2>Minimal APIs and file size are not the findings.</h2></div>
+            <ul>
+              <li>Route groups, names, shared authorization filters, DTO separation, and extracted endpoint modules are real strengths.</li>
+              <li>Compact integration and FHIR handlers show that the current framework can support cohesive boundaries.</li>
+              <li>No evidence requires controllers, a framework rewrite, blanket repository splitting, or greater EF adoption.</li>
+              <li>No finding is a production blocker, and product remediation remains Phase 3 work.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="reddit-packet-two-outcome-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Packet 02 · Verified outcome</p>
+              <h2 id="reddit-packet-two-outcome-heading">The persistence concern was real—but “use more EF” was not the answer.</h2>
+            </div>
+            <p>
+              A read-only data specialist and an independent verifier compared representative EF and SQL boundaries,
+              schema ownership, catalog integrity, and import behavior against the fixed Phase 1 baseline.
+            </p>
+          </div>
+          <div class="deliverable-grid">
+            <article><span>Medium · systemic</span><h3>P2-04-F001 · Split schema authority</h3><p>The seed generator creates the foundational schema before 201 migrations run, while readiness validates only migration-ledger IDs and checksums.</p></article>
+            <article><span>Medium · isolated</span><h3>P2-04-F002 · Catalog integrity</h3><p>Procedure-catalog parentage and logical identity are assumed by EF and SQL writers but are not enforced by database constraints.</p></article>
+            <article><span>Low · isolated</span><h3>P2-04-F003 · Row-by-row bulk import</h3><p>The compendium importer accepts uncapped input and performs sequential per-row commands inside one transaction without representative-volume evidence.</p></article>
+          </div>
+          <div class="data-table-scroll">
+            <table class="workbench-table challenge-table">
+              <thead><tr><th scope="col">Representative boundary</th><th scope="col">Verified disposition</th><th scope="col">Why</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Ordinary entity and state lifecycle</th><td>Stay EF</td><td>Clear change tracking, relationships, optimistic concurrency, and atomic state-plus-audit behavior.</td></tr>
+                <tr><th scope="row">Reporting, leases, idempotency, and row locks</th><td>Stay SQL</td><td>Explicit joins, caps, <code>FOR UPDATE SKIP LOCKED</code>, <code>ON CONFLICT</code>, and PostgreSQL-specific transactions are proportionate.</td></tr>
+                <tr><th scope="row">Patient contact and demographics</th><td>Stay SQL on present evidence</td><td>The path uses row locking and atomic audit, and no SQL-attributable defect was demonstrated.</td></tr>
+                <tr><th scope="row">Compendium import</th><td>Stay SQL; improve fitness</td><td>Bulk work belongs on the SQL side, but the current implementation is row-by-row, uncapped, and unmeasured.</td></tr>
+                <tr><th scope="row">Versioned schema</th><td>Stay SQL; clarify authority</td><td>SQL is appropriate for schema control, but it is not currently the sole foundational authority described by documentation.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="principle-band">
+            <div><p class="eyebrow">Important narrowing</p><h2>ORM adoption is not a quality score.</h2></div>
+            <ul>
+              <li>The reviewed hybrid policy is substantially implemented, not merely documented.</li>
+              <li>Missing database invariants are not repaired automatically by moving a writer to EF.</li>
+              <li>Moving a serial import loop to EF would not make it set-oriented or bounded.</li>
+              <li>Runtime database, operations, performance, and clinical validation remain explicitly open.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="reddit-packet-three-outcome-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Packet 03 · Verified outcome</p>
+              <h2 id="reddit-packet-three-outcome-heading">A green check is useful evidence—not an independent oracle.</h2>
+            </div>
+            <p>
+              A read-only quality and operations specialist and an independent verifier traced the historical 86%
+              estimate, the default verification workflow, calibration blind spots, feedback controls, and program
+              accounting against the fixed Phase 1 baseline.
+            </p>
+          </div>
+          <div class="deliverable-grid">
+            <article><span>Medium · systemic evidence claim</span><h3>P2-09-F001 · Coverage provenance</h3><p>The historical 86% value has a pinned reference and strong caveats, but no versioned capability denominator, scoring rule, evidence ledger, or independent oracle derives it.</p></article>
+            <article><span>Medium · systemic gate</span><h3>P2-09-F002 · Verification enforcement</h3><p>The default workflow builds the product and runs 178 modern UI tests, but none of the 19 browser specs or 42 deeper workflow and recovery scripts.</p></article>
+            <article><span>Opportunity · program-level</span><h3>Total modernization economics</h3><p>Phase categories are conceptually separate, but actual assessment, remediation, specialist, operationalization, residual-risk, and ownership costs are not yet recorded.</p></article>
+          </div>
+          <div class="data-table-scroll">
+            <table class="workbench-table challenge-table">
+              <thead><tr><th scope="col">Challenge claim</th><th scope="col">Verified disposition</th><th scope="col">Important limit</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Independent evidence</th><td>Corroborated with causal narrowing</td><td>Pilot C proves one real-entry-path fixture bypass; it does not prove which author or agent caused it, that all tests are dependent, or that 86% is false.</td></tr>
+                <tr><th scope="row">Delayed feedback</th><td>Partially corroborated</td><td>Phase 1 generated before evaluation by design. Propagated-error count and cost are unknown; Phase 2 now supplies calibration, bounded packets, verification, and stopping rules.</td></tr>
+                <tr><th scope="row">Modernization economics</th><td>Partially corroborated</td><td>Activity does not establish total cost, and the project does not claim it does. Actual economic records remain an opportunity, not a product defect.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="principle-band">
+            <div><p class="eyebrow">Important narrowing</p><h2>Independence is a property of evidence, not an author label.</h2></div>
+            <ul>
+              <li>The current Release build passes with zero warnings and all 178 modern UI tests pass.</li>
+              <li>Calibration still found a deterministic laboratory vocabulary mismatch because the proof bypassed the supported entry value.</li>
+              <li>The ignored local smoke result is not retained baseline evidence and does not prove 51 product defects.</li>
+              <li>No packet invalidates Phase 1, claims production readiness, or authorizes Phase 3 changes.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="clinician-packet-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">COV-011 · Evidence collected</p>
+              <h2 id="clinician-packet-heading">The clinician interface has strong foundations and uneven recovery semantics.</h2>
+            </div>
+            <p>
+              The read-only interface and accessibility trace found robust shell, dashboard, transport, cancellation,
+              and retry patterns, alongside two bounded conditions that require browser, accessibility, and scheduling
+              validation before any implementation decision.
+            </p>
+          </div>
+          <div class="deliverable-grid">
+            <article><span>Medium · scope pending</span><h3>P2-08-F005 · Flow Board stale refresh</h3><p>A rejected date refresh can leave the prior day’s actionable board rendered under the new date selection.</p></article>
+            <article><span>Medium · accessibility pending</span><h3>P2-08-F006 · Async failure semantics</h3><p>Several clinician pages render visual error banners without consistent live announcement, focus recovery, or retry guidance.</p></article>
+            <article><span>Existing root broadened</span><h3>P2-03-F007 · Response ownership</h3><p>Schedule, calendar, patient-message, timeline, and Flow Board selection loads join the existing wrong-resource response-ownership condition.</p></article>
+          </div>
+          <div class="principle-band">
+            <div><p class="eyebrow">Important boundary</p><h2>Source evidence is not formal accessibility certification.</h2></div>
+            <ul>
+              <li>Dashboard, shell, laboratory queue, Suspense, and Toast patterns provide meaningful counterevidence.</li>
+              <li>No deferred-response browser run or assistive-technology session was performed in this packet.</li>
+              <li>The packet records findings and evidence gaps only; no UI, test, or API code was changed.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="residual-packet-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Residual coverage · Readiness reconciliation</p>
+              <h2 id="residual-packet-heading">Engineering evidence is substantially collected; implementation gates remain open.</h2>
+            </div>
+            <p>
+              The residual packet reconciles the patient portal, reference interface, host and hybrid data boundary,
+              schema and recovery scripts, CI, local containers, Azure operations, dependency provenance, documentation,
+              and external-laboratory scope. The follow-on runtime packet records a failed empty migration bootstrap,
+              successful seed-first migration recovery and backup/restore, failed broad product gates, a healthy but
+              older Azure demo, FHIR contract failures, and the absent external-laboratory clinical apply path.
+            </p>
+          </div>
+          <div class="deliverable-grid">
+            <article><span>Existing roots broadened</span><h3>P2-03-F007 · Portal response ownership</h3><p>Portal dashboard, message-thread, and record-tab loads join the existing wrong-resource response condition.</p></article>
+            <article><span>Existing root broadened</span><h3>P2-08-F006 · Portal recovery semantics</h3><p>Portal failure states do not consistently provide live announcement, focus recovery, or retry guidance.</p></article>
+            <article><span>Scope decided</span><h3>COV-013 / COV-019</h3><p>The reference interface is excluded. A standards-based external laboratory API is required and its absent clinical apply path is P2-07-F005.</p></article>
+            <article><span>Defaults and handoff prepared</span><h3>Decision-ready, gates still open</h3><p>The program owner approved twelve target defaults; seven complete delivery packets, specialist review criteria, and a dependency roadmap are prepared without closing any implementation gate.</p></article>
+          </div>
+          <div class="principle-band">
+            <div><p class="eyebrow">Readiness decision</p><h2>No coding changes are authorized while the gates are open.</h2></div>
+            <ul>
+              <li>Local migration recovery, backup/restore, integration recovery, critical acknowledgement, FHIR, authorization, dependency, and browser evidence is now recorded.</li>
+              <li>Manual accessibility, clinical, privacy/HIM, interoperability, current deployment, representative performance, and release validation remain required.</li>
+              <li>Phase 3 begins only after the program owner accepts recommendations, owners, rollback, measurable evidence, and explicitly closes the applicable gates.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="feedback-triage-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Triage policy</p>
+              <h2 id="feedback-triage-heading">Substance survives; noise does not set the agenda.</h2>
+            </div>
+            <p>
+              Value is determined by specificity, relevance, consequence, and falsifiability—not sentiment, votes,
+              confidence, or whether the project agrees with the commenter.
+            </p>
+          </div>
+          <div class="deliverable-grid triage-grid">
+            <article><span>Retain</span><h3>Testable criticism</h3><p>Specific code, behavior, evidence, process, risk, or cost claims that would matter if true.</p></article>
+            <article><span>Narrow</span><h3>Over-broad but useful</h3><p>Remove rhetoric, split absolute claims into answerable questions, and merge comments that share one cause.</p></article>
+            <article><span>Exclude</span><h3>Low-value material</h3><p>Generic praise or abuse, unsupported prediction, factual misunderstanding, promotion, and duplicates—with the reason retained.</p></article>
+          </div>
+        </section>
+
+        <section class="principle-band" aria-labelledby="criticism-advocates-heading">
+          <div>
+            <p class="eyebrow">Agent boundary</p>
+            <h2 id="criticism-advocates-heading">Criticism advocates, not commenter personas.</h2>
+          </div>
+          <ul>
+            <li>Existing Phase 2 specialists represent the strongest fair version of a sourced technical argument.</li>
+            <li>They seek counterexamples, strengths, compensating controls, and evidence that would falsify the concern.</li>
+            <li>They do not impersonate public users, mine unrelated history, or infer motives, personality, employment, expertise, or sensitive traits.</li>
+            <li>Overlapping comments become one bounded packet; no more than three specialists run concurrently.</li>
+            <li>External challenge IDs remain intake references and never replace canonical findings or recommendations.</li>
+          </ul>
+        </section>
+
+        <section class="locked-entry-gate" aria-labelledby="next-reddit-source-heading">
+          <div>
+            <p class="eyebrow">Future sources</p>
+            <h2 id="next-reddit-source-heading">The next thread follows the same path.</h2>
+            <p>
+              A maintained source template makes another Reddit post—or another public technical discussion—a normal
+              addition to Phase 2 rather than a new review method.
+            </p>
+            <a class="challenge-source-link" href="https://github.com/nkimber/AvenChart/blob/main/docs/phase-2/external-feedback/README.md">
+              View the maintained intake records
+            </a>
+          </div>
+          <ul>
+            <li>Assign the next source ID and preserve its URL, dates, visible scope, and access limitations.</li>
+            <li>Complete claim extraction, exclusion reasons, clustering, and coverage mapping before delegation.</li>
+            <li>Use the relevant specialist and verifier rather than creating a personality simulation.</li>
+            <li>Update this tab with source and challenge totals as each new discussion is reconciled.</li>
+          </ul>
+        </section>
+
+        <section class="context-boundary" aria-labelledby="reddit-phase-boundary-heading">
+          <div><p class="eyebrow">Phase boundary</p><h2 id="reddit-phase-boundary-heading">Answer the criticism before changing the code.</h2></div>
+          <div>
+            <p>
+              Phase 2 addresses a challenge by substantiating, narrowing, disputing, or failing to reproduce it against
+              the fixed Phase 1 baseline. Supported conditions enter the findings register; justified target states
+              enter the recommendation catalog.
+            </p>
+            <p>
+              Decomposing files, changing persistence, adding tests, or correcting formatting remains Phase 3 work and
+              starts only after the relevant recommendation is accepted with measurable completion evidence.
+            </p>
+          </div>
+        </section>
+      </section>
+
       <section id="phase-2-findings" class="workbench-panel" data-workbench-panel="phase-2-findings" tabindex="-1" hidden>
         <div class="panel-introduction">
           <p class="eyebrow">Phase 02 · Findings register</p>
@@ -605,16 +1168,109 @@
         </div>
 
         <section class="register-status" aria-labelledby="findings-status-heading">
-          <div class="register-count"><strong>0</strong><span>validated findings</span></div>
+            <div class="register-count"><strong>64</strong><span>validated findings</span></div>
           <div>
             <p class="eyebrow">Register status</p>
-            <h2 id="findings-status-heading">The register begins empty by design.</h2>
+            <h2 id="findings-status-heading">Sixty-four Phase 2 findings are validated.</h2>
             <p>
-              Phase 1 observations and assumptions are inputs to the review, not pre-approved findings. Entries will
-              appear here only after the relevant evidence has been captured and the consequence has been evaluated.
+              The Reddit Challenge produced eight findings; the identity, authorization, session, browser, and PHI-audit
+              assessment produced seven; and the patient-identity, demographics, merge, lifecycle, chart-context, and SDOH
+              assessment produced eight. The encounter and clinical-record assessment added eleven, scheduling and
+              communications added eight, laboratories and procedures added six, and billing/inventory/administration/
+              reporting added nine while broadening existing root findings. COV-010 added four conditional contract and
+              integration conditions while broadening existing authorization, audit, lifecycle, and provenance roots.
+              COV-011 added two conditional clinician-interface and recovery conditions while broadening response
+              ownership and verification-governance roots. The runtime packet made FHIR conformance unconditional and
+              added the missing external-laboratory clinical apply path. The register now contains thirty-nine high,
+              twenty-three medium, and two low conditions. All thirty-nine High findings are blockers against the adopted
+              future-production target; none authorizes product changes.
             </p>
           </div>
-          <span class="status-pill is-setup">Assessment setup</span>
+          <span class="status-pill is-setup">Evidence validated</span>
+        </section>
+
+        <section class="workbench-section" aria-labelledby="validated-findings-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Canonical register</p>
+            <h2 id="validated-findings-heading">Sixty-four evidence-backed conditions.</h2>
+            </div>
+            <p>
+              These entries use stable Phase 2 identifiers. The source comments remain intake references; the findings
+              are grounded in reproducible baseline evidence and independent verification.
+            </p>
+          </div>
+          <div class="data-table-scroll">
+            <table class="workbench-table">
+              <thead><tr><th scope="col">Finding</th><th scope="col">Condition</th><th scope="col">Risk</th><th scope="col">Status</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">P2-01-F001</th><td>API composition, transport policy, and workflow rules converge in one change hotspot.</td><td>Medium · cross-cutting</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-02-F001</th><td>Representative broad repositories combine persistence with workflow and delivery responsibilities.</td><td>Medium · repeated</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-02-F002</th><td>C# formatting and analyzer hygiene lack consistent repository governance.</td><td>Low · repeated</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F001</th><td>Registration can bypass duplicate review and its override evidence.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F002</th><td>One demographics Save can commit only its contact portion.</td><td>Medium · repeated</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F003</th><td>Stale full-record demographic edits silently overwrite intervening corrections.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F004</th><td>Merge execution is not bound to the identity state that was reviewed.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F005</th><td>Merged source identifiers remain directly readable and actionable.</td><td>High · systemic · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F006</th><td>Encounter creation does not enforce or persistently display patient lifecycle state.</td><td>High · cross-cutting · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F007</th><td>Obsolete frontend responses can combine one resource with another selection.</td><td>High · systemic · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F008</th><td>Generated SDOH target dates move forward on every read.</td><td>Medium · repeated</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F009</th><td>Clinical attestations do not identify the content or version attested.</td><td>High · cross-cutting · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F010</th><td>Encounter locking is a non-atomic check across several clinical and financial writers.</td><td>High · systemic · target blocker</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-03-F011</th><td>Ordinary APIs physically delete clinical, follow-up, and financial records and supporting evidence.</td><td>High · cross-cutting · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F012</th><td>Several prescription mutations are not atomic with correctly attributed audit.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F013</th><td>Vitals accept empty or implausible observations without correction provenance.</td><td>High · repeated · target blocker</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-03-F014</th><td>Allergy-review acknowledgement is not bound to the condition or rule revision.</td><td>Medium · repeated · clinical policy pending</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-03-F015</th><td>Medication edits cannot reconstruct the prior clinical content.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F016</th><td>Sequentially stale encounter-summary forms overwrite newer data.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F017</th><td>SOAP concurrency protection is optional at the server boundary.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F018</th><td>Procedure orders remain rewriteable after transmission or reporting.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F019</th><td>Enforced appointment-conflict checks are not atomic with creation.</td><td>High · repeated · target blocker</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-03-F020</th><td>Recurring appointment mutations can lose exceptions and bypass conflict validation.</td><td>High · repeated · target blocker</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-03-F021</th><td>Legacy message mutations bypass the governed history and version boundary.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F022</th><td>Therapy attendance can diverge from the completed-session snapshot.</td><td>High · repeated · target blocker</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-03-F023</th><td>Therapy encounter creation is not atomic with session linkage.</td><td>High · repeated · target blocker</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-03-F024</th><td>Recall follow-up has no durable terminal lifecycle.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F025</th><td>The supported Critical value is excluded from the critical-result workflow.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F026</th><td>Concurrent result corrections can erase an intermediate correction from current state and history.</td><td>High · repeated · target blocker</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-03-F027</th><td>Critical-result evidence ends at local acknowledgement rather than accountable follow-up closure.</td><td>High · systemic · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-03-F028</th><td>Report and result lineage is not bound to a governed specimen record.</td><td>Medium · repeated · laboratory validation pending</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-03-F029</th><td>Portal laboratory release has no lifecycle predicate and omits material status context.</td><td>Medium · systemic · specialist evidence pending</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-04-F001</th><td>Schema readiness depends on a seed-owned foundation outside the migration ledger.</td><td>Medium · systemic</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-04-F002</th><td>Procedure-catalog hierarchy and logical identity are not database-enforced.</td><td>Medium · isolated</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-04-F003</th><td>Compendium import performs uncapped sequential row-by-row database work.</td><td>Low · isolated</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-04-F004</th><td>Controlled-count correction is not atomic with discrepancy closure.</td><td>High · repeated · target blocker</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-04-F005</th><td>Billing adjudication and EOB import persist fixed synthetic monetary outcomes.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-04-F006</th><td>EOB import consumes an unreserved payment-session sequence value.</td><td>Medium · repeated</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-04-F007</th><td>Governed report metadata does not pin the mutable source data.</td><td>High · cross-cutting · target blocker</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-05-F001</th><td>No professional, portal, or service identity provider is approved for production.</td><td>High · systemic · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-05-F002</th><td>Ordinary professional chart and direct-report access is not resource-scoped.</td><td>High · systemic · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-05-F003</th><td>PHI access evidence cannot correlate ordinary reads or exports to the protected patient resource.</td><td>High · systemic · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-05-F004</th><td>PHI audit can record response status before a returned result applies its outcome.</td><td>Medium · cross-cutting</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-05-F005</th><td>Account or portal-access disablement does not invalidate existing sessions.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-05-F006</th><td>Saved encounter templates can persist clinical SOAP content across sign-out and clinician identities.</td><td>High · isolated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-05-F007</th><td>Portal login reveals selected account lifecycle states before password verification.</td><td>Medium · repeated</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-05-F008</th><td>Medication-list view permission authorizes clinical-list mutations.</td><td>High · cross-cutting · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-05-F009</th><td>Workflow, laboratory, and billing mutations lack consistent resource-scoped provenance.</td><td>High · cross-cutting · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-05-F010</th><td>Controlled-inventory attestation uses another user's transferable session bearer.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-05-F011</th><td>Direct report exports bypass the governed reporting lifecycle.</td><td>High · cross-cutting · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-07-F001</th><td>Generated OpenAPI does not describe the runtime response or authentication contract.</td><td>Medium · systemic</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-07-F002</th><td>The advertised FHIR R4 surface is not a validated normative R4 contract.</td><td>High · cross-cutting · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-07-F003</th><td>Integration idempotency identities are not content-bound.</td><td>Medium · repeated · scope pending</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-07-F004</th><td>Outbox delivery is at-least-once across the transport boundary.</td><td>Medium · repeated · scope pending</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-07-F005</th><td>No authenticated external laboratory message is validated and applied to the governed clinical result aggregate.</td><td>High · cross-cutting · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-08-F001</th><td>Therapy sessions with members cannot be completed through the modern UI.</td><td>Medium · repeated · scope pending</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-08-F002</th><td>Only the three newest open critical results are actionable in the modern UI.</td><td>High · repeated · target blocker</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-08-F003</th><td>Governed report status can remain stale after recoverable failure or conflict.</td><td>Medium · repeated</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-08-F004</th><td>A failed collections-queue load is indistinguishable from an unavailable queue.</td><td>Medium · isolated · scope pending</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-08-F005</th><td>Failed Flow Board refresh can retain an actionable board for a different selected date.</td><td>Medium · repeated · scope pending</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-08-F006</th><td>Clinician async failures are not consistently announced or recoverable.</td><td>Medium · repeated · accessibility pending</td><td>Validated condition</td></tr>
+                <tr><th scope="row">P2-09-F001</th><td>The Phase 1 functional-coverage estimate has no reproducible capability denominator.</td><td>Medium · systemic evidence claim</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-09-F002</th><td>The default verification gate omits risk-shaped runtime and browser suites.</td><td>Medium · systemic</td><td>Validated</td></tr>
+                <tr><th scope="row">P2-10-F001</th><td>Administration change governance does not enforce independent approval.</td><td>Medium · systemic · sensitive policy approved</td><td>Validated mechanism</td></tr>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section class="workbench-section" aria-labelledby="finding-record-heading">
@@ -728,6 +1384,34 @@
           </ol>
         </section>
 
+        <section class="workbench-section" aria-labelledby="proposed-roadmap-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Proposal catalog · Not authorized</p>
+              <h2 id="proposed-roadmap-heading">Seven target-state proposals are drafted for decision.</h2>
+            </div>
+            <p>
+              The proposal register groups the validated findings into a dependency-aware sequence. These are not Phase
+              3 tickets: each remains proposed until the program owner and required clinical, security, accessibility,
+              interoperability, database, operations, and release specialists accept its scope and evidence.
+            </p>
+          </div>
+          <div class="data-table-scroll">
+            <table class="workbench-table">
+              <thead><tr><th scope="col">Proposal</th><th scope="col">Target</th><th scope="col">Priority</th><th scope="col">Status</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">P2-R001</th><td>Identity, resource scope, session, audit, and minimum-necessary safety</td><td>Blocker</td><td>Proposed</td></tr>
+                <tr><th scope="row">P2-R002</th><td>Patient and encounter clinical-record integrity</td><td>Blocker</td><td>Proposed</td></tr>
+                <tr><th scope="row">P2-R003</th><td>Workflow history, idempotency, and recovery</td><td>Blocker</td><td>Proposed</td></tr>
+                <tr><th scope="row">P2-R004</th><td>Schema authority, persistence fitness, and recovery measurement</td><td>Foundation</td><td>Proposed</td></tr>
+                <tr><th scope="row">P2-R005</th><td>UI response ownership, failure recovery, and accessibility</td><td>Early risk reduction</td><td>Proposed</td></tr>
+                <tr><th scope="row">P2-R006</th><td>API, FHIR, integration, report, artifact, and configuration governance</td><td>Foundation</td><td>Proposed</td></tr>
+                <tr><th scope="row">P2-R007</th><td>Verification, release provenance, and operational evidence</td><td>Foundation</td><td>Proposed</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <section class="sizing-section" aria-labelledby="recommendation-sizing-heading">
           <div class="section-side-heading">
             <p class="eyebrow">Sizing language</p>
@@ -767,14 +1451,14 @@
               and produce evidence that the intended risk or cost has actually been reduced.
             </p>
             <p class="scope-note">
-              The phase is deliberately not started. Its final scope, milestones, and estimates depend on the Phase 2
-              findings and recommendation decisions.
+              A dependency-ordered roadmap and complete decision packets are prepared. The phase remains deliberately
+              not started until recommendations, owners, specialist evidence, rollback, and the applicable gates have explicit approval.
             </p>
           </div>
           <aside class="phase-status-stamp is-planned" aria-label="Phase 3 status">
             <span>Phase 03 status</span>
             <strong>Planned</strong>
-            <p>Waiting for an approved Phase 2 roadmap</p>
+            <p>Roadmap prepared; authorization and gates remain open</p>
             <time>Start date not set</time>
           </aside>
         </section>
@@ -790,7 +1474,7 @@
           </div>
           <dl class="charter-ledger">
             <div><dt>Primary question</dt><dd>Can the generated baseline become a trustworthy and sustainable engineering foundation?</dd></div>
-            <div><dt>Entry condition</dt><dd>Phase 2 coverage, findings, recommendations, and ordering approved</dd></div>
+            <div><dt>Entry condition</dt><dd>Phase 2 evidence, accepted packets, specialist validation, ownership, rollback, and applicable gates approved</dd></div>
             <div><dt>Unit of delivery</dt><dd>One recommendation or independently valuable slice with explicit acceptance criteria</dd></div>
             <div><dt>Change policy</dt><dd>Preserve required behavior; migrate deliberately; measure before and after</dd></div>
             <div><dt>Exit condition</dt><dd>Accepted scope complete, quality gates satisfied, residual risks documented</dd></div>
@@ -801,19 +1485,19 @@
         <section class="locked-entry-gate" aria-labelledby="phase-three-entry-heading">
           <div class="gate-lock" aria-hidden="true">03</div>
           <div>
-            <p class="eyebrow">Entry gate · Closed</p>
-            <h2 id="phase-three-entry-heading">Implementation waits for the assessment.</h2>
+            <p class="eyebrow">Entry gate · Open and not passed</p>
+            <h2 id="phase-three-entry-heading">Implementation waits for explicit authorization.</h2>
             <p>
               Starting broad modernization early would mix diagnosis with treatment, hide the original baseline, and
               risk optimizing components that a later architectural decision would replace. Small emergency fixes may
-              be handled separately, but they do not silently open Phase 3.
+              be handled separately, but they do not silently close the Phase 3 entry gate or authorize the phase.
             </p>
           </div>
           <ul>
-            <li>Phase 2 assessment complete</li>
-            <li>Findings validated and dispositioned</li>
-            <li>Recommendations accepted and ordered</li>
-            <li>Regression baseline and ownership agreed</li>
+            <li>Phase 2 evidence, target policies, and decision-ready packets are prepared</li>
+            <li>Specialist decisions and remaining dynamic evidence are complete</li>
+            <li>Recommendations, owners, rollback, and acceptance measures are explicitly accepted</li>
+            <li>Applicable implementation gates are explicitly closed by the program owner</li>
           </ul>
         </section>
 
@@ -854,24 +1538,24 @@
           <p class="eyebrow">Phase 03 · Delivery sequence</p>
           <h1>Deliver in dependency-aware waves.</h1>
           <p>
-            The sequence below is a planning frame, not a pre-approved backlog. Phase 2 will determine which waves are
-            needed, what belongs in each one, and where dependencies require a different order.
+            The sequence below maps the seven decision-ready proposals by dependency. It is not a pre-approved backlog:
+            no packet begins until its recommendation, specialist validation, ownership, rollback, and prerequisites are accepted.
           </p>
         </div>
 
         <section class="delivery-waves" aria-labelledby="delivery-waves-heading">
           <div class="section-side-heading">
-            <p class="eyebrow">Provisional sequence</p>
-            <h2 id="delivery-waves-heading">Stabilize, reshape, then optimize.</h2>
+            <p class="eyebrow">Prepared sequence</p>
+            <h2 id="delivery-waves-heading">Establish evidence and trust, then clinical integrity, workflow, and governed exchange.</h2>
             <p>Each wave must leave a tested and supportable system; later waves do not excuse unfinished earlier gates.</p>
           </div>
           <ol>
-            <li><div class="wave-number">00</div><div><span>Preparation</span><h3>Baselines and safety rails</h3><p>Confirm ownership, acceptance tests, measurements, migration rehearsal, rollback, and the first approved change packets.</p><small>Unlocks reliable comparison and controlled delivery</small></div></li>
-            <li><div class="wave-number">01</div><div><span>Protection</span><h3>Production and safety blockers</h3><p>Resolve unacceptable clinical, correctness, security, privacy, recovery, and data-integrity conditions.</p><small>Required before readiness can advance</small></div></li>
-            <li><div class="wave-number">02</div><div><span>Foundation</span><h3>Architecture and boundaries</h3><p>Reduce systemic coupling, clarify ownership, and establish the seams required for safe downstream changes.</p><small>Prevents later work from reinforcing structural liabilities</small></div></li>
-            <li><div class="wave-number">03</div><div><span>Resilience</span><h3>Data, performance, and operations</h3><p>Address measured bottlenecks, concurrency and consistency risk, observability gaps, capacity, deployment, and recovery.</p><small>Improves predictable behavior under real operating conditions</small></div></li>
-            <li><div class="wave-number">04</div><div><span>Sustainability</span><h3>Maintainability and developer experience</h3><p>Remove costly duplication and bulk, simplify change paths, align conventions, and improve feedback and documentation.</p><small>Reduces the recurring cost of future delivery</small></div></li>
-            <li><div class="wave-number">05</div><div><span>Readiness</span><h3>System validation and residual risk</h3><p>Re-run end-to-end evidence, close or accept remaining findings, update architecture, and determine the next posture.</p><small>Produces the Phase 3 closure decision</small></div></li>
+            <li><div class="wave-number">00</div><div><span>Foundation decisions</span><h3>Evidence, schema authority, and contracts</h3><p>Prepare verification manifest, choose a bootstrappable schema path, select API/FHIR contract profiles, and record specialist rule matrices.</p><small>R007-A · R004-A · R006-A</small></div></li>
+            <li><div class="wave-number">01</div><div><span>Trust</span><h3>Identity, resource scope, session, and audit safety</h3><p>Establish vendor-neutral OIDC/test-IdP evidence, facility/purpose policy, resource authorization, audit/attestation, and modern-UI failure fixtures.</p><small>R001-A through R001-D · R005-A</small></div></li>
+            <li><div class="wave-number">02</div><div><span>Clinical integrity</span><h3>Patient, encounter, and safe interaction boundaries</h3><p>Deliver constraints/performance proof, identity and lifecycle invariants, encounter and medication evidence, plus safe modern UI mutation recovery.</p><small>R004-B/C · R002-A through R002-C · R005-B/C</small></div></li>
+            <li><div class="wave-number">03</div><div><span>Closed loop</span><h3>Laboratory, scheduling, communication, therapy, and recovery</h3><p>Make order-to-result evidence and operational workflows durable, attributable, idempotent, and recoverable under concurrent and partial failure.</p><small>R002-D · R003-A through R003-E</small></div></li>
+            <li><div class="wave-number">04</div><div><span>Governed exchange</span><h3>FHIR, laboratory intake, integration, reports, and configuration</h3><p>Prove standards-conformant FHIR/SMART, synthetic laboratory intake, reliable integration evidence, and governed reporting/configuration boundaries.</p><small>R006-B through R006-E</small></div></li>
+            <li><div class="wave-number">05</div><div><span>Release proof</span><h3>Accessibility, operations, provenance, and readiness</h3><p>Run independent accessibility, recovery, supply-chain, deployment, rollback, and current-environment evidence before any readiness decision.</p><small>R005-D · R007-B through R007-E · R004-D</small></div></li>
           </ol>
         </section>
 
