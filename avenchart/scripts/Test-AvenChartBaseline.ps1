@@ -318,6 +318,22 @@ function New-AuthenticatedHttpClient {
     return $client
 }
 
+function Convert-HttpResponseContentToString {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Content
+    )
+
+    # Invoke-WebRequest materializes application/fhir+json as a byte array on
+    # PowerShell. Decode it explicitly so media-type negotiation does not
+    # silently change the contract parser's input type.
+    if ($Content -is [byte[]]) {
+        return [System.Text.Encoding]::UTF8.GetString($Content)
+    }
+
+    return [string]$Content
+}
+
 function Read-HttpErrorBody {
     param(
         [Parameter(Mandatory = $true)]
@@ -3092,11 +3108,11 @@ try {
     # on the host client's default Accept behavior.
     $fhirHeaders["Accept"] = "application/fhir+json"
     $fhirMetadataResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/api/fhir/R4/metadata" -Method Get -Headers $fhirHeaders -UseBasicParsing -TimeoutSec 20
-    $fhirMetadata = $fhirMetadataResponse.Content | ConvertFrom-Json
+    $fhirMetadata = (Convert-HttpResponseContentToString $fhirMetadataResponse.Content) | ConvertFrom-Json
     $fhirPatientResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/api/fhir/R4/Patient/MOD-PAT-0001" -Method Get -Headers $fhirHeaders -UseBasicParsing -TimeoutSec 20
-    $fhirPatient = $fhirPatientResponse.Content | ConvertFrom-Json
+    $fhirPatient = (Convert-HttpResponseContentToString $fhirPatientResponse.Content) | ConvertFrom-Json
     $fhirEncounterResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/api/fhir/R4/Encounter/1000013" -Method Get -Headers $fhirHeaders -UseBasicParsing -TimeoutSec 20
-    $fhirEncounter = $fhirEncounterResponse.Content | ConvertFrom-Json
+    $fhirEncounter = (Convert-HttpResponseContentToString $fhirEncounterResponse.Content) | ConvertFrom-Json
     $patientCapability = @($fhirMetadata.rest[0].resource | Where-Object { $_.type -eq "Patient" }) | Select-Object -First 1
     $fhirContractPassed = ($fhirMetadataResponse.Headers["Content-Type"] -join ",") -like "application/fhir+json*" `
         -and $fhirMetadata.resourceType -eq "CapabilityStatement" `
