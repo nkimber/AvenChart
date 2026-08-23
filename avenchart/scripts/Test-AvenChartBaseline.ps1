@@ -352,6 +352,43 @@ catch {
     Add-Check -Name "api health" -Result "failed" -Details $_.Exception.Message
 }
 
+$syntheticBaselineReady = $false
+try {
+    $seedReadinessLogin = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/login" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{ username = "admin"; password = "pass" } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+    $syntheticBaselineReady = $seedReadinessLogin.authenticated -eq $true `
+        -and -not [string]::IsNullOrWhiteSpace($seedReadinessLogin.sessionId) `
+        -and $seedReadinessLogin.accessContext.defaultFacilityId -gt 0
+    Add-Check -Name "synthetic baseline seed readiness" -Result $(if ($syntheticBaselineReady) { "passed" } else { "failed" }) -Details @{
+        authenticated = $seedReadinessLogin.authenticated
+        sessionIssued = -not [string]::IsNullOrWhiteSpace($seedReadinessLogin.sessionId)
+        defaultFacilityId = $seedReadinessLogin.accessContext.defaultFacilityId
+        remediation = "Run scripts/Seed-AvenChartGoldDataset.ps1 only against the disposable synthetic development database."
+    }
+}
+catch {
+    Add-Check -Name "synthetic baseline seed readiness" -Result "failed" -Details @{
+        error = $_.Exception.Message
+        remediation = "Run scripts/Seed-AvenChartGoldDataset.ps1 only against the disposable synthetic development database."
+    }
+}
+
+if (-not $syntheticBaselineReady) {
+    $result = [ordered]@{
+        status = $status
+        apiBaseUrl = $ApiBaseUrl
+        generatedAt = (Get-Date).ToUniversalTime().ToString("o")
+        checks = $checks
+    }
+    $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
+    Write-Host "AvenChart smoke test result: $ResultPath"
+    exit 1
+}
+
 try {
     $flowBoardDate = "2026-07-28"
     $flowBoard = Invoke-RestMethod `
