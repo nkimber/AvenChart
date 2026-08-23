@@ -7430,13 +7430,14 @@ try {
         objective = "Vitals reviewed during smoke workflow."
         assessment = "Stable smoke workflow condition."
         plan = "Continue smoke workflow validation."
+        expectedVersion = 0
     } | ConvertTo-Json
     $createdSoap = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId/soap-notes" -Method Post -ContentType "application/json" -Body $soapBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
 
     $updateBody = @{
         reason = "Smoke Encounter Mutation Updated"
         billingNote = "Updated by the smoke encounter mutation check."
-        expectedVersion = $createdEncounter.rowVersion
+        expectedVersion = $createdSoap.detail.rowVersion
     } | ConvertTo-Json
     $updatedEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Put -ContentType "application/json" -Body $updateBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $staleEncounterUpdateStatus = 0
@@ -7456,7 +7457,7 @@ try {
         -and $updatedEncounter.vitals.bloodPressure -eq "128/76" `
         -and $updatedEncounter.soapNote.assessment -eq "Stable smoke workflow condition."
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-EncounterTestFixture -Encounter $encounterMutationId | Out-Null
     $encounterMutationId = $null
 
     Add-Check -Name "encounter mutation lifecycle" -Result $(if ($encounterMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -7476,7 +7477,7 @@ catch {
 finally {
     if ($null -ne $encounterMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Archive-EncounterTestFixture -Encounter $encounterMutationId | Out-Null
         }
         catch {
         }
@@ -7522,7 +7523,7 @@ try {
         -and $updatedMetadataEncounter.posCode -eq 22 `
         -and $updatedMetadataEncounter.billingNote -eq "Updated by the smoke encounter metadata check."
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-EncounterTestFixture -Encounter $encounterMetadataMutationId | Out-Null
     $encounterMetadataMutationId = $null
 
     Add-Check -Name "encounter metadata mutation lifecycle" -Result $(if ($encounterMetadataPassed) { "passed" } else { "failed" }) -Details @{
@@ -7540,7 +7541,7 @@ catch {
 finally {
     if ($null -ne $encounterMetadataMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Archive-EncounterTestFixture -Encounter $encounterMetadataMutationId | Out-Null
         }
         catch {
         }
