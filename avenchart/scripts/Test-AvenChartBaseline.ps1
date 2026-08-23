@@ -243,6 +243,27 @@ function Archive-EncounterTestFixture {
         -TimeoutSec 20
 }
 
+function Archive-DocumentTestFixture {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$DocumentId
+    )
+
+    # Documents are retained clinical evidence. Fixture cleanup uses the same
+    # reasoned archive transition as the product, including its optimistic
+    # lifecycle precondition, rather than the retired delete route.
+    return Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/documents/$DocumentId/soft-delete" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body (@{
+            reason = "Synthetic smoke-test fixture completed."
+            expectedArchived = $false
+        } | ConvertTo-Json) `
+        -TimeoutSec 20
+}
+
 function Get-FrontDeskHeaders {
     if ($null -eq $script:FrontDeskHeaders) {
         $loginBody = @{
@@ -6006,7 +6027,7 @@ try {
             -and $_.contentPreview -like "*$documentContent*"
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentId | Out-Null
     $smokeEncounterDocumentId = $null
     $afterDeleteDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterDocumentVisible = @($afterDeleteDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
@@ -6026,7 +6047,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterDocumentId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentId | Out-Null
         }
         catch {
         }
@@ -6079,7 +6100,7 @@ try {
         $encounterBinaryDownloadClient.Dispose()
     }
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterBinaryDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterBinaryDocumentId | Out-Null
     $smokeEncounterBinaryDocumentId = $null
     $afterDeleteBinaryDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterBinaryDocumentVisible = @($afterDeleteBinaryDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
@@ -6105,7 +6126,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterBinaryDocumentId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterBinaryDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterBinaryDocumentId | Out-Null
         }
         catch {
         }
@@ -6168,7 +6189,7 @@ try {
         $binaryReplacementDownloadClient.Dispose()
     }
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterBinaryReplacementDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterBinaryReplacementDocumentId | Out-Null
     $smokeEncounterBinaryReplacementDocumentId = $null
 
     $encounterBinaryReplacementPassed = $null -ne $replacedBinaryDocumentVisible `
@@ -6193,7 +6214,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterBinaryReplacementDocumentId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterBinaryReplacementDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterBinaryReplacementDocumentId | Out-Null
         }
         catch {
         }
@@ -6243,7 +6264,7 @@ try {
             -and $_.ocrStatus -eq "OCR pending"
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterScannedDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterScannedDocumentId | Out-Null
     $smokeEncounterScannedDocumentId = $null
     $afterDeleteScannedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterScannedDocumentVisible = @($afterDeleteScannedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
@@ -6268,7 +6289,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterScannedDocumentId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterScannedDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterScannedDocumentId | Out-Null
         }
         catch {
         }
@@ -6309,7 +6330,7 @@ try {
 
     $externalLinkContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterExternalLinkDocumentId/content" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterExternalLinkDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterExternalLinkDocumentId | Out-Null
     $smokeEncounterExternalLinkDocumentId = $null
     $afterDeleteExternalLinkDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterExternalLinkDocumentVisible = @($afterDeleteExternalLinkDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
@@ -6331,7 +6352,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterExternalLinkDocumentId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterExternalLinkDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterExternalLinkDocumentId | Out-Null
         }
         catch {
         }
@@ -6380,7 +6401,7 @@ try {
             -and $_.notes -eq "Updated by the smoke encounter document metadata check."
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentMetadataId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentMetadataId | Out-Null
     $afterDeleteMetadataDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedMetadataDocumentVisible = @($afterDeleteMetadataDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $metadataDocumentName -or $_.name -eq $updatedMetadataDocumentName
@@ -6401,7 +6422,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterDocumentMetadataId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentMetadataId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentMetadataId | Out-Null
         }
         catch {
         }
@@ -6452,7 +6473,7 @@ try {
             -and $_.previewKind -eq "text"
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentContentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentContentId | Out-Null
     $smokeEncounterDocumentContentId = $null
     $afterDeleteContentDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedContentDocumentVisible = @($afterDeleteContentDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
@@ -6474,7 +6495,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterDocumentContentId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentContentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentContentId | Out-Null
         }
         catch {
         }
@@ -6536,11 +6557,11 @@ try {
             -and $_.deleted -eq 0
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentArchiveRestoreId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentArchiveRestoreId | Out-Null
     $smokeEncounterDocumentArchiveRestoreId = $null
-    $afterDeleteArchiveDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013?includeArchivedDocuments=true" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
-    $deletedArchiveDocumentVisible = @($afterDeleteArchiveDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
-        $_.name -eq $archiveDocumentName
+    $afterArchiveDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013?includeArchivedDocuments=true" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $retainedArchiveDocumentVisible = @($afterArchiveDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $archiveDocumentName -and $_.deleted -eq 1
     } | Select-Object -First 1
 
     $encounterDocumentArchiveRestorePassed = $null -ne $createdArchiveDocumentVisible `
@@ -6549,12 +6570,13 @@ try {
         -and $null -ne $archivedDocumentIncluded `
         -and $null -ne $restoredArchiveDocumentVisible `
         -and $null -ne $restoredDocumentActive `
-        -and $null -eq $deletedArchiveDocumentVisible
+        -and $null -ne $retainedArchiveDocumentVisible
     Add-Check -Name "encounter document archive restore lifecycle" -Result $(if ($encounterDocumentArchiveRestorePassed) { "passed" } else { "failed" }) -Details @{
         encounter = 1000013
         documentId = $createdEncounterArchiveDocument.id
         archived = $archivedDocumentVisible
         restored = $restoredArchiveDocumentVisible
+        retainedAfterCleanup = $retainedArchiveDocumentVisible
     }
 }
 catch {
@@ -6563,7 +6585,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterDocumentArchiveRestoreId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentArchiveRestoreId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentArchiveRestoreId | Out-Null
         }
         catch {
         }
@@ -6617,7 +6639,7 @@ try {
     } | Select-Object -First 1
     $restoredLifecycleCodes = if ($null -eq $restoredLifecycleDocumentVisible) { @() } else { @($restoredLifecycleDocumentVisible.lifecycleEvents | ForEach-Object { $_.code }) }
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentLifecycleId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentLifecycleId | Out-Null
     $smokeEncounterDocumentLifecycleId = $null
 
     $encounterDocumentLifecyclePassed = $null -ne $createdLifecycleDocumentVisible `
@@ -6646,7 +6668,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterDocumentLifecycleId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentLifecycleId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentLifecycleId | Out-Null
         }
         catch {
         }
@@ -6693,7 +6715,7 @@ try {
             -and $_.notes -eq "Created by the smoke encounter document move check."
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentMoveId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentMoveId | Out-Null
     $smokeEncounterDocumentMoveId = $null
     $afterDeleteMovedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000011" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedMovedDocumentVisible = @($afterDeleteMovedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
@@ -6717,7 +6739,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterDocumentMoveId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentMoveId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentMoveId | Out-Null
         }
         catch {
         }
@@ -6762,7 +6784,7 @@ try {
             -and -not [string]::IsNullOrWhiteSpace($_.reviewedAt)
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentSignOffId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentSignOffId | Out-Null
     $smokeEncounterDocumentSignOffId = $null
     $afterDeleteSignedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedSignedDocumentVisible = @($afterDeleteSignedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
@@ -6784,7 +6806,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterDocumentSignOffId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentSignOffId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentSignOffId | Out-Null
         }
         catch {
         }
@@ -6829,7 +6851,7 @@ try {
             -and -not [string]::IsNullOrWhiteSpace($_.reviewedAt)
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentDenialId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentDenialId | Out-Null
     $smokeEncounterDocumentDenialId = $null
     $afterDeleteDeniedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedDeniedDocumentVisible = @($afterDeleteDeniedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
@@ -6851,7 +6873,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterDocumentDenialId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentDenialId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $smokeEncounterDocumentDenialId | Out-Null
         }
         catch {
         }
@@ -7357,14 +7379,14 @@ try {
         -and $intakePacketAttachment.versionStatus -eq "Current version" `
         -and $intakePacketAttachment.versionHistoryCount -eq 1 `
         -and $intakePacketAttachment.hasPriorVersions -eq $false `
-        -and $intakePacketAttachment.revisionAt -eq "2026-06-10 14:30" `
+        -and $intakePacketAttachment.revisionAt -like "2026-06-10 14:30*" `
         -and $intakePacketAttachment.revisionHash -eq $intakePacketAttachment.hash `
         -and $null -ne $advanceDirectiveAttachment `
         -and $advanceDirectiveAttachment.versionLabel -eq "Version 1" `
         -and $advanceDirectiveAttachment.versionStatus -eq "Current version" `
         -and $advanceDirectiveAttachment.versionHistoryCount -eq 1 `
         -and $advanceDirectiveAttachment.hasPriorVersions -eq $false `
-        -and $advanceDirectiveAttachment.revisionAt -eq "2026-06-12 15:00" `
+        -and $advanceDirectiveAttachment.revisionAt -like "2026-06-12 15:00*" `
         -and $advanceDirectiveAttachment.revisionHash -eq $advanceDirectiveAttachment.hash
     Add-Check -Name "anchor encounter document revision readiness" -Result $(if ($encounterDocumentRevisionPassed) { "passed" } else { "failed" }) -Details @{
         encounter = $encounterDetail.encounter
@@ -8238,9 +8260,13 @@ try {
 
     $archivedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMutationId/soft-delete" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $archivedVisible = $archivedDocument.detail.documents | Where-Object { $_.name -eq $documentName } | Select-Object -First 1
-    $patientDocumentMutationPassed = $null -ne $createdVisible -and $null -ne $signedVisible -and $null -eq $archivedVisible
+    $patientDocumentMutationPassed = $null -ne $createdVisible `
+        -and $null -ne $signedVisible `
+        -and $null -ne $archivedVisible `
+        -and $archivedVisible.deleted -eq 1 `
+        -and $archivedVisible.archiveStateActor -eq "admin"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    # The lifecycle assertion just archived this fixture.
     $patientDocumentMutationId = $null
 
     Add-Check -Name "patient document mutation lifecycle" -Result $(if ($patientDocumentMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -8256,7 +8282,7 @@ catch {
 finally {
     if ($null -ne $patientDocumentMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientDocumentMutationId | Out-Null
         }
         catch {
         }
@@ -8289,9 +8315,13 @@ try {
 
     $archivedDeniedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentDenialMutationId/soft-delete" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $archivedDeniedVisible = $archivedDeniedDocument.detail.documents | Where-Object { $_.name -eq $deniedDocumentName } | Select-Object -First 1
-    $patientDocumentDenialPassed = $null -ne $createdDeniedVisible -and $null -ne $deniedVisible -and $null -eq $archivedDeniedVisible
+    $patientDocumentDenialPassed = $null -ne $createdDeniedVisible `
+        -and $null -ne $deniedVisible `
+        -and $null -ne $archivedDeniedVisible `
+        -and $archivedDeniedVisible.deleted -eq 1 `
+        -and $archivedDeniedVisible.archiveStateActor -eq "admin"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentDenialMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    # The lifecycle assertion just archived this fixture.
     $patientDocumentDenialMutationId = $null
 
     Add-Check -Name "patient document denial lifecycle" -Result $(if ($patientDocumentDenialPassed) { "passed" } else { "failed" }) -Details @{
@@ -8307,7 +8337,7 @@ catch {
 finally {
     if ($null -ne $patientDocumentDenialMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentDenialMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientDocumentDenialMutationId | Out-Null
         }
         catch {
         }
@@ -8337,11 +8367,11 @@ try {
         categoryId = 6
         name = $metadataDocumentUpdatedName
         docDate = "2026-06-19"
-        encounter = 1000014
+        encounter = 1000012
         notes = $metadataDocumentUpdatedNotes
     } | ConvertTo-Json
     $updatedMetadataDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMetadataMutationId/metadata" -Method Put -ContentType "application/json" -Body $updateMetadataDocumentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
-    $updatedMetadataVisible = $updatedMetadataDocument.detail.documents | Where-Object { $_.name -eq $metadataDocumentUpdatedName -and $_.categoryName -eq "Advance Directive" -and $_.docDate -eq "2026-06-19" -and $_.encounter -eq 1000014 -and $_.notes -eq $metadataDocumentUpdatedNotes } | Select-Object -First 1
+    $updatedMetadataVisible = $updatedMetadataDocument.detail.documents | Where-Object { $_.name -eq $metadataDocumentUpdatedName -and $_.categoryName -eq "Advance Directive" -and $_.docDate -eq "2026-06-19" -and $_.encounter -eq 1000012 -and $_.notes -eq $metadataDocumentUpdatedNotes } | Select-Object -First 1
     $metadataContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMetadataMutationId/content" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
 
     $archivedMetadataDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMetadataMutationId/soft-delete" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20
@@ -8351,12 +8381,14 @@ try {
         -and $metadataContent.name -eq $metadataDocumentUpdatedName `
         -and $metadataContent.categoryName -eq "Advance Directive" `
         -and $metadataContent.docDate -eq "2026-06-19" `
-        -and $metadataContent.encounter -eq 1000014 `
+        -and $metadataContent.encounter -eq 1000012 `
         -and $metadataContent.notes -eq $metadataDocumentUpdatedNotes `
         -and $metadataContent.content.Contains($metadataDocumentBody) `
-        -and $null -eq $archivedMetadataVisible
+        -and $null -ne $archivedMetadataVisible `
+        -and $archivedMetadataVisible.deleted -eq 1 `
+        -and $archivedMetadataVisible.archiveStateActor -eq "admin"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMetadataMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    # The lifecycle assertion just archived this fixture.
     $patientDocumentMetadataMutationId = $null
 
     Add-Check -Name "patient document metadata lifecycle" -Result $(if ($patientDocumentMetadataPassed) { "passed" } else { "failed" }) -Details @{
@@ -8373,7 +8405,7 @@ catch {
 finally {
     if ($null -ne $patientDocumentMetadataMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMetadataMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientDocumentMetadataMutationId | Out-Null
         }
         catch {
         }
@@ -8446,9 +8478,11 @@ try {
         -and $replaceDownload.IsSuccessStatusCode `
         -and $replaceDownloadContentType -eq "text/plain" `
         -and $replaceDownloadBody.Contains($replaceDocumentUpdatedBody) `
-        -and $null -eq $archivedReplacedVisible
+        -and $null -ne $archivedReplacedVisible `
+        -and $archivedReplacedVisible.deleted -eq 1 `
+        -and $archivedReplacedVisible.archiveStateActor -eq "admin"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentContentReplaceId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    # The lifecycle assertion just archived this fixture.
     $patientDocumentContentReplaceId = $null
 
     Add-Check -Name "patient document content replacement lifecycle" -Result $(if ($patientDocumentContentReplacePassed) { "passed" } else { "failed" }) -Details @{
@@ -8478,7 +8512,7 @@ catch {
 finally {
     if ($null -ne $patientDocumentContentReplaceId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentContentReplaceId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientDocumentContentReplaceId | Out-Null
         }
         catch {
         }
@@ -8503,7 +8537,9 @@ try {
     $createdArchiveVisible = $createdArchiveDocument.detail.documents | Where-Object { $_.name -eq $archiveDocumentName -and $_.deleted -eq 0 } | Select-Object -First 1
 
     $archivedArchiveDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentArchiveRestoreId/soft-delete" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20
-    $archivedDefaultVisible = $archivedArchiveDocument.detail.documents | Where-Object { $_.name -eq $archiveDocumentName } | Select-Object -First 1
+    $archivedMutationVisible = $archivedArchiveDocument.detail.documents | Where-Object { $_.name -eq $archiveDocumentName -and $_.deleted -eq 1 } | Select-Object -First 1
+    $activeArchiveList = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $archivedDefaultVisible = $activeArchiveList.documents | Where-Object { $_.name -eq $archiveDocumentName } | Select-Object -First 1
     $archivedList = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001?includeArchived=true" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $archivedIncludeVisible = $archivedList.documents | Where-Object { $_.name -eq $archiveDocumentName -and $_.deleted -eq 1 } | Select-Object -First 1
 
@@ -8521,18 +8557,21 @@ try {
     $restoredArchiveContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentArchiveRestoreId/content" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
 
     $patientDocumentArchiveRestorePassed = $null -ne $createdArchiveVisible `
+        -and $null -ne $archivedMutationVisible `
+        -and $archivedMutationVisible.archiveStateActor -eq "admin" `
         -and $null -eq $archivedDefaultVisible `
         -and $null -ne $archivedIncludeVisible `
         -and $archivedContentStatus -eq 404 `
         -and $null -ne $restoredArchiveVisible `
         -and $restoredArchiveContent.content.Contains($archiveDocumentBody)
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentArchiveRestoreId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientDocumentArchiveRestoreId | Out-Null
     $patientDocumentArchiveRestoreId = $null
 
     Add-Check -Name "patient document archive restore lifecycle" -Result $(if ($patientDocumentArchiveRestorePassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdArchiveDocument.id
         createdVisible = $createdArchiveVisible
+        archivedMutationVisible = $archivedMutationVisible
         archivedDefaultVisible = $archivedDefaultVisible
         archivedIncludeVisible = $archivedIncludeVisible
         archivedContentStatus = $archivedContentStatus
@@ -8545,7 +8584,7 @@ catch {
 finally {
     if ($null -ne $patientDocumentArchiveRestoreId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentArchiveRestoreId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientDocumentArchiveRestoreId | Out-Null
         }
         catch {
         }
@@ -8590,7 +8629,7 @@ try {
     $viewerLifecycleContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentLifecycleId/content" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $viewerLifecycleCodes = @($viewerLifecycleContent.lifecycleEvents | ForEach-Object { $_.code })
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentLifecycleId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientDocumentLifecycleId | Out-Null
     $patientDocumentLifecycleId = $null
 
     $patientDocumentLifecyclePassed = $null -ne $createdLifecycleVisible `
@@ -8620,7 +8659,7 @@ catch {
 finally {
     if ($null -ne $patientDocumentLifecycleId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentLifecycleId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientDocumentLifecycleId | Out-Null
         }
         catch {
         }
@@ -8662,7 +8701,7 @@ try {
         -and $scanContent.scanPageCount -eq 1 `
         -and $scanContent.ocrStatus -eq "OCR pending"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientScannedDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientScannedDocumentId | Out-Null
     $patientScannedDocumentId = $null
 
     Add-Check -Name "patient scanned attachment readiness" -Result $(if ($patientScannedAttachmentPassed) { "passed" } else { "failed" }) -Details @{
@@ -8680,7 +8719,7 @@ catch {
 finally {
     if ($null -ne $patientScannedDocumentId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientScannedDocumentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientScannedDocumentId | Out-Null
         }
         catch {
         }
@@ -8729,7 +8768,9 @@ try {
         -and $binaryDownload.IsSuccessStatusCode `
         -and $binaryDownloadContentType -eq "application/pdf" `
         -and [Convert]::ToBase64String($binaryDownloadBytes) -eq $binaryDocumentBase64 `
-        -and $null -eq $archivedBinaryVisible
+        -and $null -ne $archivedBinaryVisible `
+        -and $archivedBinaryVisible.deleted -eq 1 `
+        -and $archivedBinaryVisible.archiveStateActor -eq "admin"
 
     $patientPdfInlinePreviewPassed = $null -ne $createdBinaryVisible `
         -and $createdBinaryVisible.previewKind -eq "pdf" `
@@ -8739,7 +8780,7 @@ try {
         -and $binaryContent.previewStatus -eq "Inline PDF preview" `
         -and $binaryContent.canPreviewInline
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    # The lifecycle assertion just archived this fixture.
     $patientBinaryDocumentMutationId = $null
 
     Add-Check -Name "patient binary document mutation lifecycle" -Result $(if ($patientBinaryDocumentMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -8766,7 +8807,7 @@ catch {
 finally {
     if ($null -ne $patientBinaryDocumentMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientBinaryDocumentMutationId | Out-Null
         }
         catch {
         }
@@ -8841,7 +8882,7 @@ try {
         -and $binaryReplaceDownloadContentType -eq "application/pdf" `
         -and [Convert]::ToBase64String($binaryReplaceDownloadBytes) -eq $binaryReplaceUpdatedBase64
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentReplaceId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientBinaryDocumentReplaceId | Out-Null
     $patientBinaryDocumentReplaceId = $null
 
     Add-Check -Name "patient binary document content replacement lifecycle" -Result $(if ($patientBinaryDocumentReplacePassed) { "passed" } else { "failed" }) -Details @{
@@ -8860,7 +8901,7 @@ catch {
 finally {
     if ($null -ne $patientBinaryDocumentReplaceId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentReplaceId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientBinaryDocumentReplaceId | Out-Null
         }
         catch {
         }
@@ -8906,7 +8947,7 @@ try {
         $imageDownloadClient.Dispose()
     }
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientImageDocumentPreviewId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientImageDocumentPreviewId | Out-Null
     $patientImageDocumentPreviewId = $null
 
     $patientImageDocumentPreviewPassed = $null -ne $createdImageVisible `
@@ -8942,7 +8983,7 @@ catch {
 finally {
     if ($null -ne $patientImageDocumentPreviewId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientImageDocumentPreviewId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientImageDocumentPreviewId | Out-Null
         }
         catch {
         }
@@ -8974,9 +9015,11 @@ try {
         -and $externalLinkContent.storageMethod -eq "web_url" `
         -and $externalLinkContent.url -eq $externalLinkUrl `
         -and $externalLinkContent.content.Contains($externalLinkUrl) `
-        -and $null -eq $archivedExternalLinkVisible
+        -and $null -ne $archivedExternalLinkVisible `
+        -and $archivedExternalLinkVisible.deleted -eq 1 `
+        -and $archivedExternalLinkVisible.archiveStateActor -eq "admin"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientExternalLinkDocumentMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    # The lifecycle assertion just archived this fixture.
     $patientExternalLinkDocumentMutationId = $null
 
     Add-Check -Name "patient external-link document mutation lifecycle" -Result $(if ($patientExternalLinkDocumentMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -8993,7 +9036,7 @@ catch {
 finally {
     if ($null -ne $patientExternalLinkDocumentMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientExternalLinkDocumentMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-DocumentTestFixture -DocumentId $patientExternalLinkDocumentMutationId | Out-Null
         }
         catch {
         }
