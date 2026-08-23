@@ -22,6 +22,10 @@ jobs:
         run: dotnet restore avenchart/AvenChart.slnx
       - name: Build
         run: dotnet build avenchart/AvenChart.slnx --configuration Release --no-restore
+      - name: Test
+        run: dotnet test avenchart/AvenChart.slnx --configuration Release --no-build --no-restore
+      - name: Verify C# formatting
+        run: dotnet format avenchart/AvenChart.slnx --verify-no-changes --no-restore
 
   frontends:
     runs-on: ubuntu-latest
@@ -38,6 +42,7 @@ jobs:
         working-directory: avenchart/frontend
         run: |
           npm ci
+          npm run lint
           npm run build
       - name: Install AvenChart UI
         working-directory: avenchart-ui
@@ -45,6 +50,9 @@ jobs:
       - name: Test AvenChart UI
         working-directory: avenchart-ui
         run: npm test
+      - name: Lint AvenChart UI
+        working-directory: avenchart-ui
+        run: npm run lint
       - name: Build AvenChart UI
         working-directory: avenchart-ui
         run: npm run build
