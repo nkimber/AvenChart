@@ -1520,16 +1520,20 @@ function App() {
     }
 
     const controller = new AbortController()
+    // A flow board is date-owned clinical state. Do not leave actions for the
+    // previously selected date available while the next date is loading or if
+    // that request fails.
+    setFlowBoard(null)
+    setFlowStatus('loading')
+    setFlowError(null)
     const timeout = window.setTimeout(async () => {
-      setFlowStatus('loading')
-      setFlowError(null)
-
       try {
         const result = await getAppointmentFlowBoard(flowDate, avenChartSessionId, controller.signal)
         setFlowBoard(result)
         setFlowStatus('ready')
       } catch (loadError) {
         if (!controller.signal.aborted) {
+          setFlowBoard(null)
           setFlowStatus('error')
           setFlowError(loadError instanceof Error ? loadError.message : 'Flow board failed')
         }
