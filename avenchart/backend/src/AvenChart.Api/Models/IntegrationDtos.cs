@@ -44,6 +44,15 @@ public sealed record IntegrationOutboxRecoveryRequest(
     string Reason,
     int ExpectedAttemptCount);
 
+public sealed record IntegrationOutboxProvenanceEvent(
+    Guid EventLogId,
+    string Action,
+    string Actor,
+    string Status,
+    int AttemptCount,
+    string Detail,
+    DateTimeOffset OccurredAt);
+
 public sealed record IntegrationInboxReceiveRequest(
     string Source,
     string SourceMessageId,

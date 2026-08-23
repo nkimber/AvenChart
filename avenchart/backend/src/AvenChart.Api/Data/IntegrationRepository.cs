@@ -29,9 +29,11 @@ public sealed class IntegrationRepository(
 
     public async Task<IntegrationOutboxMessage> QueueAsync(
         IntegrationOutboxQueueRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         ValidateQueueRequest(request);
+        var normalizedActor = NormalizeActor(actor);
         var now = DateTimeOffset.UtcNow;
         var eventId = Guid.NewGuid();
         var idempotencyKey = NormalizeIdempotencyKey(request.IdempotencyKey);
@@ -42,7 +44,9 @@ public sealed class IntegrationRepository(
         var payload = request.Payload.GetRawText();
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             insert into integration_outbox (
               event_id, idempotency_key, event_type, aggregate_type, aggregate_id, destination, payload,
@@ -68,7 +72,21 @@ public sealed class IntegrationRepository(
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (await reader.ReadAsync(cancellationToken))
         {
-            return ReadOutboxMessage(reader);
+            var queued = ReadOutboxMessage(reader);
+            await reader.DisposeAsync();
+            await WriteOutboxProvenanceEventAsync(
+                connection,
+                transaction,
+                queued.EventId,
+                "queued",
+                normalizedActor,
+                queued.Status,
+                queued.AttemptCount,
+                "Integration outbox event queued.",
+                now,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return queued;
         }
 
         await reader.DisposeAsync();
@@ -100,12 +118,15 @@ public sealed class IntegrationRepository(
         var existing = ReadOutboxMessage(existingReader);
         if (existingReader.GetBoolean(20))
         {
+            await existingReader.DisposeAsync();
+            await transaction.CommitAsync(cancellationToken);
             return existing;
         }
 
         await existingReader.DisposeAsync();
         await WriteIdempotencyConflictAsync(
             connection,
+            transaction,
             direction: "outbox",
             outboxEventId: existing.EventId,
             inboxId: null,
@@ -113,6 +134,7 @@ public sealed class IntegrationRepository(
             incomingDigest: BuildOutboxContentDigest(eventType, aggregateType, aggregateId, destination, request.Payload),
             occurredAt: now,
             cancellationToken: cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         throw new IntegrationIdempotencyConflictException("outbox");
     }
 
@@ -152,9 +174,13 @@ public sealed class IntegrationRepository(
         return messages;
     }
 
-    public async Task<IntegrationDispatchResponse?> DispatchAsync(Guid eventId, CancellationToken cancellationToken)
+    public async Task<IntegrationDispatchResponse?> DispatchAsync(
+        Guid eventId,
+        string actor,
+        CancellationToken cancellationToken)
     {
-        var claimed = await ClaimOutboxMessageAsync(eventId, cancellationToken);
+        var normalizedActor = NormalizeActor(actor);
+        var claimed = await ClaimOutboxMessageAsync(eventId, normalizedActor, cancellationToken);
         if (claimed is null)
         {
             return null;
@@ -166,7 +192,7 @@ public sealed class IntegrationRepository(
         }
 
         var result = await transport.DeliverAsync(claimed, cancellationToken);
-        var completed = await CompleteDispatchAsync(claimed, result, cancellationToken);
+        var completed = await CompleteDispatchAsync(claimed, result, normalizedActor, cancellationToken);
         return new IntegrationDispatchResponse(completed, Dispatched: result.Delivered, Outcome: result.Outcome);
     }
 
@@ -214,6 +240,17 @@ public sealed class IntegrationRepository(
         var requeued = ReadOutboxMessage(reader);
         await reader.DisposeAsync();
         await WriteOutboxEventAsync(connection, transaction, eventId, "requeued", reason, actor, requeued.AttemptCount, now, cancellationToken);
+        await WriteOutboxProvenanceEventAsync(
+            connection,
+            transaction,
+            eventId,
+            "requeued",
+            NormalizeActor(actor),
+            requeued.Status,
+            requeued.AttemptCount,
+            "A quarantined integration event was manually requeued.",
+            now,
+            cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return requeued;
     }
@@ -294,6 +331,7 @@ public sealed class IntegrationRepository(
         await existingReader.DisposeAsync();
         await WriteIdempotencyConflictAsync(
             connection,
+            transaction: null,
             direction: "inbox",
             outboxEventId: null,
             inboxId: existingInboxId,
@@ -334,9 +372,42 @@ public sealed class IntegrationRepository(
         var history = new List<IntegrationInboxEvent>(); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) history.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt32(4), reader.GetFieldValue<DateTimeOffset>(5))); return history;
     }
 
+    public async Task<IReadOnlyList<IntegrationOutboxProvenanceEvent>> GetOutboxHistoryAsync(
+        Guid eventId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select event_log_id, action, actor, status, attempt_count, detail, occurred_at
+            from integration_outbox_provenance_events
+            where event_id = @event_id
+            order by occurred_at, event_log_id;
+            """;
+        command.Parameters.AddWithValue("event_id", eventId);
+        var history = new List<IntegrationOutboxProvenanceEvent>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            history.Add(new IntegrationOutboxProvenanceEvent(
+                reader.GetGuid(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetInt32(4),
+                reader.GetString(5),
+                reader.GetFieldValue<DateTimeOffset>(6)));
+        }
+
+        return history;
+    }
+
     private static IntegrationInboxMessage ReadInboxMessage(NpgsqlDataReader reader) => new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), JsonDocument.Parse(reader.GetString(4)).RootElement.Clone(), reader.GetString(5), reader.GetInt32(6), reader.GetFieldValue<DateTimeOffset>(7), reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8), reader.IsDBNull(9) ? null : reader.GetString(9), reader.GetInt32(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetString(12));
 
-    private async Task<IntegrationOutboxMessage?> ClaimOutboxMessageAsync(Guid eventId, CancellationToken cancellationToken)
+    private async Task<IntegrationOutboxMessage?> ClaimOutboxMessageAsync(
+        Guid eventId,
+        string actor,
+        CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -362,6 +433,17 @@ public sealed class IntegrationRepository(
         {
             var claimed = ReadOutboxMessage(reader);
             await reader.DisposeAsync();
+            await WriteOutboxProvenanceEventAsync(
+                connection,
+                transaction,
+                eventId,
+                "dispatch-claimed",
+                actor,
+                claimed.Status,
+                claimed.AttemptCount,
+                "Integration outbox event was claimed for dispatch.",
+                now,
+                cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return claimed;
         }
@@ -403,12 +485,24 @@ public sealed class IntegrationRepository(
                 recoveredAttemptCount,
                 now,
                 cancellationToken);
+            await WriteOutboxProvenanceEventAsync(
+                connection,
+                transaction,
+                eventId,
+                "lease-recovered",
+                "local-dispatch-lease-recovery",
+                "retry-scheduled",
+                recoveredAttemptCount,
+                "The prior local dispatch claim exceeded its five-minute lease.",
+                now,
+                cancellationToken);
         }
     }
 
     private async Task<IntegrationOutboxMessage> CompleteDispatchAsync(
         IntegrationOutboxMessage message,
         IntegrationTransportResult result,
+        string actor,
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
@@ -448,6 +542,21 @@ public sealed class IntegrationRepository(
 
         var completed = ReadOutboxMessage(reader);
         await reader.DisposeAsync();
+        await WriteOutboxProvenanceEventAsync(
+            connection,
+            transaction,
+            message.EventId,
+            result.Delivered ? "delivered" : quarantine ? "quarantined" : "retry-scheduled",
+            actor,
+            completed.Status,
+            completed.AttemptCount,
+            result.Delivered
+                ? "Integration outbox event was delivered by the configured local transport."
+                : quarantine
+                    ? "Integration outbox event was quarantined after automatic delivery attempts were exhausted."
+                    : "Integration outbox event delivery was not completed and a retry was scheduled.",
+            now,
+            cancellationToken);
         if (quarantine)
         {
             await WriteOutboxEventAsync(connection, transaction, message.EventId, "quarantined", result.Error ?? "Dispatch attempts exhausted.", "local-dispatch", completed.AttemptCount, now, cancellationToken);
@@ -514,8 +623,41 @@ public sealed class IntegrationRepository(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task WriteOutboxProvenanceEventAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid eventId,
+        string action,
+        string actor,
+        string status,
+        int attemptCount,
+        string detail,
+        DateTimeOffset occurredAt,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into integration_outbox_provenance_events (
+              event_log_id, event_id, action, actor, status, attempt_count, detail, occurred_at
+            ) values (
+              @event_log_id, @event_id, @action, @actor, @status, @attempt_count, @detail, @occurred_at
+            );
+            """;
+        command.Parameters.AddWithValue("event_log_id", Guid.NewGuid());
+        command.Parameters.AddWithValue("event_id", eventId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("actor", actor);
+        command.Parameters.AddWithValue("status", status);
+        command.Parameters.AddWithValue("attempt_count", attemptCount);
+        command.Parameters.AddWithValue("detail", detail);
+        command.Parameters.AddWithValue("occurred_at", occurredAt);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task WriteIdempotencyConflictAsync(
         NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
         string direction,
         Guid? outboxEventId,
         Guid? inboxId,
@@ -525,6 +667,7 @@ public sealed class IntegrationRepository(
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             insert into integration_idempotency_conflicts (
               conflict_id, direction, outbox_event_id, inbox_id,
@@ -586,6 +729,17 @@ public sealed class IntegrationRepository(
         if (normalized is null || normalized.Length is < 8 or > 100)
         {
             throw new ArgumentException("An idempotency key of 8 to 100 characters is required.");
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizeActor(string? value)
+    {
+        var normalized = NormalizeOptional(value);
+        if (normalized is null || normalized.Length > 120)
+        {
+            throw new ArgumentException("An authenticated integration actor is required.");
         }
 
         return normalized;

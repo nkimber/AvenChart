@@ -34,6 +34,14 @@ try {
     try { $audit = docker compose exec -T postgres psql -U avenchart -d avenchart -t -A -c "select action || ':' || actor || ':' || attempt_count from integration_outbox_events where event_id='$($queued.eventId)' order by occurred_at;" }
     finally { Pop-Location }
     Add-Check "Lease recovery has immutable system evidence" (($audit -join '') -match "lease-recovered:local-dispatch-lease-recovery:1") @{ audit = $audit }
+    $provenance = Invoke-RestMethod -Uri "$ApiBaseUrl/api/integrations/outbox/$($queued.eventId)/history" -Headers $headers -TimeoutSec 15
+    $leaseRecovery = @($provenance | Where-Object { $_.action -eq "lease-recovered" } | Select-Object -First 1)
+    Add-Check "Lease recovery has immutable actor and outcome provenance" (
+        $leaseRecovery.Count -eq 1 -and
+        $leaseRecovery[0].actor -eq "local-dispatch-lease-recovery" -and
+        $leaseRecovery[0].status -eq "retry-scheduled" -and
+        $leaseRecovery[0].attemptCount -eq 1
+    ) @{ provenance = $provenance }
 }
 catch { $checks.Add([ordered]@{ name = "integration outbox lease recovery harness"; result = "failed"; details = $_.Exception.Message }) }
 

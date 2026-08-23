@@ -6921,12 +6921,15 @@ integrations.MapGet("/outbox", async (
 
 integrations.MapPost("/outbox", async (
         IntegrationRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         IntegrationOutboxQueueRequest request,
         CancellationToken cancellationToken) =>
     {
         try
         {
-            var message = await repository.QueueAsync(request, cancellationToken);
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var message = await repository.QueueAsync(request, session.Username, cancellationToken);
             return Results.Created($"/api/integrations/outbox/{message.EventId}", message);
         }
         catch (IntegrationIdempotencyConflictException exception)
@@ -6945,13 +6948,23 @@ integrations.MapPost("/outbox", async (
 
 integrations.MapPost("/outbox/{eventId:guid}/dispatch", async (
         IntegrationRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         Guid eventId,
         CancellationToken cancellationToken) =>
     {
-        var dispatch = await repository.DispatchAsync(eventId, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var dispatch = await repository.DispatchAsync(eventId, session.Username, cancellationToken);
         return dispatch is null ? Results.NotFound() : Results.Ok(dispatch);
     })
     .WithName("DispatchIntegrationOutbox");
+
+integrations.MapGet("/outbox/{eventId:guid}/history", async (
+        IntegrationRepository repository,
+        Guid eventId,
+        CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetOutboxHistoryAsync(eventId, cancellationToken)))
+    .WithName("GetIntegrationOutboxHistory");
 
 integrations.MapPost("/outbox/{eventId:guid}/requeue", async (
         IntegrationRepository repository,
