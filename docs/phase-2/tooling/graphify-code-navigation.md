@@ -42,6 +42,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Update-AvenChartGr
 
 Graphify 0.17.1's direct `portable-check .graphify` also inspects ignored `manifest.json` state, which intentionally contains local absolute paths. The supported script validates a temporary directory containing only the durable artifacts above, then removes that exact temporary directory. Then inspect the graph diff alongside the source change. A graph update should normally accompany a meaningful source change, but it must not obscure the actual code review.
 
+`graphify check-update` compares the embedded source Git hash with `HEAD`. Since the durable graph is committed in a following artifact-only commit, it will report that one commit of expected metadata distance immediately after publishing an updated graph. Treat the report's recorded source hash and the intervening diff as the freshness evidence; do not mistake that expected artifact commit for an unindexed product-code change.
+
 ## Initial-index evidence
 
 Initial build on 2026-08-23 used:
@@ -50,7 +52,7 @@ Initial build on 2026-08-23 used:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Update-AvenChartGraph.ps1 -Mode Update
 ```
 
-The requested `committed` scope contained 985 candidates: 786 input files were included and 48,153 ignored files were excluded. Graphify's local AST pass processed 771 code files and generated a 13,260,510-byte `graph.json` plus an 81,333-byte `GRAPH_REPORT.md`. The report records 6,732 nodes, 15,969 extracted edges, 305 topology clusters, and zero semantic-model input/output tokens. The graph was built at Git commit `3321b17`.
+The requested `committed` scope contained 993 candidates: 788 input files were included and 48,934 ignored files were excluded. Graphify's local AST pass processed 772 code files and generated a 13,263,904-byte `graph.json` plus an 82,224-byte `GRAPH_REPORT.md`. The report records 6,734 nodes, 15,972 extracted edges, 307 topology clusters, and zero semantic-model input/output tokens. The graph was built at Git commit `c3a55ee`.
 
 The checked-in C# and PowerShell parsers are present. A FHIR/external-laboratory/authorization query surfaced the API host, transport, intake repository, modern UI, and workflow-test surfaces; a `Program.cs` review-delta query returned 80 impacted nodes. These are retrieval checks, not proof of either relationship completeness or clinical, security, correctness, or test adequacy.
 
