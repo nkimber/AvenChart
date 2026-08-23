@@ -397,6 +397,57 @@ public static class EndpointAccessPolicies
         };
     }
 
+    /// <summary>
+    /// Enforces selected-facility ownership for direct encounter, appointment,
+    /// and document routes, while recording the resource context used by the
+    /// enclosing PHI audit filter.
+    /// </summary>
+    public static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> ClinicalResourceFacilityScopeFilter()
+    {
+        return async (context, next) =>
+        {
+            var routeValues = context.HttpContext.Request.RouteValues;
+            var accessContext = RequireStaffAccessContext(context.HttpContext);
+            var accessContextService = context.HttpContext.RequestServices
+                .GetRequiredService<StaffAccessContextService>();
+
+            if (routeValues.TryGetValue("documentId", out var documentRouteValue)
+                && int.TryParse(documentRouteValue?.ToString(), out var documentId))
+            {
+                PhiAuditResourceContext.Set(context.HttpContext, "Document", documentId.ToString());
+                var allowed = await accessContextService.CanAccessDocumentAsync(
+                    documentId,
+                    accessContext.FacilityId,
+                    context.HttpContext.RequestAborted);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            if (routeValues.TryGetValue("encounter", out var encounterRouteValue)
+                && int.TryParse(encounterRouteValue?.ToString(), out var encounter))
+            {
+                PhiAuditResourceContext.Set(context.HttpContext, "Encounter", encounter.ToString());
+                var allowed = await accessContextService.CanAccessEncounterAsync(
+                    encounter,
+                    accessContext.FacilityId,
+                    context.HttpContext.RequestAborted);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            if (routeValues.TryGetValue("appointmentId", out var appointmentRouteValue))
+            {
+                var appointmentId = appointmentRouteValue?.ToString();
+                PhiAuditResourceContext.Set(context.HttpContext, "Appointment", appointmentId);
+                var allowed = await accessContextService.CanAccessAppointmentAsync(
+                    appointmentId,
+                    accessContext.FacilityId,
+                    context.HttpContext.RequestAborted);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            return await next(context);
+        };
+    }
+
     public static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
         AuthRepository repository,
         HttpContext httpContext,
