@@ -264,6 +264,26 @@ function Archive-DocumentTestFixture {
         -TimeoutSec 20
 }
 
+function Archive-MessageTestFixture {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$MessageId
+    )
+
+    # Patient messages are retained communication evidence.  Cleanup therefore
+    # uses the product's reasoned archive transition instead of a retired
+    # destructive delete route.
+    return Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/messages/$MessageId/archive" `
+        -Method Post `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body (@{
+            reason = "Synthetic smoke-test fixture completed."
+        } | ConvertTo-Json) `
+        -TimeoutSec 20
+}
+
 function Get-FrontDeskHeaders {
     if ($null -eq $script:FrontDeskHeaders) {
         $loginBody = @{
@@ -9066,6 +9086,7 @@ finally {
 
 $patientMessageMutationId = $null
 try {
+    Set-AdministrationFacilityContext -FacilityId 11
     $messageTitle = "Smoke Patient Message Mutation"
     $createMessageBody = @{
         patientId = "MOD-PAT-0004"
@@ -9082,15 +9103,25 @@ try {
     $contentBody = @{
         title = $editedMessageTitle
         body = $editedMessageBody
+        expectedVersion = $createdVisible.messageVersion
     } | ConvertTo-Json
     $editedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/content" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $contentBody -TimeoutSec 20
     $editedVisible = $editedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle -and $_.body -eq $editedMessageBody -and $_.status -eq "New" -and $_.assignedTo -eq "admin" } | Select-Object -First 1
+    $contentHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/content-history" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $editedContentEvent = $contentHistory.events | Where-Object {
+        $_.action -eq "content-updated" `
+            -and $_.priorVersion -eq 1 `
+            -and $_.messageVersion -eq 2 `
+            -and $_.title -eq $editedMessageTitle `
+            -and $_.body -eq $editedMessageBody `
+            -and $_.actor -eq "admin"
+    } | Select-Object -First 1
     $createdUpdateMetadataBlank = $null -ne $createdVisible `
         -and $null -eq $createdVisible.updatedBy `
         -and [string]::IsNullOrWhiteSpace([string]$createdVisible.updatedAt)
     $editedUpdateMetadataStamped = $null -ne $editedVisible `
-        -and $editedVisible.updatedBy -eq 1 `
-        -and -not [string]::IsNullOrWhiteSpace([string]$editedVisible.updatedAt)
+        -and -not [string]::IsNullOrWhiteSpace([string]$editedVisible.updatedAt) `
+        -and $null -ne $editedContentEvent
     Add-Check -Name "patient message content update" -Result $(if ($null -ne $editedVisible) { "passed" } else { "failed" }) -Details @{
         messageId = $patientMessageMutationId
         editedVisible = $editedVisible
@@ -9101,12 +9132,14 @@ try {
         createdUpdatedAt = $createdVisible.updatedAt
         editedUpdatedBy = $editedVisible.updatedBy
         editedUpdatedAt = $editedVisible.updatedAt
+        editedContentEvent = $editedContentEvent
     }
 
     $replyMessageBody = "Replied by the smoke patient-message reply check."
     $replyBody = @{
         body = $replyMessageBody
         assignedTo = "admin"
+        expectedVersion = $editedVisible.messageVersion
     } | ConvertTo-Json
     $repliedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/reply" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $replyBody -TimeoutSec 20
     $replyVisible = $repliedMessage.detail.messages | Where-Object { $_.id -eq $patientMessageMutationId -and $_.body -like "*$replyMessageBody*" -and $_.body -like "*admin to admin*" -and $_.status -eq "New" } | Select-Object -First 1
@@ -9116,10 +9149,12 @@ try {
     }
 
     $assignmentBody = @{
-        assignedTo = "billing"
+        assignedTo = "gold-provider-01"
+        expectedVersion = $replyVisible.assignmentVersion
+        reason = "Reassigned by the synthetic smoke-test lifecycle check."
     } | ConvertTo-Json
     $assignedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/assignment" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $assignmentBody -TimeoutSec 20
-    $assignedVisible = $assignedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle -and $_.status -eq "New" -and $_.assignedTo -eq "billing" } | Select-Object -First 1
+    $assignedVisible = $assignedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle -and $_.status -eq "New" -and $_.assignedTo -eq "gold-provider-01" } | Select-Object -First 1
     Add-Check -Name "patient message assignment update" -Result $(if ($null -ne $assignedVisible) { "passed" } else { "failed" }) -Details @{
         messageId = $patientMessageMutationId
         assignedVisible = $assignedVisible
@@ -9128,15 +9163,24 @@ try {
     $closeBody = @{
         status = "Done"
         body = "Closed by the smoke patient-message mutation check."
+        expectedVersion = $assignedVisible.messageVersion
     } | ConvertTo-Json
     $closedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $closeBody -TimeoutSec 20
     $closedVisible = $closedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle -and $_.status -eq "Done" -and $_.body -eq "Closed by the smoke patient-message mutation check." } | Select-Object -First 1
 
-    $archivedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/soft-delete" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $archiveReason = "Archived by the synthetic smoke-test lifecycle check."
+    $archivedMessage = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/archive" `
+        -Method Post `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body (@{ reason = $archiveReason } | ConvertTo-Json) `
+        -TimeoutSec 20
     $archivedVisible = $archivedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle } | Select-Object -First 1
-    $patientMessageMutationPassed = $null -ne $createdVisible -and $null -ne $editedVisible -and $null -ne $replyVisible -and $null -ne $assignedVisible -and $null -ne $closedVisible -and $null -eq $archivedVisible
+    $retentionHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/retention-history" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $archiveEvent = $retentionHistory.events | Where-Object { $_.action -eq "archived" -and $_.reason -eq $archiveReason -and $_.actor -eq "admin" } | Select-Object -First 1
+    $patientMessageMutationPassed = $null -ne $createdVisible -and $null -ne $editedVisible -and $null -ne $replyVisible -and $null -ne $assignedVisible -and $null -ne $closedVisible -and $null -eq $archivedVisible -and $null -ne $archiveEvent
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $patientMessageMutationId = $null
 
     Add-Check -Name "patient message mutation lifecycle" -Result $(if ($patientMessageMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -9147,6 +9191,7 @@ try {
         assignedVisible = $assignedVisible
         closedVisible = $closedVisible
         archivedVisible = $archivedVisible
+        archiveEvent = $archiveEvent
     }
 }
 catch {
@@ -9155,7 +9200,7 @@ catch {
 finally {
     if ($null -ne $patientMessageMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Archive-MessageTestFixture -MessageId $patientMessageMutationId | Out-Null
         }
         catch {
         }
@@ -9164,10 +9209,11 @@ finally {
 
 $patientMessageMutationAuthorizationId = $null
 try {
-    $clinicianMessages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" -Method Get -Headers (Get-ClinicianHeaders) -TimeoutSec 20
+    Set-AdministrationFacilityContext -FacilityId 10
+    $clinicianMessages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0006" -Method Get -Headers (Get-ClinicianHeaders) -TimeoutSec 20
     $authorizationMessageTitle = "Smoke Patient Message Authorization $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
     $createAuthorizationMessageBody = @{
-        patientId = "MOD-PAT-0004"
+        patientId = "MOD-PAT-0006"
         title = $authorizationMessageTitle
         body = "Created by the smoke patient-message mutation authorization check."
         assignedTo = "admin"
@@ -9181,6 +9227,7 @@ try {
         $blockedStatusBody = @{
             status = "Done"
             body = "This clinician status update should be blocked."
+            expectedVersion = $clinicianCreatedVisible.messageVersion
         } | ConvertTo-Json
         $clinicianStatusUpdate = Invoke-WebRequest `
             -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationAuthorizationId/status" `
@@ -9201,11 +9248,11 @@ try {
         }
     }
 
-    $patientMessageMutationAuthorizationPassed = $clinicianMessages.patientId -eq "MOD-PAT-0004" `
+    $patientMessageMutationAuthorizationPassed = $clinicianMessages.patientId -eq "MOD-PAT-0006" `
         -and $null -ne $clinicianCreatedVisible `
         -and $clinicianStatusUpdateStatus -eq 403
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationAuthorizationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Archive-MessageTestFixture -MessageId $patientMessageMutationAuthorizationId | Out-Null
     $patientMessageMutationAuthorizationId = $null
 
     Add-Check -Name "patient message mutation authorization" -Result $(if ($patientMessageMutationAuthorizationPassed) { "passed" } else { "failed" }) -Details @{
@@ -9221,7 +9268,7 @@ catch {
 finally {
     if ($null -ne $patientMessageMutationAuthorizationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationAuthorizationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Archive-MessageTestFixture -MessageId $patientMessageMutationAuthorizationId | Out-Null
         }
         catch {
         }
