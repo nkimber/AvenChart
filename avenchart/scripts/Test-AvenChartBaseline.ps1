@@ -941,15 +941,18 @@ try {
     $identityBlockingGaps = @($identityReadiness.gaps | Where-Object { $_.blocksProduction -eq $true })
     $staffIdentityType = @($identityReadiness.identityTypes | Where-Object { $_.identityType -eq "staff" }) | Select-Object -First 1
     $emergencyIdentityType = @($identityReadiness.identityTypes | Where-Object { $_.identityType -eq "emergency" }) | Select-Object -First 1
+    # The local session remains the active development adapter, but both staff
+    # and portal identities now resolve through provider-neutral adapter seams
+    # and governed external-subject mapping.
     $identityReadinessPassed = $unauthenticatedIdentityStatus -eq 401 `
         -and $malformedIdentityStatus -eq 401 `
         -and $frontDeskIdentityStatus -eq 403 `
         -and $revokedIdentityStatus -eq 401 `
-        -and $identityReadiness.revision -eq "local-identity-adapter-v1" `
+        -and $identityReadiness.revision -eq "external-subject-mapping-v1" `
         -and $identityReadiness.lifecycleState -eq "local-foundation-owner-gated" `
         -and $identityReadiness.activeAdapterId -eq "local-database-staff-session" `
         -and $identityReadiness.counts.identityTypes -eq 4 `
-        -and $identityReadiness.counts.routedThroughAdapter -eq 1 `
+        -and $identityReadiness.counts.routedThroughAdapter -eq 2 `
         -and $identityReadiness.counts.productionApproved -eq 0 `
         -and $identityReadiness.counts.cryptographicallyValidated -eq 0 `
         -and $identityReadiness.counts.facilityScoped -eq 0 `
@@ -1273,7 +1276,9 @@ try {
     catch {
         if ($_.Exception.Response) { $invalidAuditRangeStatus = [int]$_.Exception.Response.StatusCode } else { throw }
     }
-    $auditExportPassed = [int]$auditExport.StatusCode -eq 200 -and $auditExportContentType -like "text/csv*" -and $auditExportContent.StartsWith("Occurred At,Username,Method,Endpoint,Required Permission,Decision,Response Status") -and $auditExportResponse.events.Count -gt 0 -and @($auditExportResponse.events | Where-Object { $_.username -ne "admin" }).Count -eq 0 -and $invalidAuditRangeStatus -eq 400
+    # The export includes the protected-resource and access-context columns
+    # required to make a PHI-access decision independently auditable.
+    $auditExportPassed = [int]$auditExport.StatusCode -eq 200 -and $auditExportContentType -like "text/csv*" -and $auditExportContent.StartsWith("Occurred At,Username,Method,Endpoint,Required Permission,Resource Type,Resource ID,Facility ID,Facility Code,Purpose Of Use,Decision,Response Status") -and $auditExportResponse.events.Count -gt 0 -and @($auditExportResponse.events | Where-Object { $_.username -ne "admin" }).Count -eq 0 -and $invalidAuditRangeStatus -eq 400
     Add-Check -Name "PHI access audit filtered CSV export" -Result $(if ($auditExportPassed) { "passed" } else { "failed" }) -Details @{ matchedEvents = $auditExportResponse.events.Count; contentType = $auditExportContentType; invalidRangeStatus = $invalidAuditRangeStatus }
 }
 catch {
