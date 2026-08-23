@@ -11,7 +11,7 @@ public sealed record IntegrationOutboxQueueRequest(
     string AggregateId,
     string Destination,
     JsonElement Payload,
-    string? IdempotencyKey);
+    string IdempotencyKey);
 
 public sealed record IntegrationOutboxMessage(
     Guid EventId,

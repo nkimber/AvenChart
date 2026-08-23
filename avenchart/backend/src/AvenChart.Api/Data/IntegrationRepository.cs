@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
@@ -8,6 +10,10 @@ using AvenChart.Api.Infrastructure;
 using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
+
+public sealed class IntegrationIdempotencyConflictException(string direction)
+    : InvalidOperationException(
+        $"The integration {direction} identity was already used with different content.");
 
 public sealed class IntegrationRepository(
     NpgsqlDataSource dataSource,
@@ -28,6 +34,12 @@ public sealed class IntegrationRepository(
         ValidateQueueRequest(request);
         var now = DateTimeOffset.UtcNow;
         var eventId = Guid.NewGuid();
+        var idempotencyKey = NormalizeIdempotencyKey(request.IdempotencyKey);
+        var eventType = request.EventType.Trim();
+        var aggregateType = request.AggregateType.Trim();
+        var aggregateId = request.AggregateId.Trim();
+        var destination = request.Destination.Trim();
+        var payload = request.Payload.GetRawText();
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -39,28 +51,69 @@ public sealed class IntegrationRepository(
               @event_id, @idempotency_key, @event_type, @aggregate_type, @aggregate_id, @destination, @payload,
               'queued', 0, @now, @now, @now
             )
-            on conflict (idempotency_key) do update
-            set updated_at = integration_outbox.updated_at
+            on conflict (idempotency_key) do nothing
             returning event_id, idempotency_key, event_type, aggregate_type, aggregate_id, destination, payload,
               status, attempt_count, available_at, locked_at, last_attempt_at, delivered_at,
               external_reference, last_error, quarantined_at, quarantined_by, recovery_count, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("event_id", eventId);
-        command.Parameters.AddWithValue("idempotency_key", (object?)NormalizeOptional(request.IdempotencyKey) ?? DBNull.Value);
-        command.Parameters.AddWithValue("event_type", request.EventType.Trim());
-        command.Parameters.AddWithValue("aggregate_type", request.AggregateType.Trim());
-        command.Parameters.AddWithValue("aggregate_id", request.AggregateId.Trim());
-        command.Parameters.AddWithValue("destination", request.Destination.Trim());
-        command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = request.Payload.GetRawText();
+        command.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+        command.Parameters.AddWithValue("event_type", eventType);
+        command.Parameters.AddWithValue("aggregate_type", aggregateType);
+        command.Parameters.AddWithValue("aggregate_id", aggregateId);
+        command.Parameters.AddWithValue("destination", destination);
+        command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
         command.Parameters.AddWithValue("now", now);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        if (await reader.ReadAsync(cancellationToken))
         {
-            throw new InvalidOperationException("Integration outbox event could not be queued.");
+            return ReadOutboxMessage(reader);
         }
 
-        return ReadOutboxMessage(reader);
+        await reader.DisposeAsync();
+        await using var existingCommand = connection.CreateCommand();
+        existingCommand.CommandText = """
+            select event_id, idempotency_key, event_type, aggregate_type, aggregate_id, destination, payload,
+              status, attempt_count, available_at, locked_at, last_attempt_at, delivered_at,
+              external_reference, last_error, quarantined_at, quarantined_by, recovery_count, created_at, updated_at,
+              event_type = @event_type
+                and aggregate_type = @aggregate_type
+                and aggregate_id = @aggregate_id
+                and destination = @destination
+                and payload = @payload as content_matches
+            from integration_outbox
+            where idempotency_key = @idempotency_key;
+            """;
+        existingCommand.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+        existingCommand.Parameters.AddWithValue("event_type", eventType);
+        existingCommand.Parameters.AddWithValue("aggregate_type", aggregateType);
+        existingCommand.Parameters.AddWithValue("aggregate_id", aggregateId);
+        existingCommand.Parameters.AddWithValue("destination", destination);
+        existingCommand.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
+        await using var existingReader = await existingCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await existingReader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("Integration outbox idempotency lookup failed.");
+        }
+
+        var existing = ReadOutboxMessage(existingReader);
+        if (existingReader.GetBoolean(20))
+        {
+            return existing;
+        }
+
+        await existingReader.DisposeAsync();
+        await WriteIdempotencyConflictAsync(
+            connection,
+            direction: "outbox",
+            outboxEventId: existing.EventId,
+            inboxId: null,
+            existingDigest: BuildOutboxContentDigest(existing.EventType, existing.AggregateType, existing.AggregateId, existing.Destination, existing.Payload),
+            incomingDigest: BuildOutboxContentDigest(eventType, aggregateType, aggregateId, destination, request.Payload),
+            occurredAt: now,
+            cancellationToken: cancellationToken);
+        throw new IntegrationIdempotencyConflictException("outbox");
     }
 
     public async Task<IReadOnlyList<IntegrationOutboxMessage>> GetOutboxAsync(
@@ -179,6 +232,10 @@ public sealed class IntegrationRepository(
 
         var now = DateTimeOffset.UtcNow;
         var inboxId = Guid.NewGuid();
+        var source = request.Source.Trim();
+        var sourceMessageId = request.SourceMessageId.Trim();
+        var messageType = request.MessageType.Trim();
+        var payload = request.Payload.GetRawText();
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -191,10 +248,10 @@ public sealed class IntegrationRepository(
             returning inbox_id, source, source_message_id, status, received_at;
             """;
         command.Parameters.AddWithValue("inbox_id", inboxId);
-        command.Parameters.AddWithValue("source", request.Source.Trim());
-        command.Parameters.AddWithValue("source_message_id", request.SourceMessageId.Trim());
-        command.Parameters.AddWithValue("message_type", request.MessageType.Trim());
-        command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = request.Payload.GetRawText();
+        command.Parameters.AddWithValue("source", source);
+        command.Parameters.AddWithValue("source_message_id", sourceMessageId);
+        command.Parameters.AddWithValue("message_type", messageType);
+        command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
         command.Parameters.AddWithValue("received_at", now);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -207,20 +264,44 @@ public sealed class IntegrationRepository(
         await reader.DisposeAsync();
         await using var existing = connection.CreateCommand();
         existing.CommandText = """
-            select inbox_id, source, source_message_id, status, received_at
+            select inbox_id, source, source_message_id, status, received_at,
+              message_type = @message_type
+                and payload = @payload as content_matches,
+              message_type, payload
             from integration_inbox
             where source = @source and source_message_id = @source_message_id;
             """;
-        existing.Parameters.AddWithValue("source", request.Source.Trim());
-        existing.Parameters.AddWithValue("source_message_id", request.SourceMessageId.Trim());
+        existing.Parameters.AddWithValue("source", source);
+        existing.Parameters.AddWithValue("source_message_id", sourceMessageId);
+        existing.Parameters.AddWithValue("message_type", messageType);
+        existing.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
         await using var existingReader = await existing.ExecuteReaderAsync(cancellationToken);
         if (!await existingReader.ReadAsync(cancellationToken))
         {
             throw new InvalidOperationException("Integration inbox duplicate lookup failed.");
         }
 
-        return new IntegrationInboxReceipt(
-            existingReader.GetGuid(0), existingReader.GetString(1), existingReader.GetString(2), existingReader.GetString(3), Duplicate: true, existingReader.GetFieldValue<DateTimeOffset>(4));
+        var existingInboxId = existingReader.GetGuid(0);
+        if (existingReader.GetBoolean(5))
+        {
+            return new IntegrationInboxReceipt(
+                existingInboxId, existingReader.GetString(1), existingReader.GetString(2), existingReader.GetString(3), Duplicate: true, existingReader.GetFieldValue<DateTimeOffset>(4));
+        }
+
+        var existingMessageType = existingReader.GetString(6);
+        using var existingPayloadDocument = JsonDocument.Parse(existingReader.GetString(7));
+        var existingPayload = existingPayloadDocument.RootElement.Clone();
+        await existingReader.DisposeAsync();
+        await WriteIdempotencyConflictAsync(
+            connection,
+            direction: "inbox",
+            outboxEventId: null,
+            inboxId: existingInboxId,
+            existingDigest: BuildInboxContentDigest(existingMessageType, existingPayload),
+            incomingDigest: BuildInboxContentDigest(messageType, request.Payload),
+            occurredAt: now,
+            cancellationToken: cancellationToken);
+        throw new IntegrationIdempotencyConflictException("inbox");
     }
 
     public async Task<IReadOnlyList<IntegrationInboxMessage>> GetInboxAsync(string? status, int limit, CancellationToken token)
@@ -433,6 +514,60 @@ public sealed class IntegrationRepository(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task WriteIdempotencyConflictAsync(
+        NpgsqlConnection connection,
+        string direction,
+        Guid? outboxEventId,
+        Guid? inboxId,
+        string existingDigest,
+        string incomingDigest,
+        DateTimeOffset occurredAt,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into integration_idempotency_conflicts (
+              conflict_id, direction, outbox_event_id, inbox_id,
+              existing_content_digest, incoming_content_digest, occurred_at
+            ) values (
+              @conflict_id, @direction, @outbox_event_id, @inbox_id,
+              @existing_content_digest, @incoming_content_digest, @occurred_at
+            );
+            """;
+        command.Parameters.AddWithValue("conflict_id", Guid.NewGuid());
+        command.Parameters.AddWithValue("direction", direction);
+        command.Parameters.AddWithValue("outbox_event_id", (object?)outboxEventId ?? DBNull.Value);
+        command.Parameters.AddWithValue("inbox_id", (object?)inboxId ?? DBNull.Value);
+        command.Parameters.AddWithValue("existing_content_digest", existingDigest);
+        command.Parameters.AddWithValue("incoming_content_digest", incomingDigest);
+        command.Parameters.AddWithValue("occurred_at", occurredAt);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static string BuildOutboxContentDigest(
+        string eventType,
+        string aggregateType,
+        string aggregateId,
+        string destination,
+        JsonElement payload) =>
+        BuildContentDigest(eventType, aggregateType, aggregateId, destination, payload.GetRawText());
+
+    private static string BuildInboxContentDigest(string messageType, JsonElement payload) =>
+        BuildContentDigest(messageType, payload.GetRawText());
+
+    private static string BuildContentDigest(params string[] parts)
+    {
+        using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var part in parts)
+        {
+            var bytes = Encoding.UTF8.GetBytes(part);
+            hasher.AppendData(BitConverter.GetBytes(bytes.Length));
+            hasher.AppendData(bytes);
+        }
+
+        return Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
+    }
+
     private static void ValidateQueueRequest(IntegrationOutboxQueueRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.EventType)
@@ -443,6 +578,17 @@ public sealed class IntegrationRepository(
         {
             throw new ArgumentException("Event type, aggregate type, aggregate ID, destination, and payload are required.");
         }
+    }
+
+    private static string NormalizeIdempotencyKey(string? value)
+    {
+        var normalized = NormalizeOptional(value);
+        if (normalized is null || normalized.Length is < 8 or > 100)
+        {
+            throw new ArgumentException("An idempotency key of 8 to 100 characters is required.");
+        }
+
+        return normalized;
     }
 
     private static string? NormalizeOptional(string? value) =>

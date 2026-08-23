@@ -6929,6 +6929,10 @@ integrations.MapPost("/outbox", async (
             var message = await repository.QueueAsync(request, cancellationToken);
             return Results.Created($"/api/integrations/outbox/{message.EventId}", message);
         }
+        catch (IntegrationIdempotencyConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
         catch (ArgumentException exception)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -6987,6 +6991,10 @@ integrations.MapPost("/inbox", async (
             return receipt.Duplicate
                 ? Results.Ok(receipt)
                 : Results.Created($"/api/integrations/inbox/{receipt.InboxId}", receipt);
+        }
+        catch (IntegrationIdempotencyConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
         }
         catch (ArgumentException exception)
         {
