@@ -2346,11 +2346,6 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             }
 
             legacyPid = patient.LegacyPid;
-            var nextSessionId = await NextIntAsync(
-                connection,
-                transaction,
-                "select nextval('payment_sessions_id_seq');",
-                cancellationToken);
             var nextSequenceNo = await NextIntAsync(
                 connection,
                 transaction,
@@ -2364,7 +2359,11 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
 
             foreach (var row in batchRows)
             {
-                var sessionId = nextSessionId++;
+                var sessionId = await NextIntAsync(
+                    connection,
+                    transaction,
+                    "select nextval('payment_sessions_id_seq');",
+                    cancellationToken);
                 var sequenceNo = nextSequenceNo++;
                 var activityId = $"PAY-MODERN-{Guid.NewGuid():N}";
 

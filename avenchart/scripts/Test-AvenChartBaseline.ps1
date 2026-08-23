@@ -12917,6 +12917,43 @@ finally {
 }
 
 try {
+    $eobSequenceHeaders = Get-AdministrationHeaders
+    $eobBatchImport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/eob-batches/import" -Method Post -Headers $eobSequenceHeaders -ContentType "application/json" -Body (@{ patientId = "MOD-PAT-0005" } | ConvertTo-Json) -TimeoutSec 30
+    $eobSequenceReference = "EOB-SEQUENCE-SMOKE-$([Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant())"
+    $ordinaryPaymentAfterEob = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/insurance-payments" -Method Post -Headers $eobSequenceHeaders -ContentType "application/json" -Body (@{
+        patientId = "MOD-PAT-0005"
+        encounter = 1000052
+        payerId = 9005
+        payerName = "Northstar HMO"
+        reference = $eobSequenceReference
+        postDate = "2026-06-18"
+        checkDate = "2026-06-18"
+        depositDate = "2026-06-18"
+        paymentMethod = "check_payment"
+        codeType = "CPT4"
+        code = "99214"
+        memo = "Smoke payment after EOB batch import"
+        payAmount = 1.00
+        adjustmentAmount = 0.00
+        reasonCode = "CO-45"
+        payerClaimNumber = "$eobSequenceReference-CLM"
+    } | ConvertTo-Json) -TimeoutSec 30
+    $eobSequencePassed = @($eobBatchImport.ids).Count -eq 2 `
+        -and @($eobBatchImport.sessionIds).Count -eq 2 `
+        -and @($eobBatchImport.sessionIds | Select-Object -Unique).Count -eq 2 `
+        -and @($eobBatchImport.sessionIds) -notcontains $ordinaryPaymentAfterEob.sessionId `
+        -and $ordinaryPaymentAfterEob.id -and $ordinaryPaymentAfterEob.sessionId -gt 0
+    Add-Check -Name "EOB batch reserves every payment session identifier" -Result $(if ($eobSequencePassed) { "passed" } else { "failed" }) -Details @{
+        eobSessionIds = @($eobBatchImport.sessionIds)
+        ordinarySessionId = $ordinaryPaymentAfterEob.sessionId
+        ordinaryPaymentId = $ordinaryPaymentAfterEob.id
+    }
+}
+catch {
+    Add-Check -Name "EOB batch reserves every payment session identifier" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $procedureCatalogHeaders = Get-AdministrationHeaders
     $procedureCatalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/order-catalog" -Method Get -Headers $procedureCatalogHeaders -TimeoutSec 20
     $procedureCatalogParent = $procedureCatalog.items | Where-Object {
