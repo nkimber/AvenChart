@@ -1017,10 +1017,14 @@ function App() {
     }
 
     const controller = new AbortController()
+    // Calendar selection is owned by the active search criteria. Do not allow
+    // a previous appointment to remain actionable during a new search.
+    setAppointmentResult(null)
+    setSelectedAppointmentId(null)
+    setAppointmentDetail(null)
+    setAppointmentStatus('loading')
+    setAppointmentError(null)
     const timeout = window.setTimeout(async () => {
-      setAppointmentStatus('loading')
-      setAppointmentError(null)
-
       try {
         const result = await searchAppointments(
           appointmentPatientId,
@@ -1042,6 +1046,9 @@ function App() {
         }
       } catch (searchError) {
         if (!controller.signal.aborted) {
+          setAppointmentResult(null)
+          setSelectedAppointmentId(null)
+          setAppointmentDetail(null)
           setAppointmentStatus('error')
           setAppointmentError(searchError instanceof Error ? searchError.message : 'Appointment search failed')
         }
