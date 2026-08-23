@@ -1923,10 +1923,12 @@ try {
     $originalDeceasedBody = @{
         deceasedDate = $deceasedOriginal.deceasedDate
         deceasedReason = $deceasedOriginal.deceasedReason
+        correctionReason = "Restore the synthetic patient's original deceased-status record."
     }
     $deceasedBody = @{
         deceasedDate = "2026-06-20"
         deceasedReason = "Smoke deceased-status readiness"
+        correctionReason = "Record synthetic deceased-status evidence for lifecycle verification."
     }
 
     $updatedDeceased = Invoke-RestMethod `
@@ -1972,6 +1974,7 @@ finally {
             $originalDeceasedBody = @{
                 deceasedDate = $deceasedOriginal.deceasedDate
                 deceasedReason = $deceasedOriginal.deceasedReason
+                correctionReason = "Restore the synthetic patient's original deceased-status record after verification."
             }
             Invoke-RestMethod `
                 -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/deceased-status" `
