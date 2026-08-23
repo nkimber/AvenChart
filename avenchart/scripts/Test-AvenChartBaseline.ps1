@@ -3077,6 +3077,10 @@ catch {
 
 try {
     $fhirHeaders = Get-AdministrationHeaders
+    # The FHIR boundary is content-negotiated. Be explicit here so this
+    # verification exercises its supported representation rather than relying
+    # on the host client's default Accept behavior.
+    $fhirHeaders["Accept"] = "application/fhir+json"
     $fhirMetadataResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/api/fhir/R4/metadata" -Method Get -Headers $fhirHeaders -UseBasicParsing -TimeoutSec 20
     $fhirMetadata = $fhirMetadataResponse.Content | ConvertFrom-Json
     $fhirPatientResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/api/fhir/R4/Patient/MOD-PAT-0001" -Method Get -Headers $fhirHeaders -UseBasicParsing -TimeoutSec 20
