@@ -31,7 +31,7 @@ var runtimeSafetyOptions = builder.Configuration
     .GetSection(RuntimeSafetyOptions.SectionName)
     .Get<RuntimeSafetyOptions>() ?? new RuntimeSafetyOptions();
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(AvenChartOpenApi.Configure);
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>
@@ -402,10 +402,10 @@ if (configuredRuntimeSafety.TrustedProxyAddresses.Length > 0)
     app.UseForwardedHeaders(forwardedHeaderOptions);
 }
 
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
+// This is the versioned machine-readable contract for supported staff, FHIR,
+// and external-laboratory clients. It contains no runtime data or credentials;
+// authorization remains enforced by the documented endpoint contracts.
+app.MapOpenApi();
 
 app.UseExceptionHandler(exceptionApp => exceptionApp.Run(async context =>
 {

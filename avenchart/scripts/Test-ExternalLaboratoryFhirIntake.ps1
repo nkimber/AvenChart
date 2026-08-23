@@ -3,7 +3,7 @@
 
 param(
     [string]$ApiBaseUrl = "http://localhost:5001",
-    [string]$PatientId = "MOD-PAT-0004"
+    [string]$PatientId = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,6 +19,7 @@ $checks = [System.Collections.Generic.List[object]]::new()
 $status = "passed"
 $staffHeaders = $null
 $sourceId = $null
+$script:patientId = $null
 
 function Add-Check {
     param([string]$Name, [bool]$Passed, [object]$Details = $null)
@@ -75,7 +76,7 @@ function Get-OrderSpecimen([object]$Detail, [int]$OrderId) {
     return $specimen[0]
 }
 
-function New-FhirBundle([string]$ReportId, [string]$ObservationId, [string]$MessageValue, [string]$ObservationStatus = "final") {
+function New-FhirBundle([string]$ReportId, [string]$ObservationId, [decimal]$MessageValue, [string]$ObservationStatus = "final") {
     $now = (Get-Date).ToUniversalTime().ToString("O")
     return [ordered]@{
         resourceType = "Bundle"
@@ -86,7 +87,7 @@ function New-FhirBundle([string]$ReportId, [string]$ObservationId, [string]$Mess
                 id = $ReportId
                 status = $ObservationStatus
                 code = @{ coding = @(@{ system = "http://loinc.org"; code = "58410-2"; display = "Complete blood count" }) }
-                subject = @{ reference = "Patient/$PatientId" }
+                subject = @{ reference = "Patient/$script:patientId" }
                 basedOn = @(@{ reference = "ServiceRequest/$script:orderId" })
                 specimen = @(@{ reference = "Specimen/$script:specimenId" })
                 effectiveDateTime = $now
@@ -97,7 +98,7 @@ function New-FhirBundle([string]$ReportId, [string]$ObservationId, [string]$Mess
                 resourceType = "Observation"
                 id = $ObservationId
                 status = $ObservationStatus
-                subject = @{ reference = "Patient/$PatientId" }
+                subject = @{ reference = "Patient/$script:patientId" }
                 code = @{ coding = @(@{ system = "http://loinc.org"; code = "718-7"; display = "Hemoglobin" }) }
                 effectiveDateTime = $now
                 valueQuantity = @{ value = $MessageValue; unit = "g/dL" }
@@ -119,6 +120,21 @@ try {
     }
     $staffHeaders = New-AvenChartStaffAccessContextHeaders -Login $login
     $facilityGrantId = [int]$staffHeaders["X-AvenChart-Facility-Id"]
+    $scopedPatients = Invoke-Json "$ApiBaseUrl/api/patients?limit=25"
+    $scopedPatient = if ([string]::IsNullOrWhiteSpace($PatientId)) {
+        @($scopedPatients.patients | Select-Object -First 1)
+    }
+    else {
+        @($scopedPatients.patients | Where-Object { $_.canonicalId -eq $PatientId } | Select-Object -First 1)
+    }
+    if ($scopedPatient.Count -ne 1) {
+        throw "The requested synthetic patient is not available in the selected staff facility."
+    }
+    $script:patientId = [string]$scopedPatient[0].canonicalId
+    Add-Check "Synthetic patient fixture belongs to the selected facility" (
+        $scopedPatient[0].facilityId -eq $facilityGrantId
+    ) @{ patientId = $script:patientId; patientFacilityId = $scopedPatient[0].facilityId; selectedFacilityId = $facilityGrantId }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $sourceId = "synthetic-fhir-lab-$marker"
     $apiKey = "synthetic-fhir-laboratory-key-" + [Guid]::NewGuid().ToString("N") + [Guid]::NewGuid().ToString("N")
@@ -136,11 +152,11 @@ try {
     }
     $today = (Get-Date).ToString("yyyy-MM-dd")
     $encounter = Invoke-Json "$ApiBaseUrl/api/encounters" "Post" @{
-        patientId = $PatientId; providerId = $provider[0].id; dateTime = "$today 10:00:00"; reason = "External laboratory FHIR verification $marker"
+        patientId = $script:patientId; providerId = $provider[0].id; dateTime = "$today 10:00:00"; reason = "External laboratory FHIR verification $marker"
         facilityId = $facility[0].id; billingFacilityId = $facility[0].id; sensitivity = "standard"; posCode = 11
     }
     $order = Invoke-Json "$ApiBaseUrl/api/procedures/orders" "Post" @{
-        patientId = $PatientId; providerId = $provider[0].id; labId = $catalogItem[0].labId; encounterId = $encounter.encounter
+        patientId = $script:patientId; providerId = $provider[0].id; labId = $catalogItem[0].labId; encounterId = $encounter.encounter
         dateOrdered = $today; priority = "routine"; status = "pending"; procedureCode = $catalogItem[0].code; procedureName = $catalogItem[0].name
         procedureType = if ($catalogItem[0].procedureTypeName) { $catalogItem[0].procedureTypeName } else { "laboratory" }
         diagnosis = "Z00.00"; instructions = "Synthetic FHIR external laboratory intake verification $marker"
@@ -151,7 +167,7 @@ try {
         specimenType = "Serum specimen"; collectionMethodCode = "129316008"; collectionMethod = "Venipuncture"; specimenLocationCode = ""; specimenLocation = ""
         collectedDate = "$today 09:45:00"; volumeValue = 1.0; volumeUnit = "mL"; conditionCode = ""; specimenCondition = ""; comments = "Synthetic FHIR intake fixture."
     }
-    $detail = Invoke-Json "$ApiBaseUrl/api/procedures/$PatientId"
+    $detail = Invoke-Json "$ApiBaseUrl/api/procedures/$script:patientId"
     $currentSpecimen = Get-OrderSpecimen $detail $script:orderId
     $detail = Invoke-Json "$ApiBaseUrl/api/procedures/specimens/$($currentSpecimen.id)/lifecycle" "Put" @{ status = "labeled"; expectedVersion = $currentSpecimen.lifecycleVersion; reason = "Synthetic FHIR laboratory specimen labeling." }
     $currentSpecimen = Get-OrderSpecimen $detail.detail $script:orderId
@@ -186,7 +202,7 @@ try {
     $initialReceipt = $initial.body | ConvertFrom-Json
     Add-Check "Authenticated FHIR laboratory intake applies a new result" ($initial.status -eq 201 -and -not $initialReceipt.duplicate -and $initialReceipt.createdResultCount -eq 1 -and $initialReceipt.updatedResultCount -eq 0) @{ status = $initial.status; receipt = $initialReceipt }
 
-    $detail = Invoke-Json "$ApiBaseUrl/api/procedures/$PatientId"
+    $detail = Invoke-Json "$ApiBaseUrl/api/procedures/$script:patientId"
     $report = @($detail.orders | Where-Object { $_.id -eq $script:orderId } | ForEach-Object { $_.reports } | Where-Object { $_.id -eq $initialReceipt.reportId } | Select-Object -First 1)
     $result = if ($report.Count -eq 1) { @($report[0].results | Where-Object { $_.code -eq "718-7" } | Select-Object -First 1) } else { @() }
     Add-Check "Inbound report remains pending clinician review" ($report.Count -eq 1 -and $report[0].reviewStatus -eq "received" -and $result.Count -eq 1 -and $result[0].result -eq "16.4") @{ reportId = $initialReceipt.reportId; reviewStatus = if ($report.Count) { $report[0].reviewStatus } else { $null }; result = if ($result.Count) { $result[0].result } else { $null } }
@@ -197,7 +213,7 @@ try {
 
     $conflictBundle = New-FhirBundle $reportId $observationId "99.9"
     $conflict = Invoke-HttpStatus "$ApiBaseUrl/api/external-laboratory-results/fhir-r4" "Post" $conflictBundle $externalHeaders "application/fhir+json"
-    $detailAfterConflict = Invoke-Json "$ApiBaseUrl/api/procedures/$PatientId"
+    $detailAfterConflict = Invoke-Json "$ApiBaseUrl/api/procedures/$script:patientId"
     $resultAfterConflict = @($detailAfterConflict.orders | Where-Object { $_.id -eq $script:orderId } | ForEach-Object { $_.reports } | Where-Object { $_.id -eq $initialReceipt.reportId } | ForEach-Object { $_.results } | Where-Object { $_.code -eq "718-7" } | Select-Object -First 1)
     Add-Check "Divergent replay is rejected without overwriting the record" ($conflict.status -eq 409 -and $resultAfterConflict.Count -eq 1 -and $resultAfterConflict[0].result -eq "16.4") @{ status = $conflict.status; currentResult = if ($resultAfterConflict.Count) { $resultAfterConflict[0].result } else { $null } }
 
@@ -205,7 +221,7 @@ try {
     $correctionBundle = New-FhirBundle $reportId $observationId "17.1" "corrected"
     $correction = Invoke-HttpStatus "$ApiBaseUrl/api/external-laboratory-results/fhir-r4" "Post" $correctionBundle $externalHeaders "application/fhir+json"
     $correctionReceipt = $correction.body | ConvertFrom-Json
-    $detailAfterCorrection = Invoke-Json "$ApiBaseUrl/api/procedures/$PatientId"
+    $detailAfterCorrection = Invoke-Json "$ApiBaseUrl/api/procedures/$script:patientId"
     $resultAfterCorrection = @($detailAfterCorrection.orders | Where-Object { $_.id -eq $script:orderId } | ForEach-Object { $_.reports } | Where-Object { $_.id -eq $initialReceipt.reportId } | ForEach-Object { $_.results } | Where-Object { $_.code -eq "718-7" } | Select-Object -First 1)
     Add-Check "Correction retains prior result history and reopens review" ($correction.status -eq 201 -and $correctionReceipt.updatedResultCount -eq 1 -and $resultAfterCorrection.Count -eq 1 -and $resultAfterCorrection[0].result -eq "17.1" -and $resultAfterCorrection[0].hasPriorVersions -eq $true) @{ status = $correction.status; updated = $correctionReceipt.updatedResultCount; result = if ($resultAfterCorrection.Count) { $resultAfterCorrection[0].result } else { $null }; versions = if ($resultAfterCorrection.Count) { $resultAfterCorrection[0].versionHistoryCount } else { $null } }
 
