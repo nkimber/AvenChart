@@ -990,6 +990,19 @@ function App() {
       return
     }
 
+    // A cleared search is an intentional privacy boundary, particularly after
+    // a facility or purpose-of-use change. Do not replace prior-scope content
+    // with an unrequested list of every patient in the newly selected scope.
+    if (!query.trim()) {
+      setSearchResult(null)
+      setSelectedPatientId(null)
+      setChart(null)
+      setSearchStatus('idle')
+      setChartStatus('idle')
+      setPatientError(null)
+      return
+    }
+
     const controller = new AbortController()
     // Search results own the selected chart. A changed query must not leave a
     // prior patient's chart actionable while the next search is pending or
