@@ -3149,6 +3149,10 @@ catch {
     Add-Check -Name "FHIR R4 capability and resource contract" -Result "failed" -Details $_.Exception.Message
 }
 
+# MOD-PAT-0005 belongs to the third synthetic facility. Exercise insurance
+# mutations through the same deliberately selected access context required by
+# the protected production route.
+Set-AdministrationFacilityContext -FacilityId 12
 try {
     $coverageChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $coverage = @($coverageChart.insurance)
