@@ -7126,7 +7126,7 @@ try {
         dateCollected = "2026-06-18 12:30:00"
         dateReport = "2026-06-18 13:00:00"
         reportStatus = "final"
-        reviewStatus = "reviewed"
+        reviewStatus = "received"
         notes = "Created by the smoke encounter procedure result entry check."
     } | ConvertTo-Json -Depth 5
     $createdEncounterProcedureResultReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureResultReportBody -TimeoutSec 20
@@ -7161,7 +7161,7 @@ try {
                 -and $_.specimenId -eq $encounterProcedureResultSpecimenId `
                 -and $_.specimenNumber -eq "SMOKE-ENC-PROC" `
                 -and $_.status -eq "final" `
-                -and $_.reviewStatus -eq "reviewed"
+                -and $_.reviewStatus -eq "received"
         } | Select-Object -First 1
     } else {
         $null
@@ -7246,7 +7246,7 @@ try {
         dateCollected = "2026-06-18 12:30:00"
         dateReport = "2026-06-18 13:00:00"
         reportStatus = "final"
-        reviewStatus = "reviewed"
+        reviewStatus = "received"
         notes = "Created by the smoke procedure result correction check."
     } | ConvertTo-Json -Depth 5
     $createdProcedureCorrectionReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureCorrectionReportBody -TimeoutSec 20
@@ -9574,6 +9574,7 @@ finally {
 }
 
 try {
+    Set-AdministrationFacilityContext -FacilityId 10
     $unauthenticatedProceduresStatus = 0
     try {
         $unauthenticatedProcedures = Invoke-WebRequest `
@@ -9718,8 +9719,8 @@ try {
 
     $clinicianSignStatus = 0
     $clinicianSignBody = @{
-        reviewedBy = "gold-provider-01"
-        reviewedAt = "2026-06-19 14:15:00"
+        expectedReviewVersion = $completedReport.reviewVersion
+        reason = "Synthetic authorization boundary check."
     } | ConvertTo-Json -Depth 8
     try {
         $clinicianSign = Invoke-WebRequest `
@@ -9772,6 +9773,7 @@ catch {
 }
 
 try {
+    Set-AdministrationFacilityContext -FacilityId 12
     $scheduledProcedures = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0701" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $scheduledOrder = $scheduledProcedures.orders | Where-Object {
         $_.name -eq "Complete blood count" `
@@ -9797,6 +9799,7 @@ catch {
 
 $procedureOrderMutationId = $null
 try {
+    Set-AdministrationFacilityContext -FacilityId 10
     if ($null -eq $completedOrder -or $null -eq $completedOrder.encounter) {
         throw "Anchor procedure order did not provide an encounter for the procedure mutation check."
     }
@@ -10004,9 +10007,10 @@ try {
     $outsideDateUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&fromDate=2026-06-18&toDate=2026-06-18&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $outsideDateQueuedProcedureReport = $outsideDateUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
 
+    $expectedSignedReviewVersion = [int]$resultReport.reviewVersion + 1
     $signProcedureReportBody = @{
-        reviewedBy = "admin"
-        reviewedAt = "2026-06-19 14:15:00"
+        expectedReviewVersion = $resultReport.reviewVersion
+        reason = "Reviewed by the synthetic procedure lifecycle check."
     } | ConvertTo-Json
     $signedProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports/$procedureReportId/sign" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $signProcedureReportBody -TimeoutSec 20
     $signedOrder = $signedProcedureReport.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId } | Select-Object -First 1
@@ -10014,7 +10018,8 @@ try {
         $_.id -eq $procedureReportId `
             -and $_.reviewStatus -eq "reviewed" `
             -and $_.reviewedBy -eq "admin" `
-            -and $_.reviewedAt -eq "2026-06-19 14:15"
+            -and $_.reviewVersion -eq $expectedSignedReviewVersion `
+            -and -not [string]::IsNullOrWhiteSpace([string]$_.reviewedAt)
     } | Select-Object -First 1
     $createdResultVisible = $signedReport.results | Where-Object { $_.id -eq $procedureResultId -and $_.text -eq $procedureResultText -and $_.result -eq "104" -and $_.resultStatus -eq "final" } | Select-Object -First 1
 
@@ -10023,7 +10028,8 @@ try {
         $_.reportId -eq $procedureReportId `
             -and $_.reviewStatus -eq "reviewed" `
             -and $_.reviewedBy -eq "admin" `
-            -and $_.reviewedAt -eq "2026-06-19 14:15"
+            -and $_.reviewVersion -eq $expectedSignedReviewVersion `
+            -and -not [string]::IsNullOrWhiteSpace([string]$_.reviewedAt)
     } | Select-Object -First 1
     $filteredReviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&patientId=MOD-PAT-0009&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $filteredQueuedProcedureReportAfterSign = $filteredReviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
