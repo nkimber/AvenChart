@@ -211,6 +211,11 @@ const groupPermissionRules = {
   inventory: [
     ['inventory', 'adjustments', 'write'],
     ['inventory', 'lots', 'write'],
+    // The inventory operator independently approves controlled-custody
+    // attestations.  The inventory API's authenticated read gate is the
+    // reporting view, so the role needs that narrowly read-only permission
+    // in addition to lot and adjustment write authority.
+    ['inventory', 'reporting', 'view'],
   ],
   doc: [
     ['acct', 'disc', 'write'],
