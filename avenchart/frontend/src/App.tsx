@@ -869,10 +869,15 @@ function App() {
     }
 
     const controller = new AbortController()
+    // Search results own the selected chart. A changed query must not leave a
+    // prior patient's chart actionable while the next search is pending or
+    // after it has failed.
+    setSearchResult(null)
+    setSelectedPatientId(null)
+    setChart(null)
+    setSearchStatus('loading')
+    setPatientError(null)
     const timeout = window.setTimeout(async () => {
-      setSearchStatus('loading')
-      setPatientError(null)
-
       try {
         const result = await searchPatients(query, avenChartSessionId, controller.signal)
         setSearchResult(result)
@@ -889,6 +894,9 @@ function App() {
         }
       } catch (searchError) {
         if (!controller.signal.aborted) {
+          setSearchResult(null)
+          setSelectedPatientId(null)
+          setChart(null)
           setSearchStatus('error')
           setPatientError(searchError instanceof Error ? searchError.message : 'Patient search failed')
         }
