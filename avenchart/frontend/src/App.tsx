@@ -2407,7 +2407,7 @@ function App() {
 
     try {
       const sessionId = getActiveAppointmentSessionId()
-      const updated = await updateAppointment(appointment.id, input, sessionId)
+      const updated = await updateAppointment(appointment.id, input, appointment.rowVersion, sessionId)
       setAppointmentPatientId(updated.patientId)
       setAppointmentFromDate(updated.date)
       setSelectedAppointmentId(updated.id)
@@ -2432,7 +2432,13 @@ function App() {
 
     try {
       const sessionId = getActiveAppointmentSessionId()
-      const updated = await rescheduleAppointmentOccurrence(appointment.seriesRootId, appointment.date, input, sessionId)
+      const updated = await rescheduleAppointmentOccurrence(
+        appointment.seriesRootId,
+        appointment.date,
+        input,
+        appointment.rowVersion,
+        sessionId,
+      )
       setAppointmentPatientId(updated.patientId)
       setAppointmentFromDate(updated.date)
       setSelectedAppointmentId(updated.id)
@@ -2457,7 +2463,7 @@ function App() {
       const updated = await updateAppointmentStatus(appointment.id, {
         status: 'x',
         title: appointment.title.endsWith('Cancelled') ? appointment.title : `${appointment.title} Cancelled`,
-      }, sessionId)
+      }, appointment.rowVersion, sessionId)
       setAppointmentDetail(updated)
       setSelectedAppointmentId(updated.id)
       setAppointmentDetailStatus('ready')
@@ -2480,7 +2486,7 @@ function App() {
       const updated = await updateAppointmentStatus(appointment.id, {
         status: '@',
         title: appointment.title.endsWith('Arrived') ? appointment.title : `${appointment.title} Arrived`,
-      }, sessionId)
+      }, appointment.rowVersion, sessionId)
       setAppointmentDetail(updated)
       setSelectedAppointmentId(updated.id)
       setAppointmentDetailStatus('ready')
@@ -2506,7 +2512,7 @@ function App() {
       const updated = await updateAppointmentStatus(appointment.id, {
         status: '>',
         title: baseTitle.endsWith('Checked Out') ? baseTitle : `${baseTitle} Checked Out`,
-      }, sessionId)
+      }, appointment.rowVersion, sessionId)
       setAppointmentDetail(updated)
       setSelectedAppointmentId(updated.id)
       setAppointmentDetailStatus('ready')
@@ -2529,7 +2535,7 @@ function App() {
       const updated = await updateAppointmentStatus(appointment.id, {
         status: '?',
         title: appointment.title.endsWith('No Show') ? appointment.title : `${appointment.title} No Show`,
-      }, sessionId)
+      }, appointment.rowVersion, sessionId)
       setAppointmentDetail(updated)
       setSelectedAppointmentId(updated.id)
       setAppointmentDetailStatus('ready')
@@ -2550,10 +2556,11 @@ function App() {
 
     try {
       const sessionId = getActiveAppointmentSessionId()
+      const appointment = await getAppointmentDetail(appointmentId, sessionId)
       const updated = await updateAppointmentStatus(appointmentId, {
         status: '~',
         title,
-      }, sessionId)
+      }, appointment.rowVersion, sessionId)
       setAppointmentPatientId(updated.patientId)
       setAppointmentFromDate(updated.date)
       setSelectedAppointmentId(updated.id)
@@ -2639,7 +2646,7 @@ function App() {
 
     try {
       const sessionId = getActiveAppointmentSessionId()
-      await deleteAppointment(appointment.id, sessionId)
+      await deleteAppointment(appointment.id, appointment.rowVersion, sessionId)
       setSelectedAppointmentId(null)
       setAppointmentDetail(null)
       setAppointmentDetailStatus('idle')
@@ -2658,7 +2665,12 @@ function App() {
 
     try {
       const sessionId = getActiveAppointmentSessionId()
-      const updated = await restoreAppointmentOccurrence(appointment.seriesRootId, occurrenceDate, sessionId)
+      const updated = await restoreAppointmentOccurrence(
+        appointment.seriesRootId,
+        occurrenceDate,
+        appointment.rowVersion,
+        sessionId,
+      )
       setSelectedAppointmentId(updated.id)
       setAppointmentDetail(updated)
       setAppointmentDetailStatus('ready')
@@ -3832,7 +3844,7 @@ function App() {
     }
   }
 
-  async function handleFlowStatusChange(appointmentId: string, status: string) {
+  async function handleFlowStatusChange(appointmentId: string, status: string, expectedVersion: number) {
     if (!avenChartSessionId) {
       setFlowStatus('error')
       setFlowError('Sign in before changing appointment flow status.')
@@ -3842,7 +3854,7 @@ function App() {
     setFlowStatus('loading')
     setFlowError(null)
     try {
-      await updateAppointmentStatus(appointmentId, { status }, avenChartSessionId)
+      await updateAppointmentStatus(appointmentId, { status }, expectedVersion, avenChartSessionId)
       setFlowRefreshKey((current) => current + 1)
       setAppointmentRefreshKey((current) => current + 1)
     } catch (mutationError) {
@@ -21539,7 +21551,7 @@ function FlowBoardWorkspace({
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   onDateChange: (date: string) => void
-  onStatusChange: (appointmentId: string, status: string) => void | Promise<void>
+  onStatusChange: (appointmentId: string, status: string, expectedVersion: number) => void | Promise<void>
   onRetry: () => void
 }) {
   const totalAppointments = board?.lanes.reduce((total, lane) => total + lane.items.length, 0) ?? 0
@@ -21626,7 +21638,7 @@ function FlowBoardWorkspace({
                             type="button"
                             className="flow-advance-button"
                             disabled={status === 'loading'}
-                            onClick={() => void onStatusChange(appointment.appointmentId, action.status)}
+                            onClick={() => void onStatusChange(appointment.appointmentId, action.status, appointment.rowVersion)}
                           >
                             {action.label}<ChevronRight size={14} aria-hidden="true" />
                           </button>

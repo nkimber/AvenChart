@@ -40,6 +40,7 @@ $AdministrationHeaders = $null
 $AdministrationLogin = $null
 $AdministrationFacilityIds = $null
 $AdministrationDefaultFacilityId = $null
+$AdministrationSelectedFacilityId = $null
 $AdministrationPurposes = $null
 $OriginalAdministrationGrant = $null
 $FrontDeskHeaders = $null
@@ -93,6 +94,9 @@ function Get-AdministrationHeaders {
     $selectedFacilityId = if ($FacilityId -gt 0) {
         $FacilityId
     }
+    elseif ($script:AdministrationSelectedFacilityId -gt 0) {
+        $script:AdministrationSelectedFacilityId
+    }
     else {
         $script:AdministrationDefaultFacilityId
     }
@@ -140,6 +144,18 @@ function Get-AdministrationHeaders {
         -PurposeOfUse $PurposeOfUse
 }
 
+function Set-AdministrationFacilityContext {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$FacilityId
+    )
+
+    # The helper adds a temporary grant only when the synthetic administrator does
+    # not already have it; the script's final cleanup restores the original grant.
+    Get-AdministrationHeaders -FacilityId $FacilityId | Out-Null
+    $script:AdministrationSelectedFacilityId = $FacilityId
+}
+
 function Restore-AdministrationAccessContextGrant {
     if ($null -eq $script:OriginalAdministrationGrant -or $null -eq $script:AdministrationLogin) {
         return
@@ -161,6 +177,7 @@ function Restore-AdministrationAccessContextGrant {
         } | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20 | Out-Null
     $script:OriginalAdministrationGrant = $null
+    $script:AdministrationSelectedFacilityId = $null
 }
 
 function Get-FrontDeskHeaders {
@@ -960,6 +977,7 @@ catch {
 
 $disclosureFixtureAuthorityId = $null
 try {
+    Set-AdministrationFacilityContext -FacilityId 11
     $disclosureHeaders = Get-AdministrationHeaders
     $disclosurePatientId = "MOD-PAT-0001"
     $disclosureMarker = "TMP-DISCLOSURE-SMOKE-$([Guid]::NewGuid().ToString('N').Substring(0, 10))"
@@ -3235,6 +3253,7 @@ catch {
     Add-Check -Name "patient insurance mutation lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 
+Set-AdministrationFacilityContext -FacilityId 10
 try {
     $unauthenticatedAppointmentSearchStatus = 0
     $frontDeskAppointmentSearchStatus = 0
@@ -3348,13 +3367,13 @@ catch {
 }
 
 try {
-    $reminderAppointments = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0191&from=2026-06-18&limit=5" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $reminderAppointments = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0191&from=2026-06-18&limit=5" -Method Get -Headers (Get-AdministrationHeaders -FacilityId 12) -TimeoutSec 20
     $reminderAppointment = $reminderAppointments.appointments | Where-Object { $_.id -eq "APPT-MOD-PAT-0191-3" } | Select-Object -First 1
     if ($null -eq $reminderAppointment) {
         throw "Expected reminder anchor appointment APPT-MOD-PAT-0191-3 was not returned."
     }
 
-    $reminderDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$($reminderAppointment.id)" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $reminderDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$($reminderAppointment.id)" -Method Get -Headers (Get-AdministrationHeaders -FacilityId 12) -TimeoutSec 20
     $appointmentReminderPassed = $reminderDetail.patientId -eq "MOD-PAT-0191" `
         -and $reminderDetail.date -eq "2026-06-25" `
         -and $reminderDetail.reminderDue -eq $true `
@@ -3378,6 +3397,7 @@ catch {
 }
 
 $appointmentMutationId = $null
+$appointmentMutationExpectedVersion = $null
 try {
     $createBody = @{
         patientId = "MOD-PAT-0003"
@@ -3392,15 +3412,18 @@ try {
     } | ConvertTo-Json
     $createdAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createBody -TimeoutSec 20
     $appointmentMutationId = $createdAppointment.id
+    $appointmentMutationExpectedVersion = $createdAppointment.rowVersion
 
     $cancelBody = @{
         status = "x"
         title = "Smoke Appointment Mutation Cancelled"
+        expectedVersion = $appointmentMutationExpectedVersion
     } | ConvertTo-Json
     $cancelledAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $cancelBody -TimeoutSec 20
+    $appointmentMutationExpectedVersion = $cancelledAppointment.rowVersion
     $appointmentMutationPassed = $createdAppointment.status -eq "-" -and $cancelledAppointment.status -eq "x" -and $cancelledAppointment.title -eq "Smoke Appointment Mutation Cancelled"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentMutationId?expectedVersion=$appointmentMutationExpectedVersion" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $appointmentMutationId = $null
 
     Add-Check -Name "appointment mutation lifecycle" -Result $(if ($appointmentMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -3416,7 +3439,7 @@ catch {
 finally {
     if ($null -ne $appointmentMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentMutationId?expectedVersion=$appointmentMutationExpectedVersion" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -4847,6 +4870,7 @@ catch {
     Add-Check -Name "appointment recurring series expansion" -Result "failed" -Details $_.Exception.Message
 }
 
+Set-AdministrationFacilityContext -FacilityId 11
 try {
     $exceptionSeriesSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-12-02&limit=10" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $exceptionSeriesOccurrences = @($exceptionSeriesSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
@@ -7164,6 +7188,7 @@ catch {
     Add-Check -Name "anchor encounter document revision readiness" -Result "failed" -Details $_.Exception.Message
 }
 
+Set-AdministrationFacilityContext -FacilityId 12
 $encounterMutationId = $null
 try {
     $createEncounterBody = @{
@@ -7313,6 +7338,7 @@ finally {
     }
 }
 
+Set-AdministrationFacilityContext -FacilityId 11
 try {
     $frontDeskClinicalListsStatus = 0
     $frontDeskClinicalListMutationStatus = 0
@@ -7403,6 +7429,7 @@ catch {
     Add-Check -Name "anchor immunizations" -Result "failed" -Details $_.Exception.Message
 }
 
+Set-AdministrationFacilityContext -FacilityId 10
 $clinicalAllergyMutationId = $null
 try {
     $allergyTitle = "Smoke Allergy Mutation"
@@ -7589,6 +7616,7 @@ finally {
     }
 }
 
+Set-AdministrationFacilityContext -FacilityId 11
 $clinicalImmunizationMutationId = $null
 try {
     $immunizationLot = "SMOKE-IMM-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"

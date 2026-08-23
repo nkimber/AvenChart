@@ -444,6 +444,7 @@ export class PatientRegistrationValidationError extends Error {
 
 export type AppointmentListItem = {
   id: string
+  rowVersion: number
   seriesRootId: string
   isRecurringSeries: boolean
   isVirtualOccurrence: boolean
@@ -716,6 +717,7 @@ export type AppointmentSearchResponse = {
 
 export type FlowBoardItem = {
   appointmentId: string
+  rowVersion: number
   patientId: string
   patientDisplayName: string
   startTime: string
@@ -3537,6 +3539,20 @@ export type AuthLoginInput = {
   password: string
 }
 
+export type StaffAccessFacility = {
+  facilityId: number
+  code: string
+  name: string
+  isDefault: boolean
+}
+
+export type StaffAccessContext = {
+  defaultFacilityId?: number | null
+  defaultPurposeOfUse: string
+  facilities: StaffAccessFacility[]
+  purposes: string[]
+}
+
 export type AuthLoginResponse = {
   authenticated: boolean
   username: string
@@ -3547,6 +3563,7 @@ export type AuthLoginResponse = {
   sessionId?: string | null
   sessionCreatedAt?: string | null
   sessionExpiresAt?: string | null
+  accessContext?: StaffAccessContext | null
 }
 
 export type AuthSessionResponse = {
@@ -3562,6 +3579,7 @@ export type AuthSessionResponse = {
   endedAt?: string | null
   failureReason?: string | null
   sessionSource: string
+  accessContext?: StaffAccessContext | null
 }
 
 export type PatientPortalLoginInput = {
@@ -4521,6 +4539,41 @@ export type AuthAuditResponse = {
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
+type SelectedStaffAccessContext = {
+  facilityId: number
+  purposeOfUse: string
+}
+
+// Context is kept in memory and bound to its server-issued session. The client
+// merely declares a choice returned by the server; every protected request is
+// still authorized independently by the API.
+const selectedStaffAccessContexts = new Map<string, SelectedStaffAccessContext>()
+
+function rememberDefaultStaffAccessContext(
+  sessionId: string | null | undefined,
+  accessContext: StaffAccessContext | null | undefined,
+) {
+  const facilityId = accessContext?.defaultFacilityId
+  const purposeOfUse = accessContext?.defaultPurposeOfUse?.trim()
+  if (!sessionId || !facilityId || facilityId <= 0 || !purposeOfUse) {
+    return
+  }
+
+  selectedStaffAccessContexts.set(sessionId, { facilityId, purposeOfUse })
+}
+
+export function selectStaffAccessContext(
+  sessionId: string,
+  facilityId: number,
+  purposeOfUse: string,
+) {
+  if (!Number.isInteger(facilityId) || facilityId <= 0 || !purposeOfUse.trim()) {
+    throw new Error('A valid facility and purpose of use are required.')
+  }
+
+  selectedStaffAccessContexts.set(sessionId, { facilityId, purposeOfUse: purposeOfUse.trim() })
+}
+
 function buildAvenChartSessionHeaders(sessionId?: string | null, contentType?: string): HeadersInit {
   const headers: Record<string, string> = {}
   if (contentType) {
@@ -4528,6 +4581,11 @@ function buildAvenChartSessionHeaders(sessionId?: string | null, contentType?: s
   }
   if (sessionId) {
     headers['X-AvenChart-Session'] = sessionId
+    const accessContext = selectedStaffAccessContexts.get(sessionId)
+    if (accessContext) {
+      headers['X-AvenChart-Facility-Id'] = String(accessContext.facilityId)
+      headers['X-AvenChart-Purpose-Of-Use'] = accessContext.purposeOfUse
+    }
   }
   return headers
 }
@@ -4559,7 +4617,11 @@ export async function login(input: AuthLoginInput, signal?: AbortSignal): Promis
     throw new Error(`Login readiness check failed with ${response.status}`)
   }
 
-  return response.json()
+  const result: AuthLoginResponse = await response.json()
+  if (result.authenticated) {
+    rememberDefaultStaffAccessContext(result.sessionId, result.accessContext)
+  }
+  return result
 }
 
 export async function getCurrentSession(sessionId: string, signal?: AbortSignal): Promise<AuthSessionResponse> {
@@ -4571,7 +4633,13 @@ export async function getCurrentSession(sessionId: string, signal?: AbortSignal)
     throw new Error(`Session readiness check failed with ${response.status}`)
   }
 
-  return response.json()
+  const result: AuthSessionResponse = await response.json()
+  if (result.authenticated) {
+    rememberDefaultStaffAccessContext(result.sessionId ?? sessionId, result.accessContext)
+  } else {
+    selectedStaffAccessContexts.delete(sessionId)
+  }
+  return result
 }
 
 export async function loginPatientPortal(
@@ -5118,7 +5186,9 @@ export async function logout(sessionId: string, signal?: AbortSignal): Promise<A
     throw new Error(`Session logout failed with ${response.status}`)
   }
 
-  return response.json()
+  const result: AuthSessionResponse = await response.json()
+  selectedStaffAccessContexts.delete(sessionId)
+  return result
 }
 
 export async function getLoginAudit(
@@ -5793,13 +5863,14 @@ export async function getAppointmentReminderDispatchHistory(
 export async function updateAppointmentStatus(
   appointmentId: string,
   update: AppointmentStatusUpdate,
+  expectedVersion: number,
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AppointmentDetail> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/status`, {
     method: 'PUT',
     headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
-    body: JSON.stringify(update),
+    body: JSON.stringify({ ...update, expectedVersion }),
     signal,
   })
   if (!response.ok) {
@@ -5812,13 +5883,14 @@ export async function updateAppointmentStatus(
 export async function updateAppointment(
   appointmentId: string,
   update: AppointmentUpdateInput,
+  expectedVersion: number,
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AppointmentDetail> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, {
     method: 'PUT',
     headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
-    body: JSON.stringify(update),
+    body: JSON.stringify({ ...update, expectedVersion }),
     signal,
   })
   if (!response.ok) {
@@ -5832,6 +5904,7 @@ export async function rescheduleAppointmentOccurrence(
   appointmentId: string,
   occurrenceDate: string,
   update: AppointmentOccurrenceRescheduleInput,
+  expectedVersion: number,
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AppointmentDetail> {
@@ -5840,7 +5913,7 @@ export async function rescheduleAppointmentOccurrence(
     {
       method: 'POST',
       headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
-      body: JSON.stringify(update),
+      body: JSON.stringify({ ...update, expectedVersion }),
       signal,
     },
   )
@@ -5853,10 +5926,11 @@ export async function rescheduleAppointmentOccurrence(
 
 export async function deleteAppointment(
   appointmentId: string,
+  expectedVersion: number,
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, {
+  const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}?expectedVersion=${encodeURIComponent(expectedVersion)}`, {
     method: 'DELETE',
     headers: buildAvenChartSessionHeaders(sessionId),
     signal,
@@ -5869,6 +5943,7 @@ export async function deleteAppointment(
 export async function restoreAppointmentOccurrence(
   appointmentId: string,
   occurrenceDate: string,
+  expectedVersion: number,
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AppointmentDetail> {
@@ -5876,7 +5951,8 @@ export async function restoreAppointmentOccurrence(
     `${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/recurrence-exceptions/${encodeURIComponent(occurrenceDate)}/restore`,
     {
       method: 'POST',
-      headers: buildAvenChartSessionHeaders(sessionId),
+      headers: buildAvenChartSessionHeaders(sessionId, 'application/json'),
+      body: JSON.stringify({ expectedVersion }),
       signal,
     },
   )
