@@ -448,10 +448,45 @@ public static class EndpointAccessPolicies
         };
     }
 
+    public static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> MessageFacilityScopeFilter()
+    {
+        return async (context, next) =>
+        {
+            var routeValues = context.HttpContext.Request.RouteValues;
+            var accessContext = RequireStaffAccessContext(context.HttpContext);
+            var accessContextService = context.HttpContext.RequestServices
+                .GetRequiredService<StaffAccessContextService>();
+
+            if (routeValues.TryGetValue("patientId", out var patientRouteValue))
+            {
+                var patientId = patientRouteValue?.ToString();
+                PhiAuditResourceContext.Set(context.HttpContext, "Patient", patientId);
+                var allowed = await accessContextService.CanAccessPatientAsync(
+                    patientId,
+                    accessContext.FacilityId,
+                    context.HttpContext.RequestAborted);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            if (routeValues.TryGetValue("messageId", out var messageRouteValue))
+            {
+                var messageId = messageRouteValue?.ToString();
+                PhiAuditResourceContext.Set(context.HttpContext, "Message", messageId);
+                var allowed = await accessContextService.CanAccessMessageAsync(
+                    messageId,
+                    accessContext.FacilityId,
+                    context.HttpContext.RequestAborted);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            return await next(context);
+        };
+    }
+
     public static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
-        AuthRepository repository,
-        HttpContext httpContext,
-        CancellationToken cancellationToken)
+            AuthRepository repository,
+            HttpContext httpContext,
+            CancellationToken cancellationToken)
     {
         _ = repository;
         var adapter = httpContext.RequestServices.GetRequiredService<IStaffIdentityAdapter>();
