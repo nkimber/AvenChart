@@ -7739,18 +7739,28 @@ try {
 
     $deactivateMedicationBody = @{
         comments = "Deactivated by the smoke medication-list mutation check."
+        expectedVersion = $createdMedicationVisible.lifecycleVersion
     } | ConvertTo-Json
     $deactivatedMedication = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId/deactivate" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $deactivateMedicationBody -TimeoutSec 20
     $inactiveMedicationVisible = $deactivatedMedication.detail.medications | Where-Object { $_.title -eq $medicationTitle } | Select-Object -First 1
-    $clinicalMedicationMutationPassed = $null -ne $createdMedicationVisible -and $null -eq $inactiveMedicationVisible
+    $medicationLifecycleHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId/lifecycle-history" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $deactivatedMedicationEvent = @($medicationLifecycleHistory.events | Where-Object { $_.action -eq "deactivated" -and $_.resultingVersion -eq 2 -and $_.actor -eq "admin" }) | Select-Object -First 1
+    $clinicalMedicationMutationPassed = $null -ne $createdMedicationVisible `
+        -and $null -ne $inactiveMedicationVisible `
+        -and $inactiveMedicationVisible.activity -eq 0 `
+        -and $inactiveMedicationVisible.comments -eq "Deactivated by the smoke medication-list mutation check." `
+        -and $medicationLifecycleHistory.currentVersion -eq 2 `
+        -and $null -ne $deactivatedMedicationEvent
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    # The deactivation above is the record-retaining terminal fixture transition.
     $clinicalMedicationMutationId = $null
 
     Add-Check -Name "clinical medication mutation lifecycle" -Result $(if ($clinicalMedicationMutationPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdMedication.id
         createdVisible = $createdMedicationVisible
         inactiveVisible = $inactiveMedicationVisible
+        lifecycleVersion = $medicationLifecycleHistory.currentVersion
+        deactivatedEvent = $deactivatedMedicationEvent
     }
 }
 catch {
@@ -7759,7 +7769,7 @@ catch {
 finally {
     if ($null -ne $clinicalMedicationMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId/deactivate" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ comments = "Synthetic smoke-test fixture completed."; expectedVersion = 1 } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -7770,7 +7780,7 @@ $clinicalPrescriptionMutationId = $null
 try {
     $prescriptionDrug = "Smoke Prescription Mutation"
     $createPrescriptionBody = @{
-        patientId = "MOD-PAT-0008"
+        patientId = "MOD-PAT-0006"
         providerId = $null
         startDate = "2026-07-15"
         drug = $prescriptionDrug
@@ -7801,7 +7811,16 @@ try {
         -and $null -ne $createdPrescriptionAudit `
         -and $null -ne $deactivatedPrescriptionAudit
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $permanentPrescriptionDeleteRejected = $false
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId" -Method Delete -Headers $prescriptionMutationHeaders -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        $permanentPrescriptionDeleteRejected = $_.Exception.Response.StatusCode.value__ -eq 409
+    }
+    if (-not $permanentPrescriptionDeleteRejected) {
+        throw "Prescription deletion must be rejected to retain the longitudinal audit record."
+    }
     $clinicalPrescriptionMutationId = $null
 
     Add-Check -Name "clinical prescription mutation lifecycle" -Result $(if ($clinicalPrescriptionMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -7811,6 +7830,7 @@ try {
         auditEventCount = $prescriptionAuditHistory.eventCount
         createdActor = $createdPrescriptionAudit.actor
         deactivatedActor = $deactivatedPrescriptionAudit.actor
+        permanentDeleteRejected = $permanentPrescriptionDeleteRejected
     }
 }
 catch {
@@ -7819,7 +7839,7 @@ catch {
 finally {
     if ($null -ne $clinicalPrescriptionMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId/deactivate" -Method Put -Headers (Get-ClinicianHeaders) -ContentType "application/json" -Body (@{ endDate = "2026-08-15"; note = "Synthetic smoke-test fixture completed." } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
