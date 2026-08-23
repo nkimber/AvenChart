@@ -13020,6 +13020,36 @@ catch {
 }
 
 try {
+    $integrationHeaders = Get-AdministrationHeaders
+    $integrationMarker = "SMOKE-OUTBOX-$([Guid]::NewGuid().ToString('N'))"
+    $integrationQueueRequest = @{
+        eventType = "synthetic.integration.test"
+        aggregateType = "SyntheticSmoke"
+        aggregateId = $integrationMarker
+        destination = "synthetic-laboratory"
+        payload = @{ marker = $integrationMarker; purpose = "endpoint-boundary-verification" }
+        idempotencyKey = $integrationMarker
+    } | ConvertTo-Json -Depth 8
+    $firstIntegrationQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/integrations/outbox" -Method Post -Headers $integrationHeaders -ContentType "application/json" -Body $integrationQueueRequest -TimeoutSec 20
+    $secondIntegrationQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/integrations/outbox" -Method Post -Headers $integrationHeaders -ContentType "application/json" -Body $integrationQueueRequest -TimeoutSec 20
+    $integrationOutbox = Invoke-RestMethod -Uri "$ApiBaseUrl/api/integrations/outbox?status=queued&limit=100" -Method Get -Headers $integrationHeaders -TimeoutSec 20
+    $integrationHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/integrations/outbox/$($firstIntegrationQueue.eventId)/history" -Method Get -Headers $integrationHeaders -TimeoutSec 20
+    $integrationContractPassed = $firstIntegrationQueue.eventId -eq $secondIntegrationQueue.eventId `
+        -and $firstIntegrationQueue.status -eq "queued" `
+        -and @($integrationOutbox | Where-Object { $_.eventId -eq $firstIntegrationQueue.eventId }).Count -eq 1 `
+        -and @($integrationHistory | Where-Object { $_.action -eq "queued" }).Count -ge 1
+    Add-Check -Name "integration outbox idempotency and provenance lifecycle" -Result $(if ($integrationContractPassed) { "passed" } else { "failed" }) -Details @{
+        eventId = $firstIntegrationQueue.eventId
+        firstStatus = $firstIntegrationQueue.status
+        repeatedEventId = $secondIntegrationQueue.eventId
+        provenanceCount = @($integrationHistory).Count
+    }
+}
+catch {
+    Add-Check -Name "integration outbox idempotency and provenance lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     Restore-AdministrationAccessContextGrant
 }
 catch {
