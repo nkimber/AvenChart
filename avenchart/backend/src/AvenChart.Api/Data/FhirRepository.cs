@@ -200,7 +200,9 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
               and (@subject is null
                    or assessment.patient_id = @subject
                    or assessment.patient_id in (select canonical_id from patients where pubpid = @subject))
-              and nullif(trim(domain.value ->> 'status'), '') is not null;
+              and coalesce(
+                    nullif(trim(domain.value ->> 'status'), ''),
+                    nullif(trim(domain.value ->> 'Status'), '')) is not null;
             """;
         AddSubjectParameter(countCommand, normalizedSubject);
         AddFacilityParameter(countCommand, facilityId);
@@ -212,8 +214,8 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
                    assessment.patient_id,
                    assessment.assessment_date,
                    domain.key,
-                   domain.value ->> 'status' as status,
-                   domain.value ->> 'notes' as notes
+                   coalesce(domain.value ->> 'status', domain.value ->> 'Status') as status,
+                   coalesce(domain.value ->> 'notes', domain.value ->> 'Notes') as notes
             from patient_sdoh_assessments assessment
             inner join patients p on p.canonical_id = assessment.patient_id
             cross join lateral jsonb_each(assessment.domains) domain
@@ -221,7 +223,9 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
               and (@subject is null
                    or assessment.patient_id = @subject
                    or assessment.patient_id in (select canonical_id from patients where pubpid = @subject))
-              and nullif(trim(domain.value ->> 'status'), '') is not null
+              and coalesce(
+                    nullif(trim(domain.value ->> 'status'), ''),
+                    nullif(trim(domain.value ->> 'Status'), '')) is not null
             order by assessment.assessment_date desc, assessment.updated_at desc, assessment.assessment_id desc, domain.key
             limit @limit offset @offset;
             """;

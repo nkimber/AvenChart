@@ -3053,7 +3053,15 @@ try {
     }
     $updatedSdoh = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$sdohPatientId/sdoh-assessments/$($createdSdoh.assessmentId)" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body ($sdohUpdateBody | ConvertTo-Json -Depth 8) -TimeoutSec 20
     $sdohHistory = @(Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$sdohPatientId/sdoh-assessments" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20)
-    $fhirSdoh = Invoke-RestMethod -Uri "$ApiBaseUrl/api/fhir/R4/Observation/sdoh?subject=$sdohPatientId" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $fhirSdohHeaders = Get-AdministrationHeaders
+    $fhirSdohHeaders["Accept"] = "application/fhir+json"
+    $fhirSdohResponse = Invoke-WebRequest `
+        -Uri "$ApiBaseUrl/api/fhir/R4/Observation/sdoh?subject=$sdohPatientId" `
+        -Method Get `
+        -Headers $fhirSdohHeaders `
+        -UseBasicParsing `
+        -TimeoutSec 20
+    $fhirSdoh = (Convert-HttpResponseContentToString $fhirSdohResponse.Content) | ConvertFrom-Json
     $historySdoh = $sdohHistory | Where-Object { $_.assessmentId -eq $createdSdoh.assessmentId } | Select-Object -First 1
     $sdohPassed = $createdSdoh.assessmentDate -eq "2026-07-25" `
         -and $createdSdoh.assessor -eq "admin" `

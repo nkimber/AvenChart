@@ -11,6 +11,15 @@ namespace AvenChart.Api.Data;
 
 public sealed class PatientSdohRepository(AvenChartDbContext dbContext)
 {
+    // This JSON is consumed both by EF-backed patient views and the FHIR
+    // projection. Persist a single camel-case document contract, while the
+    // case-insensitive reader preserves assessments written before this
+    // convention was established.
+    private static readonly JsonSerializerOptions PersistenceJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     private static readonly HashSet<string> SupportedDomainKeys = new(StringComparer.Ordinal)
     {
         "food_insecurity", "housing_instability", "transportation_insecurity", "utilities_insecurity",
@@ -159,8 +168,12 @@ public sealed class PatientSdohRepository(AvenChartDbContext dbContext)
         entity.PostpartumEnd = assessment.PostpartumEnd;
         entity.DisabilityStatus = assessment.DisabilityStatus;
         entity.DisabilityStatusNotes = assessment.DisabilityStatusNotes;
-        entity.DisabilityScaleJson = JsonSerializer.Serialize(assessment.DisabilityScale);
-        entity.DomainsJson = JsonSerializer.Serialize(assessment.Domains);
+        entity.DisabilityScaleJson = JsonSerializer.Serialize(
+            assessment.DisabilityScale,
+            PersistenceJsonOptions);
+        entity.DomainsJson = JsonSerializer.Serialize(
+            assessment.Domains,
+            PersistenceJsonOptions);
         entity.Interventions = assessment.Interventions;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
         entity.UpdatedBy = username;
@@ -241,8 +254,12 @@ public sealed class PatientSdohRepository(AvenChartDbContext dbContext)
 
     private static PatientSdohAssessmentResponse ToResponse(PatientSdohAssessmentEntity assessment)
     {
-        var disabilityScale = JsonSerializer.Deserialize<Dictionary<string, string>>(assessment.DisabilityScaleJson) ?? [];
-        var domains = JsonSerializer.Deserialize<Dictionary<string, PatientSdohDomainValue>>(assessment.DomainsJson) ?? [];
+        var disabilityScale = JsonSerializer.Deserialize<Dictionary<string, string>>(
+            assessment.DisabilityScaleJson,
+            PersistenceJsonOptions) ?? [];
+        var domains = JsonSerializer.Deserialize<Dictionary<string, PatientSdohDomainValue>>(
+            assessment.DomainsJson,
+            PersistenceJsonOptions) ?? [];
         // Generated targets are part of this assessment's historical interpretation.
         // Anchoring them to the assessment date prevents them from drifting forward on every read.
         var goalDueDate = assessment.AssessmentDate.AddDays(90).ToString("yyyy-MM-dd");
