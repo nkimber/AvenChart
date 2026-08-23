@@ -5772,7 +5772,9 @@ a {
 .cal-pcount {
   font-size: 11px;
   font-weight: 600;
-  opacity: 0.65;
+  /* Counts are operational data, not decorative hints.  Keep the provider
+     foreground color at full strength so every provider chip clears WCAG AA. */
+  opacity: 1;
 }
 
 .cal-all-btn {
@@ -5864,9 +5866,12 @@ a {
 }
 
 .cal-day-out {
-  background: var(--bg);
-  opacity: 0.4;
+  background: #f1f5f9;
   pointer-events: none;
+}
+
+.cal-day-out .cal-daynum {
+  color: #475569;
 }
 
 .cal-day-today {
@@ -5911,7 +5916,7 @@ a {
 .cal-daynum {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: #334155;
   line-height: 1;
 }
 
@@ -5968,7 +5973,9 @@ a {
   font-size: 9.5px;
   font-weight: 700;
   flex-shrink: 0;
-  opacity: 0.8;
+  /* Appointment time is essential schedule information.  Reducing its
+     opacity degraded the provider color pairs below the required contrast. */
+  opacity: 1;
 }
 
 .cal-chip-p {
