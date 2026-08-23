@@ -1722,6 +1722,9 @@ function App() {
     const controller = new AbortController()
 
     async function loadProcedureOrderQueue() {
+      // Queue rows are scoped to the active filter set; do not leave an order
+      // transmissible while its replacement query is unresolved.
+      setProcedureOrderQueue(null)
       setProcedureOrderQueueStatus('loading')
       setProcedureOrderQueueError(null)
 
@@ -1742,6 +1745,7 @@ function App() {
         setProcedureOrderQueueStatus('ready')
       } catch (loadError) {
         if (!controller.signal.aborted) {
+          setProcedureOrderQueue(null)
           setProcedureOrderQueueStatus('error')
           setProcedureOrderQueueError(loadError instanceof Error ? loadError.message : 'Procedure order queue failed')
         }
