@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "./support/fixtures.ts";
 
 const apiBaseUrl =
-  process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+  process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
 const codingPatientId =
   process.env.MODERN_UI_CODING_PATIENT_ID ?? "MOD-PAT-0001";
 const codingEncounter = Number(

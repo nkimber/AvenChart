@@ -53,7 +53,7 @@ test.describe("FORM-01 through FORM-04a governed clinical forms", () => {
     const stableKey = `tmp.form.browser.${marker}`;
     const formName = `Browser clinical form ${marker}`;
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     let definitionId: string | null = null;
 
     await signIn(page);

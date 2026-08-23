@@ -35,7 +35,7 @@ test.describe("SEC-03 disclosure authority", () => {
   }) => {
     const marker = `TMP-DISCLOSURE-UI-${Date.now()}`;
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     let authorityId: string | null = null;
 
     await signIn(page);

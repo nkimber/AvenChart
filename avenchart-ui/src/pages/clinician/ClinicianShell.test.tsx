@@ -7,8 +7,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getCurrentSession,
-  getOperationalReports,
   getProcedureReportQueue,
+  getStaffMessageInbox,
   logout,
 } from '../../api.ts'
 import {
@@ -23,8 +23,8 @@ vi.mock('../../api.ts', async (importOriginal) => {
   return {
     ...original,
     getCurrentSession: vi.fn(),
-    getOperationalReports: vi.fn(),
     getProcedureReportQueue: vi.fn(),
+    getStaffMessageInbox: vi.fn(),
     logout: vi.fn(),
   }
 })
@@ -70,30 +70,19 @@ describe('ClinicianShell', () => {
       unreviewedReports: 0,
       reports: [],
     })
-    vi.mocked(getOperationalReports).mockResolvedValue({
-      asOfDate: '2026-07-27',
-      currentYear: 2026,
+    vi.mocked(getStaffMessageInbox).mockResolvedValue({
+      datasetId: 'test',
+      datasetVersion: 'v1',
+      total: 0,
+      offset: 0,
+      limit: 1,
       counts: {
-        patients: 0,
-        portalPatients: 0,
-        providers: 0,
-        facilities: 0,
-        appointments: 0,
-        futureAppointments: 0,
-        currentYearAppointments: 0,
-        encounters: 0,
-        currentYearEncounters: 0,
-        billingLines: 0,
-        billingTotal: 0,
-        labReports: 0,
-        patientDocuments: 0,
-        messages: 0,
-        newMessages: 0,
-        doneMessages: 0,
+        total: 0,
+        unread: 0,
+        assignedToMe: 0,
+        unassigned: 0,
       },
-      providerActivity: [],
-      facilityActivity: [],
-      clinicalConditions: [],
+      items: [],
     })
     vi.mocked(logout).mockResolvedValue({
       authenticated: false,

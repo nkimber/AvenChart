@@ -6,7 +6,7 @@ import type { APIRequestContext, Page } from "@playwright/test";
 import { expect, test } from "./support/fixtures.ts";
 
 const apiBaseUrl =
-  process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+  process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
 const patientId = process.env.MODERN_UI_DOCUMENT_PATIENT_ID ?? "MOD-PAT-0001";
 const encounter = Number(process.env.MODERN_UI_DOCUMENT_ENCOUNTER ?? "1000013");
 

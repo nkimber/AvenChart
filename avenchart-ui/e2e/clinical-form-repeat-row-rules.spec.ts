@@ -52,7 +52,7 @@ test.describe("FORM-02 same-row repeat rules", () => {
     const stableKey = `tmp.form.row_rules.${marker}`;
     const formName = `Same-row form ${marker}`;
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     let definitionId: string | null = null;
 
     await signIn(page);

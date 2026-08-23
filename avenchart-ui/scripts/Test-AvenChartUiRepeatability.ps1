@@ -32,7 +32,10 @@ try {
         $reset = $resetJson | ConvertFrom-Json
 
         $env:MODERN_UI_BASE_URL = $BaseUrl
-        npx playwright test e2e/route-smoke.spec.ts --project=$Project
+        # A clean reset must be deterministic. Run the shared-route smoke
+        # checks serially so their authenticated navigation contexts cannot
+        # compete while the fresh runtime is warming its lazy route modules.
+        npx playwright test e2e/route-smoke.spec.ts --project=$Project --workers=1
         if ($LASTEXITCODE -ne 0) {
             throw "AvenChart UI route smoke run $runNumber failed with exit code $LASTEXITCODE."
         }

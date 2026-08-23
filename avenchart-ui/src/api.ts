@@ -2876,10 +2876,10 @@ export async function unlinkInventoryMedicationLink(
   const path = `/api/inventory/items/${itemId}/medication-link`
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: 'DELETE',
-    headers: {
-      ...clinicianHeaders(sessionId),
-      'Content-Type': 'application/json',
-    },
+    // clinicianHeaders already supplies the JSON media type. Re-adding it
+    // with different casing produces a duplicate HTTP field value, which the
+    // ASP.NET Core JSON binder correctly rejects.
+    headers: clinicianHeaders(sessionId),
     body: JSON.stringify({ reason }),
     signal,
   })

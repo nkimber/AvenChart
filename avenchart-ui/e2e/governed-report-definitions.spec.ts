@@ -35,7 +35,7 @@ test.describe("REP-01 governed report definitions", () => {
   }) => {
     const marker = `tmp-report-ui-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     let definitionId: string | null = null;
 
     await signIn(page);

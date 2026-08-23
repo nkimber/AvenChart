@@ -1584,9 +1584,11 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         var recipientName = recipientOption.DisplayName;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        var nextId = await GetNextPortalMailboxIdAsync(connection, transaction, cancellationToken);
+        var messageIds = await AllocatePortalMailboxMessageIdsAsync(connection, transaction, cancellationToken);
+        var sentMessageId = messageIds.SentMessageId;
+        var recipientMessageId = messageIds.RecipientMessageId;
         var sentMessage = new PatientPortalMessageItem(
-            Id: nextId.ToString(),
+            Id: sentMessageId.ToString(),
             Type: "Message",
             Date: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
             Title: title,
@@ -1597,16 +1599,16 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SenderName: session.DisplayName,
             RecipientId: recipientId,
             RecipientName: recipientName,
-            MailChain: nextId,
-            ReplyMailChain: nextId,
+            MailChain: sentMessageId,
+            ReplyMailChain: sentMessageId,
             PortalRelation: "portal:composed",
             IsEncrypted: false,
             AttachmentCount: attachments.Count,
             Attachments: CreateAttachmentItems(attachments));
         var recipientMessage = sentMessage with
         {
-            Id = (nextId + 1).ToString(),
-            MailChain = nextId + 1,
+            Id = recipientMessageId.ToString(),
+            MailChain = recipientMessageId,
             SenderName = session.DisplayName,
             RecipientName = recipientName,
             Attachments = CreateAttachmentItems(attachments)
@@ -1618,8 +1620,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             sentMessage,
             owner: session.PortalUsername,
             userValue: session.PortalUsername,
-            mailChain: nextId,
-            replyMailChain: nextId,
+            mailChain: sentMessageId,
+            replyMailChain: sentMessageId,
             transaction: transaction,
             cancellationToken: cancellationToken);
         await InsertPortalMailboxMessageAsync(
@@ -1628,8 +1630,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             recipientMessage,
             owner: recipientId,
             userValue: session.PortalUsername,
-            mailChain: nextId + 1,
-            replyMailChain: nextId,
+            mailChain: recipientMessageId,
+            replyMailChain: sentMessageId,
             transaction: transaction,
             cancellationToken: cancellationToken);
         await InsertPortalMessageAttachmentsAsync(connection, transaction, session, sentMessage, attachments, cancellationToken);
@@ -1712,9 +1714,11 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         var body = string.Join(Environment.NewLine, bodyParts.Where(part => !string.IsNullOrWhiteSpace(part)));
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var nextId = await GetNextPortalMailboxIdAsync(connection, transaction, cancellationToken);
+        var messageIds = await AllocatePortalMailboxMessageIdsAsync(connection, transaction, cancellationToken);
+        var sentMessageId = messageIds.SentMessageId;
+        var recipientMessageId = messageIds.RecipientMessageId;
         var sentMessage = new PatientPortalMessageItem(
-            Id: nextId.ToString(),
+            Id: sentMessageId.ToString(),
             Type: "Message",
             Date: requestDate,
             Title: title,
@@ -1725,16 +1729,16 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SenderName: session.DisplayName,
             RecipientId: recipientOption.Id,
             RecipientName: recipientOption.DisplayName,
-            MailChain: nextId,
-            ReplyMailChain: nextId,
+            MailChain: sentMessageId,
+            ReplyMailChain: sentMessageId,
             PortalRelation: "portal:prescription-refill-request",
             IsEncrypted: false,
             AttachmentCount: 0,
             Attachments: Array.Empty<PatientPortalMessageAttachment>());
         var recipientMessage = sentMessage with
         {
-            Id = (nextId + 1).ToString(),
-            MailChain = nextId + 1
+            Id = recipientMessageId.ToString(),
+            MailChain = recipientMessageId
         };
 
         await InsertPortalMailboxMessageAsync(
@@ -1743,8 +1747,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             sentMessage,
             owner: session.PortalUsername,
             userValue: session.PortalUsername,
-            mailChain: nextId,
-            replyMailChain: nextId,
+            mailChain: sentMessageId,
+            replyMailChain: sentMessageId,
             transaction: transaction,
             cancellationToken: cancellationToken);
         await InsertPortalMailboxMessageAsync(
@@ -1753,8 +1757,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             recipientMessage,
             owner: recipientOption.Id,
             userValue: session.PortalUsername,
-            mailChain: nextId + 1,
-            replyMailChain: nextId,
+            mailChain: recipientMessageId,
+            replyMailChain: sentMessageId,
             transaction: transaction,
             cancellationToken: cancellationToken);
         await RecordPortalMessageAuditEventAsync(
@@ -1769,8 +1773,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         await InsertPrescriptionRefillLifecycleAsync(
             connection,
             transaction,
-            threadId: nextId,
-            staffMessageId: nextId + 1,
+            threadId: sentMessageId,
+            staffMessageId: recipientMessageId,
             pid: session.LegacyPid.Value,
             patientId: session.CanonicalId,
             prescriptionId: prescription.Id,
@@ -1947,10 +1951,12 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
                 : messageId;
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var nextId = await GetNextPortalMailboxIdAsync(connection, transaction, cancellationToken);
+        var messageIds = await AllocatePortalMailboxMessageIdsAsync(connection, transaction, cancellationToken);
+        var sentMessageId = messageIds.SentMessageId;
+        var recipientMessageId = messageIds.RecipientMessageId;
         var messageDate = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
         var sentMessage = new PatientPortalMessageItem(
-            Id: nextId.ToString(),
+            Id: sentMessageId.ToString(),
             Type: "Message",
             Date: messageDate,
             Title: original.Item.Title,
@@ -1961,7 +1967,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SenderName: session.DisplayName,
             RecipientId: recipientId,
             RecipientName: recipientName,
-            MailChain: nextId,
+            MailChain: sentMessageId,
             ReplyMailChain: replyThreadId,
             PortalRelation: "portal:reply",
             IsEncrypted: false,
@@ -1969,8 +1975,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             Attachments: CreateAttachmentItems(attachments));
         var recipientMessage = sentMessage with
         {
-            Id = (nextId + 1).ToString(),
-            MailChain = nextId + 1,
+            Id = recipientMessageId.ToString(),
+            MailChain = recipientMessageId,
             Attachments = CreateAttachmentItems(attachments)
         };
 
@@ -1980,7 +1986,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             sentMessage,
             owner: session.PortalUsername,
             userValue: session.PortalUsername,
-            mailChain: nextId,
+            mailChain: sentMessageId,
             replyMailChain: replyThreadId,
             transaction: transaction,
             cancellationToken: cancellationToken);
@@ -1990,7 +1996,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             recipientMessage,
             owner: recipientId,
             userValue: session.PortalUsername,
-            mailChain: nextId + 1,
+            mailChain: recipientMessageId,
             replyMailChain: replyThreadId,
             transaction: transaction,
             cancellationToken: cancellationToken);
@@ -5927,17 +5933,27 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             MessageVersion: 1);
     }
 
-    private static async Task<int> GetNextPortalMailboxIdAsync(
+    /// <summary>
+    /// Reserves the two distinct primary keys required for the sender's and
+    /// recipient's copies of a portal message. Reserving both sequence values
+    /// prevents the next request from reusing the recipient copy's ID.
+    /// </summary>
+    private static async Task<PortalMailboxMessageIds> AllocatePortalMailboxMessageIdsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "select nextval('portal_mailbox_messages_id_seq');";
+        command.CommandText = "select nextval('portal_mailbox_messages_id_seq'), nextval('portal_mailbox_messages_id_seq');";
 
-        var value = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("Portal mailbox identity allocation did not return a result.");
+        }
+
+        return new PortalMailboxMessageIds(reader.GetInt32(0), reader.GetInt32(1));
     }
 
     private static async Task<int> GetPortalMessageCountAsync(
@@ -6925,6 +6941,10 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         string EvidenceSource);
 
     private sealed record PortalAttachmentUpload(string FileName, string ContentType, byte[] Content);
+
+    private sealed record PortalMailboxMessageIds(
+        int SentMessageId,
+        int RecipientMessageId);
 
     private sealed record PatientPortalSessionReadRow(
         Guid SessionId,

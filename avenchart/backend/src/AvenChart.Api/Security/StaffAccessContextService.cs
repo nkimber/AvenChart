@@ -393,6 +393,33 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
             facilityId,
             cancellationToken);
 
+    /// <summary>
+    /// Resolves the facility boundary for the staff-facing copy of a portal
+    /// prescription refill request. These records deliberately live in the
+    /// portal mailbox rather than the legacy staff <c>messages</c> table, so
+    /// they must not be authorized through <see cref="CanAccessMessageAsync"/>.
+    /// </summary>
+    public Task<bool> CanAccessPrescriptionRefillRequestAsync(
+        string? messageId,
+        int facilityId,
+        CancellationToken cancellationToken) =>
+        CanAccessPatientResourceAsync(
+            """
+            select exists(
+              select 1
+              from portal_mailbox_messages message
+              join patients patient on patient.legacy_pid=message.pid
+              where message.id=@resourceId::integer
+                and message.deleted=0
+                and message.owner=message.assigned_to
+                and message.portal_relation='portal:prescription-refill-request'
+                and patient.facility_id=@facility
+                and patient.merged_into_patient_id is null);
+            """,
+            messageId,
+            facilityId,
+            cancellationToken);
+
     public Task<bool> CanAccessClinicalListResourceAsync(
         string resourceType,
         string? resourceId,

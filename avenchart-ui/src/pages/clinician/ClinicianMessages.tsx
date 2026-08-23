@@ -372,6 +372,19 @@ export default function ClinicianMessages() {
       ? threadState.thread.messages.find((item) => item.id === messageId)
       : undefined
     if (!message) return
+    if (message.assignedTo) {
+      // Reassignment needs an auditable reason. Prefill the governed form so
+      // the clinician supplies that reason before the protected write occurs.
+      setAssignmentDrafts((current) => ({
+        ...current,
+        [message.id]: {
+          assignedTo: session.username,
+          reason: current[message.id]?.reason ?? '',
+        },
+      }))
+      setAssignmentError(null)
+      return
+    }
     await handleAssignment(message, session.username, '')
   }
 
@@ -991,7 +1004,14 @@ export default function ClinicianMessages() {
                           <button
                             className="cl-btn-secondary"
                             type="button"
-                            disabled={assigningId !== null || assignees.length === 0 || (assignmentDrafts[message.id]?.assignedTo ?? message.assignedTo ?? '') === (message.assignedTo ?? '')}
+                            disabled={
+                              assigningId !== null ||
+                              assignees.length === 0 ||
+                              (assignmentDrafts[message.id]?.assignedTo ?? message.assignedTo ?? '') === (message.assignedTo ?? '') ||
+                              (Boolean(message.assignedTo) &&
+                                (assignmentDrafts[message.id]?.assignedTo ?? message.assignedTo ?? '') !== (message.assignedTo ?? '') &&
+                                !(assignmentDrafts[message.id]?.reason ?? '').trim())
+                            }
                             onClick={() => void handleAssignment(message)}
                           >
                             {assigningId === message.id ? 'Savingâ€¦' : 'Save assignment'}

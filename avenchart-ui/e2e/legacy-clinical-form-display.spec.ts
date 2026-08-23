@@ -26,7 +26,7 @@ async function loginStaff(
   password = "pass",
 ) {
   const apiBaseUrl =
-    process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
   const response = await request.post(`${apiBaseUrl}/api/auth/login`, {
     data: { username, password },
   });
@@ -57,7 +57,7 @@ async function resetManifestFixture(
   admin: LoginResponse,
 ) {
   const apiBaseUrl =
-    process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
   const response = await request.delete(
     `${apiBaseUrl}/api/form-engine/legacy-migration-manifests/${manifestId}/test-fixture`,
     { headers: { "X-AvenChart-Session": admin.sessionId } },

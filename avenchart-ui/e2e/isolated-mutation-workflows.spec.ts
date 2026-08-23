@@ -12,7 +12,7 @@ test.skip(
   "Run through npm run test:mutation-proofs so shared count tests stay isolated.",
 );
 
-async function signInClinician(page: Page) {
+async function signInClinician(page: Page, facilityId = 11) {
   await page.goto("/login");
   await page
     .getByLabel("Username")
@@ -26,21 +26,25 @@ async function signInClinician(page: Page) {
       await expect(page).toHaveURL(/\/clinician\/dashboard$/, {
         timeout: 15_000,
       });
-      return;
+      break;
     } catch {
       if (attempt === 2) throw new Error("Clinician sign-in did not complete.");
     }
   }
+
+  const activeFacility = page.getByRole("combobox", {
+    name: "Active facility",
+  });
+  await expect(activeFacility).toBeVisible();
+  await activeFacility.selectOption(String(facilityId));
+  await expect(activeFacility).toHaveValue(String(facilityId));
 }
 
 async function signInPortal(page: Page) {
   await page.goto("/portal/login");
   await page
     .getByLabel("Email or username")
-    .fill(
-      process.env.MODERN_UI_PORTAL_USERNAME ??
-        "mod-pat-0004@example.test",
-    );
+    .fill(process.env.MODERN_UI_PORTAL_USERNAME ?? "mod-pat-0004@example.test");
   await page
     .getByLabel("Password")
     .fill(process.env.MODERN_UI_PORTAL_PASSWORD ?? "PortalPass207!");
@@ -48,15 +52,42 @@ async function signInPortal(page: Page) {
   await expect(page).toHaveURL(/\/portal\/home$/, { timeout: 15_000 });
 }
 
-async function getClinicianSessionId(page: Page) {
-  const sessionId = await page.evaluate(() => {
-    const raw = sessionStorage.getItem(
-      "avenchart-ui.clinicianSession",
-    );
-    return raw ? (JSON.parse(raw) as { sessionId?: string }).sessionId : null;
+async function getClinicianRequestHeaders(page: Page) {
+  const context = await page.evaluate(() => {
+    const raw = sessionStorage.getItem("avenchart-ui.clinicianSession");
+    if (!raw) return null;
+    const session = JSON.parse(raw) as {
+      sessionId?: string;
+      facilityId?: number | null;
+      purposeOfUse?: string | null;
+    };
+    return {
+      sessionId: session.sessionId,
+      facilityId: session.facilityId,
+      purposeOfUse: session.purposeOfUse,
+    };
   });
-  if (!sessionId) throw new Error("Clinician session ID was not persisted.");
-  return sessionId;
+  if (!context?.sessionId || !context.facilityId || !context.purposeOfUse) {
+    throw new Error("Clinician access context was not persisted.");
+  }
+  return {
+    "X-AvenChart-Session": context.sessionId,
+    "X-AvenChart-Facility-Id": String(context.facilityId),
+    "X-AvenChart-Purpose-Of-Use": context.purposeOfUse,
+  };
+}
+
+function acceptConfirmationAndReason(page: Page, reason: string) {
+  page.once("dialog", async (confirmation) => {
+    // The review actions deliberately require two native dialogs: an explicit
+    // confirmation and a governed lifecycle reason. Register the prompt
+    // handler before releasing the confirmation so each handler owns exactly
+    // one dialog.
+    page.once("dialog", (prompt) => {
+      void prompt.accept(reason);
+    });
+    await confirmation.accept();
+  });
 }
 
 function deletePortalMailboxFixtures(messageIds: string[]) {
@@ -92,11 +123,106 @@ function deletePortalMailboxFixtures(messageIds: string[]) {
       sql,
     ],
     {
-      cwd: fileURLToPath(
-        new URL("../../avenchart/", import.meta.url),
-      ),
+      cwd: fileURLToPath(new URL("../../avenchart/", import.meta.url)),
       stdio: "pipe",
     },
+  );
+}
+
+function deleteStaffMessageFixture(messageId: string) {
+  const id = messageId.replaceAll("'", "''");
+  runProviderAssignmentSql(
+    [
+      "begin;",
+      `delete from staff_message_attachments where message_id = '${id}';`,
+      `delete from message_assignment_events where message_id = '${id}';`,
+      `delete from message_content_events where message_id = '${id}';`,
+      `delete from message_correction_events where message_id = '${id}';`,
+      `delete from message_retention_events where message_id = '${id}';`,
+      `delete from messages where id = '${id}';`,
+      "commit;",
+    ].join(" "),
+  );
+}
+
+function deleteProcedureOrderFixture(orderId: number) {
+  if (!Number.isInteger(orderId) || orderId <= 0) return;
+  runProviderAssignmentSql(
+    [
+      "begin;",
+      `delete from lab_results where report_id in (select id from lab_reports where order_id = ${orderId});`,
+      `delete from lab_reports where order_id = ${orderId};`,
+      `delete from procedure_specimen_events where specimen_id in (select id from lab_specimens where order_id = ${orderId});`,
+      `delete from lab_specimens where order_id = ${orderId};`,
+      `delete from procedure_order_events where order_id = ${orderId};`,
+      `delete from lab_orders where id = ${orderId};`,
+      "commit;",
+    ].join(" "),
+  );
+}
+
+function deleteClinicalListFixture(fixture: {
+  type: "problem" | "allergy" | "medication" | "immunization";
+  id: string;
+}) {
+  const id = fixture.id.replaceAll("'", "''");
+  const table =
+    fixture.type === "problem"
+      ? "problems"
+      : fixture.type === "allergy"
+        ? "allergies"
+        : fixture.type === "medication"
+          ? "medications"
+          : "immunizations";
+  const idColumn = fixture.type === "immunization" ? "key" : "id";
+  const cleanupStatements = [
+    "begin;",
+    // The application role cannot mutate this audit table. The dedicated
+    // synthetic-test database owner temporarily disables that one guard only
+    // to remove test-owned rows; the transaction reenables it before commit.
+    "alter table clinical_list_audit_events disable trigger trg_clinical_list_audit_events_immutable;",
+    `delete from clinical_list_audit_events where resource_type = '${fixture.type}' and resource_id = '${id}';`,
+  ];
+  if (fixture.type === "medication") {
+    cleanupStatements.push(
+      `delete from medication_list_lifecycle_events where medication_id = '${id}';`,
+    );
+  }
+  cleanupStatements.push(
+    `delete from ${table} where ${idColumn} = '${id}';`,
+    "alter table clinical_list_audit_events enable trigger trg_clinical_list_audit_events_immutable;",
+    "commit;",
+  );
+  runProviderAssignmentSql(cleanupStatements.join(" "));
+}
+
+function deletePatientDocumentFixtures(marker: string) {
+  const escapedMarker = marker.replaceAll("'", "''");
+  // Patient-document deletion is deliberately retired in the product. This
+  // privileged cleanup runs only against the synthetic test database; the
+  // schema's cascading relationships remove the associated test-only events.
+  runProviderAssignmentSql(
+    `delete from patient_documents where name like '%${escapedMarker}%';`,
+  );
+}
+
+function deletePrescriptionFixture(prescriptionId: string) {
+  const id = prescriptionId.replaceAll("'", "''");
+  // Prescription and audit retention guards remain enabled in the product.
+  // This transaction bypasses them only for a test-owned aggregate in the
+  // synthetic validation database, and restores both guards before commit.
+  runProviderAssignmentSql(
+    [
+      "begin;",
+      "alter table prescription_audit_events disable trigger user;",
+      "alter table prescriptions disable trigger user;",
+      `delete from prescription_refill_request_lifecycle where prescription_id = '${id}';`,
+      `delete from prescription_audit_events where prescription_id = '${id}';`,
+      `delete from prescriptions where id = '${id}';`,
+      "alter table prescriptions enable trigger user;",
+      "alter table prescription_audit_events enable trigger user;",
+      "commit;",
+    ].join(" "),
   );
 }
 
@@ -122,9 +248,7 @@ function runProviderAssignmentSql(sql: string) {
       sql,
     ],
     {
-      cwd: fileURLToPath(
-        new URL("../../avenchart/", import.meta.url),
-      ),
+      cwd: fileURLToPath(new URL("../../avenchart/", import.meta.url)),
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -189,16 +313,16 @@ test.describe("isolated mutation workflows", () => {
     page,
   }) => {
     await signInClinician(page);
-    const sessionId = await getClinicianSessionId(page);
+    const headers = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const subject = `Inbox claim proof ${Date.now()}`;
     const reply = `Browser-verified reply ${Date.now()}`;
     let messageId: string | null = null;
 
     try {
       const created = await page.request.post(`${apiBaseUrl}/api/messages`, {
-        headers: { "X-AvenChart-Session": sessionId },
+        headers,
         data: {
           patientId: "MOD-PAT-0004",
           title: subject,
@@ -216,9 +340,7 @@ test.describe("isolated mutation workflows", () => {
         subject,
       });
       await page.goto(`/clinician/messages?${params}`);
-      const inboxItem = page
-        .getByRole("button")
-        .filter({ hasText: subject });
+      const inboxItem = page.getByRole("button").filter({ hasText: subject });
       await expect(inboxItem).toBeVisible({ timeout: 30_000 });
       await inboxItem.click();
 
@@ -226,31 +348,34 @@ test.describe("isolated mutation workflows", () => {
         has: page.getByRole("heading", { name: subject }),
       });
       await expect(message).toBeVisible({ timeout: 30_000 });
+      await message.getByRole("button", { name: "Reassign to me" }).click();
+      await expect(message.getByLabel("Assign to")).toHaveValue("admin");
+      await expect(
+        message.getByRole("button", { name: "Save assignment" }),
+      ).toBeDisabled();
       await message
-        .getByRole("button", { name: "Reassign to me" })
-        .click();
+        .getByLabel("Reason (required to reassign or unassign)")
+        .fill("Browser lifecycle proof reassigns the synthetic message.");
+      await expect(
+        message.getByRole("button", { name: "Save assignment" }),
+      ).toBeEnabled();
+      await message.getByRole("button", { name: "Save assignment" }).click();
       await expect(message.getByText("Assigned to you")).toBeVisible();
 
-      await message
-        .getByRole("button", { name: "Reply", exact: true })
-        .click();
+      await message.getByRole("button", { name: "Reply", exact: true }).click();
       await message.getByLabel("Reply").fill(reply);
-      await message
-        .getByRole("button", { name: "Reply", exact: true })
-        .click();
+      await message.getByRole("button", { name: "Reply", exact: true }).click();
       await expect(message).toContainText(reply);
-      await expect(
-        page
-          .getByRole("status")
-          .filter({ hasText: "Reply recorded." }),
-      ).toBeVisible();
     } finally {
       if (messageId) {
-        const deleted = await page.request.delete(
-          `${apiBaseUrl}/api/messages/${messageId}`,
-          { headers: { "X-AvenChart-Session": sessionId } },
+        // Staff messages are non-destructive in the product. Remove only the
+        // synthetic fixture and its immutable test evidence at the database
+        // boundary so this isolated proof never changes later test inputs.
+        deleteStaffMessageFixture(messageId);
+        const residue = runProviderAssignmentSql(
+          `select count(*) from messages where id = '${messageId.replaceAll("'", "''")}';`,
         );
-        expect(deleted.ok()).toBeTruthy();
+        expect(residue).toBe("0");
       }
     }
   });
@@ -259,17 +384,18 @@ test.describe("isolated mutation workflows", () => {
     page,
   }) => {
     await signInClinician(page);
-    const sessionId = await getClinicianSessionId(page);
+    const headers = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const procedureName = `Review lifecycle proof ${Date.now()}`;
     let orderId: number | null = null;
+    let specimenId: number | null;
 
     try {
       const createdOrder = await page.request.post(
         `${apiBaseUrl}/api/procedures/orders`,
         {
-          headers: { "X-AvenChart-Session": sessionId },
+          headers,
           data: {
             patientId: "MOD-PAT-0901",
             providerId: 101,
@@ -291,12 +417,56 @@ test.describe("isolated mutation workflows", () => {
       orderId = orderMutation.id ?? null;
       expect(orderId).toBeTruthy();
 
+      const createdSpecimen = await page.request.post(
+        `${apiBaseUrl}/api/procedures/specimens`,
+        {
+          headers,
+          data: {
+            orderId,
+            specimenIdentifier: `SPEC-${Date.now()}`,
+            accessionIdentifier: `ACC-${Date.now()}`,
+            specimenTypeCode: "122555007",
+            specimenType: "Venous blood specimen",
+            collectionMethodCode: "129316008",
+            collectionMethod: "Venipuncture",
+            specimenLocationCode: "368209003",
+            specimenLocation: "Right antecubital fossa",
+            collectedDate: "2026-07-27T10:00:00Z",
+            volumeValue: 4,
+            volumeUnit: "mL",
+            conditionCode: "fresh",
+            specimenCondition: "Fresh",
+            comments: "Temporary browser verification fixture",
+          },
+        },
+      );
+      expect(createdSpecimen.ok()).toBeTruthy();
+      const specimenMutation = (await createdSpecimen.json()) as {
+        id?: number;
+      };
+      specimenId = specimenMutation.id ?? null;
+      expect(specimenId).toBeTruthy();
+
+      const receivedSpecimen = await page.request.put(
+        `${apiBaseUrl}/api/procedures/specimens/${specimenId}/lifecycle`,
+        {
+          headers,
+          data: {
+            status: "received",
+            expectedVersion: 1,
+            reason: "Receive temporary browser verification specimen.",
+          },
+        },
+      );
+      expect(receivedSpecimen.ok()).toBeTruthy();
+
       const createdReport = await page.request.post(
         `${apiBaseUrl}/api/procedures/reports`,
         {
-          headers: { "X-AvenChart-Session": sessionId },
+          headers,
           data: {
             orderId,
+            specimenId,
             dateCollected: "2026-07-27T10:00:00Z",
             dateReport: "2026-07-27T11:00:00Z",
             specimenNumber: `QA-${Date.now()}`,
@@ -313,13 +483,17 @@ test.describe("isolated mutation workflows", () => {
       );
       let reportRow = page.getByRole("row").filter({ hasText: procedureName });
       await expect(reportRow).toBeVisible({ timeout: 30_000 });
+      page.once("dialog", (dialog) =>
+        dialog.accept("Claimed for browser lifecycle verification."),
+      );
       await reportRow.getByRole("button", { name: "Claim" }).click();
       await expect(reportRow.getByText("Assigned to you")).toBeVisible();
 
-      page.once("dialog", (dialog) => dialog.accept());
-      await reportRow
-        .getByRole("button", { name: "Sign reviewed" })
-        .click();
+      acceptConfirmationAndReason(
+        page,
+        "Signed for browser lifecycle verification.",
+      );
+      await reportRow.getByRole("button", { name: "Sign reviewed" }).click();
       await expect(reportRow).toHaveCount(0);
 
       await page.goto(
@@ -330,10 +504,11 @@ test.describe("isolated mutation workflows", () => {
         timeout: 30_000,
       });
 
-      page.once("dialog", (dialog) => dialog.accept());
-      await reportRow
-        .getByRole("button", { name: "Reopen review" })
-        .click();
+      acceptConfirmationAndReason(
+        page,
+        "Reopened for browser lifecycle verification.",
+      );
+      await reportRow.getByRole("button", { name: "Reopen review" }).click();
       await expect(reportRow).toHaveCount(0);
 
       await page.goto(
@@ -342,27 +517,32 @@ test.describe("isolated mutation workflows", () => {
       reportRow = page.getByRole("row").filter({ hasText: procedureName });
       await expect(reportRow).toBeVisible({ timeout: 30_000 });
       await reportRow.getByRole("checkbox").check();
-      page.once("dialog", (dialog) => dialog.accept());
+      acceptConfirmationAndReason(
+        page,
+        "Bulk-signed for browser lifecycle verification.",
+      );
       await page.getByRole("button", { name: "Sign selected (1)" }).click();
       await expect(reportRow).toHaveCount(0);
     } finally {
       if (orderId) {
-        const deleted = await page.request.delete(
-          `${apiBaseUrl}/api/procedures/orders/${orderId}`,
-          { headers: { "X-AvenChart-Session": sessionId } },
+        // Orders and reports are intentionally non-destructive in the product.
+        // Remove only this synthetic fixture after proving its review lifecycle.
+        deleteProcedureOrderFixture(orderId);
+        const residue = runProviderAssignmentSql(
+          `select count(*) from lab_orders where id = ${orderId};`,
         );
-        expect(deleted.ok()).toBeTruthy();
+        expect(residue).toBe("0");
       }
     }
   });
 
-  test("staff can retain and remove clinical-list lifecycle history with required reasons", async ({
+  test("staff record clinical-list lifecycle history with required reasons", async ({
     page,
   }) => {
     await signInClinician(page);
-    const sessionId = await getClinicianSessionId(page);
+    const headers = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const suffix = Date.now();
     const fixtures = [
       {
@@ -428,7 +608,7 @@ test.describe("isolated mutation workflows", () => {
         const response = await page.request.post(
           `${apiBaseUrl}/api/clinical-lists/${fixture.path}`,
           {
-            headers: { "X-AvenChart-Session": sessionId },
+            headers,
             data: fixture.data,
           },
         );
@@ -464,27 +644,38 @@ test.describe("isolated mutation workflows", () => {
           .locator("li.cl-clinical-row-interactive")
           .filter({ hasText: fixture.title });
         await expect(row).toContainText(
-          fixture.type === "immunization" ? "Lifecycle proof reason" : "Inactive",
+          fixture.type === "immunization"
+            ? "Lifecycle proof reason"
+            : "Inactive",
           { timeout: 30_000 },
         );
-        await row
-          .getByRole("button", { name: `Delete ${fixture.title}` })
-          .click();
-        await row
-          .getByLabel("Type DELETE to confirm")
-          .fill("DELETE");
-        await row
-          .getByRole("button", { name: "Delete permanently" })
-          .click();
-        await expect(row).toHaveCount(0);
+        if (fixture.type !== "medication") {
+          await row
+            .getByRole("button", {
+              name: `Show audit trail for ${fixture.title}`,
+            })
+            .click();
+          await expect(row.getByLabel("Clinical audit trail")).toContainText(
+            fixture.type === "immunization"
+              ? "entered-in-error by admin"
+              : "deactivated by admin",
+            { timeout: 30_000 },
+          );
+        }
       }
     } finally {
       for (const fixture of created) {
-        const response = await page.request.delete(
-          `${apiBaseUrl}/api/clinical-lists/${fixture.path}/${encodeURIComponent(fixture.id)}`,
-          { headers: { "X-AvenChart-Session": sessionId } },
+        // Clinical list records deliberately have no user-facing destructive
+        // action. Remove only this test-owned fixture and its audit evidence
+        // so shared browser proofs retain their fixed seed state.
+        deleteClinicalListFixture({
+          type: fixture.type,
+          id: fixture.id,
+        });
+        const residue = runProviderAssignmentSql(
+          `select count(*) from clinical_list_audit_events where resource_type = '${fixture.type}' and resource_id = '${fixture.id.replaceAll("'", "''")}';`,
         );
-        expect([204, 404]).toContain(response.status());
+        expect(residue).toBe("0");
       }
     }
   });
@@ -493,16 +684,16 @@ test.describe("isolated mutation workflows", () => {
     page,
   }) => {
     await signInClinician(page);
-    const sessionId = await getClinicianSessionId(page);
+    const headers = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const changeReason = `Provider assignment proof ${Date.now()}`;
     const restoreReason = `Provider assignment restore ${Date.now()}`;
     const fixtureReasons = [changeReason, restoreReason];
 
     const patientResponse = await page.request.get(
       `${apiBaseUrl}/api/patients/MOD-PAT-0004`,
-      { headers: { "X-AvenChart-Session": sessionId } },
+      { headers },
     );
     expect(patientResponse.ok()).toBeTruthy();
     const patient = (await patientResponse.json()) as {
@@ -515,7 +706,7 @@ test.describe("isolated mutation workflows", () => {
 
     const optionsResponse = await page.request.get(
       `${apiBaseUrl}/api/patients/provider-options`,
-      { headers: { "X-AvenChart-Session": sessionId } },
+      { headers },
     );
     expect(optionsResponse.ok()).toBeTruthy();
     const options = (await optionsResponse.json()) as {
@@ -561,7 +752,7 @@ test.describe("isolated mutation workflows", () => {
 
       const historyResponse = await page.request.get(
         `${apiBaseUrl}/api/patients/MOD-PAT-0004/provider-assignment-history`,
-        { headers: { "X-AvenChart-Session": sessionId } },
+        { headers },
       );
       expect(historyResponse.ok()).toBeTruthy();
       const history = (await historyResponse.json()) as {
@@ -589,7 +780,7 @@ test.describe("isolated mutation workflows", () => {
         const restored = await page.request.put(
           `${apiBaseUrl}/api/patients/MOD-PAT-0004/provider-assignment`,
           {
-            headers: { "X-AvenChart-Session": sessionId },
+            headers,
             data: {
               providerId: originalProviderId,
               reason: restoreReason,
@@ -610,11 +801,10 @@ test.describe("isolated mutation workflows", () => {
     page,
   }) => {
     await signInClinician(page);
-    const sessionId = await getClinicianSessionId(page);
+    const headers = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const marker = `admin-audit-${Date.now()}`;
-    const headers = { "X-AvenChart-Session": sessionId };
     const eventIds = new Set<string>();
 
     const patientResponse = await page.request.get(
@@ -799,9 +989,7 @@ test.describe("isolated mutation workflows", () => {
         }>;
       };
       expect(history.returnedCount).toBeLessThanOrEqual(history.resultLimit);
-      expect(history.eventCount).toBeGreaterThanOrEqual(
-        history.returnedCount,
-      );
+      expect(history.eventCount).toBeGreaterThanOrEqual(history.returnedCount);
       const markerEvents = history.events.filter((event) =>
         JSON.stringify(event).includes(marker),
       );
@@ -819,8 +1007,7 @@ test.describe("isolated mutation workflows", () => {
       );
       expect(
         markerEvents.filter(
-          (event) =>
-            event.area === "contact" && event.action === "updated",
+          (event) => event.area === "contact" && event.action === "updated",
         ),
       ).toHaveLength(1);
       for (const event of markerEvents) {
@@ -833,8 +1020,8 @@ test.describe("isolated mutation workflows", () => {
           .email,
       ).toBe(changedContact.email);
       expect(
-        markerEvents.find((event) => event.area === "demographics")
-          ?.afterValues.occupation,
+        markerEvents.find((event) => event.area === "demographics")?.afterValues
+          .occupation,
       ).toBe(changedDemographics.occupation);
 
       await page.goto("/clinician/patients/MOD-PAT-0004/summary");
@@ -844,12 +1031,10 @@ test.describe("isolated mutation workflows", () => {
         }),
       });
       await expect(historySection).toBeVisible();
-      await expect(
-        historySection.getByText("By admin").first(),
-      ).toBeVisible({ timeout: 20_000 });
-      await historySection
-        .getByLabel("Show")
-        .selectOption("demographics");
+      await expect(historySection.getByText("By admin").first()).toBeVisible({
+        timeout: 20_000,
+      });
+      await historySection.getByLabel("Show").selectOption("demographics");
       const demographicEvent = historySection
         .locator(".administration-history-list > li")
         .filter({ hasText: marker });
@@ -952,11 +1137,10 @@ test.describe("isolated mutation workflows", () => {
     page,
   }) => {
     await signInClinician(page);
-    const sessionId = await getClinicianSessionId(page);
+    const headers = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const publicId = `TMP-PAT-REG-DUP-${Date.now()}`;
-    const headers = { "X-AvenChart-Session": sessionId };
     let created = false;
 
     try {
@@ -971,9 +1155,7 @@ test.describe("isolated mutation workflows", () => {
         .getByLabel("Email", { exact: true })
         .fill("mod-pat-0004@example.test");
 
-      await page
-        .getByRole("button", { name: "Review and register" })
-        .click();
+      await page.getByRole("button", { name: "Review and register" }).click();
       await expect(page).toHaveURL(/\/clinician\/patients\/new$/);
       const duplicateCheck = page.getByRole("region", {
         name: "Duplicate record check",
@@ -993,10 +1175,7 @@ test.describe("isolated mutation workflows", () => {
       );
       await expect(
         candidate.getByRole("link", { name: "Open existing chart" }),
-      ).toHaveAttribute(
-        "href",
-        "/clinician/patients/MOD-PAT-0004/summary",
-      );
+      ).toHaveAttribute("href", "/clinician/patients/MOD-PAT-0004/summary");
 
       const separatePatientButton = page.getByRole("button", {
         name: "Register separate patient",
@@ -1010,7 +1189,9 @@ test.describe("isolated mutation workflows", () => {
       await expect(separatePatientButton).toBeDisabled();
       await duplicateCheck
         .getByLabel("Reason for separate registration *")
-        .fill("This synthetic fixture intentionally verifies separate registration after duplicate review.");
+        .fill(
+          "This synthetic fixture intentionally verifies separate registration after duplicate review.",
+        );
       await expect(separatePatientButton).toBeEnabled();
       await separatePatientButton.click();
       created = true;
@@ -1048,9 +1229,9 @@ test.describe("isolated mutation workflows", () => {
     page,
   }) => {
     await signInClinician(page);
-    const sessionId = await getClinicianSessionId(page);
+    const headers = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const marker = `TMP-DOC-INTAKE-${Date.now()}`;
     const noteName = `${marker}-NOTE`;
     const refiledNoteName = `${noteName}-REFILED`;
@@ -1077,10 +1258,8 @@ test.describe("isolated mutation workflows", () => {
     const ocrRetryReason = `Retry after local image adjustment ${marker}`;
     const ocrCompletionReason = `Verify extracted referral text ${marker}`;
     const ocrCorrectionReason = `Correct source surname ${marker}`;
-    const ocrExtractedText =
-      `Referral received for Morgan Sample. Browser OCR proof ${marker}.`;
-    const ocrCorrectedText =
-      `Referral received for Morgan Samuels. Browser OCR proof ${marker}.`;
+    const ocrExtractedText = `Referral received for Morgan Sample. Browser OCR proof ${marker}.`;
+    const ocrCorrectedText = `Referral received for Morgan Samuels. Browser OCR proof ${marker}.`;
     const routingDueAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
     const routingDueLocal = new Date(
       routingDueAt.valueOf() - routingDueAt.getTimezoneOffset() * 60_000,
@@ -1099,7 +1278,6 @@ test.describe("isolated mutation workflows", () => {
       "base64",
     );
     const unsupportedBytes = Buffer.from(`Unsupported archive ${marker}`);
-    const headers = { "X-AvenChart-Session": sessionId };
     let ocrDocumentId: number;
 
     async function getMarkerDocuments() {
@@ -1142,7 +1320,7 @@ test.describe("isolated mutation workflows", () => {
 
     try {
       const otherEncountersResponse = await page.request.get(
-        `${apiBaseUrl}/api/encounters/?patientId=MOD-PAT-0002&from=1900-01-01&limit=1`,
+        `${apiBaseUrl}/api/encounters/?patientId=MOD-PAT-0901&from=1900-01-01&limit=1`,
         { headers },
       );
       expect(otherEncountersResponse.ok()).toBeTruthy();
@@ -1185,24 +1363,16 @@ test.describe("isolated mutation workflows", () => {
       );
       expect(invalidMediaType.status()).toBe(400);
 
-      await page.goto(
-        "/clinician/patients/MOD-PAT-0001/documents",
-      );
+      await page.goto("/clinician/patients/MOD-PAT-0001/documents");
       await page.getByRole("button", { name: "Add document" }).click();
       await page.getByLabel("Document name *").fill(noteName);
       await page
         .getByLabel("Filing category *")
         .selectOption({ label: "Medical Record" });
-      await page
-        .getByLabel("Related encounter")
-        .selectOption("1000013");
-      await page
-        .getByLabel("Note content *")
-        .fill(originalNoteContent);
+      await page.getByLabel("Related encounter").selectOption("1000013");
+      await page.getByLabel("Note content *").fill(originalNoteContent);
       await page.getByLabel("Filing notes").fill(`Proof ${marker}`);
-      await page
-        .getByRole("button", { name: "File clinical note" })
-        .click();
+      await page.getByRole("button", { name: "File clinical note" }).click();
 
       const noteCard = page.locator("article").filter({ hasText: noteName });
       await expect(noteCard).toBeVisible({ timeout: 20_000 });
@@ -1237,9 +1407,7 @@ test.describe("isolated mutation workflows", () => {
         .selectOption({ label: "Lab Report" });
       await noteCard.getByLabel("Document date *").fill("2026-07-27");
       await noteCard.getByLabel("Related encounter").selectOption("1000011");
-      await noteCard
-        .getByLabel("Filing notes")
-        .fill(`Refiled proof ${marker}`);
+      await noteCard.getByLabel("Filing notes").fill(`Refiled proof ${marker}`);
       await noteCard.getByLabel("Change reason *").fill(metadataReason);
       await noteCard
         .getByRole("button", { name: "Save filing change" })
@@ -1613,10 +1781,10 @@ test.describe("isolated mutation workflows", () => {
           name: "Archive lifecycle",
         }),
       ).toBeVisible();
-      await expect(refiledNoteCard.getByText("Active", { exact: true })).toBeVisible();
-      await refiledNoteCard
-        .getByLabel("Archive reason *")
-        .fill(archiveReason);
+      await expect(
+        refiledNoteCard.getByText("Active", { exact: true }),
+      ).toBeVisible();
+      await refiledNoteCard.getByLabel("Archive reason *").fill(archiveReason);
       await refiledNoteCard
         .getByRole("button", { name: "Archive document", exact: true })
         .click();
@@ -1670,9 +1838,7 @@ test.describe("isolated mutation workflows", () => {
       await archivedNoteCard
         .getByRole("button", { name: "Restore document" })
         .click();
-      await archivedNoteCard
-        .getByLabel("Restore reason *")
-        .fill(restoreReason);
+      await archivedNoteCard.getByLabel("Restore reason *").fill(restoreReason);
       await archivedNoteCard
         .getByRole("button", {
           name: "Restore to active register",
@@ -1752,9 +1918,7 @@ test.describe("isolated mutation workflows", () => {
       });
 
       await page.getByRole("button", { name: "Add document" }).click();
-      await page
-        .getByRole("button", { name: /Upload file Up to/ })
-        .click();
+      await page.getByRole("button", { name: /Upload file Up to/ }).click();
       await page.getByLabel("Document file *").setInputFiles({
         name: "too-large.pdf",
         mimeType: "application/pdf",
@@ -1770,18 +1934,14 @@ test.describe("isolated mutation workflows", () => {
       });
       await page.getByLabel("Document name *").fill(fileName);
       await page.getByLabel("Filing notes").fill(`Binary proof ${marker}`);
-      await page
-        .getByRole("button", { name: "Upload document" })
-        .click();
+      await page.getByRole("button", { name: "Upload document" }).click();
 
       const fileCard = page.locator("article").filter({ hasText: fileName });
       await expect(fileCard).toBeVisible({ timeout: 20_000 });
       await expect(fileCard).toContainText("application/pdf");
       await expect(fileCard).toContainText("Just filed");
 
-      await fileCard
-        .getByRole("button", { name: "Replace content" })
-        .click();
+      await fileCard.getByRole("button", { name: "Replace content" }).click();
       await fileCard
         .getByLabel("Choose the complete replacement file")
         .setInputFiles({
@@ -1838,9 +1998,9 @@ test.describe("isolated mutation workflows", () => {
         contentBase64?: string | null;
       };
       expect(originalPdfVersion.isBinary).toBe(true);
-      expect(Buffer.from(originalPdfVersion.contentBase64 ?? "", "base64")).toEqual(
-        originalPdfBytes,
-      );
+      expect(
+        Buffer.from(originalPdfVersion.contentBase64 ?? "", "base64"),
+      ).toEqual(originalPdfBytes);
 
       await fileCard
         .getByRole("button", { name: "Preview", exact: true })
@@ -1855,9 +2015,7 @@ test.describe("isolated mutation workflows", () => {
         .click();
 
       await page.getByRole("button", { name: "Add document" }).click();
-      await page
-        .getByRole("button", { name: /Upload file Up to/ })
-        .click();
+      await page.getByRole("button", { name: /Upload file Up to/ }).click();
       await page.getByLabel("Document file *").setInputFiles({
         name: `${marker}.png`,
         mimeType: "image/png",
@@ -1865,9 +2023,7 @@ test.describe("isolated mutation workflows", () => {
       });
       await page.getByLabel("Document name *").fill(imageName);
       await page.getByLabel("Filing notes").fill(`Image proof ${marker}`);
-      await page
-        .getByRole("button", { name: "Upload document" })
-        .click();
+      await page.getByRole("button", { name: "Upload document" }).click();
 
       const imageCard = page.locator("article").filter({ hasText: imageName });
       await expect(imageCard).toBeVisible({ timeout: 20_000 });
@@ -1932,10 +2088,10 @@ test.describe("isolated mutation workflows", () => {
       await page
         .getByLabel("Filing notes")
         .fill(`Scanner capture proof ${marker}`);
-      await page
-        .getByRole("button", { name: "File scanner capture" })
-        .click();
-      await expect(page.getByText("Scanner capture receipt filed")).toBeVisible();
+      await page.getByRole("button", { name: "File scanner capture" }).click();
+      await expect(
+        page.getByText("Scanner capture receipt filed"),
+      ).toBeVisible();
 
       const ocrDocument = (await getMarkerDocuments()).find(
         (document) => document.name === ocrName,
@@ -1952,9 +2108,7 @@ test.describe("isolated mutation workflows", () => {
       expect(ocrDocumentId).toBeGreaterThan(0);
 
       await page.getByRole("button", { name: "Add document" }).click();
-      await page
-        .getByRole("button", { name: /External link HTTP/ })
-        .click();
+      await page.getByRole("button", { name: /External link HTTP/ }).click();
       await page.getByLabel("Document name *").fill(linkName);
       await page
         .getByLabel("Filing category *")
@@ -1962,9 +2116,7 @@ test.describe("isolated mutation workflows", () => {
       await page
         .getByLabel("External document URL *")
         .fill("ftp://example.test/not-permitted");
-      await page
-        .getByRole("button", { name: "File external link" })
-        .click();
+      await page.getByRole("button", { name: "File external link" }).click();
       await expect(page.getByRole("alert")).toContainText(
         "must use http or https",
       );
@@ -1972,9 +2124,7 @@ test.describe("isolated mutation workflows", () => {
         .getByLabel("External document URL *")
         .fill(`https://example.test/${marker}`);
       await page.getByLabel("Filing notes").fill(`Link proof ${marker}`);
-      await page
-        .getByRole("button", { name: "File external link" })
-        .click();
+      await page.getByRole("button", { name: "File external link" }).click();
 
       const linkCard = page.locator("article").filter({ hasText: linkName });
       await expect(linkCard).toBeVisible({ timeout: 20_000 });
@@ -2006,15 +2156,11 @@ test.describe("isolated mutation workflows", () => {
       await expect(routingCard).toContainText("High");
       await expect(routingCard).toContainText("Inferred / not yet routed");
 
-      await routingCard
-        .getByRole("button", { name: "Route document" })
-        .click();
+      await routingCard.getByRole("button", { name: "Route document" }).click();
       await routingCard.getByLabel("Assign to").selectOption("admin");
       await routingCard.getByLabel("Due *").fill(routingDueLocal);
       await routingCard.getByLabel("Routing reason *").fill(routingReason);
-      await routingCard
-        .getByRole("button", { name: "Save routing" })
-        .click();
+      await routingCard.getByRole("button", { name: "Save routing" }).click();
       await expect(routingCard).toContainText("In progress", {
         timeout: 20_000,
       });
@@ -2053,9 +2199,7 @@ test.describe("isolated mutation workflows", () => {
       ).toBeVisible();
       await expect(routingCard).toContainText("task v1");
 
-      await routingCard
-        .getByRole("button", { name: "Complete work" })
-        .click();
+      await routingCard.getByRole("button", { name: "Complete work" }).click();
       await routingCard
         .getByLabel("Completion note *")
         .fill(routingCompletionReason);
@@ -2220,9 +2364,7 @@ test.describe("isolated mutation workflows", () => {
         currentStatus: "running",
       });
 
-      await ocrCard
-        .getByRole("button", { name: "Record failure" })
-        .click();
+      await ocrCard.getByRole("button", { name: "Record failure" }).click();
       await ocrCard.getByLabel("Failure reason *").fill(ocrFailureReason);
       await ocrCard
         .getByRole("button", { name: "Record failure", exact: true })
@@ -2242,9 +2384,7 @@ test.describe("isolated mutation workflows", () => {
       await expect(failedOcrEvents).toHaveCount(2);
       await expect(failedOcrEvents.nth(0)).toContainText(ocrFailureReason);
       await expect(failedOcrEvents.nth(1)).toContainText(ocrStartReason);
-      await ocrCard
-        .getByRole("button", { name: "Close OCR history" })
-        .click();
+      await ocrCard.getByRole("button", { name: "Close OCR history" }).click();
 
       await ocrCard.getByRole("button", { name: "Retry OCR" }).click();
       await ocrCard.getByLabel("Work note *").fill(ocrRetryReason);
@@ -2279,9 +2419,9 @@ test.describe("isolated mutation workflows", () => {
       await completedOcrCard
         .getByRole("button", { name: "Correct extracted text" })
         .click();
-      await expect(
-        completedOcrCard.getByLabel("Extracted text *"),
-      ).toHaveValue(ocrExtractedText);
+      await expect(completedOcrCard.getByLabel("Extracted text *")).toHaveValue(
+        ocrExtractedText,
+      );
       await completedOcrCard
         .getByLabel("Extracted text *")
         .fill(ocrCorrectedText);
@@ -2296,9 +2436,7 @@ test.describe("isolated mutation workflows", () => {
         { timeout: 20_000 },
       );
       await expect(completedOcrCard).toContainText(ocrCorrectedText);
-      await expect(completedOcrCard).toContainText(
-        "Task v5 / document v1",
-      );
+      await expect(completedOcrCard).toContainText("Task v5 / document v1");
 
       const staleOcrCorrection = await page.request.post(
         `${apiBaseUrl}/api/documents/${ocrDocumentId}/ocr/correct`,
@@ -2507,13 +2645,16 @@ test.describe("isolated mutation workflows", () => {
     } finally {
       const fixtures = await getMarkerDocuments();
       for (const fixture of fixtures) {
-        const deleted = await page.request.delete(
+        const retiredDeletion = await page.request.delete(
           `${apiBaseUrl}/api/documents/${fixture.id}`,
           { headers },
         );
-        expect([204, 404]).toContain(deleted.status());
+        expect(retiredDeletion.status()).toBe(410);
       }
-      await expect.poll(async () => (await getMarkerDocuments()).length).toBe(0);
+      deletePatientDocumentFixtures(marker);
+      await expect
+        .poll(async () => (await getMarkerDocuments()).length)
+        .toBe(0);
       expect(
         runProviderAssignmentSql(
           `select
@@ -2536,22 +2677,32 @@ test.describe("isolated mutation workflows", () => {
   }) => {
     test.setTimeout(60_000);
     await signInClinician(page);
-    const sessionId = await getClinicianSessionId(page);
+    const headers = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const marker = `TMP-CLIN-AUTH-${Date.now()}`;
     const patientId = "MOD-PAT-0001";
-    const headers = { "X-AvenChart-Session": sessionId };
+    const isoDateInFuture = (days: number) =>
+      new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+    const initialDueDate = isoDateInFuture(7);
+    const expiryDate = isoDateInFuture(30);
+    const reassignedDueDate = isoDateInFuture(8);
+    const displayDate = (value: string) =>
+      new Date(`${value}T00:00:00Z`).toLocaleDateString("en-US", {
+        timeZone: "UTC",
+      });
     let authorizationId: string | null = null;
 
     try {
-      await page.goto(
-        `/clinician/patients/${patientId}/authorizations`,
-      );
+      await page.goto(`/clinician/patients/${patientId}/authorizations`);
       await expect(
         page.getByRole("heading", { name: "Payer authorizations" }),
       ).toBeVisible();
-      await expect(page.getByText("Policy local-clinical-workflow-v1")).toBeVisible();
+      await expect(
+        page.getByText("Policy local-clinical-workflow-v1"),
+      ).toBeVisible();
 
       const createForm = page.locator("form.authorization-create-grid");
       await createForm.getByLabel("Payer").fill(marker);
@@ -2559,8 +2710,8 @@ test.describe("isolated mutation workflows", () => {
       await createForm
         .getByLabel("Responsible staff")
         .selectOption("gold-provider-01");
-      await createForm.getByLabel("Work due date").fill("2026-08-05");
-      await createForm.getByLabel("Authorization expiry").fill("2026-09-01");
+      await createForm.getByLabel("Work due date").fill(initialDueDate);
+      await createForm.getByLabel("Authorization expiry").fill(expiryDate);
       await createForm
         .getByLabel("Creation reason")
         .fill(`${marker} created for browser lifecycle verification`);
@@ -2577,10 +2728,10 @@ test.describe("isolated mutation workflows", () => {
         "Version 1",
       );
       await expect(page.locator(".authorization-facts")).toContainText(
-        "8/5/2026",
+        displayDate(initialDueDate),
       );
       await expect(page.locator(".authorization-facts")).toContainText(
-        "9/1/2026",
+        displayDate(expiryDate),
       );
       await expect(page.locator(".authorization-history")).toContainText(
         `${marker} created for browser lifecycle verification`,
@@ -2607,7 +2758,7 @@ test.describe("isolated mutation workflows", () => {
       await assignmentForm
         .getByLabel("Responsible staff")
         .selectOption("admin");
-      await assignmentForm.getByLabel("Work due date").fill("2026-08-06");
+      await assignmentForm.getByLabel("Work due date").fill(reassignedDueDate);
       await assignmentForm
         .getByLabel("Assignment reason")
         .fill(`${marker} transferred to authorization coordinator`);
@@ -2621,12 +2772,10 @@ test.describe("isolated mutation workflows", () => {
         "Administrator",
       );
       await expect(page.locator(".authorization-facts")).toContainText(
-        "8/6/2026",
+        displayDate(reassignedDueDate),
       );
 
-      await page
-        .getByRole("button", { name: "Submit for review" })
-        .click();
+      await page.getByRole("button", { name: "Submit for review" }).click();
       const submitForm = page
         .locator("form.authorization-editor")
         .filter({ hasText: "Draft → Submitted" });
@@ -2759,12 +2908,11 @@ test.describe("isolated mutation workflows", () => {
   }) => {
     test.setTimeout(45_000);
     await signInClinician(page);
-    const sessionId = await getClinicianSessionId(page);
+    const headers = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const marker = `TMP-ADM-SETTING-${Date.now()}`;
     const staleValue = `${marker}-STALE`;
-    const headers = { "X-AvenChart-Session": sessionId };
     let originalValue = "";
 
     try {
@@ -2823,7 +2971,9 @@ test.describe("isolated mutation workflows", () => {
         detail.getByRole("definition").filter({ hasText: marker }),
       ).toBeVisible();
       await expect(
-        governance.locator(".practice-setting-card").filter({ hasText: marker }),
+        governance
+          .locator(".practice-setting-card")
+          .filter({ hasText: marker }),
       ).toHaveCount(0);
 
       const listResponse = await page.request.get(
@@ -2871,14 +3021,15 @@ test.describe("isolated mutation workflows", () => {
         `${apiBaseUrl}/api/administration/practice-setting-change-requests/${staleId}/approve`,
         {
           headers,
-          data: { note: "Approved before baseline changes", expectedVersion: 1 },
+          data: {
+            note: "Approved before baseline changes",
+            expectedVersion: 1,
+          },
         },
       );
       expect(staleApprovedResponse.ok()).toBeTruthy();
 
-      await detail
-        .getByRole("button", { name: "Submit for review" })
-        .click();
+      await detail.getByRole("button", { name: "Submit for review" }).click();
       await expect(
         detail.getByText("Awaiting review", { exact: true }),
       ).toBeVisible();
@@ -2891,11 +3042,13 @@ test.describe("isolated mutation workflows", () => {
         detail.getByText("Activated", { exact: true }),
       ).toBeVisible();
       await expect(
-        governance.locator(".practice-setting-card").filter({ hasText: marker }),
+        governance
+          .locator(".practice-setting-card")
+          .filter({ hasText: marker }),
       ).toBeVisible();
-      await expect(detail.locator(".practice-request-history article")).toHaveCount(
-        4,
-      );
+      await expect(
+        detail.locator(".practice-request-history article"),
+      ).toHaveCount(4);
 
       const staleActivationResponse = await page.request.post(
         `${apiBaseUrl}/api/administration/practice-setting-change-requests/${staleId}/activate`,
@@ -2953,14 +3106,13 @@ test.describe("isolated mutation workflows", () => {
     page,
   }) => {
     await signInClinician(page);
-    const sessionId = await getClinicianSessionId(page);
+    const headers = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const marker = `TMP-DOC-TEMPLATE-${Date.now()}`;
     const primaryName = `${marker}-00`;
     const binaryFileName = `${marker}-version.txt`;
     const binaryContent = `Binary patient-template proof ${marker}.`;
-    const headers = { "X-AvenChart-Session": sessionId };
     const templateIds = new Set<string>();
 
     async function getMarkerTemplates() {
@@ -3096,23 +3248,18 @@ test.describe("isolated mutation workflows", () => {
       await expect(output.getByText("Stone, Avery")).toBeVisible();
       await output.getByLabel("Filing category *").selectOption("3");
       await output.getByLabel("Document date *").fill("2026-07-28");
-      await output
-        .getByRole("button", { name: "Render text preview" })
-        .click();
+      await output.getByRole("button", { name: "Render text preview" }).click();
       await expect(output.getByText(/Care plan for Avery Stone/)).toBeVisible();
 
       await output
         .getByRole("button", { name: "Attach rendered text" })
         .click();
-      await expect(output.getByText(/Patient document \d+ was created/)).toBeVisible(
-        { timeout: 20_000 },
-      );
+      await expect(
+        output.getByText(/Patient document \d+ was created/),
+      ).toBeVisible({ timeout: 20_000 });
       await expect(
         output.getByRole("link", { name: "Open patient documents" }),
-      ).toHaveAttribute(
-        "href",
-        "/clinician/patients/MOD-PAT-0001/documents",
-      );
+      ).toHaveAttribute("href", "/clinician/patients/MOD-PAT-0001/documents");
 
       const versions = page
         .getByRole("heading", { name: "Binary versions" })
@@ -3137,9 +3284,9 @@ test.describe("isolated mutation workflows", () => {
       expect(download.suggestedFilename()).toBe(binaryFileName);
 
       await versionRow.getByRole("button", { name: "Attach" }).click();
-      await expect(output.getByText(/Patient document \d+ was created/)).toBeVisible(
-        { timeout: 20_000 },
-      );
+      await expect(
+        output.getByText(/Patient document \d+ was created/),
+      ).toBeVisible({ timeout: 20_000 });
 
       const historySection = page
         .getByRole("heading", { name: "Audit history" })
@@ -3150,8 +3297,12 @@ test.describe("isolated mutation workflows", () => {
       await expect(
         historySection.getByText("patient attachment generated").first(),
       ).toBeVisible();
-      await expect(historySection.getByText(/Actor: admin/).first()).toBeVisible();
-      await expect(historySection.getByText(/Patient: MOD-PAT-0001/).first()).toBeVisible();
+      await expect(
+        historySection.getByText(/Actor: admin/).first(),
+      ).toBeVisible();
+      await expect(
+        historySection.getByText(/Patient: MOD-PAT-0001/).first(),
+      ).toBeVisible();
 
       const historyResponse = await page.request.get(
         `${apiBaseUrl}/api/administration/document-templates/${primary!.id}/history`,
@@ -3189,12 +3340,13 @@ test.describe("isolated mutation workflows", () => {
       expect(await getMarkerDocuments()).toHaveLength(2);
     } finally {
       for (const document of await getMarkerDocuments()) {
-        const deleted = await page.request.delete(
+        const retiredDeletion = await page.request.delete(
           `${apiBaseUrl}/api/documents/${document.id}`,
           { headers },
         );
-        expect([204, 404]).toContain(deleted.status());
+        expect(retiredDeletion.status()).toBe(410);
       }
+      deletePatientDocumentFixtures(marker);
       for (const template of await getMarkerTemplates()) {
         templateIds.add(template.id);
       }
@@ -3205,8 +3357,12 @@ test.describe("isolated mutation workflows", () => {
         );
         expect([204, 404]).toContain(deleted.status());
       }
-      await expect.poll(async () => (await getMarkerTemplates()).length).toBe(0);
-      await expect.poll(async () => (await getMarkerDocuments()).length).toBe(0);
+      await expect
+        .poll(async () => (await getMarkerTemplates()).length)
+        .toBe(0);
+      await expect
+        .poll(async () => (await getMarkerDocuments()).length)
+        .toBe(0);
       expect(
         runProviderAssignmentSql(
           `select
@@ -3224,9 +3380,9 @@ test.describe("isolated mutation workflows", () => {
     context,
   }) => {
     await signInClinician(page);
-    const sessionId = await getClinicianSessionId(page);
+    const headers = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const prescriptionNote = `Temporary catalog prescription ${Date.now()}`;
     const requestNote = `Temporary refill request ${Date.now()}`;
     const deniedRequestNote = `Temporary denied refill ${Date.now()}`;
@@ -3248,9 +3404,7 @@ test.describe("isolated mutation workflows", () => {
       await prescriptions
         .getByRole("button", { name: "Add prescription" })
         .click();
-      await prescriptions
-        .getByLabel("Drug name or RXCUI")
-        .fill("Metformin");
+      await prescriptions.getByLabel("Drug name or RXCUI").fill("Metformin");
       await prescriptions
         .getByRole("button", { name: "Search catalog" })
         .click();
@@ -3280,7 +3434,7 @@ test.describe("isolated mutation workflows", () => {
       const clinicalLists = await page.request.get(
         `${apiBaseUrl}/api/clinical-lists/MOD-PAT-0004`,
         {
-          headers: { "X-AvenChart-Session": sessionId },
+          headers,
         },
       );
       expect(clinicalLists.ok()).toBeTruthy();
@@ -3304,15 +3458,14 @@ test.describe("isolated mutation workflows", () => {
             username:
               process.env.MODERN_UI_PORTAL_USERNAME ??
               "mod-pat-0004@example.test",
-            password:
-              process.env.MODERN_UI_PORTAL_PASSWORD ?? "PortalPass207!",
+            password: process.env.MODERN_UI_PORTAL_PASSWORD ?? "PortalPass207!",
           },
         },
       );
       expect(portalLogin.ok()).toBeTruthy();
-      portalSessionId = (
-        (await portalLogin.json()) as { sessionId?: string | null }
-      ).sessionId ?? null;
+      portalSessionId =
+        ((await portalLogin.json()) as { sessionId?: string | null })
+          .sessionId ?? null;
       expect(portalSessionId).toBeTruthy();
 
       const requested = await page.request.post(
@@ -3339,9 +3492,7 @@ test.describe("isolated mutation workflows", () => {
         if (id) messageIds.push(id);
       }
 
-      await page.goto(
-        "/clinician/renewals?patient=MOD-PAT-0004&view=requests",
-      );
+      await page.goto("/clinician/renewals?patient=MOD-PAT-0004&view=requests");
       const requestCard = page.locator("article.rx-renew-item").filter({
         hasText: requestNote,
       });
@@ -3376,9 +3527,7 @@ test.describe("isolated mutation workflows", () => {
         .click();
       await expect(requestCard).toHaveCount(0, { timeout: 30_000 });
       await expect(
-        page
-          .getByRole("status")
-          .filter({ hasText: "approved and reconciled" }),
+        page.getByRole("status").filter({ hasText: "approved and reconciled" }),
       ).toBeVisible();
 
       await page
@@ -3393,7 +3542,7 @@ test.describe("isolated mutation workflows", () => {
       const currentClinicalLists = await page.request.get(
         `${apiBaseUrl}/api/clinical-lists/MOD-PAT-0004`,
         {
-          headers: { "X-AvenChart-Session": sessionId },
+          headers,
         },
       );
       expect(currentClinicalLists.ok()).toBeTruthy();
@@ -3424,7 +3573,7 @@ test.describe("isolated mutation workflows", () => {
       const competingUpdate = await page.request.put(
         `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId!)}`,
         {
-          headers: { "X-AvenChart-Session": sessionId },
+          headers,
           data: {
             expectedVersion: currentPrescription!.version,
             startDate: currentPrescription!.startDate,
@@ -3479,12 +3628,8 @@ test.describe("isolated mutation workflows", () => {
         }),
       ).toBeVisible();
       await expect(prescriptionCard).toContainText("Create");
-      await expect(prescriptionCard).toContainText(
-        "Refill Request Approved",
-      );
-      await expect(prescriptionCard).toContainText(
-        approvalResponse,
-      );
+      await expect(prescriptionCard).toContainText("Refill Request Approved");
+      await expect(prescriptionCard).toContainText(approvalResponse);
       await expect(prescriptionCard).toContainText(
         "Browser-verified prescription edit",
       );
@@ -3492,8 +3637,7 @@ test.describe("isolated mutation workflows", () => {
       await prescriptionCard
         .getByRole("button", { name: "Record pharmacy" })
         .click();
-      const pharmacySelect =
-        prescriptionCard.getByLabel("Local pharmacy");
+      const pharmacySelect = prescriptionCard.getByLabel("Local pharmacy");
       const northstarPharmacyId = await pharmacySelect
         .locator("option")
         .filter({ hasText: "Northstar Community Pharmacy" })
@@ -3520,12 +3664,8 @@ test.describe("isolated mutation workflows", () => {
         "Browser-verified local route",
       );
 
-      await page
-        .getByRole("button", { name: /^Portal requests/ })
-        .click();
-      await page
-        .getByRole("button", { name: /^Approved \(/ })
-        .click();
+      await page.getByRole("button", { name: /^Portal requests/ }).click();
+      await page.getByRole("button", { name: /^Approved \(/ }).click();
       const approvedRequestCard = page
         .locator("article.rx-renew-item")
         .filter({ hasText: requestNote });
@@ -3543,9 +3683,7 @@ test.describe("isolated mutation workflows", () => {
       await expect(approvedRequestCard).toHaveCount(0, {
         timeout: 30_000,
       });
-      await page
-        .getByRole("button", { name: /^Completed \(/ })
-        .click();
+      await page.getByRole("button", { name: /^Completed \(/ }).click();
       const completedRequestCard = page
         .locator("article.rx-renew-item")
         .filter({ hasText: requestNote });
@@ -3579,9 +3717,7 @@ test.describe("isolated mutation workflows", () => {
         if (id) messageIds.push(id);
       }
 
-      await page
-        .getByRole("button", { name: /^Open \(/ })
-        .click();
+      await page.getByRole("button", { name: /^Open \(/ }).click();
       const deniedRequestCard = page
         .locator("article.rx-renew-item")
         .filter({ hasText: deniedRequestNote });
@@ -3594,9 +3730,7 @@ test.describe("isolated mutation workflows", () => {
         .getByRole("button", { name: "Deny request" })
         .click();
       await expect(deniedRequestCard).toHaveCount(0, { timeout: 30_000 });
-      await page
-        .getByRole("button", { name: /^Denied \(/ })
-        .click();
+      await page.getByRole("button", { name: /^Denied \(/ }).click();
       const deniedHistoryCard = page
         .locator("article.rx-renew-item")
         .filter({ hasText: deniedRequestNote });
@@ -3607,9 +3741,7 @@ test.describe("isolated mutation workflows", () => {
       const portalPage = await context.newPage();
       await signInPortal(portalPage);
       await portalPage.goto("/portal/records");
-      await portalPage
-        .getByRole("button", { name: "Health summary" })
-        .click();
+      await portalPage.getByRole("button", { name: "Health summary" }).click();
       const completedRefillHistory = portalPage
         .locator(".refill-history-list li")
         .filter({ hasText: requestNote });
@@ -3628,28 +3760,33 @@ test.describe("isolated mutation workflows", () => {
       await expect(deniedRefillHistory).toBeVisible({ timeout: 30_000 });
       await expect(deniedRefillHistory).toContainText("Denied");
       await expect(deniedRefillHistory).toContainText(denialResponse);
-      await expect(portalPage.locator(".refill-history .hint-banner")).toContainText(
+      await expect(
+        portalPage.locator(".refill-history .hint-banner"),
+      ).toContainText(
         "does not confirm that a pharmacy dispensed or delivered medication",
       );
       await portalPage.close();
     } finally {
       deletePortalMailboxFixtures(messageIds);
       if (prescriptionId) {
-        const deletedPrescription = await page.request.delete(
+        const retainedDeletion = await page.request.delete(
           `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}`,
-          { headers: { "X-AvenChart-Session": sessionId } },
+          { headers },
         );
-        expect(deletedPrescription.ok()).toBeTruthy();
+        expect(retainedDeletion.status()).toBe(409);
+        deletePrescriptionFixture(prescriptionId);
+        expect(
+          runProviderAssignmentSql(
+            `select count(*) from prescriptions where id = '${prescriptionId.replaceAll("'", "''")}';`,
+          ),
+        ).toBe("0");
       }
       if (portalSessionId) {
-        await page.request.delete(
-          `${apiBaseUrl}/api/patient-portal/session`,
-          {
-            headers: {
-              "X-AvenChart-Patient-Portal-Session": portalSessionId,
-            },
+        await page.request.delete(`${apiBaseUrl}/api/patient-portal/session`, {
+          headers: {
+            "X-AvenChart-Patient-Portal-Session": portalSessionId,
           },
-        );
+        });
       }
     }
   });

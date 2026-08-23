@@ -11,13 +11,13 @@ import {
   getPatientDocumentOcrQueue,
   getPatientDocumentRoutingQueue,
   getProcedureReportQueue,
+  getStaffMessageInbox,
   searchAppointments,
-  getOperationalReports,
   type AppointmentListItem,
   type PatientDocumentOcrQueueResponse,
   type PatientDocumentRoutingQueueResponse,
   type ProcedureReportQueueResponse,
-  type OperationalReportsResponse,
+  type StaffMessageInboxResponse,
 } from '../../api.ts'
 import { AppointmentStatusBadge } from '../../components/AppointmentStatusBadge.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
@@ -60,7 +60,7 @@ export default function ClinicianDashboard() {
   const navigate = useNavigate()
   const [apptState, setApptState] = useState<AsyncState<AppointmentListItem[]>>({ status: 'loading' })
   const [labState, setLabState] = useState<AsyncState<ProcedureReportQueueResponse>>({ status: 'loading' })
-  const [reportsState, setReportsState] = useState<AsyncState<OperationalReportsResponse>>({ status: 'loading' })
+  const [messageState, setMessageState] = useState<AsyncState<StaffMessageInboxResponse>>({ status: 'loading' })
   const [documentRouteState, setDocumentRouteState] =
     useState<AsyncState<PatientDocumentRoutingQueueResponse>>({ status: 'loading' })
   const [documentOcrState, setDocumentOcrState] =
@@ -111,16 +111,18 @@ export default function ClinicianDashboard() {
             updatedAt: 'updatedAt' in current ? current.updatedAt : undefined,
           })),
         ),
-      getOperationalReports(session.sessionId)
+      // The message route is facility-scoped. Its dashboard count must use
+      // the same source and access context as the route it opens.
+      getStaffMessageInbox(session.sessionId, { status: 'new', limit: 1 })
         .then((data) =>
-          setReportsState({
+          setMessageState({
             status: 'ready',
             data,
             updatedAt: new Date().toISOString(),
           }),
         )
         .catch(() =>
-          setReportsState((current) => ({
+          setMessageState((current) => ({
             status: 'error',
             message: 'The message count could not be refreshed.',
             data: 'data' in current ? current.data : undefined,
@@ -187,8 +189,8 @@ export default function ClinicianDashboard() {
       ? labState.data.unreviewedReports
       : null
   const newMessages =
-    'data' in reportsState && reportsState.data
-      ? reportsState.data.counts.newMessages
+    'data' in messageState && messageState.data
+      ? messageState.data.counts.unread
       : null
   const activeDocumentRoutes =
     'data' in documentRouteState && documentRouteState.data
@@ -201,7 +203,7 @@ export default function ClinicianDashboard() {
   const lastUpdated = [
     'updatedAt' in apptState ? apptState.updatedAt : undefined,
     'updatedAt' in labState ? labState.updatedAt : undefined,
-    'updatedAt' in reportsState ? reportsState.updatedAt : undefined,
+    'updatedAt' in messageState ? messageState.updatedAt : undefined,
     'updatedAt' in documentRouteState ? documentRouteState.updatedAt : undefined,
     'updatedAt' in documentOcrState ? documentOcrState.updatedAt : undefined,
   ]
@@ -209,7 +211,7 @@ export default function ClinicianDashboard() {
     .sort()
     .at(-1)
   const hasAppointmentSnapshot = 'data' in apptState && Boolean(apptState.data)
-  const refreshErrors = [apptState, labState, reportsState, documentRouteState, documentOcrState]
+  const refreshErrors = [apptState, labState, messageState, documentRouteState, documentOcrState]
     .filter((state) => state.status === 'error')
     .map((state) => state.status === 'error' ? state.message : '')
 
@@ -296,9 +298,9 @@ export default function ClinicianDashboard() {
           <div className={`dash-stat-icon${newMessages ? ' dash-stat-icon-indigo' : ' dash-stat-icon-muted'}`}><Mail size={18} /></div>
           <div className="dash-stat-body">
             <p className="dash-stat-value">
-              {reportsState.status === 'loading'
+              {messageState.status === 'loading'
                 ? '—'
-                : reportsState.status === 'error' && !reportsState.data
+                : messageState.status === 'error' && !messageState.data
                   ? 'Unavailable'
                   : (newMessages ?? 0)}
             </p>

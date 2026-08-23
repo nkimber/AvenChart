@@ -35,8 +35,8 @@ import {
 } from 'lucide-react'
 import {
   getCurrentSession,
-  getOperationalReports,
   getProcedureReportQueue,
+  getStaffMessageInbox,
   isInvalidSessionError,
   isRequestCancellation,
   logout,
@@ -341,14 +341,14 @@ export default function ClinicianShell() {
     function pollNotifications() {
       Promise.all([
         getProcedureReportQueue(session!.sessionId, { status: 'pending', limit: 1 }),
-        getOperationalReports(session!.sessionId),
+        getStaffMessageInbox(session!.sessionId, { status: 'new', limit: 1 }),
       ])
-        .then(([labs, reports]) => {
+        .then(([labs, messages]) => {
           if (cancelled) return
-          setNotifCount(labs.unreviewedReports + reports.counts.newMessages)
+          setNotifCount(labs.unreviewedReports + messages.counts.unread)
           setNotifBreakdown({
             labs: labs.unreviewedReports,
-            messages: reports.counts.newMessages,
+            messages: messages.counts.unread,
           })
           setNotifError(null)
         })

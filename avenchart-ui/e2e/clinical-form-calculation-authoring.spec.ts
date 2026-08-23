@@ -37,7 +37,7 @@ test.describe("FORM-02 calculation authoring", () => {
     const stableKey = `tmp.form.calculation.${marker}`;
     const formName = `Calculation authoring ${marker}`;
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     let definitionId: string | null = null;
     let forgedDefinitionId: string | null = null;
 

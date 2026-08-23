@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 param(
-    [string]$ApiBaseUrl = "http://localhost:5001",
+    [string]$ApiBaseUrl = "http://127.0.0.1:5001",
     [switch]$IncludeBrowser
 )
 

@@ -350,7 +350,7 @@ test.describe("accessibility gate", () => {
     );
     const requestHeaders = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const templateMarker = `TMP-DOC-TEMPLATE-AXE-${testInfo.project.name}-${Date.now()}`;
     const templateFixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/administration/document-templates/`,
@@ -661,7 +661,7 @@ test.describe("accessibility gate", () => {
     const requestHeaders = await getClinicianRequestHeaders(page);
 
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const marker = `TMP-CLIN-AUTH-AXE-${testInfo.project.name}-${Date.now()}`;
     const fixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/patients/${clinicianFixture.patientId}/authorizations`,

@@ -220,7 +220,7 @@ test.describe("REP-02 governed report execution", () => {
   }) => {
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const definitions: string[] = [];
 
     await signIn(page);
@@ -401,7 +401,7 @@ test.describe("REP-02 governed report execution", () => {
   }) => {
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+      process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const definitions: string[] = [];
     let formDefinitionId: string | null = null;
     const adminLogin = await page.request.post(

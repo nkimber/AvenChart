@@ -64,6 +64,9 @@ test.describe("route smoke", () => {
     page.on("pageerror", (error) => pageErrors.push(error));
 
     await page.goto("/");
+    await expect(page.locator(".route-loading")).toHaveCount(0, {
+      timeout: 15_000,
+    });
     await expect(
       page.getByRole("heading", { name: "Choose how you'd like to sign in" }),
     ).toBeVisible();

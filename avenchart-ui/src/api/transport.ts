@@ -4,7 +4,7 @@
 import { loadClinicianSession, loadPortalSession } from '../auth/session.ts'
 
 export const apiBaseUrl =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5001";
+  import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:5001";
 
 export const SESSION_INVALID_EVENT = "avenchart-ui:session-invalid";
 
@@ -42,6 +42,25 @@ export class ApiRequestError extends Error {
 }
 
 const API_TIMEOUT_MILLISECONDS = 30_000;
+
+const requestHeaderNames = new Map<string, string>([
+  ["content-type", "content-type"],
+  ["x-avenchart-csrf", "X-AvenChart-CSRF"],
+  ["x-avenchart-facility-id", "X-AvenChart-Facility-Id"],
+  ["x-avenchart-operations-access", "X-AvenChart-Operations-Access"],
+  ["x-avenchart-patient-portal-session", "X-AvenChart-Patient-Portal-Session"],
+  ["x-avenchart-purpose-of-use", "X-AvenChart-Purpose-Of-Use"],
+  ["x-avenchart-session", "X-AvenChart-Session"],
+]);
+
+function materializeRequestHeaders(headers: Headers): Record<string, string> {
+  return Object.fromEntries(
+    Array.from(headers.entries(), ([name, value]) => [
+      requestHeaderNames.get(name) ?? name,
+      value,
+    ]),
+  );
+}
 
 function announceInvalidSession(scope: SessionScope) {
   if (typeof window === "undefined") return;
@@ -151,7 +170,10 @@ export async function apiFetch(
   try {
     const response = await globalThis.fetch(input, {
       ...init,
-      headers,
+      // Construct with Headers so security headers are handled
+      // case-insensitively, then materialize the final set for a stable fetch
+      // contract in browsers, test doubles, and request instrumentation.
+      headers: materializeRequestHeaders(headers),
       credentials: 'include',
       signal: requestController.signal,
     });

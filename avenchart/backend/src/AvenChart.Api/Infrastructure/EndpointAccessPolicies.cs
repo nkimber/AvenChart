@@ -526,8 +526,8 @@ public static class EndpointAccessPolicies
             if (routeValues.TryGetValue("messageId", out var messageRouteValue))
             {
                 var messageId = messageRouteValue?.ToString();
-                PhiAuditResourceContext.Set(context.HttpContext, "Message", messageId);
-                var allowed = await accessContextService.CanAccessMessageAsync(
+                PhiAuditResourceContext.Set(context.HttpContext, "PrescriptionRefillRequest", messageId);
+                var allowed = await accessContextService.CanAccessPrescriptionRefillRequestAsync(
                     messageId,
                     accessContext.FacilityId,
                     cancellationToken);

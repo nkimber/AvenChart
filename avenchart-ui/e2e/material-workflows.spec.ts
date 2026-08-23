@@ -3,7 +3,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 
-async function signInClinician(page: Page) {
+async function signInClinician(page: Page, facilityId?: number) {
   await page.goto("/login");
   await page
     .getByLabel("Username")
@@ -17,9 +17,29 @@ async function signInClinician(page: Page) {
       await expect(page).toHaveURL(/\/clinician\/dashboard$/, {
         timeout: 15_000,
       });
-      return;
+      break;
     } catch {
       if (attempt === 2) throw new Error("Clinician sign-in did not complete.");
+    }
+  }
+  if (facilityId) {
+    const isMobile = (page.viewportSize()?.width ?? 1024) <= 680;
+    if (isMobile) {
+      await page.getByRole("button", { name: "Open navigation" }).click();
+    }
+    const accessSurface = isMobile
+      ? page.getByRole("dialog", { name: "Main navigation" })
+      : page;
+    const activeFacility = accessSurface.getByRole("combobox", {
+      name: "Active facility",
+    });
+    await expect(activeFacility).toBeVisible();
+    await activeFacility.selectOption(String(facilityId));
+    await expect(activeFacility).toHaveValue(String(facilityId));
+    if (isMobile) {
+      await accessSurface
+        .getByRole("button", { name: "Close navigation" })
+        .click();
     }
   }
 }
@@ -170,7 +190,7 @@ test.describe("material workflows", () => {
       testInfo.project.name !== "desktop-chromium",
       "The acknowledgement proof runs once to avoid concurrent writes to the shared synthetic encounter.",
     );
-    await signInClinician(page);
+    await signInClinician(page, 11);
     await page.goto("/clinician/patients/MOD-PAT-0901/encounters");
     await page
       .getByRole("button", {
@@ -249,7 +269,7 @@ test.describe("material workflows", () => {
       testInfo.project.name !== "desktop-chromium",
       "The mutation proof runs once to avoid cross-project writes to the shared synthetic patient.",
     );
-    await signInClinician(page);
+    await signInClinician(page, 11);
     await page.goto("/clinician/patients/MOD-PAT-0004/summary");
 
     const guardian = page.locator("section").filter({
@@ -310,7 +330,7 @@ test.describe("material workflows", () => {
   test("patient summary deep-links to account, aging, statement, and ledger context", async ({
     page,
   }) => {
-    await signInClinician(page);
+    await signInClinician(page, 11);
     await page.goto("/clinician/patients/MOD-PAT-0004/summary");
     await page.getByRole("link", { name: "View patient account" }).click();
 
@@ -499,7 +519,11 @@ test.describe("material workflows", () => {
 
   test("inventory medication links expose catalog, current mapping, audited history, and reasoned unlink boundaries", async ({
     page,
-  }) => {
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "desktop-chromium",
+      "The link-and-unlink proof runs once so each run starts from the disposable unmapped inventory fixture.",
+    );
     await signInClinician(page);
     await page.goto("/clinician/inventory");
 
@@ -525,11 +549,32 @@ test.describe("material workflows", () => {
 
     await links
       .getByLabel("Link inventory item")
-      .selectOption({ label: "MED-MET-500 / Metformin 500 mg tablet / RXCUI 860975" });
+      .selectOption({ label: "MED-MET-500 / Metformin 500 mg tablet / unmapped" });
+    await links.getByLabel("Local RXCUI medication").selectOption("860975");
+    await expect(
+      links.getByRole("button", { name: "Save medication link" }),
+    ).toBeEnabled();
+    await links.getByRole("button", { name: "Save medication link" }).click();
+    await expect(links.getByText("Medication link saved", { exact: true })).toBeVisible();
+    await expect(
+      links.getByText(/Current: RXCUI 860975/),
+    ).toBeVisible();
     await expect(links.getByLabel("Reason to unlink this mapping")).toBeVisible();
     await expect(
       links.getByRole("button", { name: "Unlink with reason" }),
     ).toBeDisabled();
+    await links
+      .getByLabel("Reason to unlink this mapping")
+      .fill("E2E fixture cleanup after link-history verification.");
+    await links.getByRole("button", { name: "Unlink with reason" }).click();
+    await expect(
+      links.getByText(/unlinked \/ 860975 → none \/ admin \/ .*E2E fixture cleanup/),
+    ).toBeVisible();
+    await expect(
+      links.getByText(
+        "Unmapped: this item is not eligible for prescription-linked inventory dispensing.",
+      ),
+    ).toBeVisible();
     await expect(links.getByLabel("Search inventory mappings")).toBeVisible();
     await expect(links.getByRole("table")).toBeVisible();
   });
@@ -537,7 +582,10 @@ test.describe("material workflows", () => {
   test("inventory exposes patient, encounter, FEFO, and prescription dispensing context", async ({
     page,
   }) => {
-    await signInClinician(page);
+    // MOD-PAT-0001 is intentionally assigned to North County. Exercise the
+    // patient/encounter dispense path within that authorized facility rather
+    // than crossing the facility boundary in a test fixture.
+    await signInClinician(page, 11);
     await page.goto("/clinician/inventory");
 
     const dispensing = page
