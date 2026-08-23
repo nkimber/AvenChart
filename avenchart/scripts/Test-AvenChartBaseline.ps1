@@ -180,6 +180,33 @@ function Restore-AdministrationAccessContextGrant {
     $script:AdministrationSelectedFacilityId = $null
 }
 
+function Cancel-AppointmentTestFixture {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$AppointmentId
+    )
+
+    # Appointments are clinical scheduling evidence.  Test cleanup follows the
+    # same terminal transition as the product rather than using the recurrence-
+    # exception/delete endpoint as a fixture shortcut.
+    $appointment = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/appointments/$AppointmentId" `
+        -Method Get `
+        -Headers (Get-AdministrationHeaders) `
+        -TimeoutSec 20
+    if ($appointment.status -eq "x") {
+        return $appointment
+    }
+
+    return Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/appointments/$AppointmentId/status" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body (@{ status = "x"; expectedVersion = $appointment.rowVersion } | ConvertTo-Json) `
+        -TimeoutSec 20
+}
+
 function Get-FrontDeskHeaders {
     if ($null -eq $script:FrontDeskHeaders) {
         $loginBody = @{
@@ -3487,7 +3514,7 @@ catch {
 finally {
     if ($null -ne $appointmentMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentMutationId?expectedVersion=$appointmentMutationExpectedVersion" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentMutationId | Out-Null
         }
         catch {
         }
@@ -3572,7 +3599,7 @@ $appointmentOverlapSecondaryId = $null
 try {
     $primaryOverlapBody = @{
         patientId = "MOD-PAT-0003"
-        providerId = 102
+        providerId = 104
         title = "Smoke Appointment Provider Overlap A"
         date = "2026-12-04"
         startTime = "09:00"
@@ -3584,8 +3611,8 @@ try {
         comments = "Smoke overlap primary appointment"
     } | ConvertTo-Json
     $secondaryOverlapBody = @{
-        patientId = "MOD-PAT-0004"
-        providerId = 102
+        patientId = "MOD-PAT-0006"
+        providerId = 104
         title = "Smoke Appointment Provider Overlap B"
         date = "2026-12-04"
         startTime = "09:00"
@@ -3609,9 +3636,9 @@ try {
         -and ($primaryOverlapDetail.providerOverlapAppointmentIds -contains $appointmentOverlapSecondaryId) `
         -and ($secondaryOverlapDetail.providerOverlapAppointmentIds -contains $appointmentOverlapPrimaryId)
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapSecondaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapSecondaryId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $secondaryOverlapAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentOverlapSecondaryId = $null
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapPrimaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapPrimaryId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $primaryOverlapAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentOverlapPrimaryId = $null
 
     Add-Check -Name "appointment provider overlap tolerance" -Result $(if ($appointmentProviderOverlapPassed) { "passed" } else { "failed" }) -Details @{
@@ -3629,14 +3656,14 @@ catch {
 finally {
     if ($null -ne $appointmentOverlapSecondaryId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapSecondaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentOverlapSecondaryId | Out-Null
         }
         catch {
         }
     }
     if ($null -ne $appointmentOverlapPrimaryId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapPrimaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentOverlapPrimaryId | Out-Null
         }
         catch {
         }
@@ -3654,7 +3681,7 @@ try {
     $atomicConflictPayloads = @(
         @{
             patientId = "MOD-PAT-0003"
-            providerId = 102
+            providerId = 104
             facilityId = 10
             billingLocationId = 10
             title = "Smoke atomic conflict A $atomicConflictMarker"
@@ -3667,8 +3694,8 @@ try {
             enforceConflictPolicy = $true
         },
         @{
-            patientId = "MOD-PAT-0004"
-            providerId = 102
+            patientId = "MOD-PAT-0006"
+            providerId = 104
             facilityId = 10
             billingLocationId = 10
             title = "Smoke atomic conflict B $atomicConflictMarker"
@@ -3718,7 +3745,8 @@ finally {
     }
     if ($appointmentAtomicConflictId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentAtomicConflictId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            $atomicConflictAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentAtomicConflictId" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentAtomicConflictId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $atomicConflictAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -3751,6 +3779,7 @@ try {
         categoryId = 9
         room = "Resched"
         status = "@"
+        expectedVersion = $createdAppointment.rowVersion
     } | ConvertTo-Json
     $updatedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRescheduleId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $updateBody -TimeoutSec 20
     $appointmentReschedulePassed = $updatedAppointment.title -eq "Smoke Appointment Rescheduled" `
@@ -3760,7 +3789,7 @@ try {
         -and $updatedAppointment.room -eq "Resched" `
         -and $updatedAppointment.status -eq "@"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRescheduleId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRescheduleId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $updatedAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentRescheduleId = $null
 
     Add-Check -Name "appointment reschedule lifecycle" -Result $(if ($appointmentReschedulePassed) { "passed" } else { "failed" }) -Details @{
@@ -3778,7 +3807,7 @@ catch {
 finally {
     if ($null -ne $appointmentRescheduleId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRescheduleId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentRescheduleId | Out-Null
         }
         catch {
         }
@@ -3803,7 +3832,7 @@ try {
     } | ConvertTo-Json
     $secondaryPatientOverlapBody = @{
         patientId = "MOD-PAT-0003"
-        providerId = 102
+        providerId = 104
         title = "Smoke Appointment Patient Overlap B"
         date = "2026-12-05"
         startTime = "09:00"
@@ -3827,9 +3856,9 @@ try {
         -and ($primaryPatientOverlapDetail.patientOverlapAppointmentIds -contains $appointmentPatientOverlapSecondaryId) `
         -and ($secondaryPatientOverlapDetail.patientOverlapAppointmentIds -contains $appointmentPatientOverlapPrimaryId)
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPatientOverlapSecondaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPatientOverlapSecondaryId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $secondaryPatientOverlapAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentPatientOverlapSecondaryId = $null
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPatientOverlapPrimaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPatientOverlapPrimaryId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $primaryPatientOverlapAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentPatientOverlapPrimaryId = $null
 
     Add-Check -Name "appointment patient overlap tolerance" -Result $(if ($appointmentPatientOverlapPassed) { "passed" } else { "failed" }) -Details @{
@@ -3847,14 +3876,14 @@ catch {
 finally {
     if ($null -ne $appointmentPatientOverlapSecondaryId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPatientOverlapSecondaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentPatientOverlapSecondaryId | Out-Null
         }
         catch {
         }
     }
     if ($null -ne $appointmentPatientOverlapPrimaryId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPatientOverlapPrimaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentPatientOverlapPrimaryId | Out-Null
         }
         catch {
         }
@@ -3878,8 +3907,8 @@ try {
         comments = "Smoke room overlap primary appointment"
     } | ConvertTo-Json
     $secondaryRoomOverlapBody = @{
-        patientId = "MOD-PAT-0004"
-        providerId = 102
+        patientId = "MOD-PAT-0006"
+        providerId = 104
         title = "Smoke Appointment Room Overlap B"
         date = "2026-12-06"
         startTime = "09:00"
@@ -3903,9 +3932,9 @@ try {
         -and ($primaryRoomOverlapDetail.roomOverlapAppointmentIds -contains $appointmentRoomOverlapSecondaryId) `
         -and ($secondaryRoomOverlapDetail.roomOverlapAppointmentIds -contains $appointmentRoomOverlapPrimaryId)
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapSecondaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapSecondaryId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $secondaryRoomOverlapAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentRoomOverlapSecondaryId = $null
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapPrimaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapPrimaryId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $primaryRoomOverlapAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentRoomOverlapPrimaryId = $null
 
     Add-Check -Name "appointment room overlap tolerance" -Result $(if ($appointmentRoomOverlapPassed) { "passed" } else { "failed" }) -Details @{
@@ -3923,14 +3952,14 @@ catch {
 finally {
     if ($null -ne $appointmentRoomOverlapSecondaryId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapSecondaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentRoomOverlapSecondaryId | Out-Null
         }
         catch {
         }
     }
     if ($null -ne $appointmentRoomOverlapPrimaryId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapPrimaryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentRoomOverlapPrimaryId | Out-Null
         }
         catch {
         }
@@ -3956,6 +3985,7 @@ try {
     $arrivalBody = @{
         status = "@"
         title = "Smoke Appointment Arrival Arrived"
+        expectedVersion = $createdAppointment.rowVersion
     } | ConvertTo-Json
     $arrivedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentArrivalId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $arrivalBody -TimeoutSec 20
     $appointmentArrivalPassed = $createdAppointment.status -eq "-" `
@@ -3966,7 +3996,7 @@ try {
         -and $arrivedAppointment.durationMinutes -eq 30 `
         -and $arrivedAppointment.room -eq "Arrival"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentArrivalId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentArrivalId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $arrivedAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentArrivalId = $null
 
     Add-Check -Name "appointment arrival lifecycle" -Result $(if ($appointmentArrivalPassed) { "passed" } else { "failed" }) -Details @{
@@ -3984,7 +4014,7 @@ catch {
 finally {
     if ($null -ne $appointmentArrivalId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentArrivalId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentArrivalId | Out-Null
         }
         catch {
         }
@@ -4010,12 +4040,14 @@ try {
     $arrivalBody = @{
         status = "@"
         title = "Smoke Appointment Checkout Arrived"
+        expectedVersion = $createdAppointment.rowVersion
     } | ConvertTo-Json
     $arrivedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCheckoutId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $arrivalBody -TimeoutSec 20
 
     $checkoutBody = @{
         status = ">"
         title = "Smoke Appointment Checkout Checked Out"
+        expectedVersion = $arrivedAppointment.rowVersion
     } | ConvertTo-Json
     $checkedOutAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCheckoutId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $checkoutBody -TimeoutSec 20
     $appointmentCheckoutPassed = $createdAppointment.status -eq "-" `
@@ -4027,7 +4059,7 @@ try {
         -and $checkedOutAppointment.durationMinutes -eq 30 `
         -and $checkedOutAppointment.room -eq "Checkout"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCheckoutId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCheckoutId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $checkedOutAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentCheckoutId = $null
 
     Add-Check -Name "appointment check-out lifecycle" -Result $(if ($appointmentCheckoutPassed) { "passed" } else { "failed" }) -Details @{
@@ -4046,7 +4078,7 @@ catch {
 finally {
     if ($null -ne $appointmentCheckoutId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCheckoutId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentCheckoutId | Out-Null
         }
         catch {
         }
@@ -4072,6 +4104,7 @@ try {
     $noShowBody = @{
         status = "?"
         title = "Smoke Appointment Missed No Show"
+        expectedVersion = $createdAppointment.rowVersion
     } | ConvertTo-Json
     $noShowAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentNoShowId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $noShowBody -TimeoutSec 20
     $appointmentNoShowPassed = $createdAppointment.status -eq "-" `
@@ -4082,7 +4115,8 @@ try {
         -and $noShowAppointment.durationMinutes -eq 30 `
         -and $noShowAppointment.room -eq "NoShow"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentNoShowId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    # A no-show is a retained terminal scheduling outcome, not a deletable
+    # root appointment.
     $appointmentNoShowId = $null
 
     Add-Check -Name "appointment no-show lifecycle" -Result $(if ($appointmentNoShowPassed) { "passed" } else { "failed" }) -Details @{
@@ -4100,7 +4134,7 @@ catch {
 finally {
     if ($null -ne $appointmentNoShowId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentNoShowId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentNoShowId | Out-Null
         }
         catch {
         }
@@ -4133,6 +4167,7 @@ try {
         categoryId = 10
         room = "Category"
         status = "-"
+        expectedVersion = $createdAppointment.rowVersion
     } | ConvertTo-Json
     $updatedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCategoryId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $updateBody -TimeoutSec 20
     $appointmentCategoryPassed = $createdAppointment.categoryId -eq 13 `
@@ -4143,7 +4178,7 @@ try {
         -and $updatedAppointment.startTime -eq "09:15" `
         -and $updatedAppointment.room -eq "Category"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCategoryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCategoryId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $updatedAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentCategoryId = $null
 
     Add-Check -Name "appointment category lifecycle" -Result $(if ($appointmentCategoryPassed) { "passed" } else { "failed" }) -Details @{
@@ -4160,7 +4195,7 @@ catch {
 finally {
     if ($null -ne $appointmentCategoryId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCategoryId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentCategoryId | Out-Null
         }
         catch {
         }
@@ -4193,6 +4228,7 @@ try {
         categoryId = 9
         room = "Pending"
         status = "~"
+        expectedVersion = $createdAppointment.rowVersion
     } | ConvertTo-Json
     $pendingAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPendingId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $updateBody -TimeoutSec 20
     $appointmentPendingPassed = $createdAppointment.status -eq "-" `
@@ -4203,7 +4239,7 @@ try {
         -and $pendingAppointment.durationMinutes -eq 30 `
         -and $pendingAppointment.room -eq "Pending"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPendingId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPendingId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $pendingAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentPendingId = $null
 
     Add-Check -Name "appointment pending-status lifecycle" -Result $(if ($appointmentPendingPassed) { "passed" } else { "failed" }) -Details @{
@@ -4221,7 +4257,7 @@ catch {
 finally {
     if ($null -ne $appointmentPendingId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPendingId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentPendingId | Out-Null
         }
         catch {
         }
@@ -4245,7 +4281,7 @@ try {
     $appointmentProviderId = $createdAppointment.id
 
     $updateBody = @{
-        providerId = 102
+        providerId = 104
         title = "Smoke Appointment Provider Reassigned"
         date = "2026-12-03"
         startTime = "11:45"
@@ -4254,18 +4290,19 @@ try {
         categoryId = 9
         room = "Provider"
         status = "-"
+        expectedVersion = $createdAppointment.rowVersion
     } | ConvertTo-Json
     $reassignedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentProviderId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $updateBody -TimeoutSec 20
     $appointmentProviderPassed = $createdAppointment.providerId -eq 101 `
         -and $createdAppointment.facilityId -eq 10 `
-        -and $reassignedAppointment.providerId -eq 102 `
+        -and $reassignedAppointment.providerId -eq 104 `
         -and $reassignedAppointment.facilityId -eq 10 `
         -and $reassignedAppointment.title -eq "Smoke Appointment Provider Reassigned" `
         -and $reassignedAppointment.date -eq "2026-12-03" `
         -and $reassignedAppointment.startTime -eq "11:45" `
         -and $reassignedAppointment.room -eq "Provider"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentProviderId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentProviderId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ status = "x"; expectedVersion = $reassignedAppointment.rowVersion } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $appointmentProviderId = $null
 
     Add-Check -Name "appointment provider reassignment lifecycle" -Result $(if ($appointmentProviderPassed) { "passed" } else { "failed" }) -Details @{
@@ -4282,7 +4319,7 @@ catch {
 finally {
     if ($null -ne $appointmentProviderId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentProviderId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentProviderId | Out-Null
         }
         catch {
         }
@@ -4315,25 +4352,35 @@ try {
         categoryId = 9
         room = "Facility"
         status = "-"
+        expectedVersion = $createdAppointment.rowVersion
     } | ConvertTo-Json
-    $reassignedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentFacilityId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $updateBody -TimeoutSec 20
-    $appointmentFacilityPassed = $createdAppointment.facilityId -eq 10 `
-        -and $reassignedAppointment.facilityId -eq 11 `
-        -and $reassignedAppointment.providerId -eq 101 `
-        -and $reassignedAppointment.title -eq "Smoke Appointment Facility Reassigned" `
-        -and $reassignedAppointment.date -eq "2026-12-10" `
-        -and $reassignedAppointment.startTime -eq "10:00" `
-        -and $reassignedAppointment.room -eq "Facility"
+    $facilityReassignmentStatus = 0
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/appointments/$appointmentFacilityId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $updateBody -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        $facilityReassignmentStatus = $_.Exception.Response.StatusCode.value__
+    }
+    $unchangedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentFacilityId" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $appointmentFacilityPassed = $facilityReassignmentStatus -eq 400 `
+        -and $createdAppointment.facilityId -eq 10 `
+        -and $unchangedAppointment.facilityId -eq 10 `
+        -and $unchangedAppointment.providerId -eq 101 `
+        -and $unchangedAppointment.title -eq "Smoke Appointment Facility" `
+        -and $unchangedAppointment.date -eq "2026-12-10" `
+        -and $unchangedAppointment.startTime -eq "10:00" `
+        -and $unchangedAppointment.room -eq "Facility"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentFacilityId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Cancel-AppointmentTestFixture -AppointmentId $appointmentFacilityId | Out-Null
     $appointmentFacilityId = $null
 
     Add-Check -Name "appointment facility reassignment lifecycle" -Result $(if ($appointmentFacilityPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdAppointment.id
         createdFacilityId = $createdAppointment.facilityId
-        reassignedFacilityId = $reassignedAppointment.facilityId
-        providerId = $reassignedAppointment.providerId
-        title = $reassignedAppointment.title
+        rejectedStatus = $facilityReassignmentStatus
+        retainedFacilityId = $unchangedAppointment.facilityId
+        providerId = $unchangedAppointment.providerId
+        title = $unchangedAppointment.title
     }
 }
 catch {
@@ -4342,7 +4389,7 @@ catch {
 finally {
     if ($null -ne $appointmentFacilityId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentFacilityId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentFacilityId | Out-Null
         }
         catch {
         }
@@ -4377,6 +4424,7 @@ try {
         categoryId = 9
         room = "BillingLoc"
         status = "-"
+        expectedVersion = $createdAppointment.rowVersion
     } | ConvertTo-Json
     $reassignedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentBillingLocationId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $updateBody -TimeoutSec 20
     $appointmentBillingLocationPassed = $createdAppointment.facilityId -eq 10 `
@@ -4389,7 +4437,7 @@ try {
         -and $reassignedAppointment.startTime -eq "09:15" `
         -and $reassignedAppointment.room -eq "BillingLoc"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentBillingLocationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Cancel-AppointmentTestFixture -AppointmentId $appointmentBillingLocationId | Out-Null
     $appointmentBillingLocationId = $null
 
     Add-Check -Name "appointment billing-location reassignment lifecycle" -Result $(if ($appointmentBillingLocationPassed) { "passed" } else { "failed" }) -Details @{
@@ -4407,7 +4455,7 @@ catch {
 finally {
     if ($null -ne $appointmentBillingLocationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentBillingLocationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentBillingLocationId | Out-Null
         }
         catch {
         }
@@ -4446,6 +4494,7 @@ try {
         room = "Comments"
         status = "-"
         comments = $updatedComments
+        expectedVersion = $createdAppointment.rowVersion
     } | ConvertTo-Json
     $updatedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCommentsId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $updateBody -TimeoutSec 20
     $appointmentCommentsPassed = $createdAppointment.comments -eq $initialComments `
@@ -4455,7 +4504,7 @@ try {
         -and $updatedAppointment.startTime -eq "08:30" `
         -and $updatedAppointment.room -eq "Comments"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCommentsId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Cancel-AppointmentTestFixture -AppointmentId $appointmentCommentsId | Out-Null
     $appointmentCommentsId = $null
 
     Add-Check -Name "appointment comments lifecycle" -Result $(if ($appointmentCommentsPassed) { "passed" } else { "failed" }) -Details @{
@@ -4471,7 +4520,7 @@ catch {
 finally {
     if ($null -ne $appointmentCommentsId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCommentsId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentCommentsId | Out-Null
         }
         catch {
         }
@@ -4516,6 +4565,7 @@ try {
         repeatFrequency = 2
         repeatUnit = 1
         recurrenceEndDate = "2027-01-28"
+        expectedVersion = $createdAppointment.rowVersion
     } | ConvertTo-Json
     $updatedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRecurrenceId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $updateBody -TimeoutSec 20
     $appointmentRecurrencePassed = $createdAppointment.recurrenceType -eq 1 `
@@ -4529,7 +4579,7 @@ try {
         -and $updatedAppointment.recurrenceLabel -eq "Every 2 weeks until 2027-01-28" `
         -and $updatedAppointment.title -eq "Smoke Appointment Recurrence Updated"
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRecurrenceId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Cancel-AppointmentTestFixture -AppointmentId $appointmentRecurrenceId | Out-Null
     $appointmentRecurrenceId = $null
 
     Add-Check -Name "appointment recurrence metadata lifecycle" -Result $(if ($appointmentRecurrencePassed) { "passed" } else { "failed" }) -Details @{
@@ -4545,7 +4595,7 @@ catch {
 finally {
     if ($null -ne $appointmentRecurrenceId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRecurrenceId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentRecurrenceId | Out-Null
         }
         catch {
         }
@@ -4576,7 +4626,7 @@ try {
     $createdMonthly = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createBody -TimeoutSec 20
     $appointmentMonthlyRecurrenceId = $createdMonthly.id
 
-    $monthlySearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-12-15&limit=10" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $monthlySearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-12-15&limit=100" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $monthlyBefore = @($monthlySearch.appointments | Where-Object { $_.title -eq $monthlyTitle })
     $monthlyBeforeDates = @($monthlyBefore | ForEach-Object { $_.date })
     $monthlyBeforeNumbers = @($monthlyBefore | ForEach-Object { $_.occurrenceNumber })
@@ -4599,10 +4649,11 @@ try {
         repeatUnit = 2
         recurrenceEndDate = "2027-08-15"
         recurrenceExdates = @()
+        expectedVersion = $createdMonthly.rowVersion
     } | ConvertTo-Json -Depth 5
     $updatedMonthly = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedMonthlyId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $updateBody -TimeoutSec 20
 
-    $monthlyAfterSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-12-15&limit=10" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $monthlyAfterSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-12-15&limit=100" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $monthlyAfter = @($monthlyAfterSearch.appointments | Where-Object { $_.title -eq "$monthlyTitle Updated" })
     $monthlyAfterDates = @($monthlyAfter | ForEach-Object { $_.date })
     $monthlyAfterNumbers = @($monthlyAfter | ForEach-Object { $_.occurrenceNumber })
@@ -4619,7 +4670,7 @@ try {
         -and $null -ne $monthlyGenerated `
         -and $monthlyGenerated.isVirtualOccurrence
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedMonthlyId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Cancel-AppointmentTestFixture -AppointmentId $appointmentMonthlyRecurrenceId | Out-Null
     $appointmentMonthlyRecurrenceId = $null
 
     Add-Check -Name "appointment monthly recurrence lifecycle" -Result $(if ($appointmentMonthlyRecurrencePassed) { "passed" } else { "failed" }) -Details @{
@@ -4637,8 +4688,7 @@ catch {
 finally {
     if ($null -ne $appointmentMonthlyRecurrenceId) {
         try {
-            $encodedMonthlyId = [System.Uri]::EscapeDataString($appointmentMonthlyRecurrenceId)
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedMonthlyId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentMonthlyRecurrenceId | Out-Null
         }
         catch {
         }
@@ -4670,7 +4720,7 @@ try {
     $createdRepeatOn = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createBody -TimeoutSec 20
     $appointmentMonthlyRepeatOnId = $createdRepeatOn.id
 
-    $repeatOnSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-12-08&limit=10" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $repeatOnSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-12-08&limit=100" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $repeatOnOccurrences = @($repeatOnSearch.appointments | Where-Object { $_.title -eq $repeatOnTitle })
     $repeatOnDates = @($repeatOnOccurrences | ForEach-Object { $_.date })
     $repeatOnNumbers = @($repeatOnOccurrences | ForEach-Object { $_.occurrenceNumber })
@@ -4688,8 +4738,7 @@ try {
         -and $null -ne $repeatOnGenerated `
         -and $repeatOnGenerated.isVirtualOccurrence
 
-    $encodedRepeatOnId = [System.Uri]::EscapeDataString($appointmentMonthlyRepeatOnId)
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedRepeatOnId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Cancel-AppointmentTestFixture -AppointmentId $appointmentMonthlyRepeatOnId | Out-Null
     $appointmentMonthlyRepeatOnId = $null
 
     Add-Check -Name "appointment monthly repeat-on recurrence lifecycle" -Result $(if ($appointmentMonthlyRepeatOnPassed) { "passed" } else { "failed" }) -Details @{
@@ -4705,8 +4754,7 @@ catch {
 finally {
     if ($null -ne $appointmentMonthlyRepeatOnId) {
         try {
-            $encodedRepeatOnId = [System.Uri]::EscapeDataString($appointmentMonthlyRepeatOnId)
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedRepeatOnId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentMonthlyRepeatOnId | Out-Null
         }
         catch {
         }
@@ -4806,8 +4854,7 @@ try {
     }
 
     foreach ($appointmentId in $appointmentRecurrenceUnitMatrixIds) {
-        $encodedUnitId = [System.Uri]::EscapeDataString($appointmentId)
-        Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedUnitId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+        Cancel-AppointmentTestFixture -AppointmentId $appointmentId | Out-Null
     }
     $appointmentRecurrenceUnitMatrixIds = @()
 
@@ -4821,8 +4868,7 @@ catch {
 finally {
     foreach ($appointmentId in $appointmentRecurrenceUnitMatrixIds) {
         try {
-            $encodedUnitId = [System.Uri]::EscapeDataString($appointmentId)
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedUnitId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentId | Out-Null
         }
         catch {
         }
@@ -4870,8 +4916,7 @@ try {
         -and $daysGenerated.isVirtualOccurrence `
         -and (($daysGenerated.recurrenceDays -join ",") -eq "2,4,6")
 
-    $encodedDaysId = [System.Uri]::EscapeDataString($appointmentDaysOfWeekRecurrenceId)
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedDaysId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Cancel-AppointmentTestFixture -AppointmentId $appointmentDaysOfWeekRecurrenceId | Out-Null
     $appointmentDaysOfWeekRecurrenceId = $null
 
     Add-Check -Name "appointment days-of-week recurrence lifecycle" -Result $(if ($appointmentDaysOfWeekRecurrencePassed) { "passed" } else { "failed" }) -Details @{
@@ -4889,8 +4934,7 @@ catch {
 finally {
     if ($null -ne $appointmentDaysOfWeekRecurrenceId) {
         try {
-            $encodedDaysId = [System.Uri]::EscapeDataString($appointmentDaysOfWeekRecurrenceId)
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedDaysId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentDaysOfWeekRecurrenceId | Out-Null
         }
         catch {
         }
@@ -4955,7 +4999,7 @@ try {
 
     $appointmentOccurrenceCancelRootId = $occurrenceToCancel.seriesRootId
     $encodedOccurrenceId = [System.Uri]::EscapeDataString($occurrenceToCancel.id)
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedOccurrenceId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/${encodedOccurrenceId}?expectedVersion=$($occurrenceToCancel.rowVersion)" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
 
     $occurrenceCancelAfterSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-12-02&limit=10" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $occurrenceCancelAfter = @($occurrenceCancelAfterSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
@@ -5002,6 +5046,7 @@ finally {
                 repeatUnit = $rootToRestore.repeatUnit
                 recurrenceEndDate = $rootToRestore.recurrenceEndDate
                 recurrenceExdates = @("2026-12-16")
+                expectedVersion = $rootToRestore.rowVersion
             } | ConvertTo-Json -Depth 5
             Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceCancelRootId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $restoreBody -TimeoutSec 20 | Out-Null
         }
@@ -5021,11 +5066,11 @@ try {
 
     $appointmentOccurrenceRestoreRootId = $occurrenceToRestore.seriesRootId
     $encodedOccurrenceToSkipId = [System.Uri]::EscapeDataString($occurrenceToRestore.id)
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedOccurrenceToSkipId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/${encodedOccurrenceToSkipId}?expectedVersion=$($occurrenceToRestore.rowVersion)" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
 
     $rootAfterSkipForRestore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceRestoreRootId" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $encodedRestoreRootId = [System.Uri]::EscapeDataString($appointmentOccurrenceRestoreRootId)
-    $rootAfterRestore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedRestoreRootId/recurrence-exceptions/2026-12-30/restore" -Method Post -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $rootAfterRestore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedRestoreRootId/recurrence-exceptions/2026-12-30/restore" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ expectedVersion = $rootAfterSkipForRestore.rowVersion } | ConvertTo-Json) -TimeoutSec 20
 
     $occurrenceRestoreAfterSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-12-02&limit=10" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $occurrenceRestoreAfter = @($occurrenceRestoreAfterSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
@@ -5073,6 +5118,7 @@ finally {
                 repeatUnit = $rootToRestore.repeatUnit
                 recurrenceEndDate = $rootToRestore.recurrenceEndDate
                 recurrenceExdates = @("2026-12-16")
+                expectedVersion = $rootToRestore.rowVersion
             } | ConvertTo-Json -Depth 5
             Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceRestoreRootId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $restoreBody -TimeoutSec 20 | Out-Null
         }
@@ -5106,6 +5152,7 @@ try {
         room = $rescheduleRoot.room
         status = $rescheduleRoot.status
         comments = $rescheduleRoot.comments
+        expectedVersion = $rescheduleRoot.rowVersion
     } | ConvertTo-Json -Depth 5
 
     $rescheduledAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedRescheduleRootId/occurrences/2026-12-30/reschedule" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $rescheduleBody -TimeoutSec 20
@@ -5145,8 +5192,7 @@ catch {
 finally {
     if ($null -ne $appointmentOccurrenceRescheduleStandaloneId) {
         try {
-            $encodedStandaloneAppointmentId = [System.Uri]::EscapeDataString($appointmentOccurrenceRescheduleStandaloneId)
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedStandaloneAppointmentId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Cancel-AppointmentTestFixture -AppointmentId $appointmentOccurrenceRescheduleStandaloneId | Out-Null
         }
         catch {
         }
@@ -5172,6 +5218,7 @@ finally {
                 repeatUnit = $rootToRestore.repeatUnit
                 recurrenceEndDate = $rootToRestore.recurrenceEndDate
                 recurrenceExdates = @("2026-12-16")
+                expectedVersion = $rootToRestore.rowVersion
             } | ConvertTo-Json -Depth 5
             Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceRescheduleRootId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $restoreBody -TimeoutSec 20 | Out-Null
         }
@@ -5209,6 +5256,7 @@ try {
         repeatUnit = $rootToEdit.repeatUnit
         recurrenceEndDate = $rootToEdit.recurrenceEndDate
         recurrenceExdates = @("2026-12-16", "2026-12-30")
+        expectedVersion = $rootToEdit.rowVersion
     } | ConvertTo-Json -Depth 5
 
     $rootAfterExceptionEdit = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedExceptionEditRootId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $exceptionEditBody -TimeoutSec 20
@@ -5256,6 +5304,7 @@ finally {
                 repeatUnit = $rootToRestore.repeatUnit
                 recurrenceEndDate = $rootToRestore.recurrenceEndDate
                 recurrenceExdates = @("2026-12-16")
+                expectedVersion = $rootToRestore.rowVersion
             } | ConvertTo-Json -Depth 5
             Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedExceptionEditRootId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $restoreBody -TimeoutSec 20 | Out-Null
         }
@@ -5294,6 +5343,7 @@ try {
         repeatUnit = $appointmentSeriesRootUpdateOriginalRoot.repeatUnit
         recurrenceEndDate = $appointmentSeriesRootUpdateOriginalRoot.recurrenceEndDate
         recurrenceExdates = @($appointmentSeriesRootUpdateOriginalRoot.recurrenceExdates)
+        expectedVersion = $appointmentSeriesRootUpdateOriginalRoot.rowVersion
     } | ConvertTo-Json -Depth 5
 
     $rootAfterSeriesRootUpdate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootUpdateRootId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $seriesRootUpdateBody -TimeoutSec 20
@@ -5352,6 +5402,7 @@ finally {
                 repeatUnit = $appointmentSeriesRootUpdateOriginalRoot.repeatUnit
                 recurrenceEndDate = $appointmentSeriesRootUpdateOriginalRoot.recurrenceEndDate
                 recurrenceExdates = @($appointmentSeriesRootUpdateOriginalRoot.recurrenceExdates)
+                expectedVersion = (Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootUpdateRootId" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20).rowVersion
             } | ConvertTo-Json -Depth 5
             Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootUpdateRootId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $restoreBody -TimeoutSec 20 | Out-Null
         }
@@ -5390,6 +5441,7 @@ try {
         repeatUnit = $appointmentSeriesRecurrenceUpdateOriginalRoot.repeatUnit
         recurrenceEndDate = "2027-02-10"
         recurrenceExdates = @($appointmentSeriesRecurrenceUpdateOriginalRoot.recurrenceExdates)
+        expectedVersion = $appointmentSeriesRecurrenceUpdateOriginalRoot.rowVersion
     } | ConvertTo-Json -Depth 5
 
     $rootAfterSeriesRecurrenceUpdate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRecurrenceUpdateRootId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $seriesRecurrenceUpdateBody -TimeoutSec 20
@@ -5449,6 +5501,7 @@ finally {
                 repeatUnit = $appointmentSeriesRecurrenceUpdateOriginalRoot.repeatUnit
                 recurrenceEndDate = $appointmentSeriesRecurrenceUpdateOriginalRoot.recurrenceEndDate
                 recurrenceExdates = @($appointmentSeriesRecurrenceUpdateOriginalRoot.recurrenceExdates)
+                expectedVersion = (Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRecurrenceUpdateRootId" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20).rowVersion
             } | ConvertTo-Json -Depth 5
             Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRecurrenceUpdateRootId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $seriesRecurrenceUpdateRestoreBody -TimeoutSec 20 | Out-Null
         }
@@ -5472,14 +5525,14 @@ try {
     $appointmentSeriesRootMetadataOriginalRoot = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootMetadataRootId" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
 
     $seriesRootMetadataBody = @{
-        providerId = 101
+        providerId = $appointmentSeriesRootMetadataOriginalRoot.providerId
         title = $appointmentSeriesRootMetadataOriginalRoot.title
         date = $appointmentSeriesRootMetadataOriginalRoot.date
         startTime = $appointmentSeriesRootMetadataOriginalRoot.startTime
         durationMinutes = $appointmentSeriesRootMetadataOriginalRoot.durationMinutes
-        facilityId = 10
-        billingLocationId = 10
-        categoryId = 10
+        facilityId = $appointmentSeriesRootMetadataOriginalRoot.facilityId
+        billingLocationId = $appointmentSeriesRootMetadataOriginalRoot.billingLocationId
+        categoryId = $appointmentSeriesRootMetadataOriginalRoot.categoryId
         room = "Series Meta"
         status = "~"
         comments = "Slice 111 recurring root metadata propagation check."
@@ -5488,6 +5541,7 @@ try {
         repeatUnit = $appointmentSeriesRootMetadataOriginalRoot.repeatUnit
         recurrenceEndDate = $appointmentSeriesRootMetadataOriginalRoot.recurrenceEndDate
         recurrenceExdates = @($appointmentSeriesRootMetadataOriginalRoot.recurrenceExdates)
+        expectedVersion = $appointmentSeriesRootMetadataOriginalRoot.rowVersion
     } | ConvertTo-Json -Depth 5
 
     $rootAfterSeriesRootMetadata = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootMetadataRootId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $seriesRootMetadataBody -TimeoutSec 20
@@ -5505,10 +5559,10 @@ try {
     $seriesRootMetadataGeneratedOccurrence = $seriesRootMetadataAfter | Where-Object { $_.date -eq "2026-11-18" } | Select-Object -First 1
     $seriesRootMetadataMismatchedRooms = @($seriesRootMetadataAfter | Where-Object { $_.room -ne "Series Meta" })
     $seriesRootMetadataMismatchedComments = @($seriesRootMetadataAfter | Where-Object { $_.comments -ne "Slice 111 recurring root metadata propagation check." })
-    $appointmentSeriesRootMetadataPassed = $rootAfterSeriesRootMetadata.providerId -eq 101 `
-        -and $rootAfterSeriesRootMetadata.facilityId -eq 10 `
-        -and $rootAfterSeriesRootMetadata.billingLocationId -eq 10 `
-        -and $rootAfterSeriesRootMetadata.categoryId -eq 10 `
+    $appointmentSeriesRootMetadataPassed = $rootAfterSeriesRootMetadata.providerId -eq $appointmentSeriesRootMetadataOriginalRoot.providerId `
+        -and $rootAfterSeriesRootMetadata.facilityId -eq $appointmentSeriesRootMetadataOriginalRoot.facilityId `
+        -and $rootAfterSeriesRootMetadata.billingLocationId -eq $appointmentSeriesRootMetadataOriginalRoot.billingLocationId `
+        -and $rootAfterSeriesRootMetadata.categoryId -eq $appointmentSeriesRootMetadataOriginalRoot.categoryId `
         -and $rootAfterSeriesRootMetadata.status -eq "~" `
         -and $rootAfterSeriesRootMetadata.room -eq "Series Meta" `
         -and $rootAfterSeriesRootMetadata.comments -eq "Slice 111 recurring root metadata propagation check." `
@@ -5517,10 +5571,10 @@ try {
         -and $seriesRootMetadataAfter.Count -eq 6 `
         -and (($seriesRootMetadataAfterDates -join ",") -eq "2026-11-04,2026-11-18,2026-12-02,2026-12-30,2027-01-13,2027-01-27") `
         -and (($seriesRootMetadataAfterNumbers -join ",") -eq "1,2,3,5,6,7") `
-        -and (($seriesRootMetadataAfterProviderIds -join ",") -eq "101,101,101,101,101,101") `
-        -and (($seriesRootMetadataAfterFacilityIds -join ",") -eq "10,10,10,10,10,10") `
-        -and (($seriesRootMetadataAfterBillingLocationIds -join ",") -eq "10,10,10,10,10,10") `
-        -and (($seriesRootMetadataAfterCategoryIds -join ",") -eq "10,10,10,10,10,10") `
+        -and @($seriesRootMetadataAfterProviderIds | Where-Object { $_ -ne $appointmentSeriesRootMetadataOriginalRoot.providerId }).Count -eq 0 `
+        -and @($seriesRootMetadataAfterFacilityIds | Where-Object { $_ -ne $appointmentSeriesRootMetadataOriginalRoot.facilityId }).Count -eq 0 `
+        -and @($seriesRootMetadataAfterBillingLocationIds | Where-Object { $_ -ne $appointmentSeriesRootMetadataOriginalRoot.billingLocationId }).Count -eq 0 `
+        -and @($seriesRootMetadataAfterCategoryIds | Where-Object { $_ -ne $appointmentSeriesRootMetadataOriginalRoot.categoryId }).Count -eq 0 `
         -and (($seriesRootMetadataAfterStatuses -join ",") -eq "~,~,~,~,~,~") `
         -and $seriesRootMetadataMismatchedRooms.Count -eq 0 `
         -and $seriesRootMetadataMismatchedComments.Count -eq 0 `
@@ -5569,6 +5623,7 @@ finally {
                 repeatUnit = $appointmentSeriesRootMetadataOriginalRoot.repeatUnit
                 recurrenceEndDate = $appointmentSeriesRootMetadataOriginalRoot.recurrenceEndDate
                 recurrenceExdates = @($appointmentSeriesRootMetadataOriginalRoot.recurrenceExdates)
+                expectedVersion = (Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootMetadataRootId" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20).rowVersion
             } | ConvertTo-Json -Depth 5
             Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootMetadataRootId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $seriesRootMetadataRestoreBody -TimeoutSec 20 | Out-Null
         }

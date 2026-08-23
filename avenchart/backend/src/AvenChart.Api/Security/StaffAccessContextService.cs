@@ -17,6 +17,7 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
     public const string FacilityHeader = "X-AvenChart-Facility-Id";
     public const string PurposeHeader = "X-AvenChart-Purpose-Of-Use";
     public const string HttpContextItemKey = "staffAccessContext";
+    private const string VirtualOccurrenceSeparator = "::occurs::";
 
     private static readonly string[] AllowedPurposes =
     [
@@ -199,13 +200,6 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
         int facilityId,
         CancellationToken cancellationToken)
     {
-        var normalized = appointmentId?.Trim();
-        var separator = normalized?.IndexOf('@', StringComparison.Ordinal) ?? -1;
-        if (separator > 0)
-        {
-            normalized = normalized![..separator];
-        }
-
         return CanAccessPatientResourceAsync(
             """
             select exists(
@@ -216,9 +210,54 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
                 and patient.facility_id=@facility
                 and patient.merged_into_patient_id is null);
             """,
-            normalized,
+            GetAppointmentSeriesRootId(appointmentId),
             facilityId,
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Resolves a route value for either a persisted appointment series or a
+    /// virtual recurring occurrence to the persisted series identifier used by
+    /// the authorization query.  Client routes encode the current occurrence
+    /// separator, while older clients may use the legacy <c>@</c> suffix.
+    /// </summary>
+    internal static string? GetAppointmentSeriesRootId(string? appointmentId)
+    {
+        var normalized = appointmentId?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        try
+        {
+            normalized = Uri.UnescapeDataString(normalized);
+        }
+        catch (UriFormatException)
+        {
+            return null;
+        }
+
+        var occurrenceSeparator = normalized.IndexOf(VirtualOccurrenceSeparator, StringComparison.Ordinal);
+        if (occurrenceSeparator >= 0)
+        {
+            if (occurrenceSeparator == 0)
+            {
+                return null;
+            }
+
+            normalized = normalized[..occurrenceSeparator];
+        }
+        else
+        {
+            var legacySeparator = normalized.IndexOf('@', StringComparison.Ordinal);
+            if (legacySeparator > 0)
+            {
+                normalized = normalized[..legacySeparator];
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 
     public Task<bool> CanAccessLaboratoryOrderAsync(

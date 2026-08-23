@@ -2669,12 +2669,17 @@ appointments.MapPost("/{appointmentId}/occurrences/{occurrenceDate}/reschedule",
 appointments.MapDelete("/{appointmentId}", async (
         AppointmentRepository repository,
         string appointmentId,
-        int expectedVersion,
+        int? expectedVersion,
         CancellationToken cancellationToken) =>
     {
+        if (expectedVersion is not > 0)
+        {
+            return Results.BadRequest(new { error = "An expectedVersion greater than zero is required when changing an appointment occurrence." });
+        }
+
         try
         {
-            var deleted = await repository.DeleteAsync(appointmentId, expectedVersion, cancellationToken);
+            var deleted = await repository.DeleteAsync(appointmentId, expectedVersion.Value, cancellationToken);
             return deleted ? Results.NoContent() : Results.NotFound();
         }
         catch (AppointmentConcurrencyException)

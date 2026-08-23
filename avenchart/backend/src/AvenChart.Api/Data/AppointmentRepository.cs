@@ -3046,17 +3046,21 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
     private static AppointmentOccurrenceReference ParseOccurrenceReference(string appointmentId)
     {
-        var separatorIndex = appointmentId.IndexOf(VirtualOccurrenceSeparator, StringComparison.Ordinal);
+        // Browser clients encode the composite virtual-occurrence identifier when
+        // placing it in a path segment.  Normalize it before recognising the
+        // separator so an encoded occurrence cannot be mistaken for a root ID.
+        var normalizedAppointmentId = Uri.UnescapeDataString(appointmentId);
+        var separatorIndex = normalizedAppointmentId.IndexOf(VirtualOccurrenceSeparator, StringComparison.Ordinal);
         if (separatorIndex < 0)
         {
-            return new AppointmentOccurrenceReference(appointmentId, null);
+            return new AppointmentOccurrenceReference(normalizedAppointmentId, null);
         }
 
-        var rootAppointmentId = appointmentId[..separatorIndex];
-        var occurrenceDateText = appointmentId[(separatorIndex + VirtualOccurrenceSeparator.Length)..];
+        var rootAppointmentId = normalizedAppointmentId[..separatorIndex];
+        var occurrenceDateText = normalizedAppointmentId[(separatorIndex + VirtualOccurrenceSeparator.Length)..];
         return DateOnly.TryParse(occurrenceDateText, out var occurrenceDate)
             ? new AppointmentOccurrenceReference(rootAppointmentId, occurrenceDate)
-            : new AppointmentOccurrenceReference(appointmentId, null);
+            : new AppointmentOccurrenceReference(normalizedAppointmentId, null);
     }
 
     private static string BuildOccurrenceId(string rootAppointmentId, DateOnly occurrenceDate) =>
