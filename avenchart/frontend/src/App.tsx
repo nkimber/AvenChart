@@ -1776,6 +1776,9 @@ function App() {
     const controller = new AbortController()
 
     async function loadCriticalLabResultQueue() {
+      // Critical-result follow-up actions must never be presented as current
+      // when their refresh is pending or has failed.
+      setCriticalLabResultQueue(null)
       setCriticalLabResultQueueStatus('loading')
       setCriticalLabResultQueueError(null)
       try {
@@ -1784,6 +1787,7 @@ function App() {
         setCriticalLabResultQueueStatus('ready')
       } catch (loadError) {
         if (!controller.signal.aborted) {
+          setCriticalLabResultQueue(null)
           setCriticalLabResultQueueStatus('error')
           setCriticalLabResultQueueError(
             loadError instanceof Error ? loadError.message : 'Critical result follow-up queue failed',
