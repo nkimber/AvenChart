@@ -483,6 +483,60 @@ public static class EndpointAccessPolicies
         };
     }
 
+    public static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> ClinicalListFacilityScopeFilter()
+    {
+        return async (context, next) =>
+        {
+            var routeValues = context.HttpContext.Request.RouteValues;
+            var accessContext = RequireStaffAccessContext(context.HttpContext);
+            var accessContextService = context.HttpContext.RequestServices
+                .GetRequiredService<StaffAccessContextService>();
+            var cancellationToken = context.HttpContext.RequestAborted;
+
+            if (routeValues.TryGetValue("patientId", out var patientRouteValue))
+            {
+                var patientId = patientRouteValue?.ToString();
+                PhiAuditResourceContext.Set(context.HttpContext, "Patient", patientId);
+                var allowed = await accessContextService.CanAccessPatientAsync(
+                    patientId,
+                    accessContext.FacilityId,
+                    cancellationToken);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            (string? ResourceType, string? ResourceId) clinicalResource = routeValues.TryGetValue("allergyId", out var allergyId) ? ("Allergy", allergyId?.ToString())
+                : routeValues.TryGetValue("problemId", out var problemId) ? ("Problem", problemId?.ToString())
+                : routeValues.TryGetValue("medicationId", out var medicationId) ? ("Medication", medicationId?.ToString())
+                : routeValues.TryGetValue("prescriptionId", out var prescriptionId) ? ("Prescription", prescriptionId?.ToString())
+                : routeValues.TryGetValue("immunizationId", out var immunizationId) ? ("Immunization", immunizationId?.ToString())
+                : routeValues.TryGetValue("immunizationKey", out var immunizationKey) ? ("ImmunizationKey", immunizationKey?.ToString())
+                : (null, null);
+            if (clinicalResource.ResourceType is not null)
+            {
+                PhiAuditResourceContext.Set(context.HttpContext, clinicalResource.ResourceType, clinicalResource.ResourceId);
+                var allowed = await accessContextService.CanAccessClinicalListResourceAsync(
+                    clinicalResource.ResourceType,
+                    clinicalResource.ResourceId,
+                    accessContext.FacilityId,
+                    cancellationToken);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            if (routeValues.TryGetValue("messageId", out var messageRouteValue))
+            {
+                var messageId = messageRouteValue?.ToString();
+                PhiAuditResourceContext.Set(context.HttpContext, "Message", messageId);
+                var allowed = await accessContextService.CanAccessMessageAsync(
+                    messageId,
+                    accessContext.FacilityId,
+                    cancellationToken);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            return await next(context);
+        };
+    }
+
     public static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
             AuthRepository repository,
             HttpContext httpContext,
