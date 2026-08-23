@@ -1,0 +1,212 @@
+name: Supply-chain evidence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "avenchart/**/*.csproj"
+      - "avenchart/**/*.props"
+      - "avenchart/**/*.targets"
+      - "avenchart/**/packages.lock.json"
+      - "avenchart-ui/package.json"
+      - "avenchart-ui/package-lock.json"
+      - "avenchart/frontend/package.json"
+      - "avenchart/frontend/package-lock.json"
+      - ".github/workflows/supply-chain-evidence.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "avenchart/**/*.csproj"
+      - "avenchart/**/*.props"
+      - "avenchart/**/*.targets"
+      - "avenchart/**/packages.lock.json"
+      - "avenchart-ui/package.json"
+      - "avenchart-ui/package-lock.json"
+      - "avenchart/frontend/package.json"
+      - "avenchart/frontend/package-lock.json"
+      - ".github/workflows/supply-chain-evidence.yml"
+  schedule:
+    - cron: "45 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  attestations: write
+  id-token: write
+
+jobs:
+  dependency-evidence:
+    name: SBOM, license inventory, and vulnerability evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            avenchart/frontend/package-lock.json
+            avenchart-ui/package-lock.json
+      - name: Restore backend dependencies
+        run: dotnet restore avenchart/AvenChart.slnx
+      - name: Restore frontend dependencies
+        run: |
+          npm ci --prefix avenchart/frontend
+          npm ci --prefix avenchart-ui
+      - name: Generate reproducible CycloneDX software bills of materials
+        run: |
+          mkdir -p supply-chain-artifacts/sbom
+          dotnet tool install --tool-path "$RUNNER_TEMP/cyclonedx-dotnet" CycloneDX --version 6.2.0
+          "$RUNNER_TEMP/cyclonedx-dotnet/dotnet-CycloneDX" avenchart/AvenChart.slnx \
+            --output supply-chain-artifacts/sbom \
+            --filename backend.cdx.json \
+            --output-format Json \
+            --exclude-test-projects \
+            --disable-package-restore
+          (
+            cd avenchart/frontend
+            npm exec --yes --package @cyclonedx/cyclonedx-npm@6.0.1 -- cyclonedx-npm \
+              --package-lock-only \
+              --output-reproducible \
+              --validate \
+              --output-format JSON \
+              --output-file ../../supply-chain-artifacts/sbom/reference-ui.cdx.json
+          )
+          (
+            cd avenchart-ui
+            npm exec --yes --package @cyclonedx/cyclonedx-npm@6.0.1 -- cyclonedx-npm \
+              --package-lock-only \
+              --output-reproducible \
+              --validate \
+              --output-format JSON \
+              --output-file ../supply-chain-artifacts/sbom/modern-ui.cdx.json
+          )
+      - name: Record production dependency advisory evidence
+        run: |
+          mkdir -p supply-chain-artifacts/audits
+          set +e
+          dotnet list avenchart/backend/src/AvenChart.Api/AvenChart.Api.csproj package --vulnerable --include-transitive --format json > supply-chain-artifacts/audits/backend.json
+          backend_exit=$?
+          npm audit --prefix avenchart/frontend --omit=dev --audit-level=high --json > supply-chain-artifacts/audits/reference-ui.json
+          reference_exit=$?
+          npm audit --prefix avenchart-ui --omit=dev --audit-level=high --json > supply-chain-artifacts/audits/modern-ui.json
+          modern_exit=$?
+          set -e
+          printf '{"backend":%s,"referenceUi":%s,"modernUi":%s}\n' "$backend_exit" "$reference_exit" "$modern_exit" > supply-chain-artifacts/audits/command-exit-codes.json
+      - name: Inventory license metadata and validate advisory threshold
+        id: vulnerability-validation
+        continue-on-error: true
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path("supply-chain-artifacts")
+          sbom_paths = sorted((root / "sbom").glob("*.cdx.json"))
+          license_inventory = []
+          for path in sbom_paths:
+              bom = json.loads(path.read_text(encoding="utf-8"))
+              components = bom.get("components", [])
+              missing = [
+                  component.get("bom-ref") or component.get("name")
+                  for component in components
+                  if not component.get("licenses")
+              ]
+              license_inventory.append(
+                  {
+                      "artifact": path.name,
+                      "components": len(components),
+                      "componentsWithLicenseMetadata": len(components) - len(missing),
+                      "componentsMissingLicenseMetadata": missing,
+                  }
+              )
+          (root / "license-inventory.json").write_text(
+              json.dumps(
+                  {
+                      "status": "inventory-complete",
+                      "reviewRequired": True,
+                      "artifacts": license_inventory,
+                  },
+                  indent=2,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+
+          advisories = []
+          for name in ("reference-ui.json", "modern-ui.json"):
+              report = json.loads((root / "audits" / name).read_text(encoding="utf-8"))
+              metadata = report.get("metadata", {}).get("vulnerabilities", {})
+              for severity in ("high", "critical"):
+                  if metadata.get(severity, 0):
+                      advisories.append(
+                          {"artifact": name, "severity": severity, "count": metadata[severity]}
+                      )
+
+          backend = json.loads((root / "audits" / "backend.json").read_text(encoding="utf-8"))
+          def collect_dotnet_vulnerabilities(value, path=""):
+              if isinstance(value, dict):
+                  vulnerabilities = value.get("vulnerabilities")
+                  if isinstance(vulnerabilities, list):
+                      for vulnerability in vulnerabilities:
+                          severity = str(vulnerability.get("severity", "unknown")).lower()
+                          if severity in ("high", "critical", "unknown"):
+                              advisories.append(
+                                  {
+                                      "artifact": "backend.json",
+                                      "path": path,
+                                      "severity": severity,
+                                      "advisory": vulnerability.get("advisoryurl"),
+                                  }
+                              )
+                  for key, nested in value.items():
+                      collect_dotnet_vulnerabilities(nested, f"{path}.{key}" if path else key)
+              elif isinstance(value, list):
+                  for index, nested in enumerate(value):
+                      collect_dotnet_vulnerabilities(nested, f"{path}[{index}]")
+
+          collect_dotnet_vulnerabilities(backend)
+          evidence = {
+              "policy": "No high, critical, or unclassified production dependency advisories",
+              "status": "passed" if not advisories else "failed",
+              "advisories": advisories,
+          }
+          (root / "vulnerability-evidence.json").write_text(
+              json.dumps(evidence, indent=2) + "\n", encoding="utf-8"
+          )
+          if advisories:
+              print(json.dumps(evidence, indent=2))
+              sys.exit(1)
+          PY
+      - name: Record evidence tool versions
+        run: |
+          cat > supply-chain-artifacts/tool-versions.json <<EOF
+          {
+            "cyclonedxDotnet": "6.2.0",
+            "cyclonedxNpm": "6.0.1",
+            "dotnet": "$(dotnet --version)",
+            "node": "$(node --version)",
+            "commit": "${GITHUB_SHA}"
+          }
+          EOF
+      - name: Attest generated supply-chain artifacts
+        if: github.event_name != 'pull_request' && steps.vulnerability-validation.outcome == 'success'
+        uses: actions/attest@v4
+        with:
+          subject-path: supply-chain-artifacts/sbom/*.cdx.json
+      - name: Upload supply-chain evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avenchart-supply-chain-evidence
+          path: supply-chain-artifacts/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Enforce advisory threshold
+        if: always() && steps.vulnerability-validation.outcome != 'success'
+        run: exit 1
