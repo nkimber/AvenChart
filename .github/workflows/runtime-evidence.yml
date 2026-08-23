@@ -1,0 +1,111 @@
+name: Runtime evidence
+
+on:
+  schedule:
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-runtime-evidence:
+    name: Seeded API and modern UI evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: avenchart-ui/package-lock.json
+      - name: Install modern UI dependencies
+        working-directory: avenchart-ui
+        run: npm ci
+      - name: Install Chromium for browser evidence
+        working-directory: avenchart-ui
+        run: npx playwright install --with-deps chromium
+      - name: Start seeded AvenChart runtime
+        working-directory: avenchart
+        shell: pwsh
+        run: |
+          docker compose up -d --build --wait api
+          ./scripts/Seed-AvenChartGoldDataset.ps1 -SkipMigrationImageBuild
+      - name: Run governed API workflow baseline
+        working-directory: avenchart
+        shell: pwsh
+        run: ./scripts/Test-AvenChartBaseline.ps1
+      - name: Run external laboratory FHIR intake evidence
+        working-directory: avenchart
+        shell: pwsh
+        run: ./scripts/Test-ExternalLaboratoryFhirIntake.ps1
+      - name: Run development OIDC provider evidence
+        working-directory: avenchart
+        shell: pwsh
+        run: |
+          $env:IdentityProvider__Mode = "test-oidc"
+          docker compose up -d --force-recreate --wait api
+          ./scripts/Test-DevelopmentTestOidc.ps1
+          Remove-Item Env:\IdentityProvider__Mode
+      - name: Restore local identity runtime for browser evidence
+        working-directory: avenchart
+        shell: pwsh
+        run: |
+          $env:IdentityProvider__Mode = "local"
+          docker compose up -d --force-recreate --wait api
+          Remove-Item Env:\IdentityProvider__Mode
+          ./scripts/Seed-AvenChartGoldDataset.ps1 -SkipMigrationImageBuild
+      - name: Run modern UI browser evidence in Chromium
+        working-directory: avenchart-ui
+        run: |
+          set +e
+          npx playwright test e2e/route-smoke.spec.ts --project=desktop-chromium --project=mobile-chromium --workers=1
+          route_smoke_exit_code=$?
+          mv test-results route-smoke-test-results
+          mv playwright-report route-smoke-playwright-report
+
+          npx playwright test e2e/accessibility.spec.ts --project=desktop-chromium --project=mobile-chromium --workers=1
+          accessibility_exit_code=$?
+          mv test-results accessibility-test-results
+          mv playwright-report accessibility-playwright-report
+
+          if [ "$route_smoke_exit_code" -ne 0 ] || [ "$accessibility_exit_code" -ne 0 ]; then
+            exit 1
+          fi
+      - name: Upload API evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avenchart-runtime-artifacts
+          path: avenchart/artifacts/
+          if-no-files-found: ignore
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avenchart-browser-evidence
+          path: |
+            avenchart-ui/route-smoke-playwright-report/
+            avenchart-ui/route-smoke-test-results/
+            avenchart-ui/accessibility-playwright-report/
+            avenchart-ui/accessibility-test-results/
+          if-no-files-found: ignore
+      - name: Collect Docker logs
+        if: always()
+        working-directory: avenchart
+        run: docker compose logs --no-color > runtime-docker-compose.log
+      - name: Upload Docker logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avenchart-runtime-docker-logs
+          path: avenchart/runtime-docker-compose.log
+          if-no-files-found: ignore
+      - name: Stop runtime
+        if: always()
+        working-directory: avenchart
+        run: docker compose down --volumes --remove-orphans
