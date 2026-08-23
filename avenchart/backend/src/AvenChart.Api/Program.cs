@@ -667,7 +667,6 @@ app.MapTherapyGroupEndpoints();
 
 app.Run();
 
-
 static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport report)
 {
     return context.Response.WriteAsJsonAsync(new
@@ -718,5 +717,4 @@ static Task WriteSchemaNotReadyAsync(HttpContext context)
             })
         .ExecuteAsync(context);
 }
-
 
