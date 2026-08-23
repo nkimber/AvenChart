@@ -412,6 +412,26 @@ function Test-ProcedureOrderRetention {
     }
 }
 
+function Test-RetiredFinancialDeletion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Uri
+    )
+
+    try {
+        Invoke-WebRequest `
+            -Uri $Uri `
+            -Method Delete `
+            -Headers (Get-AdministrationHeaders) `
+            -UseBasicParsing `
+            -TimeoutSec 20 | Out-Null
+        return $false
+    }
+    catch {
+        return $null -ne $_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 410
+    }
+}
+
 function New-AuthenticatedHttpClient {
     $client = [System.Net.Http.HttpClient]::new()
     $headers = Get-AdministrationHeaders
@@ -10349,23 +10369,28 @@ try {
     $clearedClaimRows = @($clearedClaimStatus.detail.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
     $clearedClaimVisible = $clearedClaimRows | Where-Object { $_.id -eq $claimStatusMutationId -and $_.statusLabel -eq "Marked as cleared" -and [string]::IsNullOrWhiteSpace($_.processFile) -and $_.target -eq "HCFA" } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $claimDeletionRetired = Test-RetiredFinancialDeletion -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId"
     $claimStatusMutationId = $null
     $afterClaimMutationBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $afterClaimRows = @($afterClaimMutationBilling.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
+    $retainedClaimVisible = $afterClaimRows | Where-Object { $_.id -eq $createdClaimStatus.id -and $_.statusLabel -eq "Marked as cleared" } | Select-Object -First 1
 
     $claimStatusMutationPassed = $null -ne $createdClaimVisible `
         -and $createdClaimRows.Count -eq ($beforeClaimRows.Count + 1) `
         -and $createdClaimVisible.version -gt 1 `
         -and $null -ne $generatedClaimVisible `
         -and $null -ne $clearedClaimVisible `
-        -and $afterClaimRows.Count -eq $beforeClaimRows.Count
+        -and $claimDeletionRetired `
+        -and $afterClaimRows.Count -eq ($beforeClaimRows.Count + 1) `
+        -and $null -ne $retainedClaimVisible
     Add-Check -Name "claim status mutation lifecycle" -Result $(if ($claimStatusMutationPassed) { "passed" } else { "failed" }) -Details @{
         claimId = $createdClaimStatus.id
         processFile = $claimStatusProcessFile
         createdClaim = $createdClaimVisible
         generatedClaim = $generatedClaimVisible
         clearedClaim = $clearedClaimVisible
+        deletionRetired = $claimDeletionRetired
+        retainedClaim = $retainedClaimVisible
     }
 }
 catch {
@@ -10437,7 +10462,7 @@ try {
     $voidedPaymentVisible = $voidedPaymentRows | Where-Object { $_.activityId -eq $paymentPostingMutationId } | Select-Object -First 1
     $voidedPaymentSummary = $voidedPaymentPosting.detail.accountSummary
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$paymentPostingMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $paymentDeletionRetired = Test-RetiredFinancialDeletion -Uri "$ApiBaseUrl/api/billing/payments/$paymentPostingMutationId"
     $paymentPostingMutationId = $null
 
     $paymentPostingMutationPassed = $null -ne $createdPaymentVisible `
@@ -10447,13 +10472,15 @@ try {
         -and $null -eq $voidedPaymentVisible `
         -and [decimal]$voidedPaymentSummary.paymentAmount -eq [decimal]$beforePaymentMutationSummary.paymentAmount `
         -and [decimal]$voidedPaymentSummary.adjustmentAmount -eq [decimal]$beforePaymentMutationSummary.adjustmentAmount `
-        -and [decimal]$voidedPaymentSummary.balanceAmount -eq [decimal]$beforePaymentMutationSummary.balanceAmount
+        -and [decimal]$voidedPaymentSummary.balanceAmount -eq [decimal]$beforePaymentMutationSummary.balanceAmount `
+        -and $paymentDeletionRetired
     Add-Check -Name "payment posting mutation lifecycle" -Result $(if ($paymentPostingMutationPassed) { "passed" } else { "failed" }) -Details @{
         paymentId = $createdPaymentPosting.id
         reference = $paymentPostingReference
         createdPayment = $createdPaymentVisible
         createdSummary = $createdPaymentSummary
         voidedSummary = $voidedPaymentSummary
+        deletionRetired = $paymentDeletionRetired
     }
 }
 catch {
@@ -10498,7 +10525,7 @@ try {
     $voidedPatientPaymentVisible = $voidedPatientPaymentRows | Where-Object { $_.activityId -eq $patientPaymentMutationId } | Select-Object -First 1
     $voidedPatientPaymentSummary = $voidedPatientPayment.detail.accountSummary
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$patientPaymentMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $patientPaymentDeletionRetired = Test-RetiredFinancialDeletion -Uri "$ApiBaseUrl/api/billing/payments/$patientPaymentMutationId"
     $patientPaymentMutationId = $null
 
     $patientPaymentMutationPassed = $null -ne $createdPatientPaymentVisible `
@@ -10508,13 +10535,15 @@ try {
         -and $null -eq $voidedPatientPaymentVisible `
         -and [decimal]$voidedPatientPaymentSummary.paymentAmount -eq [decimal]$beforePatientPaymentSummary.paymentAmount `
         -and [decimal]$voidedPatientPaymentSummary.adjustmentAmount -eq [decimal]$beforePatientPaymentSummary.adjustmentAmount `
-        -and [decimal]$voidedPatientPaymentSummary.balanceAmount -eq [decimal]$beforePatientPaymentSummary.balanceAmount
+        -and [decimal]$voidedPatientPaymentSummary.balanceAmount -eq [decimal]$beforePatientPaymentSummary.balanceAmount `
+        -and $patientPaymentDeletionRetired
     Add-Check -Name "patient payment capture lifecycle" -Result $(if ($patientPaymentMutationPassed) { "passed" } else { "failed" }) -Details @{
         paymentId = $createdPatientPayment.id
         reference = $patientPaymentReference
         createdPayment = $createdPatientPaymentVisible
         createdSummary = $createdPatientPaymentSummary
         voidedSummary = $voidedPatientPaymentSummary
+        deletionRetired = $patientPaymentDeletionRetired
     }
 }
 catch {
@@ -10855,6 +10884,11 @@ catch {
 
 $collectionsFollowUpId = $null
 try {
+    # The highest-priority seeded collections account is in facility 12.  The
+    # billing endpoint itself is intentionally work-queue scoped, but the
+    # resulting message must still be read and updated through its facility
+    # scoped clinical communication endpoints.
+    Set-AdministrationFacilityContext -FacilityId 12
     $collectionsWorkQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/collections/work-queue?limit=5" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $firstCollectionItem = @($collectionsWorkQueue.items) | Select-Object -First 1
     $createFollowUpBody = @{
@@ -10865,24 +10899,42 @@ try {
     } | ConvertTo-Json
     $createdFollowUp = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/collections/follow-ups" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createFollowUpBody -TimeoutSec 20
     $collectionsFollowUpId = $createdFollowUp.id
+    $initialFollowUpVersion = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId/version" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
 
     $closeFollowUpBody = @{
         status = "Done"
         body = "Closed by the smoke collections follow-up check."
+        expectedVersion = [int]$initialFollowUpVersion.version
     } | ConvertTo-Json
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $closeFollowUpBody -TimeoutSec 20 | Out-Null
     $patientMessages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$($firstCollectionItem.pubpid)" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $closedFollowUp = $patientMessages.messages | Where-Object { $_.id -eq $collectionsFollowUpId -and $_.status -eq "Done" } | Select-Object -First 1
+
+    # Collections follow-ups are patient communication evidence.  Archive the
+    # completed fixture through the retained lifecycle and prove both its
+    # hidden active view and auditable retention event, rather than using the
+    # retired DELETE endpoint as synthetic cleanup.
+    Archive-MessageTestFixture -MessageId $collectionsFollowUpId | Out-Null
+    $activePatientMessages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$($firstCollectionItem.pubpid)" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $archivedPatientMessages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$($firstCollectionItem.pubpid)?includeArchived=true" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $archivedFollowUp = $archivedPatientMessages.messages | Where-Object { $_.id -eq $collectionsFollowUpId -and $_.deleted -eq 1 } | Select-Object -First 1
+    $retentionHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId/retention-history" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $archiveEvent = $retentionHistory.events | Where-Object { $_.action -eq "archived" -and $_.actor -eq "admin" } | Select-Object -First 1
+    $hiddenFromActiveMessages = $null -eq ($activePatientMessages.messages | Where-Object { $_.id -eq $collectionsFollowUpId } | Select-Object -First 1)
     $collectionsFollowUpPassed = $createdFollowUp.task.title -eq "Collections follow-up: $($firstCollectionItem.statementNumber)" `
         -and $createdFollowUp.task.assignedTo -eq "billing" `
         -and $createdFollowUp.task.action -eq $firstCollectionItem.recommendedAction `
         -and $createdFollowUp.task.collectionTier -eq $firstCollectionItem.collectionTier `
         -and $createdFollowUp.task.body -like "*$($firstCollectionItem.statementNumber)*" `
         -and $createdFollowUp.task.body -like "*Created by the smoke collections follow-up check.*" `
+        -and [int]$initialFollowUpVersion.version -eq 1 `
         -and $null -ne $closedFollowUp `
-        -and $closedFollowUp.body -eq "Closed by the smoke collections follow-up check."
+        -and $closedFollowUp.body -eq "Closed by the smoke collections follow-up check." `
+        -and $closedFollowUp.messageVersion -eq 2 `
+        -and $hiddenFromActiveMessages `
+        -and $null -ne $archivedFollowUp `
+        -and $null -ne $archiveEvent
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $collectionsFollowUpId = $null
 
     Add-Check -Name "collections follow-up task lifecycle" -Result $(if ($collectionsFollowUpPassed) { "passed" } else { "failed" }) -Details @{
@@ -10892,6 +10944,9 @@ try {
         assignedTo = $createdFollowUp.task.assignedTo
         action = $createdFollowUp.task.action
         closedVisible = $null -ne $closedFollowUp
+        initialVersion = $initialFollowUpVersion.version
+        archivedVisible = $null -ne $archivedFollowUp
+        archiveEvent = $archiveEvent
     }
 }
 catch {
@@ -10909,6 +10964,7 @@ finally {
 
 $billingLineMutationId = $null
 try {
+    Set-AdministrationFacilityContext -FacilityId 11
     $billingCodeText = "Smoke Billing Mutation"
     $createBillingBody = @{
         patientId = "MOD-PAT-0001"
@@ -10938,21 +10994,23 @@ try {
     $inactiveBillingVisible = $inactiveBillingEncounter.lines | Where-Object { $_.id -eq $billingLineMutationId } | Select-Object -First 1
     $inactiveEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $inactiveEncounterBillingVisible = $inactiveEncounterDetail.billingLines | Where-Object { $_.id -eq $billingLineMutationId } | Select-Object -First 1
-    $billingLineMutationPassed = $null -ne $createdBillingVisible -and $null -eq $inactiveBillingVisible
-    $encounterBillingLinkMutationPassed = $null -ne $createdEncounterBillingVisible -and $null -eq $inactiveEncounterBillingVisible
+    $billingLineDeletionRetired = Test-RetiredFinancialDeletion -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId"
+    $billingLineMutationPassed = $null -ne $createdBillingVisible -and $null -eq $inactiveBillingVisible -and $billingLineDeletionRetired
+    $encounterBillingLinkMutationPassed = $null -ne $createdEncounterBillingVisible -and $null -eq $inactiveEncounterBillingVisible -and $billingLineDeletionRetired
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $billingLineMutationId = $null
 
     Add-Check -Name "billing line mutation lifecycle" -Result $(if ($billingLineMutationPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdBillingLine.id
         createdVisible = $createdBillingVisible
         inactiveVisible = $inactiveBillingVisible
+        deletionRetired = $billingLineDeletionRetired
     }
     Add-Check -Name "encounter billing linkage mutation visibility" -Result $(if ($encounterBillingLinkMutationPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdBillingLine.id
         encounterBillingVisible = $createdEncounterBillingVisible
         inactiveEncounterBillingVisible = $inactiveEncounterBillingVisible
+        deletionRetired = $billingLineDeletionRetired
     }
 }
 catch {
@@ -10971,6 +11029,7 @@ finally {
 
 $billingCorrectionMutationId = $null
 try {
+    Set-AdministrationFacilityContext -FacilityId 11
     $correctedBillingText = "Smoke Corrected Billing Mutation"
     $createCorrectionBody = @{
         patientId = "MOD-PAT-0001"
@@ -11004,15 +11063,16 @@ try {
     $inactiveCorrectionLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingCorrectionMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $statusCorrectionBody -TimeoutSec 20
     $inactiveCorrectionEncounter = $inactiveCorrectionLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $inactiveCorrectionVisible = $inactiveCorrectionEncounter.lines | Where-Object { $_.id -eq $billingCorrectionMutationId } | Select-Object -First 1
-    $billingCorrectionPassed = $null -ne $correctedBillingVisible -and $null -eq $inactiveCorrectionVisible
+    $billingCorrectionDeletionRetired = Test-RetiredFinancialDeletion -Uri "$ApiBaseUrl/api/billing/lines/$billingCorrectionMutationId"
+    $billingCorrectionPassed = $null -ne $correctedBillingVisible -and $null -eq $inactiveCorrectionVisible -and $billingCorrectionDeletionRetired
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingCorrectionMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $billingCorrectionMutationId = $null
 
     Add-Check -Name "billing correction mutation lifecycle" -Result $(if ($billingCorrectionPassed) { "passed" } else { "failed" }) -Details @{
         correctedId = $correctedBillingLine.id
         correctedVisible = $correctedBillingVisible
         inactiveVisible = $inactiveCorrectionVisible
+        deletionRetired = $billingCorrectionDeletionRetired
     }
 }
 catch {
@@ -11030,6 +11090,7 @@ finally {
 
 $billingModifierMutationId = $null
 try {
+    Set-AdministrationFacilityContext -FacilityId 11
     $modifierBillingText = "Smoke Modifier Billing Mutation"
     $createModifierBody = @{
         patientId = "MOD-PAT-0001"
@@ -11065,15 +11126,16 @@ try {
     $inactiveModifierLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $statusModifierBody -TimeoutSec 20
     $inactiveModifierEncounter = $inactiveModifierLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $inactiveModifierVisible = $inactiveModifierEncounter.lines | Where-Object { $_.id -eq $billingModifierMutationId } | Select-Object -First 1
-    $billingModifierPassed = $null -ne $modifiedBillingVisible -and $null -eq $inactiveModifierVisible
+    $billingModifierDeletionRetired = Test-RetiredFinancialDeletion -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId"
+    $billingModifierPassed = $null -ne $modifiedBillingVisible -and $null -eq $inactiveModifierVisible -and $billingModifierDeletionRetired
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $billingModifierMutationId = $null
 
     Add-Check -Name "billing modifier mutation lifecycle" -Result $(if ($billingModifierPassed) { "passed" } else { "failed" }) -Details @{
         modifiedId = $modifiedBillingLine.id
         modifiedVisible = $modifiedBillingVisible
         inactiveVisible = $inactiveModifierVisible
+        deletionRetired = $billingModifierDeletionRetired
     }
 }
 catch {
@@ -11091,6 +11153,7 @@ finally {
 
 $diagnosisLineMutationId = $null
 try {
+    Set-AdministrationFacilityContext -FacilityId 11
     $encounterDiagnosisMutationPassed = $false
     $diagnosisCodeText = "Smoke Diagnosis Mutation"
     $createDiagnosisBody = @{
@@ -11128,20 +11191,22 @@ try {
     $inactiveDiagnosisVisible = $inactiveDiagnosisEncounter.lines | Where-Object { $_.id -eq $diagnosisLineMutationId } | Select-Object -First 1
     $inactiveDiagnosisEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $inactiveEncounterDiagnosisVisible = @($inactiveDiagnosisEncounterDetail.diagnosisCodes | Where-Object { $null -ne $_ }) | Where-Object { $_.code -eq "R73.03" } | Select-Object -First 1
-    $diagnosisLineMutationPassed = $null -ne $createdDiagnosisVisible -and $null -eq $inactiveDiagnosisVisible
-    $encounterDiagnosisMutationPassed = $null -ne $createdEncounterDiagnosisVisible -and $null -eq $inactiveEncounterDiagnosisVisible
+    $diagnosisLineDeletionRetired = Test-RetiredFinancialDeletion -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId"
+    $diagnosisLineMutationPassed = $null -ne $createdDiagnosisVisible -and $null -eq $inactiveDiagnosisVisible -and $diagnosisLineDeletionRetired
+    $encounterDiagnosisMutationPassed = $null -ne $createdEncounterDiagnosisVisible -and $null -eq $inactiveEncounterDiagnosisVisible -and $diagnosisLineDeletionRetired
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $diagnosisLineMutationId = $null
 
     Add-Check -Name "billing diagnosis mutation lifecycle" -Result $(if ($diagnosisLineMutationPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdDiagnosisLine.id
         createdVisible = $createdDiagnosisVisible
         inactiveVisible = $inactiveDiagnosisVisible
+        deletionRetired = $diagnosisLineDeletionRetired
     }
     Add-Check -Name "encounter diagnosis coding mutation visibility" -Result $(if ($encounterDiagnosisMutationPassed) { "passed" } else { "failed" }) -Details @{
         createdDiagnosis = $createdEncounterDiagnosisVisible
         inactiveDiagnosis = $inactiveEncounterDiagnosisVisible
+        deletionRetired = $diagnosisLineDeletionRetired
     }
 }
 catch {
