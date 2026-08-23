@@ -211,10 +211,47 @@ builder.Services.AddOptions<ReportExecutionOptions>()
         "ReportExecution heartbeat must be shorter than its lease.")
     .ValidateOnStart();
 
+builder.Services.AddOptions<DatabaseConnectionOptions>()
+    .BindConfiguration(DatabaseConnectionOptions.SectionName)
+    .Validate(
+        options => options.ConnectionTimeoutSeconds is >= 5 and <= 60,
+        "DatabaseConnection:ConnectionTimeoutSeconds must be between 5 and 60.")
+    .Validate(
+        options => options.CommandTimeoutSeconds is >= 5 and <= 300,
+        "DatabaseConnection:CommandTimeoutSeconds must be between 5 and 300.")
+    .Validate(
+        options => options.CancellationTimeoutMilliseconds is >= 500 and <= 10000,
+        "DatabaseConnection:CancellationTimeoutMilliseconds must be between 500 and 10000.")
+    .Validate(
+        options => options.MinimumPoolSize is >= 0 and <= 100,
+        "DatabaseConnection:MinimumPoolSize must be between 0 and 100.")
+    .Validate(
+        options => options.MaximumPoolSize is >= 5 and <= 500,
+        "DatabaseConnection:MaximumPoolSize must be between 5 and 500.")
+    .Validate(
+        options => options.MinimumPoolSize <= options.MaximumPoolSize,
+        "DatabaseConnection:MinimumPoolSize cannot exceed MaximumPoolSize.")
+    .Validate(
+        options => options.KeepAliveSeconds is 0 or >= 10 and <= 600,
+        "DatabaseConnection:KeepAliveSeconds must be 0 or between 10 and 600.")
+    .ValidateOnStart();
+
 var connectionString = builder.Configuration.GetConnectionString("AvenChart")
     ?? "Host=localhost;Port=5433;Database=avenchart;Username=avenchart;Password=avenchart_demo";
+var databaseConnectionOptions = builder.Configuration
+    .GetSection(DatabaseConnectionOptions.SectionName)
+    .Get<DatabaseConnectionOptions>() ?? new DatabaseConnectionOptions();
+var databaseConnectionString = new NpgsqlConnectionStringBuilder(connectionString)
+{
+    Timeout = databaseConnectionOptions.ConnectionTimeoutSeconds,
+    CommandTimeout = databaseConnectionOptions.CommandTimeoutSeconds,
+    CancellationTimeout = databaseConnectionOptions.CancellationTimeoutMilliseconds,
+    MinPoolSize = databaseConnectionOptions.MinimumPoolSize,
+    MaxPoolSize = databaseConnectionOptions.MaximumPoolSize,
+    KeepAlive = databaseConnectionOptions.KeepAliveSeconds
+}.ConnectionString;
 
-builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
+builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(databaseConnectionString));
 builder.Services.AddDbContext<AvenChartDbContext>((services, options) =>
     options.UseNpgsql(services.GetRequiredService<NpgsqlDataSource>()));
 builder.Services.AddScoped<PatientRepository>();
