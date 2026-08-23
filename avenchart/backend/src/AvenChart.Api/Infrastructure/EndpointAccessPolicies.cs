@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Globalization;
 using AvenChart.Api.Data;
 using AvenChart.Api.Models;
 using AvenChart.Api.Security;
@@ -528,6 +529,75 @@ public static class EndpointAccessPolicies
                 PhiAuditResourceContext.Set(context.HttpContext, "Message", messageId);
                 var allowed = await accessContextService.CanAccessMessageAsync(
                     messageId,
+                    accessContext.FacilityId,
+                    cancellationToken);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            return await next(context);
+        };
+    }
+
+    public static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> ProcedureFacilityScopeFilter()
+    {
+        return async (context, next) =>
+        {
+            var routeValues = context.HttpContext.Request.RouteValues;
+            var accessContext = RequireStaffAccessContext(context.HttpContext);
+            var accessContextService = context.HttpContext.RequestServices
+                .GetRequiredService<StaffAccessContextService>();
+            var cancellationToken = context.HttpContext.RequestAborted;
+
+            if (routeValues.TryGetValue("patientId", out var patientRouteValue))
+            {
+                var patientId = patientRouteValue?.ToString();
+                PhiAuditResourceContext.Set(context.HttpContext, "Patient", patientId);
+                var allowed = await accessContextService.CanAccessPatientAsync(
+                    patientId,
+                    accessContext.FacilityId,
+                    cancellationToken);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            if (routeValues.TryGetValue("orderId", out var orderRouteValue)
+                && int.TryParse(orderRouteValue?.ToString(), out var orderId))
+            {
+                PhiAuditResourceContext.Set(context.HttpContext, "LaboratoryOrder", orderId.ToString(CultureInfo.InvariantCulture));
+                var allowed = await accessContextService.CanAccessLaboratoryOrderAsync(
+                    orderId,
+                    accessContext.FacilityId,
+                    cancellationToken);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            if (routeValues.TryGetValue("reportId", out var reportRouteValue)
+                && int.TryParse(reportRouteValue?.ToString(), out var reportId))
+            {
+                PhiAuditResourceContext.Set(context.HttpContext, "LaboratoryReport", reportId.ToString(CultureInfo.InvariantCulture));
+                var allowed = await accessContextService.CanAccessLaboratoryReportAsync(
+                    reportId,
+                    accessContext.FacilityId,
+                    cancellationToken);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            if (routeValues.TryGetValue("resultId", out var resultRouteValue)
+                && int.TryParse(resultRouteValue?.ToString(), out var resultId))
+            {
+                PhiAuditResourceContext.Set(context.HttpContext, "LaboratoryResult", resultId.ToString(CultureInfo.InvariantCulture));
+                var allowed = await accessContextService.CanAccessLaboratoryResultAsync(
+                    resultId,
+                    accessContext.FacilityId,
+                    cancellationToken);
+                return allowed ? await next(context) : Results.NotFound();
+            }
+
+            if (routeValues.TryGetValue("specimenId", out var specimenRouteValue)
+                && int.TryParse(specimenRouteValue?.ToString(), out var specimenId))
+            {
+                PhiAuditResourceContext.Set(context.HttpContext, "LaboratorySpecimen", specimenId.ToString(CultureInfo.InvariantCulture));
+                var allowed = await accessContextService.CanAccessLaboratorySpecimenAsync(
+                    specimenId,
                     accessContext.FacilityId,
                     cancellationToken);
                 return allowed ? await next(context) : Results.NotFound();
