@@ -138,7 +138,8 @@ public sealed class BrowserOidcSessionService(
         var token = await ExchangeAuthorizationCodeAsync(code, oidcState.CodeVerifier, context, cancellationToken);
         var accessToken = token.AccessToken ?? throw new BrowserOidcException("The identity provider did not return a usable bearer token.");
         var identity = await ValidateTokenAsync(accessToken, cancellationToken);
-        var subject = identity.Principal.FindFirst(_options.IsTestOidc ? "sub" : _options.SubjectClaim)?.Value;
+        var subject = identity.Principal.FindFirst(_options.IsTestOidc ? "sub" : _options.SubjectClaim)?.Value
+            ?? identity.Principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrWhiteSpace(subject))
         {
             throw new BrowserOidcException("The identity provider token does not contain the configured subject claim.");
@@ -262,6 +263,11 @@ public sealed class BrowserOidcSessionService(
 
     private async Task<OidcProviderMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
+        if (_options.IsTestOidc)
+        {
+            var issuer = _options.TestIssuer.TrimEnd('/');
+            return new OidcProviderMetadata($"{issuer}/authorize", $"{issuer}/token");
+        }
         var authority = _options.IsTestOidc ? _options.TestIssuer : _options.Authority;
         if (string.IsNullOrWhiteSpace(authority))
         {
@@ -285,6 +291,13 @@ public sealed class BrowserOidcSessionService(
         HttpContext context,
         CancellationToken cancellationToken)
     {
+        if (_options.IsTestOidc)
+        {
+            var issued = testIdentityProvider.ExchangeAuthorizationCode(code, _options.BrowserClientId, GetCallbackUrl(context), verifier);
+            return issued is null
+                ? throw new BrowserOidcException("The identity provider did not accept the authorization code.")
+                : new OidcTokenResponse(issued.AccessToken, issued.TokenType);
+        }
         var metadata = await GetMetadataAsync(cancellationToken);
         using var request = new HttpRequestMessage(HttpMethod.Post, metadata.TokenEndpoint)
         {
@@ -349,7 +362,8 @@ public sealed class BrowserOidcSessionService(
             {
                 throw new BrowserOidcException("The identity provider token is invalid.");
             }
-            var expires = validation.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Exp)?.Value;
+            var expires = validation.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Exp)?.Value
+                ?? validation.ClaimsIdentity.FindFirst(ClaimTypes.Expiration)?.Value;
             if (!long.TryParse(expires, out var expirySeconds))
             {
                 throw new BrowserOidcException("The identity provider token does not contain an expiry.");

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using AvenChart.Api.Configuration;
@@ -149,8 +150,12 @@ internal static class PatientPortalIdentityAdapterHelpers
         string token,
         CancellationToken cancellationToken)
     {
-        var subject = identity.FindFirst(subjectClaim)?.Value;
-        var expires = identity.FindFirst(JwtRegisteredClaimNames.Exp)?.Value;
+        var subject = identity.FindFirst(subjectClaim)?.Value
+            ?? (string.Equals(subjectClaim, JwtRegisteredClaimNames.Sub, StringComparison.Ordinal)
+                ? identity.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                : null);
+        var expires = identity.FindFirst(JwtRegisteredClaimNames.Exp)?.Value
+            ?? identity.FindFirst(ClaimTypes.Expiration)?.Value;
         if (string.IsNullOrWhiteSpace(subject) || !long.TryParse(expires, out var seconds)) return null;
         return await repository.ResolveExternalSessionAsync(
             providerId,

@@ -42,6 +42,7 @@ services:
     environment:
       <<: *api-database-environment
       ASPNETCORE_URLS: http://+:8080
+      IdentityProvider__Mode: ${IdentityProvider__Mode:-local}
       RuntimeSafety__RateLimitPermitLimit: 5000
     ports:
       - "5001:8080"

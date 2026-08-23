@@ -161,6 +161,7 @@ public sealed class TestIdentityProviderService
             Subject = new ClaimsIdentity([
                 new Claim(JwtRegisteredClaimNames.Sub, username),
                 new Claim(JwtRegisteredClaimNames.Name, displayName),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
             ]),
             NotBefore = now.UtcDateTime,
             IssuedAt = now.UtcDateTime,
@@ -283,8 +284,15 @@ internal static class OidcIdentityAdapterHelpers
         string source,
         CancellationToken cancellationToken)
     {
-        var subject = identity.FindFirst(subjectClaim)?.Value;
-        var expires = identity.FindFirst(JwtRegisteredClaimNames.Exp)?.Value;
+        // JwtSecurityTokenHandler may map standard JWT claims to their .NET
+        // equivalents. Accept both forms so a validated standards-compliant
+        // bearer is not rejected merely because claim mapping is enabled.
+        var subject = identity.FindFirst(subjectClaim)?.Value
+            ?? (string.Equals(subjectClaim, JwtRegisteredClaimNames.Sub, StringComparison.Ordinal)
+                ? identity.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                : null);
+        var expires = identity.FindFirst(JwtRegisteredClaimNames.Exp)?.Value
+            ?? identity.FindFirst(ClaimTypes.Expiration)?.Value;
         if (string.IsNullOrWhiteSpace(subject) || !long.TryParse(expires, out var seconds)) return MissingSession("The bearer token does not include a valid subject and expiry.");
         return await repository.ResolveExternalPrincipalAsync(providerId, subject, source, DateTimeOffset.FromUnixTimeSeconds(seconds), cancellationToken);
     }
