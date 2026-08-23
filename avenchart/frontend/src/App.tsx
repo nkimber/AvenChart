@@ -22211,7 +22211,7 @@ function ProcedureOrderCatalogPanel({
         <span>{catalog?.orderCount ?? 0} orders</span>
       </div>
 
-      {status === 'error' && <div className="status-banner error">{error}</div>}
+      {status === 'error' && <div className="status-banner error" role="alert">{error}</div>}
       {status === 'loading' && <div className="timeline-placeholder">Loading procedure order catalog</div>}
 
       <form className="appointment-mutation-panel procedure-order-catalog-form" onSubmit={handleCatalogCreate}>
