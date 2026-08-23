@@ -5,6 +5,7 @@ function New-AvenChartStaffAccessContextHeaders {
     param(
         [Parameter(Mandatory = $true)]
         [object]$Login,
+        [int]$FacilityId,
         [ValidateSet("treatment", "payment", "healthcare-operations")]
         [string]$PurposeOfUse
     )
@@ -19,8 +20,17 @@ function New-AvenChartStaffAccessContextHeaders {
     }
 
     $facilities = @($accessContext.facilities)
-    $facility = @($facilities | Where-Object { $_.isDefault -eq $true } | Select-Object -First 1)
+    $facility = if ($FacilityId -gt 0) {
+        @($facilities | Where-Object { $_.facilityId -eq $FacilityId } | Select-Object -First 1)
+    }
+    else {
+        @($facilities | Where-Object { $_.isDefault -eq $true } | Select-Object -First 1)
+    }
     if ($facility.Count -eq 0) {
+        if ($FacilityId -gt 0) {
+            throw "The login response does not grant access to facility '$FacilityId'."
+        }
+
         $facility = @($facilities | Select-Object -First 1)
     }
     if ($facility.Count -ne 1 -or $facility[0].facilityId -le 0) {

@@ -158,7 +158,7 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
               select 1
               from patient_documents document
               join patients patient on patient.canonical_id=document.patient_id
-              where document.id=@resourceId
+              where document.id=@resourceId::integer
                 and patient.facility_id=@facility
                 and patient.merged_into_patient_id is null);
             """,

@@ -37,11 +37,19 @@ function Add-Check {
 }
 
 $AdministrationHeaders = $null
+$AdministrationLogin = $null
+$OriginalAdministrationGrant = $null
 $FrontDeskHeaders = $null
 $ClinicianHeaders = $null
 $InventoryWitnessHeaders = $null
 
 function Get-AdministrationHeaders {
+    param(
+        [int]$FacilityId = 11,
+        [ValidateSet("treatment", "payment", "healthcare-operations")]
+        [string]$PurposeOfUse = "healthcare-operations"
+    )
+
     if ($null -eq $script:AdministrationHeaders) {
         $loginBody = @{
             username = "admin"
@@ -58,10 +66,80 @@ function Get-AdministrationHeaders {
             throw "Administration smoke login did not issue an active session."
         }
 
-        $script:AdministrationHeaders = New-AvenChartStaffAccessContextHeaders -Login $login -PurposeOfUse "healthcare-operations"
+        $bootstrapHeaders = New-AvenChartStaffAccessContextHeaders -Login $login -PurposeOfUse $PurposeOfUse
+        $grant = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/administration/access-context-grants/admin" `
+            -Method Get `
+            -Headers $bootstrapHeaders `
+            -TimeoutSec 20
+        $grantedFacilityIds = @($grant.facilities | ForEach-Object { [int]$_.facilityId } | Sort-Object -Unique)
+        if ($grantedFacilityIds -notcontains $FacilityId) {
+            $originalDefaultFacility = @($grant.facilities | Where-Object { $_.isDefault -eq $true } | Select-Object -First 1)
+            if ($originalDefaultFacility.Count -ne 1) {
+                throw "The administrator access-context grant did not identify exactly one default facility."
+            }
+            $script:OriginalAdministrationGrant = @{
+                FacilityIds = $grantedFacilityIds
+                DefaultFacilityId = [int]$originalDefaultFacility[0].facilityId
+                Purposes = @($grant.purposes)
+            }
+            Invoke-RestMethod `
+                -Uri "$ApiBaseUrl/api/administration/access-context-grants/admin" `
+                -Method Put `
+                -Headers $bootstrapHeaders `
+                -ContentType "application/json" `
+                -Body (@{
+                    facilityIds = @($grantedFacilityIds + $FacilityId | Sort-Object -Unique)
+                    defaultFacilityId = $script:OriginalAdministrationGrant.DefaultFacilityId
+                    purposes = @($grant.purposes)
+                } | ConvertTo-Json -Depth 5) `
+                -TimeoutSec 20 | Out-Null
+
+            $login = Invoke-RestMethod `
+                -Uri "$ApiBaseUrl/api/auth/login" `
+                -Method Post `
+                -ContentType "application/json" `
+                -Body ($loginBody | ConvertTo-Json -Depth 5) `
+                -TimeoutSec 20
+            if ($login.authenticated -ne $true -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
+                throw "Administration smoke login did not refresh after its facility grants changed."
+            }
+        }
+
+        $script:AdministrationLogin = $login
+        $script:AdministrationHeaders = New-AvenChartStaffAccessContextHeaders `
+            -Login $login `
+            -FacilityId $FacilityId `
+            -PurposeOfUse $PurposeOfUse
     }
 
-    return $script:AdministrationHeaders
+    return New-AvenChartStaffAccessContextHeaders `
+        -Login $script:AdministrationLogin `
+        -FacilityId $FacilityId `
+        -PurposeOfUse $PurposeOfUse
+}
+
+function Restore-AdministrationAccessContextGrant {
+    if ($null -eq $script:OriginalAdministrationGrant -or $null -eq $script:AdministrationLogin) {
+        return
+    }
+
+    $headers = New-AvenChartStaffAccessContextHeaders `
+        -Login $script:AdministrationLogin `
+        -FacilityId $script:OriginalAdministrationGrant.DefaultFacilityId `
+        -PurposeOfUse "healthcare-operations"
+    Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/administration/access-context-grants/admin" `
+        -Method Put `
+        -Headers $headers `
+        -ContentType "application/json" `
+        -Body (@{
+            facilityIds = $script:OriginalAdministrationGrant.FacilityIds
+            defaultFacilityId = $script:OriginalAdministrationGrant.DefaultFacilityId
+            purposes = $script:OriginalAdministrationGrant.Purposes
+        } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20 | Out-Null
+    $script:OriginalAdministrationGrant = $null
 }
 
 function Get-FrontDeskHeaders {
@@ -12302,6 +12380,13 @@ finally {
             Add-Check -Name "managed record lifecycle fixture cleanup" -Result "failed" -Details $_.Exception.Message
         }
     }
+}
+
+try {
+    Restore-AdministrationAccessContextGrant
+}
+catch {
+    Add-Check -Name "administrator access-context grant cleanup" -Result "failed" -Details $_.Exception.Message
 }
 
 $result = [ordered]@{
