@@ -517,6 +517,26 @@
           </div>
         </section>
 
+        <section class="workbench-section" aria-labelledby="phase-two-navigation-index-heading">
+          <div class="wide-section-heading">
+            <div>
+              <p class="eyebrow">Assessment navigation</p>
+              <h2 id="phase-two-navigation-index-heading">A constrained code graph now supports future review.</h2>
+            </div>
+            <p>
+              Graphify has mapped the committed supported code into a local, read-only navigation graph for LLM
+              harnesses and human reviewers. It improves discovery before verification; it does not turn a graph into
+              a quality, safety, security, accessibility, interoperability, or readiness conclusion.
+            </p>
+          </div>
+          <div class="deliverable-grid">
+            <article><span>01</span><h3>Deterministic source map</h3><p>The initial local AST pass processed 771 code files at commit <code>3321b17</code>, producing 6,732 nodes, 15,969 extracted edges, and 305 topology clusters.</p></article>
+            <article><span>02</span><h3>Read-only harness access</h3><p>Codex can query the local graph for compact architecture, path, and review-impact context. The MCP server serves the graph only; it cannot edit application or graph state.</p></article>
+            <article><span>03</span><h3>Explicit boundary</h3><p>The index excludes documentation, synthetic data, the reference frontend, build output, and agent state. Semantic/provider extraction, transcript analysis, and writable stores are not enabled.</p></article>
+          </div>
+          <p class="scope-note">See the <a href="https://github.com/nkimber/AvenChart/blob/main/docs/phase-2/tooling/graphify-code-navigation.md">Graphify integration record</a> for the pinned version, source scope, maintenance command, query evidence, and limitations.</p>
+        </section>
+
         <section class="phase-process" aria-labelledby="phase-two-process-heading">
           <div class="phase-process-heading">
             <p class="eyebrow">Assessment flow</p>

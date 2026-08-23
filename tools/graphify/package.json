@@ -1,0 +1,14 @@
+{
+  "name": "avenchart-graphify-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned local tooling for AvenChart's deterministic code-navigation graph.",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@sentropic/graphify": "0.17.1",
+    "tree-sitter-c-sharp": "0.23.1",
+    "tree-sitter-powershell": "0.26.3"
+  }
+}

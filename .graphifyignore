@@ -1,0 +1,20 @@
+# AvenChart's initial Graphify index is a deterministic code-navigation map.
+# Keep corpus-like content and generated/unsupported product surfaces out of
+# this baseline so no semantic extraction or non-code corpus processing occurs.
+.agents/
+.codex/
+.github/
+.graphify/
+demo-data/
+docs/
+public-history/
+avenchart/frontend/
+**/bin/
+**/obj/
+**/dist/
+**/coverage/
+**/node_modules/
+*.lock
+*.map
+.env
+.env.*

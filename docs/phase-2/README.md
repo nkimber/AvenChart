@@ -21,6 +21,7 @@ The accepted decisions and later amendments are recorded in [decision-log.md](de
 | [coverage-matrix.md](coverage-matrix.md) | Maps the complete solution to assessment domains, reviewers, status, and evidence. |
 | [scorecard.md](scorecard.md) | Provides evidence-anchored domain ratings without hiding uncertainty behind one aggregate score. |
 | [iterations/README.md](iterations/README.md) | Maintains the Phase 2 re-assessment ledger. It preserves the fixed baseline assessment while recording later implementation targets, improvements, residuals, and convergence evidence. |
+| [tooling/graphify-code-navigation.md](tooling/graphify-code-navigation.md) | Records the constrained Graphify code-navigation index, its local-only scope, artifacts, and maintenance evidence. |
 | [finding-template.md](finding-template.md) | Defines the minimum record for an observed condition and its validation lifecycle. |
 | [findings/README.md](findings/README.md) | Maintains canonical validated findings after deduplication and required verification. |
 | [assessments/cov-002-identity-authorization-phi-audit.md](assessments/cov-002-identity-authorization-phi-audit.md) | Preserves the first full-assessment packet, its professional and portal traces, independently verified findings, counterevidence, and remaining runtime and owner decisions. |

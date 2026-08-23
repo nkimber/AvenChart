@@ -168,6 +168,16 @@ This log records governance and scope decisions. It does not contain findings or
 - Consequence: [iterations/README.md](iterations/README.md) is the authoritative ledger. [Iteration 2](iterations/iteration-002-current-implementation-reassessment.md) is recorded as not converged: it corroborates meaningful improvements and retains material identity/browser, interoperability, structure, and verification work. Canonical baseline finding IDs and the Phase 2 exit gate remain unchanged until their separate evidence and decision requirements are satisfied.
 - Evidence: [iteration register](iterations/README.md), [Iteration 2 reassessment](iterations/iteration-002-current-implementation-reassessment.md), [Phase 2 exit gate](phase-2-exit-gate.md)
 
+## P2-D019 — Adopt a constrained Graphify code-navigation index
+
+- Date: 2026-08-23
+- Status: accepted as assessment tooling
+- Decision owner: AvenChart program owner
+- Decision: Add a pinned, deterministic, code-only Graphify index and a read-only Codex MCP registration to assist future repository navigation. Preserve the graph as a supporting artifact and keep the initial scope limited to committed supported product code, tests, and automation. Exclude documentation, synthetic data, the reference frontend, generated output, agent state, and environment files. Disable semantic/provider extraction, corpus ingestion, agent-stat collection, and writable stores unless separately authorized.
+- Context and alternatives: Repeated large-repository exploration by LLM harnesses can be expensive and lose structural context. Graphify's local AST pass provides a potentially useful map of symbols, imports, calls, clusters, and impacts without treating index output as an assessment conclusion. A broad semantic corpus scan was not selected because it introduces provider-data, provenance, and staleness concerns that are unnecessary for the initial code-navigation purpose.
+- Consequence: The repository gains reproducible tool dependencies, an ignore policy, update script, durable graph artifacts, and maintenance guidance. Graph counts, clusters, query answers, and reports are navigation aids only; no finding, recommendation, scorecard rating, specialist judgment, implementation gate, or production-readiness claim changes.
+- Evidence: [Graphify integration record](tooling/graphify-code-navigation.md), [`tools/graphify/package.json`](../../tools/graphify/package.json), [update script](../../scripts/Update-AvenChartGraph.ps1)
+
 ## Decision amendment template
 
 ```markdown

@@ -21,6 +21,24 @@ output/
 *.bak
 *.tmp
 
+# Graphify local runtime, caches, and assistant-mode work queues. The durable
+# code-navigation artifacts remain versioned under .graphify/.
+.graphify/cache/
+.graphify/converted/
+.graphify/description-instructions/
+.graphify/label-instructions/
+.graphify/memory/
+.graphify/profile/
+.graphify/scratch/
+.graphify/studio/
+.graphify/transcripts/
+.graphify/branch.json
+.graphify/manifest.json
+.graphify/scope.json
+.graphify/worktree.json
+.graphify/needs_update
+.graphify/.graphify_*.json
+
 # Editors and operating systems
 .DS_Store
 Thumbs.db
