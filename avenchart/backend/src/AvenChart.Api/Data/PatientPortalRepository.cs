@@ -31,6 +31,11 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private const int MaximumPortalMessageAttachmentCount = 5;
     private const int MaximumPortalMessageAttachmentBytes = 4 * 1024 * 1024;
     private const int MaximumPortalMessageAttachmentTotalBytes = 10 * 1024 * 1024;
+    // Use the current password work factor when the account cannot be resolved,
+    // so unauthenticated callers cannot cheaply distinguish an unknown portal
+    // username from a rejected known account by response timing.
+    private static readonly string DummyPasswordHash =
+        PasswordHashing.Hash("AvenChart-invalid-portal-credential");
     private static readonly PatientPortalMessageSubjectOption[] PortalMessageSubjectOptions =
     [
         new("General", "General", true),
@@ -105,6 +110,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
+            _ = PasswordHashing.Verify(DummyPasswordHash, string.Empty, request.Password);
             return Failed(username, InvalidCredentialsMessage);
         }
 
@@ -115,25 +121,21 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             || string.IsNullOrWhiteSpace(account.PortalLoginUsername)
             || string.IsNullOrWhiteSpace(account.PasswordHash))
         {
+            _ = PasswordHashing.Verify(DummyPasswordHash, string.Empty, request.Password);
             return Failed(username, InvalidCredentialsMessage);
         }
 
-        if (!string.IsNullOrWhiteSpace(account.OneTimeToken))
-        {
-            return Failed(username, "One-time reset pending.");
-        }
-
-        if (account.PasswordStatus != 1)
-        {
-            return Failed(username, "Patient portal account is pending password setup.");
-        }
-
-        if (!account.PortalEnabled)
-        {
-            return Failed(username, "Patient portal access is disabled.");
-        }
-
         if (!PasswordHashing.Verify(account.PasswordHash, account.PasswordSalt, request.Password))
+        {
+            return Failed(username, InvalidCredentialsMessage);
+        }
+
+        // State-specific recovery guidance must be presented only through an
+        // authenticated recovery flow. Returning it here would allow a guessed
+        // username plus any password to disclose the account lifecycle state.
+        if (!string.IsNullOrWhiteSpace(account.OneTimeToken)
+            || account.PasswordStatus != 1
+            || !account.PortalEnabled)
         {
             return Failed(username, InvalidCredentialsMessage);
         }
