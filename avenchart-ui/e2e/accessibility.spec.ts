@@ -16,6 +16,15 @@ type AccessibilityFinding = {
   targets: string[];
 };
 
+// The administrator's seeded default access context is the main facility. Keep
+// browser fixtures in that facility so the test exercises the intended screen
+// rather than an intentionally obscured cross-facility 404 response.
+const clinicianFixture = {
+  patientId: "MOD-PAT-0408",
+  patientResult: /Bell, Arjun.*MOD-PAT-0408/,
+  documentEncounter: 1004081,
+};
+
 async function findSeriousAccessibilityViolations(
   page: Page,
   label: string,
@@ -75,6 +84,34 @@ async function signInPortal(page: Page) {
     .fill(process.env.MODERN_UI_PORTAL_PASSWORD ?? "PortalPass207!");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/portal\/home$/, { timeout: 20_000 });
+}
+
+async function getClinicianRequestHeaders(page: Page) {
+  const accessContext = await page.evaluate(() => {
+    const raw = sessionStorage.getItem("avenchart-ui.clinicianSession");
+    if (!raw) {
+      return null;
+    }
+    const session = JSON.parse(raw) as {
+      sessionId?: string;
+      facilityId?: number | null;
+      purposeOfUse?: string;
+    };
+    return {
+      sessionId: session.sessionId,
+      facilityId: session.facilityId,
+      purposeOfUse: session.purposeOfUse,
+    };
+  });
+
+  expect(accessContext?.sessionId).toBeTruthy();
+  expect(accessContext?.facilityId).toBeTruthy();
+  expect(accessContext?.purposeOfUse).toBeTruthy();
+  return {
+    "X-AvenChart-Session": accessContext!.sessionId!,
+    "X-AvenChart-Facility-Id": String(accessContext!.facilityId),
+    "X-AvenChart-Purpose-Of-Use": accessContext!.purposeOfUse!,
+  };
 }
 
 async function navigateWithinApplication(page: Page, path: string) {
@@ -188,9 +225,11 @@ test.describe("accessibility gate", () => {
     }
     await navigateWithinApplication(
       page,
-      "/clinician/patients/MOD-PAT-0001/documents",
+      `/clinician/patients/${clinicianFixture.patientId}/documents`,
     );
-    await page.getByRole("button", { name: "Add document" }).click();
+    const addDocument = page.getByRole("button", { name: "Add document" });
+    await expect(addDocument).toBeVisible({ timeout: 15_000 });
+    await addDocument.click({ timeout: 15_000 });
     await expect(
       page.getByRole("heading", { name: "Choose how to file it" }),
     ).toBeVisible();
@@ -200,9 +239,9 @@ test.describe("accessibility gate", () => {
     await expect(page.getByLabel("Scanner or capture source *")).toBeVisible();
     await expect(page.getByLabel("Captured pages *")).toBeVisible();
     violations.push(
-      ...(await findSeriousAccessibilityViolations(
-        page,
-        "/clinician/patients/MOD-PAT-0001/documents#intake",
+        ...(await findSeriousAccessibilityViolations(
+          page,
+          `/clinician/patients/${clinicianFixture.patientId}/documents#intake`,
       )),
     );
     await page.getByRole("button", { name: "Close intake" }).click();
@@ -213,9 +252,9 @@ test.describe("accessibility gate", () => {
       page.getByRole("heading", { name: "Filing history" }),
     ).toBeVisible();
     violations.push(
-      ...(await findSeriousAccessibilityViolations(
-        page,
-        "/clinician/patients/MOD-PAT-0001/documents#metadata",
+        ...(await findSeriousAccessibilityViolations(
+          page,
+          `/clinician/patients/${clinicianFixture.patientId}/documents#metadata`,
       )),
     );
     await page.getByRole("button", { name: "Close edit" }).first().click();
@@ -237,9 +276,9 @@ test.describe("accessibility gate", () => {
       page.getByRole("heading", { name: "Content version history" }),
     ).toBeVisible();
     violations.push(
-      ...(await findSeriousAccessibilityViolations(
-        page,
-        "/clinician/patients/MOD-PAT-0001/documents#content-versions",
+        ...(await findSeriousAccessibilityViolations(
+          page,
+          `/clinician/patients/${clinicianFixture.patientId}/documents#content-versions`,
       )),
     );
     await page
@@ -251,9 +290,9 @@ test.describe("accessibility gate", () => {
     ).toBeVisible();
     await expect(page.getByLabel("Approval rationale *")).toBeVisible();
     violations.push(
-      ...(await findSeriousAccessibilityViolations(
-        page,
-        "/clinician/patients/MOD-PAT-0001/documents#review",
+        ...(await findSeriousAccessibilityViolations(
+          page,
+          `/clinician/patients/${clinicianFixture.patientId}/documents#review`,
       )),
     );
     await page
@@ -265,9 +304,9 @@ test.describe("accessibility gate", () => {
     ).toBeVisible();
     await expect(page.getByLabel("Archive reason *")).toBeVisible();
     violations.push(
-      ...(await findSeriousAccessibilityViolations(
-        page,
-        "/clinician/patients/MOD-PAT-0001/documents#archive",
+        ...(await findSeriousAccessibilityViolations(
+          page,
+          `/clinician/patients/${clinicianFixture.patientId}/documents#archive`,
       )),
     );
     await page
@@ -278,9 +317,9 @@ test.describe("accessibility gate", () => {
       page.getByRole("heading", { name: /^Previewing / }),
     ).toBeVisible();
     violations.push(
-      ...(await findSeriousAccessibilityViolations(
-        page,
-        "/clinician/patients/MOD-PAT-0001/documents#inline-preview",
+        ...(await findSeriousAccessibilityViolations(
+          page,
+          `/clinician/patients/${clinicianFixture.patientId}/documents#inline-preview`,
       )),
     );
     await navigateWithinApplication(page, "/clinician/documents");
@@ -309,20 +348,14 @@ test.describe("accessibility gate", () => {
         "/clinician/documents#routing-history",
       )),
     );
-    const sessionId = await page.evaluate(() => {
-      const raw = sessionStorage.getItem(
-        "avenchart-ui.clinicianSession",
-      );
-      return raw ? (JSON.parse(raw) as { sessionId?: string }).sessionId : null;
-    });
-    expect(sessionId).toBeTruthy();
+    const requestHeaders = await getClinicianRequestHeaders(page);
     const apiBaseUrl =
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     const templateMarker = `TMP-DOC-TEMPLATE-AXE-${testInfo.project.name}-${Date.now()}`;
     const templateFixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/administration/document-templates/`,
       {
-        headers: { "X-AvenChart-Session": sessionId! },
+        headers: requestHeaders,
         data: {
           name: templateMarker,
           content:
@@ -339,7 +372,7 @@ test.describe("accessibility gate", () => {
       const versionFixtureResponse = await page.request.post(
         `${apiBaseUrl}/api/administration/document-templates/${templateFixtureId}/binary-versions`,
         {
-          headers: { "X-AvenChart-Session": sessionId! },
+          headers: requestHeaders,
           data: {
             fileName: `${templateMarker}.txt`,
             mimetype: "text/plain",
@@ -365,10 +398,12 @@ test.describe("accessibility gate", () => {
           name: "Preview and patient attachment",
         })
         .locator("xpath=ancestor::section");
-      await templateOutput.getByLabel("Find patient *").fill("MOD-PAT-0001");
+      await templateOutput
+        .getByLabel("Find patient *")
+        .fill(clinicianFixture.patientId);
       await templateOutput.getByRole("button", { name: "Search" }).click();
       const templatePatientResult = templateOutput.getByRole("button", {
-        name: /Stone, Avery.*MOD-PAT-0001/,
+        name: clinicianFixture.patientResult,
       });
       await expect(templatePatientResult).toBeVisible({ timeout: 15_000 });
       await templatePatientResult.click();
@@ -387,7 +422,7 @@ test.describe("accessibility gate", () => {
     } finally {
       const deleted = await page.request.delete(
         `${apiBaseUrl}/api/administration/document-templates/${templateFixtureId}/test-fixture`,
-        { headers: { "X-AvenChart-Session": sessionId! } },
+        { headers: requestHeaders },
       );
       expect([204, 404]).toContain(deleted.status());
     }
@@ -395,7 +430,7 @@ test.describe("accessibility gate", () => {
     const settingFixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/administration/practice-settings/practice.name/change-requests`,
       {
-        headers: { "X-AvenChart-Session": sessionId! },
+        headers: requestHeaders,
         data: {
           value: settingMarker,
           reason: settingMarker,
@@ -435,7 +470,7 @@ test.describe("accessibility gate", () => {
     } finally {
       const deleted = await page.request.delete(
         `${apiBaseUrl}/api/administration/practice-setting-change-requests/${settingFixtureId}/test-fixture`,
-        { headers: { "X-AvenChart-Session": sessionId! } },
+        { headers: requestHeaders },
       );
       expect([204, 404]).toContain(deleted.status());
     }
@@ -452,7 +487,7 @@ test.describe("accessibility gate", () => {
       }),
     ).toBeVisible();
     await expect(
-      authorizationRegistry.getByText("local-acl-compatibility-v1"),
+      authorizationRegistry.getByText("local-acl-access-context-v2"),
     ).toBeVisible();
     await authorizationRegistry
       .getByRole("button", { name: "Open" })
@@ -470,13 +505,13 @@ test.describe("accessibility gate", () => {
       }),
     ).toBeVisible();
     await expect(
-      identityReadiness.getByText("local-identity-adapter-v1", {
+      identityReadiness.getByText("external-subject-mapping-v1", {
         exact: true,
       }),
     ).toBeVisible();
     await expect(
       identityReadiness.getByText("local adapter active", { exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(2);
     await expect(
       identityReadiness.getByText("disabled owner gated", { exact: true }),
     ).toBeVisible();
@@ -490,13 +525,13 @@ test.describe("accessibility gate", () => {
     const ocrFixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/documents/scanner-captures`,
       {
-        headers: { "X-AvenChart-Session": sessionId! },
+        headers: requestHeaders,
         data: {
-          patientId: "MOD-PAT-0001",
+          patientId: clinicianFixture.patientId,
           categoryId: 3,
           name: ocrMarker,
           docDate: "2026-07-28",
-          encounter: 1000013,
+          encounter: clinicianFixture.documentEncounter,
           captureSource: "accessibility scanner",
           pageCount: 2,
           notes: `Accessibility scanner fixture ${ocrMarker}`,
@@ -538,11 +573,24 @@ test.describe("accessibility gate", () => {
         )),
       );
     } finally {
-      const deleted = await page.request.delete(
-        `${apiBaseUrl}/api/documents/${ocrFixtureId}`,
-        { headers: { "X-AvenChart-Session": sessionId! } },
+      // Documents are clinical records. Archive the synthetic capture after
+      // exercise and prove that its physical-delete route remains retired.
+      const archived = await page.request.put(
+        `${apiBaseUrl}/api/documents/${ocrFixtureId}/soft-delete`,
+        {
+          headers: requestHeaders,
+          data: {
+            reason: `Accessibility OCR fixture cleanup ${ocrMarker}`,
+            expectedArchived: false,
+          },
+        },
       );
-      expect([204, 404]).toContain(deleted.status());
+      expect([200, 404]).toContain(archived.status());
+      const deleteAttempt = await page.request.delete(
+        `${apiBaseUrl}/api/documents/${ocrFixtureId}`,
+        { headers: requestHeaders },
+      );
+      expect(deleteAttempt.status()).toBe(410);
     }
     await navigateWithinApplication(page, "/clinician/patients/new");
     await page.getByLabel("Chart number").fill("TMP-PAT-REG-AXE");
@@ -567,7 +615,9 @@ test.describe("accessibility gate", () => {
       )),
     );
     await navigateWithinApplication(page, "/clinician/renewals");
-    await page.getByLabel("Patient name or ID").fill("MOD-PAT-0004");
+    await page
+      .getByLabel("Patient name or ID")
+      .fill(clinicianFixture.patientId);
     await page
       .getByRole("button", { name: "Apply patient scope" })
       .click();
@@ -608,24 +658,22 @@ test.describe("accessibility gate", () => {
     page,
   }, testInfo) => {
     await signInClinician(page);
-    const sessionId = await page.evaluate(() => {
-      const raw = sessionStorage.getItem(
-        "avenchart-ui.clinicianSession",
-      );
-      return raw ? (JSON.parse(raw) as { sessionId?: string }).sessionId : null;
-    });
-    expect(sessionId).toBeTruthy();
+    const requestHeaders = await getClinicianRequestHeaders(page);
 
     const apiBaseUrl =
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     const marker = `TMP-CLIN-AUTH-AXE-${testInfo.project.name}-${Date.now()}`;
     const fixtureResponse = await page.request.post(
-      `${apiBaseUrl}/api/patients/MOD-PAT-0001/authorizations`,
+      `${apiBaseUrl}/api/patients/${clinicianFixture.patientId}/authorizations`,
       {
-        headers: { "X-AvenChart-Session": sessionId! },
+        headers: requestHeaders,
         data: {
           payer: marker,
           service: `${marker} service`,
+          // Keep the fixture internally valid regardless of the day CI runs.
+          // The API otherwise defaults requestedAt to "today", which eventually
+          // made the once-static responsibility date invalid.
+          requestedAt: "2026-08-01",
           assignedTo: "admin",
           dueAt: "2026-08-05",
           reason: `${marker} dynamic-state accessibility fixture`,
@@ -638,7 +686,7 @@ test.describe("accessibility gate", () => {
     try {
       await navigateWithinApplication(
         page,
-        "/clinician/patients/MOD-PAT-0001/authorizations",
+        `/clinician/patients/${clinicianFixture.patientId}/authorizations`,
       );
       const queueItem = page
         .locator("button.authorization-queue-item")
@@ -660,13 +708,13 @@ test.describe("accessibility gate", () => {
       expectNoSeriousAccessibilityViolations(
         await findSeriousAccessibilityViolations(
           page,
-          "/clinician/patients/MOD-PAT-0001/authorizations#workflow",
+          `/clinician/patients/${clinicianFixture.patientId}/authorizations#workflow`,
         ),
       );
     } finally {
       const deleted = await page.request.delete(
-        `${apiBaseUrl}/api/patients/MOD-PAT-0001/authorizations/${fixtureId}/test-fixture`,
-        { headers: { "X-AvenChart-Session": sessionId! } },
+        `${apiBaseUrl}/api/patients/${clinicianFixture.patientId}/authorizations/${fixtureId}/test-fixture`,
+        { headers: requestHeaders },
       );
       expect([204, 404]).toContain(deleted.status());
     }
