@@ -1814,6 +1814,9 @@ function App() {
     const controller = new AbortController()
 
     async function loadProcedureReportReviewQueue() {
+      // The review queue is owned by its current filter set; retained rows
+      // must not be signable when that filter refresh is incomplete.
+      setProcedureReportReviewQueue(null)
       setProcedureReportReviewQueueStatus('loading')
       setProcedureReportReviewQueueError(null)
 
@@ -1834,6 +1837,7 @@ function App() {
         setProcedureReportReviewQueueStatus('ready')
       } catch (loadError) {
         if (!controller.signal.aborted) {
+          setProcedureReportReviewQueue(null)
           setProcedureReportReviewQueueStatus('error')
           setProcedureReportReviewQueueError(
             loadError instanceof Error ? loadError.message : 'Procedure report review queue failed',
