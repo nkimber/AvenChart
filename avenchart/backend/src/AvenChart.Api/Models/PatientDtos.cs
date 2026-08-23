@@ -138,9 +138,9 @@ public sealed record PatientDuplicateSearchResponse(
     int TotalCandidates,
     IReadOnlyList<PatientDuplicateCandidate> Candidates);
 
-public sealed record PatientDuplicateReviewItem(string TargetPatientId,string SourcePatientId,string TargetDisplayName,string SourceDisplayName,string DateOfBirth,int MatchScore,IReadOnlyList<string> MatchReasons,string Status);
+public sealed record PatientDuplicateReviewItem(string TargetPatientId, string SourcePatientId, string TargetDisplayName, string SourceDisplayName, string DateOfBirth, int MatchScore, IReadOnlyList<string> MatchReasons, string Status);
 public sealed record PatientDuplicateReviewQueueResponse(IReadOnlyList<PatientDuplicateReviewItem> Items);
-public sealed record PatientDuplicateReviewDispositionRequest(string TargetPatientId,string SourcePatientId,string Status,string? Note);
+public sealed record PatientDuplicateReviewDispositionRequest(string TargetPatientId, string SourcePatientId, string Status, string? Note);
 
 public sealed record PatientDuplicateCandidate(
     string CanonicalId,

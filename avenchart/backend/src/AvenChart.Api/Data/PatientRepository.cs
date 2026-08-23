@@ -629,7 +629,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         {
             var reasons = new List<string>(); var score = reader.GetInt32(5);
             if (score >= 70) reasons.Add("same name and date of birth"); else reasons.Add("same date of birth with matching demographics");
-            items.Add(new(reader.GetString(0),reader.GetString(1),reader.GetString(2),reader.GetString(3),reader.GetFieldValue<DateOnly>(4).ToString("yyyy-MM-dd"),score,reasons,reader.GetString(6)));
+            items.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetFieldValue<DateOnly>(4).ToString("yyyy-MM-dd"), score, reasons, reader.GetString(6)));
         }
         return new(items);
     }
@@ -638,11 +638,11 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     {
         var status = request.Status?.Trim().ToLowerInvariant(); if (status is not ("pending" or "unique" or "reviewed")) throw new ArgumentException("Status must be pending, unique, or reviewed.");
         if (request.TargetPatientId == request.SourcePatientId) throw new ArgumentException("Duplicate review records require two different patients.");
-        var target = string.CompareOrdinal(request.TargetPatientId,request.SourcePatientId)<0?request.TargetPatientId:request.SourcePatientId; var source = target==request.TargetPatientId?request.SourcePatientId:request.TargetPatientId;
+        var target = string.CompareOrdinal(request.TargetPatientId, request.SourcePatientId) < 0 ? request.TargetPatientId : request.SourcePatientId; var source = target == request.TargetPatientId ? request.SourcePatientId : request.TargetPatientId;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
-        command.CommandText="insert into patient_duplicate_review_dispositions(target_patient_id,source_patient_id,status,note,updated_at) values(@target,@source,@status,@note,now()) on conflict(target_patient_id,source_patient_id) do update set status=excluded.status,note=excluded.note,updated_at=now();";
-        command.Parameters.AddWithValue("target",target);command.Parameters.AddWithValue("source",source);command.Parameters.AddWithValue("status",status);command.Parameters.AddWithValue("note",(object?)request.Note?.Trim()??DBNull.Value);await command.ExecuteNonQueryAsync(cancellationToken);
-        return (await GetDuplicateReviewQueueAsync(200,cancellationToken)).Items.FirstOrDefault(x=>x.TargetPatientId==target&&x.SourcePatientId==source);
+        command.CommandText = "insert into patient_duplicate_review_dispositions(target_patient_id,source_patient_id,status,note,updated_at) values(@target,@source,@status,@note,now()) on conflict(target_patient_id,source_patient_id) do update set status=excluded.status,note=excluded.note,updated_at=now();";
+        command.Parameters.AddWithValue("target", target); command.Parameters.AddWithValue("source", source); command.Parameters.AddWithValue("status", status); command.Parameters.AddWithValue("note", (object?)request.Note?.Trim() ?? DBNull.Value); await command.ExecuteNonQueryAsync(cancellationToken);
+        return (await GetDuplicateReviewQueueAsync(200, cancellationToken)).Items.FirstOrDefault(x => x.TargetPatientId == target && x.SourcePatientId == source);
     }
 
     public async Task<PatientMergePreviewResponse?> GetMergePreviewAsync(

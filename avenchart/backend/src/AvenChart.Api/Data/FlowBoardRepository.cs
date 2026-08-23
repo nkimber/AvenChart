@@ -39,7 +39,11 @@ public sealed class FlowBoardRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("facilityId", facilityId);
         var lanes = new Dictionary<string, List<FlowBoardItem>>(StringComparer.OrdinalIgnoreCase)
         {
-            ["scheduled"] = [], ["arrived"] = [], ["in-room"] = [], ["complete"] = [], ["other"] = [],
+            ["scheduled"] = [],
+            ["arrived"] = [],
+            ["in-room"] = [],
+            ["complete"] = [],
+            ["other"] = [],
         };
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {

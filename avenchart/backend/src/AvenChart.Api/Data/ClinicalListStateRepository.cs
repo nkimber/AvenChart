@@ -634,9 +634,9 @@ public sealed class ClinicalListStateRepository(
             return true;
         }
         catch (DbUpdateException exception) when (exception.InnerException is PostgresException
-            {
-                SqlState: PostgresErrorCodes.ForeignKeyViolation or PostgresErrorCodes.CheckViolation
-            })
+        {
+            SqlState: PostgresErrorCodes.ForeignKeyViolation or PostgresErrorCodes.CheckViolation
+        })
         {
             dbContext.ChangeTracker.Clear();
             return false;

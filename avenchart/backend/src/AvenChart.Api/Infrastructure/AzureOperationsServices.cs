@@ -510,39 +510,73 @@ public sealed class AzureDeploymentCoordinator(
 
     private Dictionary<string, object?> PlatformParameters(AzureDeploymentProfileDocument p, string password, string principalObjectId, string principalType) => new()
     {
-        ["location"] = p.Location, ["resourceGroupName"] = p.ResourceGroupName, ["resourceNamePrefix"] = p.ResourceNamePrefix,
-        ["containerRegistryName"] = p.ContainerRegistryName, ["keyVaultName"] = p.KeyVaultName, ["postgresServerName"] = p.PostgresServerName,
-        ["containerAppsEnvironmentName"] = p.ContainerAppsEnvironmentName, ["managedIdentityName"] = p.ManagedIdentityName,
-        ["logAnalyticsWorkspaceName"] = p.LogAnalyticsWorkspaceName, ["databaseName"] = p.DatabaseName,
-        ["databaseAdministratorLogin"] = p.DatabaseAdministratorLogin, ["databasePasswordSecretName"] = p.DatabasePasswordSecretName,
-        ["databaseAdministratorPassword"] = password, ["postgresSkuName"] = p.PostgresSkuName, ["postgresTier"] = p.PostgresTier,
-        ["postgresStorageGiB"] = p.PostgresStorageGiB, ["backupRetentionDays"] = p.BackupRetentionDays,
-        ["enableGeoRedundantBackup"] = p.EnableGeoRedundantBackup, ["enableHighAvailability"] = p.EnableHighAvailability,
-        ["connectionPoolMaximum"] = p.ConnectionPoolMaximum, ["vnetAddressPrefix"] = p.VnetAddressPrefix,
-        ["infrastructureSubnetPrefix"] = p.InfrastructureSubnetPrefix, ["databaseSubnetPrefix"] = p.DatabaseSubnetPrefix,
-        ["logRetentionDays"] = p.LogRetentionDays, ["monthlyBudgetUsd"] = p.MonthlyBudgetUsd, ["alertEmails"] = p.AlertEmails,
-        ["deploymentPrincipalObjectId"] = principalObjectId, ["deploymentPrincipalType"] = principalType,
+        ["location"] = p.Location,
+        ["resourceGroupName"] = p.ResourceGroupName,
+        ["resourceNamePrefix"] = p.ResourceNamePrefix,
+        ["containerRegistryName"] = p.ContainerRegistryName,
+        ["keyVaultName"] = p.KeyVaultName,
+        ["postgresServerName"] = p.PostgresServerName,
+        ["containerAppsEnvironmentName"] = p.ContainerAppsEnvironmentName,
+        ["managedIdentityName"] = p.ManagedIdentityName,
+        ["logAnalyticsWorkspaceName"] = p.LogAnalyticsWorkspaceName,
+        ["databaseName"] = p.DatabaseName,
+        ["databaseAdministratorLogin"] = p.DatabaseAdministratorLogin,
+        ["databasePasswordSecretName"] = p.DatabasePasswordSecretName,
+        ["databaseAdministratorPassword"] = password,
+        ["postgresSkuName"] = p.PostgresSkuName,
+        ["postgresTier"] = p.PostgresTier,
+        ["postgresStorageGiB"] = p.PostgresStorageGiB,
+        ["backupRetentionDays"] = p.BackupRetentionDays,
+        ["enableGeoRedundantBackup"] = p.EnableGeoRedundantBackup,
+        ["enableHighAvailability"] = p.EnableHighAvailability,
+        ["connectionPoolMaximum"] = p.ConnectionPoolMaximum,
+        ["vnetAddressPrefix"] = p.VnetAddressPrefix,
+        ["infrastructureSubnetPrefix"] = p.InfrastructureSubnetPrefix,
+        ["databaseSubnetPrefix"] = p.DatabaseSubnetPrefix,
+        ["logRetentionDays"] = p.LogRetentionDays,
+        ["monthlyBudgetUsd"] = p.MonthlyBudgetUsd,
+        ["alertEmails"] = p.AlertEmails,
+        ["deploymentPrincipalObjectId"] = principalObjectId,
+        ["deploymentPrincipalType"] = principalType,
         ["tags"] = DeploymentTags(p)
     };
 
     private Dictionary<string, object?> MigrationParameters(AzureDeploymentProfileDocument p) => new()
     {
-        ["location"] = p.Location, ["migrationJobName"] = p.MigrationJobName, ["containerAppsEnvironmentName"] = p.ContainerAppsEnvironmentName,
-        ["managedIdentityResourceId"] = ManagedIdentityId(p), ["containerRegistryLoginServer"] = $"{p.ContainerRegistryName}.azurecr.io",
-        ["apiImage"] = p.ApiImage, ["keyVaultName"] = p.KeyVaultName, ["databasePasswordSecretName"] = p.DatabasePasswordSecretName,
-        ["postgresHost"] = $"{p.PostgresServerName}.postgres.database.azure.com", ["databaseName"] = p.DatabaseName,
-        ["databaseAdministratorLogin"] = p.DatabaseAdministratorLogin, ["enableDemoSeed"] = p.EnableDemoSeed, ["tags"] = DeploymentTags(p)
+        ["location"] = p.Location,
+        ["migrationJobName"] = p.MigrationJobName,
+        ["containerAppsEnvironmentName"] = p.ContainerAppsEnvironmentName,
+        ["managedIdentityResourceId"] = ManagedIdentityId(p),
+        ["containerRegistryLoginServer"] = $"{p.ContainerRegistryName}.azurecr.io",
+        ["apiImage"] = p.ApiImage,
+        ["keyVaultName"] = p.KeyVaultName,
+        ["databasePasswordSecretName"] = p.DatabasePasswordSecretName,
+        ["postgresHost"] = $"{p.PostgresServerName}.postgres.database.azure.com",
+        ["databaseName"] = p.DatabaseName,
+        ["databaseAdministratorLogin"] = p.DatabaseAdministratorLogin,
+        ["enableDemoSeed"] = p.EnableDemoSeed,
+        ["tags"] = DeploymentTags(p)
     };
 
     private Dictionary<string, object?> ApplicationParameters(AzureDeploymentProfileDocument p) => new()
     {
-        ["location"] = p.Location, ["containerAppName"] = p.ContainerAppName, ["containerAppsEnvironmentName"] = p.ContainerAppsEnvironmentName,
-        ["managedIdentityResourceId"] = ManagedIdentityId(p), ["containerRegistryLoginServer"] = $"{p.ContainerRegistryName}.azurecr.io",
-        ["apiImage"] = p.ApiImage, ["uiImage"] = p.UiImage, ["keyVaultName"] = p.KeyVaultName,
-        ["minimumReplicas"] = p.MinimumReplicas, ["maximumReplicas"] = p.MaximumReplicas, ["httpConcurrency"] = p.HttpConcurrency,
-        ["apiCpu"] = p.ApiCpu.ToString("0.##", CultureInfo.InvariantCulture), ["apiMemory"] = $"{p.ApiMemoryGiB.ToString("0.##", CultureInfo.InvariantCulture)}Gi",
-        ["uiCpu"] = p.UiCpu.ToString("0.##", CultureInfo.InvariantCulture), ["uiMemory"] = $"{p.UiMemoryGiB.ToString("0.##", CultureInfo.InvariantCulture)}Gi",
-        ["rateLimitPermitLimit"] = p.RateLimitPermitLimit, ["tags"] = DeploymentTags(p)
+        ["location"] = p.Location,
+        ["containerAppName"] = p.ContainerAppName,
+        ["containerAppsEnvironmentName"] = p.ContainerAppsEnvironmentName,
+        ["managedIdentityResourceId"] = ManagedIdentityId(p),
+        ["containerRegistryLoginServer"] = $"{p.ContainerRegistryName}.azurecr.io",
+        ["apiImage"] = p.ApiImage,
+        ["uiImage"] = p.UiImage,
+        ["keyVaultName"] = p.KeyVaultName,
+        ["minimumReplicas"] = p.MinimumReplicas,
+        ["maximumReplicas"] = p.MaximumReplicas,
+        ["httpConcurrency"] = p.HttpConcurrency,
+        ["apiCpu"] = p.ApiCpu.ToString("0.##", CultureInfo.InvariantCulture),
+        ["apiMemory"] = $"{p.ApiMemoryGiB.ToString("0.##", CultureInfo.InvariantCulture)}Gi",
+        ["uiCpu"] = p.UiCpu.ToString("0.##", CultureInfo.InvariantCulture),
+        ["uiMemory"] = $"{p.UiMemoryGiB.ToString("0.##", CultureInfo.InvariantCulture)}Gi",
+        ["rateLimitPermitLimit"] = p.RateLimitPermitLimit,
+        ["tags"] = DeploymentTags(p)
     };
 
     private static IReadOnlyDictionary<string, string> DeploymentTags(AzureDeploymentProfileDocument p)

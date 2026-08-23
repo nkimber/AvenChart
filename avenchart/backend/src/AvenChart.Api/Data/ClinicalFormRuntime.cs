@@ -1527,18 +1527,18 @@ public static partial class ClinicalFormRuntime
                         required[rule.TargetFieldKey] = true;
                         break;
                     case "warning" when triggered:
-                    {
-                        var issue = new ClinicalFormValidationIssue(
-                            rule.TargetFieldKey,
-                            "warning",
-                            $"{field.Label} row {rowIndex + 1}: {rule.Message ?? "The configured warning condition matched."}",
-                            rule.Key,
-                            field.Key,
-                            rowIndex);
-                        issues.Add(issue);
-                        rowIssues.Add(issue);
-                        break;
-                    }
+                        {
+                            var issue = new ClinicalFormValidationIssue(
+                                rule.TargetFieldKey,
+                                "warning",
+                                $"{field.Label} row {rowIndex + 1}: {rule.Message ?? "The configured warning condition matched."}",
+                                rule.Key,
+                                field.Key,
+                                rowIndex);
+                            issues.Add(issue);
+                            rowIssues.Add(issue);
+                            break;
+                        }
                 }
 
                 rowEvaluations.Add(new(

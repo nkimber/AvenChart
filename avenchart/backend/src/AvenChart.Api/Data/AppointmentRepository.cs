@@ -2155,20 +2155,20 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                     yield break;
                 }
 
-                    if (IsWithinSearchRange(repeatOnDate.Value, fromDate, toDate)
-                        && !recurrenceExdates.Contains(repeatOnDate.Value))
+                if (IsWithinSearchRange(repeatOnDate.Value, fromDate, toDate)
+                    && !recurrenceExdates.Contains(repeatOnDate.Value))
+                {
+                    var isVirtualOccurrence = repeatOnDate.Value != anchorDate;
+                    yield return WithReminder(appointment with
                     {
-                        var isVirtualOccurrence = repeatOnDate.Value != anchorDate;
-                        yield return WithReminder(appointment with
-                        {
-                            Id = isVirtualOccurrence ? BuildOccurrenceId(appointment.SeriesRootId, repeatOnDate.Value) : appointment.SeriesRootId,
-                            Date = repeatOnDate.Value.ToString("yyyy-MM-dd"),
-                            IsRecurringSeries = true,
-                            IsVirtualOccurrence = isVirtualOccurrence,
-                            OccurrenceNumber = occurrenceNumber
-                        }, baseDate);
-                    }
+                        Id = isVirtualOccurrence ? BuildOccurrenceId(appointment.SeriesRootId, repeatOnDate.Value) : appointment.SeriesRootId,
+                        Date = repeatOnDate.Value.ToString("yyyy-MM-dd"),
+                        IsRecurringSeries = true,
+                        IsVirtualOccurrence = isVirtualOccurrence,
+                        OccurrenceNumber = occurrenceNumber
+                    }, baseDate);
                 }
+            }
 
             yield break;
         }

@@ -1902,8 +1902,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                     .First();
                 var status = (orderedMedications.Count, orderedPrescriptions.Count) switch
                 {
-                    (> 0, > 0) => "matched",
-                    (> 0, 0) => "medication-list-only",
+                    ( > 0, > 0) => "matched",
+                    ( > 0, 0) => "medication-list-only",
                     _ => "prescription-only"
                 };
 
