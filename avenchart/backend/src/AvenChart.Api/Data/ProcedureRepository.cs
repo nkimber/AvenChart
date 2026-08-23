@@ -34,6 +34,9 @@ public sealed class CriticalLabResultFollowUpConflictException(
 public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 {
     private const int MaximumReviewQueueLimit = 100;
+    public const int MaximumOrderCatalogImportRequestBytes = 1_048_576;
+    private const int MaximumOrderCatalogImportRows = 5_000;
+    private const int OrderCatalogImportBatchSize = 250;
 
     public async Task<ProcedureResultsResponse?> GetForPatientAsync(
         string patientId,
@@ -913,95 +916,114 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         var deactivatedOrderCount = await DeactivateOrderCatalogChildrenAsync(
             connection,
             transaction,
-            import.ParentId,
+            [import.ParentId],
             "ord",
             cancellationToken);
 
-        var importedItems = new List<ProcedureOrderCatalogImportItem>();
-        var createdOrderCount = 0;
-        var updatedOrderCount = 0;
-        var reactivatedOrderCount = 0;
-        var createdResultCount = 0;
-        var updatedResultCount = 0;
-        var reactivatedResultCount = 0;
-        var resultCount = 0;
-        var resultParentsCleared = new HashSet<int>();
-
-        foreach (var row in import.Rows)
-        {
-            var orderMutation = await UpsertImportedOrderCatalogItemAsync(
-                connection,
-                transaction,
+        var orderCodes = import.Rows
+            .Select(row => row.OrderCode)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var existingOrders = await GetImportedOrderCatalogItemsAsync(
+            connection,
+            transaction,
+            [import.ParentId],
+            orderCodes,
+            "ord",
+            cancellationToken);
+        var orderUpserts = import.Rows
+            .GroupBy(row => row.OrderCode, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new OrderCatalogImportUpsert(
                 import.ParentId,
                 import.LabId,
-                row.OrderCode,
-                row.OrderName,
-                "ord",
-                cancellationToken);
+                group.Key,
+                group.First().OrderName,
+                "ord"))
+            .ToArray();
+        var orderIds = await UpsertImportedOrderCatalogItemsAsync(
+            connection,
+            transaction,
+            orderUpserts,
+            cancellationToken);
+        var orderMutations = new Dictionary<string, OrderCatalogImportMutation>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (upsert, id) in orderUpserts.Zip(orderIds))
+        {
+            var identity = new CatalogImportIdentity(upsert.ParentId, upsert.Code, upsert.ItemType);
+            existingOrders.TryGetValue(identity, out var existing);
+            orderMutations[upsert.Code] = new OrderCatalogImportMutation(
+                id,
+                Created: existing is null,
+                Reactivated: existing is { Active: false });
+        }
 
-            if (orderMutation.Created)
-            {
-                createdOrderCount += 1;
-            }
-            else
-            {
-                updatedOrderCount += 1;
-            }
+        await DeactivateOrderCatalogChildrenAsync(
+            connection,
+            transaction,
+            orderMutations.Values.Select(mutation => mutation.Id).Distinct().ToArray(),
+            "res",
+            cancellationToken);
 
-            if (orderMutation.Reactivated)
-            {
-                reactivatedOrderCount += 1;
-            }
+        var resultRows = import.VendorFormat == "pathgroup"
+            ? import.Rows.Where(row => row.ResultCode is not null && row.ResultName is not null).ToArray()
+            : [];
+        var resultUpserts = resultRows
+            .Select(row => new OrderCatalogImportUpsert(
+                orderMutations[row.OrderCode].Id,
+                import.LabId,
+                row.ResultCode!,
+                row.ResultName!,
+                "res"))
+            .ToArray();
+        var existingResults = await GetImportedOrderCatalogItemsAsync(
+            connection,
+            transaction,
+            orderMutations.Values.Select(mutation => mutation.Id).Distinct().ToArray(),
+            resultUpserts.Select(upsert => upsert.Code).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            "res",
+            cancellationToken);
+        var resultIds = await UpsertImportedOrderCatalogItemsAsync(
+            connection,
+            transaction,
+            resultUpserts,
+            cancellationToken);
+        var resultMutations = new Dictionary<CatalogImportIdentity, OrderCatalogImportMutation>();
+        foreach (var (upsert, id) in resultUpserts.Zip(resultIds))
+        {
+            var identity = new CatalogImportIdentity(upsert.ParentId, upsert.Code, upsert.ItemType);
+            existingResults.TryGetValue(identity, out var existing);
+            resultMutations[identity] = new OrderCatalogImportMutation(
+                id,
+                Created: existing is null,
+                Reactivated: existing is { Active: false });
+        }
 
+        var importedItems = new List<ProcedureOrderCatalogImportItem>();
+        var effectiveOrderStates = new Dictionary<CatalogImportIdentity, ExistingCatalogImportItem>(existingOrders);
+        foreach (var row in import.Rows)
+        {
+            var orderMutation = orderMutations[row.OrderCode];
+            var orderIdentity = new CatalogImportIdentity(import.ParentId, row.OrderCode, "ord");
+            effectiveOrderStates.TryGetValue(orderIdentity, out var existingOrder);
+            var rowOrderMutation = new OrderCatalogImportMutation(
+                orderMutation.Id,
+                Created: existingOrder is null,
+                Reactivated: existingOrder is { Active: false });
+            effectiveOrderStates[orderIdentity] = new ExistingCatalogImportItem(orderMutation.Id, Active: true);
             importedItems.Add(new ProcedureOrderCatalogImportItem(
-                Id: orderMutation.Id,
+                Id: rowOrderMutation.Id,
                 ParentId: import.ParentId,
                 Code: row.OrderCode,
                 Name: row.OrderName,
                 ItemType: "ord",
-                Created: orderMutation.Created,
-                Reactivated: orderMutation.Reactivated));
-
-            if (resultParentsCleared.Add(orderMutation.Id))
-            {
-                await DeactivateOrderCatalogChildrenAsync(
-                    connection,
-                    transaction,
-                    orderMutation.Id,
-                    "res",
-                    cancellationToken);
-            }
+                Created: rowOrderMutation.Created,
+                Reactivated: rowOrderMutation.Reactivated));
 
             if (import.VendorFormat != "pathgroup" || row.ResultCode is null || row.ResultName is null)
             {
                 continue;
             }
 
-            var resultMutation = await UpsertImportedOrderCatalogItemAsync(
-                connection,
-                transaction,
-                orderMutation.Id,
-                import.LabId,
-                row.ResultCode,
-                row.ResultName,
-                "res",
-                cancellationToken);
-            resultCount += 1;
-
-            if (resultMutation.Created)
-            {
-                createdResultCount += 1;
-            }
-            else
-            {
-                updatedResultCount += 1;
-            }
-
-            if (resultMutation.Reactivated)
-            {
-                reactivatedResultCount += 1;
-            }
-
+            var resultMutation = resultMutations[new CatalogImportIdentity(orderMutation.Id, row.ResultCode, "res")];
             importedItems.Add(new ProcedureOrderCatalogImportItem(
                 Id: resultMutation.Id,
                 ParentId: orderMutation.Id,
@@ -1011,6 +1033,14 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 Created: resultMutation.Created,
                 Reactivated: resultMutation.Reactivated));
         }
+
+        var createdOrderCount = importedItems.Count(item => item.ItemType == "ord" && item.Created);
+        var updatedOrderCount = importedItems.Count(item => item.ItemType == "ord" && !item.Created);
+        var reactivatedOrderCount = importedItems.Count(item => item.ItemType == "ord" && item.Reactivated);
+        var resultItems = importedItems.Where(item => item.ItemType == "res").ToArray();
+        var createdResultCount = resultItems.Count(item => item.Created);
+        var updatedResultCount = resultItems.Count(item => !item.Created);
+        var reactivatedResultCount = resultItems.Count(item => item.Reactivated);
 
         await transaction.CommitAsync(cancellationToken);
 
@@ -1023,7 +1053,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             UpdatedOrderCount: updatedOrderCount,
             ReactivatedOrderCount: reactivatedOrderCount,
             DeactivatedOrderCount: deactivatedOrderCount,
-            ImportedResultCount: resultCount,
+            ImportedResultCount: resultItems.Length,
             CreatedResultCount: createdResultCount,
             UpdatedResultCount: updatedResultCount,
             ReactivatedResultCount: reactivatedResultCount,
@@ -3254,6 +3284,11 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 continue;
             }
 
+            if (rows.Count >= MaximumOrderCatalogImportRows)
+            {
+                throw new ArgumentException($"Procedure order catalog compendium imports support at most {MaximumOrderCatalogImportRows} accepted rows.");
+            }
+
             rows.Add(new OrderCatalogCompendiumRow(
                 OrderCode: orderCode,
                 OrderName: orderName,
@@ -3374,118 +3409,130 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private static async Task<int> DeactivateOrderCatalogChildrenAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        int parentId,
+        IReadOnlyCollection<int> parentIds,
         string itemType,
         CancellationToken cancellationToken)
     {
+        if (parentIds.Count == 0)
+        {
+            return 0;
+        }
+
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             update lab_order_catalog
             set active = false
-            where parent_id = @parentId
+            where parent_id = any(@parentIds)
               and item_type = @itemType
               and active = true;
             """;
-        command.Parameters.AddWithValue("parentId", parentId);
+        command.Parameters.AddWithValue("parentIds", parentIds.ToArray());
         command.Parameters.AddWithValue("itemType", itemType);
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<OrderCatalogImportMutation> UpsertImportedOrderCatalogItemAsync(
+    private static async Task<Dictionary<CatalogImportIdentity, ExistingCatalogImportItem>> GetImportedOrderCatalogItemsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        int parentId,
-        int labId,
-        string code,
-        string name,
+        IReadOnlyCollection<int> parentIds,
+        IReadOnlyCollection<string> codes,
         string itemType,
         CancellationToken cancellationToken)
     {
-        var existing = await GetImportedOrderCatalogItemAsync(
-            connection,
-            transaction,
-            parentId,
-            code,
-            itemType,
-            cancellationToken);
-        if (existing is null)
+        if (parentIds.Count == 0 || codes.Count == 0)
         {
-            var id = await GetNextIntIdAsync(connection, "lab_order_catalog", "id", transaction, cancellationToken);
-            await using var insert = connection.CreateCommand();
-            insert.Transaction = transaction;
-            insert.CommandText = """
-                insert into lab_order_catalog
-                    (id, parent_id, lab_id, code, name, item_type, procedure_type_name, description, specimen, standard_code, seq, active)
-                values
-                    (@id, @parentId, @labId, @code, @name, @itemType, @procedureTypeName, null, null, null, 0, true);
-                """;
-            insert.Parameters.AddWithValue("id", id);
-            insert.Parameters.AddWithValue("parentId", parentId);
-            insert.Parameters.AddWithValue("labId", labId);
-            insert.Parameters.AddWithValue("code", code);
-            insert.Parameters.AddWithValue("name", name);
-            insert.Parameters.AddWithValue("itemType", itemType);
-            insert.Parameters.Add("procedureTypeName", NpgsqlDbType.Text).Value = itemType == "ord" ? "laboratory" : DBNull.Value;
-            await insert.ExecuteNonQueryAsync(cancellationToken);
-            return new OrderCatalogImportMutation(id, Created: true, Reactivated: false);
+            return [];
         }
 
-        await using var update = connection.CreateCommand();
-        update.Transaction = transaction;
-        update.CommandText = """
-            update lab_order_catalog
-            set parent_id = @parentId,
-                lab_id = @labId,
-                code = @code,
-                name = @name,
-                item_type = @itemType,
-                active = true
-            where id = @id;
-            """;
-        update.Parameters.AddWithValue("id", existing.Id);
-        update.Parameters.AddWithValue("parentId", parentId);
-        update.Parameters.AddWithValue("labId", labId);
-        update.Parameters.AddWithValue("code", code);
-        update.Parameters.AddWithValue("name", name);
-        update.Parameters.AddWithValue("itemType", itemType);
-        await update.ExecuteNonQueryAsync(cancellationToken);
-
-        return new OrderCatalogImportMutation(existing.Id, Created: false, Reactivated: !existing.Active);
-    }
-
-    private static async Task<ExistingCatalogImportItem?> GetImportedOrderCatalogItemAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        int parentId,
-        string code,
-        string itemType,
-        CancellationToken cancellationToken)
-    {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            select id, active
+            select id, parent_id, code, item_type, active
             from lab_order_catalog
-            where parent_id = @parentId
-              and code = @code
-              and item_type = @itemType
-            order by id desc
-            limit 1;
+            where parent_id = any(@parentIds)
+              and code = any(@codes)
+              and item_type = @itemType;
             """;
-        command.Parameters.AddWithValue("parentId", parentId);
-        command.Parameters.AddWithValue("code", code);
+        command.Parameters.AddWithValue("parentIds", parentIds.ToArray());
+        command.Parameters.AddWithValue("codes", codes.ToArray());
         command.Parameters.AddWithValue("itemType", itemType);
 
+        var items = new Dictionary<CatalogImportIdentity, ExistingCatalogImportItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        while (await reader.ReadAsync(cancellationToken))
         {
-            return null;
+            var identity = new CatalogImportIdentity(
+                reader.GetInt32(reader.GetOrdinal("parent_id")),
+                reader.GetString(reader.GetOrdinal("code")),
+                reader.GetString(reader.GetOrdinal("item_type")));
+            items[identity] = new ExistingCatalogImportItem(
+                reader.GetInt32(reader.GetOrdinal("id")),
+                reader.GetBoolean(reader.GetOrdinal("active")));
         }
 
-        return new ExistingCatalogImportItem(
-            Id: reader.GetInt32(reader.GetOrdinal("id")),
-            Active: reader.GetBoolean(reader.GetOrdinal("active")));
+        return items;
+    }
+
+    private static async Task<int[]> UpsertImportedOrderCatalogItemsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        IReadOnlyList<OrderCatalogImportUpsert> upserts,
+        CancellationToken cancellationToken)
+    {
+        var ids = new int[upserts.Count];
+        foreach (var indexedChunk in upserts
+                     .Select((upsert, index) => (upsert, index))
+                     .Chunk(OrderCatalogImportBatchSize))
+        {
+            await using var batch = new NpgsqlBatch(connection, transaction);
+            foreach (var (upsert, _) in indexedChunk)
+            {
+                var command = new NpgsqlBatchCommand(
+                    """
+                    insert into lab_order_catalog
+                        (parent_id, lab_id, code, name, item_type, procedure_type_name, description, specimen, standard_code, seq, active)
+                    values
+                        (@parentId, @labId, @code, @name, @itemType, @procedureTypeName, null, null, null, 0, true)
+                    on conflict (parent_id, code, item_type)
+                        where parent_id is not null
+                          and code is not null
+                          and btrim(code) <> ''
+                    do update
+                    set lab_id = excluded.lab_id,
+                        name = excluded.name,
+                        active = true
+                    returning id;
+                    """);
+                command.Parameters.AddWithValue("parentId", upsert.ParentId);
+                command.Parameters.AddWithValue("labId", upsert.LabId);
+                command.Parameters.AddWithValue("code", upsert.Code);
+                command.Parameters.AddWithValue("name", upsert.Name);
+                command.Parameters.AddWithValue("itemType", upsert.ItemType);
+                command.Parameters.Add("procedureTypeName", NpgsqlDbType.Text).Value = upsert.ItemType == "ord"
+                    ? "laboratory"
+                    : DBNull.Value;
+                batch.BatchCommands.Add(command);
+            }
+
+            await using var reader = await batch.ExecuteReaderAsync(cancellationToken);
+            for (var offset = 0; offset < indexedChunk.Length; offset += 1)
+            {
+                if (offset > 0 && !await reader.NextResultAsync(cancellationToken))
+                {
+                    throw new InvalidOperationException("The procedure catalog import batch did not return every catalog identifier.");
+                }
+
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    throw new InvalidOperationException("The procedure catalog import batch did not return a catalog identifier.");
+                }
+
+                ids[indexedChunk[offset].index] = reader.GetInt32(0);
+            }
+        }
+
+        return ids;
     }
 
     private async Task<bool> TransitionCriticalFollowUpAsync(
@@ -4022,6 +4069,15 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         string OrderName,
         string? ResultCode,
         string? ResultName);
+
+    private sealed record CatalogImportIdentity(int ParentId, string Code, string ItemType);
+
+    private sealed record OrderCatalogImportUpsert(
+        int ParentId,
+        int LabId,
+        string Code,
+        string Name,
+        string ItemType);
 
     private sealed record ExistingCatalogImportItem(int Id, bool Active);
 

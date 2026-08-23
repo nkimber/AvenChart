@@ -5761,12 +5761,20 @@ procedures.MapPost("/order-catalog/import-compendium", async (
         ProcedureOrderCatalogImportRequest request,
         CancellationToken cancellationToken) =>
     {
-        var import = await repository.ImportOrderCatalogCompendiumAsync(request, cancellationToken);
-        return import is null
-            ? Results.BadRequest(new { error = "Procedure order catalog compendium import requires a valid vendor format, group, lab, and CSV payload." })
-            : Results.Ok(import);
+        try
+        {
+            var import = await repository.ImportOrderCatalogCompendiumAsync(request, cancellationToken);
+            return import is null
+                ? Results.BadRequest(new { error = "Procedure order catalog compendium import requires a valid vendor format, group, lab, and CSV payload." })
+                : Results.Ok(import);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["csvText"] = [exception.Message] });
+        }
     })
     .WithName("ImportProcedureOrderCatalogCompendium")
+    .WithMetadata(new RequestSizeLimitAttribute(ProcedureRepository.MaximumOrderCatalogImportRequestBytes))
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPut("/order-catalog/{itemId:int}", async (

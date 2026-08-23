@@ -12917,6 +12917,72 @@ finally {
 }
 
 try {
+    $procedureCatalogHeaders = Get-AdministrationHeaders
+    $procedureCatalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/order-catalog" -Method Get -Headers $procedureCatalogHeaders -TimeoutSec 20
+    $procedureCatalogParent = $procedureCatalog.items | Where-Object {
+        $_.itemType -eq "grp" -and $null -ne $_.labId
+    } | Select-Object -First 1
+    if ($null -eq $procedureCatalogParent) {
+        throw "No order catalog group with a laboratory provider was available for compendium-import verification."
+    }
+
+    $procedureCatalogMarker = "SMOKE-CATALOG-$([Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant())"
+    $procedureCatalogRows = 1..260 | ForEach-Object {
+        "$procedureCatalogMarker-ORD-$('{0:D4}' -f $_),Compendium order $_,$procedureCatalogMarker-RES-$('{0:D4}' -f $_),Compendium result $_"
+    }
+    $procedureCatalogRows += "$procedureCatalogMarker-ORD-0001,Compendium order 1,$procedureCatalogMarker-RES-0261,Compendium result 261"
+    $procedureCatalogImportBody = @{
+        vendorFormat = "pathgroup"
+        parentId = $procedureCatalogParent.id
+        labId = $procedureCatalogParent.labId
+        csvText = "Order Code,Order Name,Result Code,Result Name`n$($procedureCatalogRows -join "`n")"
+    } | ConvertTo-Json -Depth 6
+    $procedureCatalogFirstImport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/order-catalog/import-compendium" -Method Post -Headers $procedureCatalogHeaders -ContentType "application/json" -Body $procedureCatalogImportBody -TimeoutSec 60
+    $procedureCatalogReimport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/order-catalog/import-compendium" -Method Post -Headers $procedureCatalogHeaders -ContentType "application/json" -Body $procedureCatalogImportBody -TimeoutSec 60
+
+    $procedureCatalogLimitRows = 1..5001 | ForEach-Object {
+        "$procedureCatalogMarker-LIMIT-$('{0:D4}' -f $_),Bounded compendium order $_"
+    }
+    $procedureCatalogLimitBody = @{
+        vendorFormat = "ympg-dpmg"
+        parentId = $procedureCatalogParent.id
+        labId = $procedureCatalogParent.labId
+        csvText = "Order Code,Order Name`n$($procedureCatalogLimitRows -join "`n")"
+    } | ConvertTo-Json -Depth 6
+    $procedureCatalogLimitResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/api/procedures/order-catalog/import-compendium" -Method Post -Headers $procedureCatalogHeaders -ContentType "application/json" -Body $procedureCatalogLimitBody -SkipHttpErrorCheck -TimeoutSec 60
+
+    $procedureCatalogOversizeBody = @{
+        vendorFormat = "ympg-dpmg"
+        parentId = $procedureCatalogParent.id
+        labId = $procedureCatalogParent.labId
+        csvText = "x" * 1048576
+    } | ConvertTo-Json -Depth 6
+    $procedureCatalogOversizeResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/api/procedures/order-catalog/import-compendium" -Method Post -Headers $procedureCatalogHeaders -ContentType "application/json" -Body $procedureCatalogOversizeBody -SkipHttpErrorCheck -TimeoutSec 60
+
+    $procedureCatalogImportPassed = $procedureCatalogFirstImport.importedOrderCount -eq 261 `
+        -and $procedureCatalogFirstImport.importedResultCount -eq 261 `
+        -and $procedureCatalogFirstImport.createdOrderCount -eq 260 `
+        -and $procedureCatalogFirstImport.updatedOrderCount -eq 1 `
+        -and $procedureCatalogFirstImport.createdResultCount -eq 261 `
+        -and @($procedureCatalogFirstImport.importedItems).Count -eq 522 `
+        -and $procedureCatalogReimport.updatedOrderCount -eq 261 `
+        -and $procedureCatalogReimport.reactivatedOrderCount -eq 260 `
+        -and $procedureCatalogReimport.updatedResultCount -eq 261 `
+        -and $procedureCatalogReimport.reactivatedResultCount -eq 261 `
+        -and $procedureCatalogLimitResponse.StatusCode -eq 400 `
+        -and $procedureCatalogOversizeResponse.StatusCode -eq 413
+    Add-Check -Name "procedure catalog compendium imports are bounded and batched" -Result $(if ($procedureCatalogImportPassed) { "passed" } else { "failed" }) -Details @{
+        firstImport = @{ orders = $procedureCatalogFirstImport.importedOrderCount; results = $procedureCatalogFirstImport.importedResultCount; createdOrders = $procedureCatalogFirstImport.createdOrderCount; createdResults = $procedureCatalogFirstImport.createdResultCount }
+        reimport = @{ updatedOrders = $procedureCatalogReimport.updatedOrderCount; reactivatedOrders = $procedureCatalogReimport.reactivatedOrderCount; updatedResults = $procedureCatalogReimport.updatedResultCount; reactivatedResults = $procedureCatalogReimport.reactivatedResultCount }
+        rowCapStatus = $procedureCatalogLimitResponse.StatusCode
+        requestSizeCapStatus = $procedureCatalogOversizeResponse.StatusCode
+    }
+}
+catch {
+    Add-Check -Name "procedure catalog compendium imports are bounded and batched" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     Restore-AdministrationAccessContextGrant
 }
 catch {
