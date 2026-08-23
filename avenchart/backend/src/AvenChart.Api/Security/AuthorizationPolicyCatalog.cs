@@ -24,6 +24,7 @@ public static class AuthorizationPolicyCatalog
         new("Communications", "Batch communication", "admin", "batchcom", "Patient engagement owner", ["view", "write"]),
         new("Administration", "Practice administration", "admin", "practice", "Practice administrator", ["view", "write"]),
         new("Administration", "Super administration", "admin", "super", "Practice administrator", ["view", "write"]),
+        new("Clinical documentation", "Own encounters", "encounters", "auth", "Clinical product owner", ["view", "write"]),
         new("Clinical documentation", "Authorized encounters", "encounters", "auth_a", "Clinical product owner", ["view", "write"]),
         new("Clinical documentation", "Encounter notes", "encounters", "notes", "Clinical product owner", ["addonly", "view", "write"]),
         new("Specialty modules", "Group care", "groups", "gadd", "Clinical product owner", ["view", "write"]),

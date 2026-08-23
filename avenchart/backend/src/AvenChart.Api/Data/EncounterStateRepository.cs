@@ -177,6 +177,7 @@ public sealed class EncounterStateRepository(
         {
             return false;
         }
+        await EnsureEncounterIsUnlockedAsync(encounter, cancellationToken);
 
         entity.ArchivedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
         entity.ArchiveVersion++;
@@ -204,6 +205,7 @@ public sealed class EncounterStateRepository(
         {
             return false;
         }
+        await EnsureEncounterIsUnlockedAsync(encounter, cancellationToken);
 
         entity.ArchivedAt = null;
         entity.ArchiveVersion++;

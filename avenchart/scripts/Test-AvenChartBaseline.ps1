@@ -207,6 +207,42 @@ function Cancel-AppointmentTestFixture {
         -TimeoutSec 20
 }
 
+function Archive-EncounterTestFixture {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$Encounter
+    )
+
+    # Encounter signatures are retained clinical evidence.  Archive an isolated
+    # synthetic fixture after exercising it; do not delete signatures or alter
+    # a shared anchor encounter used by later workflow checks.
+    $detail = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/encounters/$Encounter" `
+        -Method Get `
+        -Headers (Get-AdministrationHeaders) `
+        -TimeoutSec 20
+    if ($null -ne $detail.archivedAt) {
+        return $detail
+    }
+
+    Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/encounters/$Encounter/archive" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body (@{
+            reason = "Synthetic smoke-test fixture completed."
+            expectedArchiveVersion = $detail.archiveVersion
+        } | ConvertTo-Json) `
+        -TimeoutSec 20 | Out-Null
+
+    return Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/encounters/$Encounter" `
+        -Method Get `
+        -Headers (Get-AdministrationHeaders) `
+        -TimeoutSec 20
+}
+
 function Get-FrontDeskHeaders {
     if ($null -eq $script:FrontDeskHeaders) {
         $loginBody = @{
@@ -5731,97 +5767,122 @@ catch {
     Add-Check -Name "anchor encounter detail" -Result "failed" -Details $_.Exception.Message
 }
 
-$smokeEncounterSignatureId = $null
+$smokeEncounterSignatureFixture = $null
 try {
-    if ($null -eq $encounterDetail) {
-        throw "Anchor encounter detail did not load."
-    }
-
+    # Signatures are legally and clinically meaningful retained evidence.  Use
+    # an isolated encounter so this test can prove the retention and content
+    # binding without mutating the shared document-workflow anchor.
+    Set-AdministrationFacilityContext -FacilityId 11
     $signatureSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     $signatureNote = "Smoke encounter sign-off $signatureSuffix"
+    $signatureFixture = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/encounters" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{
+            patientId = "MOD-PAT-0001"
+            providerId = $null
+            dateTime = "2026-06-18 10:20:00"
+            reason = "Smoke encounter signature fixture $signatureSuffix"
+            facilityId = 11
+            billingFacilityId = 11
+            billingNote = "Isolated synthetic signature verification fixture."
+        } | ConvertTo-Json) `
+        -Headers (Get-AdministrationHeaders) `
+        -TimeoutSec 20
+    $smokeEncounterSignatureFixture = $signatureFixture.encounter
     $signatureBody = @{
-        signerUsername = "admin"
-        signedAt = "2026-06-18 10:20:00"
         isLock = $false
         amendment = $signatureNote
     } | ConvertTo-Json -Depth 5
 
-    $createdSignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $signatureBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
-    $smokeEncounterSignatureId = $createdSignature.id
+    $createdSignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$smokeEncounterSignatureFixture/sign" -Method Put -ContentType "application/json" -Body $signatureBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $createdSignatureVisible = @($createdSignature.detail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
-        $_.id -eq $smokeEncounterSignatureId `
+        $_.id -eq $createdSignature.id `
             -and $_.signerUsername -eq "admin" `
-            -and $_.signedAt -eq "2026-06-18 10:20" `
+            -and -not [string]::IsNullOrWhiteSpace($_.signedAt) `
             -and $_.isLock -eq $false `
-            -and $_.encounterVersion -eq $encounterDetail.rowVersion `
-            -and $_.amendment -eq $signatureNote
+            -and $_.encounterVersion -eq $signatureFixture.rowVersion `
+            -and $_.amendment -eq $signatureNote `
+            -and $_.contentRevision -eq "encounter-signature-content-v1" `
+            -and -not [string]::IsNullOrWhiteSpace($_.contentChecksum)
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$smokeEncounterSignatureId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
-    $smokeEncounterSignatureId = $null
-    $afterDeleteSignatureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
-    $deletedSignatureVisible = @($afterDeleteSignatureDetail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
-        $_.amendment -eq $signatureNote
+    $archivedSignatureFixture = Archive-EncounterTestFixture -Encounter $smokeEncounterSignatureFixture
+    $retainedSignatureVisible = @($archivedSignatureFixture.signatures | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $createdSignature.id -and $_.amendment -eq $signatureNote
     } | Select-Object -First 1
+    $smokeEncounterSignatureFixture = $null
 
-    $encounterSignOffPassed = $null -ne $createdSignatureVisible -and $null -eq $deletedSignatureVisible
+    $encounterSignOffPassed = $null -ne $createdSignatureVisible `
+        -and $null -ne $retainedSignatureVisible `
+        -and $null -ne $archivedSignatureFixture.archivedAt
     Add-Check -Name "encounter sign-off lifecycle" -Result $(if ($encounterSignOffPassed) { "passed" } else { "failed" }) -Details @{
-        encounter = 1000013
+        encounter = $signatureFixture.encounter
         signatureId = $createdSignature.id
         signature = $createdSignatureVisible
+        archivedAt = $archivedSignatureFixture.archivedAt
+        retained = $null -ne $retainedSignatureVisible
     }
 }
 catch {
     Add-Check -Name "encounter sign-off lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 finally {
-    if ($null -ne $smokeEncounterSignatureId) {
+    if ($null -ne $smokeEncounterSignatureFixture) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$smokeEncounterSignatureId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            Archive-EncounterTestFixture -Encounter $smokeEncounterSignatureFixture | Out-Null
         }
         catch {
         }
     }
 }
 
-$smokeEncounterCoSignatureIds = @()
+$smokeEncounterCoSignatureFixture = $null
 try {
-    if ($null -eq $encounterDetail) {
-        throw "Anchor encounter detail did not load."
-    }
-
+    # The second signer must come from a distinct authenticated principal.  The
+    # body never chooses the signer; the API binds it to the active session.
+    Set-AdministrationFacilityContext -FacilityId 10
     $coSignatureSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     $primarySignatureNote = "Smoke primary encounter attestation $coSignatureSuffix"
     $coSignatureNote = "Smoke co-signature review $coSignatureSuffix"
+    $coSignatureFixture = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/encounters" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{
+            patientId = "MOD-PAT-0006"
+            providerId = 101
+            dateTime = "2026-06-18 10:30:00"
+            reason = "Smoke encounter co-signature fixture $coSignatureSuffix"
+            facilityId = 10
+            billingFacilityId = 10
+            billingNote = "Isolated synthetic co-signature verification fixture."
+        } | ConvertTo-Json) `
+        -Headers (Get-AdministrationHeaders) `
+        -TimeoutSec 20
+    $smokeEncounterCoSignatureFixture = $coSignatureFixture.encounter
     $primarySignatureBody = @{
-        signerUsername = "admin"
-        signedAt = "2026-06-18 10:30:00"
         isLock = $false
         amendment = $primarySignatureNote
     } | ConvertTo-Json -Depth 5
     $coSignatureBody = @{
-        signerUsername = "gold-provider-02"
-        signedAt = "2026-06-18 10:35:00"
         isLock = $true
         amendment = $coSignatureNote
     } | ConvertTo-Json -Depth 5
 
-    $createdPrimarySignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $primarySignatureBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
-    $smokeEncounterCoSignatureIds += $createdPrimarySignature.id
-    $createdCoSignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $coSignatureBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
-    $smokeEncounterCoSignatureIds += $createdCoSignature.id
+    $createdPrimarySignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$smokeEncounterCoSignatureFixture/sign" -Method Put -ContentType "application/json" -Body $primarySignatureBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $createdCoSignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$smokeEncounterCoSignatureFixture/sign" -Method Put -ContentType "application/json" -Body $coSignatureBody -Headers (Get-ClinicianHeaders) -TimeoutSec 20
 
     $primarySignatureVisible = @($createdCoSignature.detail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $createdPrimarySignature.id `
             -and $_.signerUsername -eq "admin" `
-            -and $_.signedAt -eq "2026-06-18 10:30" `
             -and $_.isLock -eq $false `
             -and $_.amendment -eq $primarySignatureNote
     } | Select-Object -First 1
     $coSignatureVisible = @($createdCoSignature.detail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $createdCoSignature.id `
-            -and $_.signerUsername -eq "gold-provider-02" `
-            -and $_.signedAt -eq "2026-06-18 10:35" `
+            -and $_.signerUsername -eq "gold-provider-01" `
             -and $_.isLock -eq $true `
             -and $_.amendment -eq $coSignatureNote
     } | Select-Object -First 1
@@ -5833,14 +5894,14 @@ try {
     } | Select-Object -First 1
     $coSignatureAmendmentVisible = $amendmentHistory | Where-Object {
         $_.signatureId -eq $createdCoSignature.id `
-            -and $_.signerUsername -eq "gold-provider-02" `
+            -and $_.signerUsername -eq "gold-provider-01" `
             -and $_.isLock -eq $true `
             -and $_.amendment -eq $coSignatureNote
     } | Select-Object -First 1
     $lockedSummaryStatus = 0
     try {
         Invoke-WebRequest `
-            -Uri "$ApiBaseUrl/api/encounters/1000013" `
+            -Uri "$ApiBaseUrl/api/encounters/$smokeEncounterCoSignatureFixture" `
             -Method Put `
             -ContentType "application/json" `
             -Body (@{
@@ -5855,44 +5916,67 @@ try {
         if ($_.Exception.Response) { $lockedSummaryStatus = [int]$_.Exception.Response.StatusCode } else { throw }
     }
 
-    foreach ($signatureId in @($smokeEncounterCoSignatureIds)) {
-        Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$signatureId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $lockedArchiveStatus = 0
+    try {
+        Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/encounters/$smokeEncounterCoSignatureFixture/archive" `
+            -Method Put `
+            -Headers (Get-AdministrationHeaders) `
+            -ContentType "application/json" `
+            -Body (@{
+                reason = "The locking-signature fixture must remain immutable."
+                expectedArchiveVersion = $createdCoSignature.detail.archiveVersion
+            } | ConvertTo-Json) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop | Out-Null
     }
-    $smokeEncounterCoSignatureIds = @()
-    $afterCoSignatureDeleteDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
-    $deletedCoSignaturesVisible = @($afterCoSignatureDeleteDetail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
-        $_.amendment -eq $primarySignatureNote -or $_.amendment -eq $coSignatureNote
-    }
-    $deletedAmendmentsVisible = @($afterCoSignatureDeleteDetail.amendmentHistory | Where-Object { $null -ne $_ }) | Where-Object {
-        $_.amendment -eq $primarySignatureNote -or $_.amendment -eq $coSignatureNote
+    catch {
+        if ($_.Exception.Response) { $lockedArchiveStatus = [int]$_.Exception.Response.StatusCode } else { throw }
     }
 
-    $encounterCoSignaturePassed = $null -ne $primarySignatureVisible -and $null -ne $coSignatureVisible -and $coSignatureVisible.encounterVersion -eq $createdCoSignature.detail.rowVersion -and $null -ne $primaryAmendmentVisible -and $null -ne $coSignatureAmendmentVisible -and $lockedSummaryStatus -eq 409 -and @($amendmentHistory).Count -eq 2 -and @($deletedCoSignaturesVisible).Count -eq 0 -and @($deletedAmendmentsVisible).Count -eq 0
+    $retainedCoSignatureFixture = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$smokeEncounterCoSignatureFixture" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $retainedCoSignaturesVisible = @($retainedCoSignatureFixture.signatures | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.amendment -eq $primarySignatureNote -or $_.amendment -eq $coSignatureNote
+    }
+    $retainedAmendmentsVisible = @($retainedCoSignatureFixture.amendmentHistory | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.amendment -eq $primarySignatureNote -or $_.amendment -eq $coSignatureNote
+    }
+    $smokeEncounterCoSignatureFixture = $null
+
+    $encounterCoSignaturePassed = $null -ne $primarySignatureVisible `
+        -and $null -ne $coSignatureVisible `
+        -and $coSignatureVisible.encounterVersion -eq $createdCoSignature.detail.rowVersion `
+        -and $null -ne $primaryAmendmentVisible `
+        -and $null -ne $coSignatureAmendmentVisible `
+        -and $lockedSummaryStatus -eq 409 `
+        -and @($amendmentHistory).Count -eq 2 `
+        -and @($retainedCoSignaturesVisible).Count -eq 2 `
+        -and @($retainedAmendmentsVisible).Count -eq 2 `
+        -and $lockedArchiveStatus -eq 409 `
+        -and $null -eq $retainedCoSignatureFixture.archivedAt
     Add-Check -Name "encounter co-signature lifecycle" -Result $(if ($encounterCoSignaturePassed) { "passed" } else { "failed" }) -Details @{
-        encounter = 1000013
+        encounter = $coSignatureFixture.encounter
         primarySignature = $primarySignatureVisible
         coSignature = $coSignatureVisible
         lockedSummaryStatus = $lockedSummaryStatus
         amendmentHistoryCount = @($amendmentHistory).Count
         primaryAmendment = $primaryAmendmentVisible
         coSignatureAmendment = $coSignatureAmendmentVisible
-        deletedVisibleCount = @($deletedCoSignaturesVisible).Count
-        deletedAmendmentCount = @($deletedAmendmentsVisible).Count
+        retainedSignatureCount = @($retainedCoSignaturesVisible).Count
+        retainedAmendmentCount = @($retainedAmendmentsVisible).Count
+        lockedArchiveStatus = $lockedArchiveStatus
+        retainedLockedFixture = $null -eq $retainedCoSignatureFixture.archivedAt
     }
 }
 catch {
     Add-Check -Name "encounter co-signature lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 finally {
-    foreach ($signatureId in @($smokeEncounterCoSignatureIds)) {
-        try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$signatureId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
-        }
-        catch {
-        }
-    }
+    # A locking signature is intentionally immutable. The disposable synthetic
+    # database is reset before the next run, so retain this fixture as evidence.
 }
 
+Set-AdministrationFacilityContext -FacilityId 11
 $smokeEncounterDocumentId = $null
 try {
     if ($null -eq $encounterDetail) {

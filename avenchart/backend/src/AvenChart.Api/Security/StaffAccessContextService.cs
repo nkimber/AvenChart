@@ -191,6 +191,45 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
             cancellationToken);
 
     /// <summary>
+    /// Tests whether an encounter belongs to the authenticated clinician as
+    /// its assigned provider inside the already selected facility. This is the
+    /// narrow authorization branch for ACLs that allow work on a clinician's
+    /// own encounters but not arbitrary facility records.
+    /// </summary>
+    public Task<bool> CanAccessAssignedEncounterAsync(
+        int encounter,
+        string? username,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedUsername = username?.Trim();
+        if (encounter <= 0
+            || string.IsNullOrWhiteSpace(normalizedUsername)
+            || normalizedUsername.Length > 128
+            || facilityId <= 0)
+        {
+            return Task.FromResult(false);
+        }
+
+        return CanAccessPatientResourceAsync(
+            """
+            select exists(
+              select 1
+              from encounters encounter
+              join staff provider on provider.id=encounter.provider_id
+              join patients patient on patient.legacy_pid=encounter.pid
+              where encounter.encounter=@resourceId::integer
+                and patient.facility_id=@facility
+                and patient.merged_into_patient_id is null
+                and lower(provider.username)=lower(@username));
+            """,
+            encounter.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            facilityId,
+            cancellationToken,
+            normalizedUsername);
+    }
+
+    /// <summary>
     /// Resolves a recurring appointment occurrence to its series root and
     /// then to the owning patient. A virtual-occurrence suffix cannot widen
     /// the facility scope of the underlying appointment.
@@ -594,7 +633,8 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
         string commandText,
         string? resourceId,
         int facilityId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? username = null)
     {
         if (string.IsNullOrWhiteSpace(resourceId)
             || resourceId.Length > 128
@@ -608,6 +648,10 @@ public sealed class StaffAccessContextService(NpgsqlDataSource dataSource)
         command.CommandText = commandText;
         command.Parameters.AddWithValue("resourceId", resourceId);
         command.Parameters.AddWithValue("facility", facilityId);
+        if (commandText.Contains("@username", StringComparison.Ordinal))
+        {
+            command.Parameters.AddWithValue("username", username ?? string.Empty);
+        }
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 

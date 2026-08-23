@@ -2721,6 +2721,7 @@ encounters.MapGet("/", async (
 encounters.MapPut("/{encounter:int}/archive", async (EncounterStateRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, EncounterArchiveRequest request, CancellationToken cancellationToken) =>
 {
     try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return await repository.ArchiveAsync(encounter, request, session.Username, cancellationToken) ? Results.NoContent() : Results.Conflict(new { error = "The encounter is missing, already archived, or has changed. Reload and try again." }); }
+    catch (EncounterLockConflictException exception) { return Results.Conflict(new { error = exception.Message, code = "encounter_locked" }); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 })
     .WithName("ArchiveEncounter")
@@ -2729,6 +2730,7 @@ encounters.MapPut("/{encounter:int}/archive", async (EncounterStateRepository re
 encounters.MapPut("/{encounter:int}/restore", async (EncounterStateRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, EncounterArchiveRequest request, CancellationToken cancellationToken) =>
 {
     try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return await repository.RestoreAsync(encounter, request, session.Username, cancellationToken) ? Results.NoContent() : Results.Conflict(new { error = "The encounter is missing, already restored, or has changed. Reload and try again." }); }
+    catch (EncounterLockConflictException exception) { return Results.Conflict(new { error = exception.Message, code = "encounter_locked" }); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 })
     .WithName("RestoreEncounter")
@@ -2957,7 +2959,7 @@ encounters.MapPost("/{encounter:int}/soap-notes", async (
     .WithName("CreateEncounterSoapNote")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
-encounters.MapPut("/{encounter:int}/sign", async (
+app.MapPut("/api/encounters/{encounter:int}/sign", async (
         EncounterRepository repository,
         AuthRepository authRepository,
         HttpContext httpContext,
@@ -2972,7 +2974,8 @@ encounters.MapPut("/{encounter:int}/sign", async (
             : Results.Ok(response);
     })
     .WithName("SignEncounter")
-    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+    .AddEndpointFilter(EncounterSigningPermissionFilter())
+    .AddEndpointFilter(ClinicalResourceFacilityScopeFilter());
 
 encounters.MapPost("/{encounter:int}/documents", async (
         EncounterRepository encounterRepository,
