@@ -35,6 +35,10 @@ jobs:
         run: |
           docker compose up -d --build --wait api
           ./scripts/Seed-AvenChartGoldDataset.ps1 -SkipMigrationImageBuild
+      - name: Run migration resilience evidence
+        working-directory: avenchart
+        shell: pwsh
+        run: ./scripts/Test-AvenChartMigrationResilience.ps1
       - name: Run governed API workflow baseline
         working-directory: avenchart
         shell: pwsh
@@ -59,6 +63,14 @@ jobs:
           docker compose up -d --force-recreate --wait api
           Remove-Item Env:\IdentityProvider__Mode
           ./scripts/Seed-AvenChartGoldDataset.ps1 -SkipMigrationImageBuild
+      - name: Rehearse database backup and restore
+        working-directory: avenchart
+        shell: pwsh
+        run: ./scripts/Test-AvenChartBackupRestore.ps1
+      - name: Verify restored runtime operational readiness
+        working-directory: avenchart
+        shell: pwsh
+        run: ./scripts/Test-AvenChartOperationalReadiness.ps1
       - name: Run modern UI browser evidence in Chromium
         working-directory: avenchart-ui
         run: |
