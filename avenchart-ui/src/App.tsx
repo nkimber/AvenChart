@@ -90,6 +90,11 @@ const DocumentOcrQueue = lazy(
   () => import('./pages/clinician/DocumentOcrQueue.tsx'),
 )
 const DuplicateReview = lazy(() => import('./pages/clinician/DuplicateReview.tsx'))
+const TelehealthLanding = lazy(() => import('./features/telehealth/TelehealthLanding.tsx'))
+const ProspectivePatientTelehealthEntry = lazy(() => import('./features/telehealth/ProspectivePatientTelehealthEntry.tsx'))
+const PatientTelehealthWorkspace = lazy(() => import('./features/telehealth/PatientTelehealthWorkspace.tsx'))
+const AdminTelehealthQueue = lazy(() => import('./features/telehealth/AdminTelehealthQueue.tsx'))
+const ClinicianTelehealthQueue = lazy(() => import('./features/telehealth/ClinicianTelehealthQueue.tsx'))
 
 export default function App() {
   return (
@@ -107,6 +112,8 @@ export default function App() {
         <Route path="/" element={<EntryChooser />} />
         <Route path="/login" element={<ClinicianLogin />} />
         <Route path="/auth/oidc/callback" element={<OidcCallback />} />
+        <Route path="/telehealth" element={<TelehealthLanding />} />
+        <Route path="/telehealth/new" element={<ProspectivePatientTelehealthEntry />} />
         {/* Legacy redirect */}
         <Route path="/home" element={<Navigate to="/clinician/dashboard" replace />} />
 
@@ -145,6 +152,8 @@ export default function App() {
           <Route path="admin" element={<AdminDirectory />} />
           <Route path="experience" element={<ExperienceBaseline />} />
           <Route path="operations" element={<AzureOperations />} />
+          <Route path="telehealth/admin" element={<AdminTelehealthQueue />} />
+          <Route path="telehealth/physician" element={<ClinicianTelehealthQueue />} />
 
           {/* Standalone new encounter (no patient context) */}
           <Route path="encounters/new" element={<NewEncounter />} />
@@ -184,6 +193,7 @@ export default function App() {
           <Route path="appointments" element={<PortalAppointments />} />
           <Route path="records" element={<PortalRecords />} />
           <Route path="account" element={<PortalAccount />} />
+          <Route path="telehealth" element={<PatientTelehealthWorkspace />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

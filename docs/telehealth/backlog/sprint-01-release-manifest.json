@@ -1,0 +1,52 @@
+{
+  "manifestVersion": "1.0",
+  "featureVersion": "0.1.0-synthetic.1",
+  "decision": "TH-DEC-0003",
+  "decisionExpiresOn": "2026-10-31",
+  "generatedOn": "2026-08-26",
+  "scope": "disabled-local-synthetic-foundation",
+  "featureFlag": {
+    "key": "Telehealth:Enabled",
+    "committedDefault": false,
+    "productionAllowed": false
+  },
+  "api": {
+    "basePath": "/api/telehealth/v1",
+    "version": 1
+  },
+  "schema": {
+    "migration": "V0282__telehealth_foundation",
+    "tableCount": 8,
+    "rollbackStrategy": "feature-disable-and-reviewed-forward-recovery"
+  },
+  "protocol": {
+    "key": "synthetic-universal-safety",
+    "version": 1,
+    "contentHashSha256": "84332da395115e13a89af80452773daff68295ce96090225972f76158de52f50",
+    "syntheticOnly": true,
+    "clinicalApprovalClaimed": false
+  },
+  "jurisdictions": ["GA", "CA", "FL"],
+  "evidenceCommands": [
+    "scripts/Test-TelehealthMigrationResilience.ps1",
+    "scripts/Test-TelehealthRuntimeSafety.ps1",
+    "scripts/Test-TelehealthOpenApiContract.ps1",
+    "scripts/Test-TelehealthAuthorization.ps1",
+    "scripts/Test-TelehealthQueueConcurrency.ps1",
+    "e2e/telehealth-accessibility.spec.ts",
+    "e2e/telehealth-failure-recovery.spec.ts"
+  ],
+  "releaseGates": {
+    "g1SyntheticFoundation": false,
+    "g2InternalClinical": false,
+    "g3Pilot": false,
+    "g4Production": false
+  },
+  "independentReviewsComplete": false,
+  "blockingConditions": [
+    "independent-clinical-security-data-accessibility-reviews-pending",
+    "program-owner-final-evidence-packet-review-pending"
+  ],
+  "productionReleaseAuthorized": false,
+  "patientCareAuthorized": false
+}

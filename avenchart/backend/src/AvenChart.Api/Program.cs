@@ -19,6 +19,7 @@ using Npgsql;
 using AvenChart.Api.Configuration;
 using AvenChart.Api.Data;
 using AvenChart.Api.Experience;
+using AvenChart.Api.Features.Telehealth;
 using AvenChart.Api.Infrastructure;
 using AvenChart.Api.Models;
 using AvenChart.Api.Persistence;
@@ -28,11 +29,17 @@ using static AvenChart.Api.Infrastructure.EndpointAccessPolicies;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddTelehealth(builder.Configuration, builder.Environment);
+
 var runtimeSafetyOptions = builder.Configuration
     .GetSection(RuntimeSafetyOptions.SectionName)
     .Get<RuntimeSafetyOptions>() ?? new RuntimeSafetyOptions();
 
-builder.Services.AddOpenApi(AvenChartOpenApi.Configure);
+builder.Services.AddOpenApi(options =>
+{
+    AvenChartOpenApi.Configure(options);
+    TelehealthOpenApi.Configure(options);
+});
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>
@@ -515,7 +522,7 @@ app.Use(async (context, next) =>
         {
             // API responses can contain ePHI. Keep them out of browser and intermediary caches,
             // including error responses and download endpoints that set their own response headers.
-            context.Response.Headers.CacheControl = "no-store, no-cache, max-age=0";
+            context.Response.Headers.CacheControl = "no-store, no-cache, private, max-age=0";
             context.Response.Headers.Pragma = "no-cache";
             context.Response.Headers.Expires = "0";
             return Task.CompletedTask;
@@ -644,6 +651,7 @@ auth.MapStaffAuthenticationEndpoints();
 
 app.MapDevelopmentTestIdentityProviderEndpoints();
 app.MapPatientPortalEndpoints();
+app.MapTelehealthEndpoints();
 app.MapExternalLaboratoryFhirIntakeEndpoints();
 
 app.MapPatientEndpoints();

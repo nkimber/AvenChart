@@ -1,0 +1,319 @@
+{
+  "schemaVersion": 1,
+  "status": "active-for-decisions-0003-0005-through-0042-synthetic-sprints-01-through-39",
+  "decisionOwner": "Project owner",
+  "approvedAt": "2026-08-27",
+  "authorizationDecisions": ["TH-DEC-0002", "TH-DEC-0003", "TH-DEC-0005", "TH-DEC-0006", "TH-DEC-0007", "TH-DEC-0008", "TH-DEC-0009", "TH-DEC-0010", "TH-DEC-0011", "TH-DEC-0012", "TH-DEC-0013", "TH-DEC-0014", "TH-DEC-0015", "TH-DEC-0016", "TH-DEC-0017", "TH-DEC-0018", "TH-DEC-0019", "TH-DEC-0020", "TH-DEC-0021", "TH-DEC-0022", "TH-DEC-0023", "TH-DEC-0024", "TH-DEC-0025", "TH-DEC-0026", "TH-DEC-0027", "TH-DEC-0028", "TH-DEC-0029", "TH-DEC-0030", "TH-DEC-0031", "TH-DEC-0032", "TH-DEC-0033", "TH-DEC-0034", "TH-DEC-0035", "TH-DEC-0036", "TH-DEC-0037", "TH-DEC-0038", "TH-DEC-0039", "TH-DEC-0040", "TH-DEC-0041", "TH-DEC-0042"],
+  "activeSafeguards": ["TH-SG-001", "TH-SG-002", "TH-SG-003", "TH-SG-004", "TH-SG-005", "TH-SG-006", "TH-SG-007", "TH-SG-008", "TH-SG-009", "TH-SG-010", "TH-SG-011", "TH-SG-012", "TH-SG-013", "TH-SG-014", "TH-SG-015", "TH-SG-016", "TH-SG-017", "TH-SG-018", "TH-SG-019", "TH-SG-020", "TH-SG-021", "TH-SG-022", "TH-SG-023", "TH-SG-024", "TH-SG-025", "TH-SG-026", "TH-SG-027", "TH-SG-028", "TH-SG-029", "TH-SG-030", "TH-SG-031", "TH-SG-032", "TH-SG-033", "TH-SG-034", "TH-SG-035", "TH-SG-036", "TH-SG-037", "TH-SG-038", "TH-SG-039", "TH-SG-040", "TH-SG-041", "TH-SG-042", "TH-SG-043", "TH-SG-044"],
+  "activationPrerequisite": "Active only for the exact disabled synthetic Sprints 1 through 39 scopes and paths in TH-DEC-0003 and TH-DEC-0005 through TH-DEC-0042 through 2026-10-31",
+  "safeguards": [
+    {
+      "id": "TH-SG-001",
+      "name": "Specification and backlog traceability",
+      "requiredPath": "scripts/Test-TelehealthPlanningArtifacts.ps1",
+      "trigger": "always",
+      "evidence": "329 requirements, exact primary backlog coverage, decisions and links"
+    },
+    {
+      "id": "TH-SG-002",
+      "name": "Migration resilience",
+      "requiredPath": "avenchart/scripts/Test-TelehealthMigrationResilience.ps1",
+      "trigger": "first telehealth migration",
+      "evidence": "empty and populated PostgreSQL migration, constraints and rollback-compatible rehearsal"
+    },
+    {
+      "id": "TH-SG-003",
+      "name": "OpenAPI compatibility",
+      "requiredPath": "avenchart/scripts/Test-TelehealthOpenApiContract.ps1",
+      "trigger": "first telehealth endpoint",
+      "evidence": "versioned routes, auth, Problem Details, idempotency and concurrency contract"
+    },
+    {
+      "id": "TH-SG-004",
+      "name": "Real PostgreSQL concurrency",
+      "requiredPath": "avenchart/scripts/Test-TelehealthQueueConcurrency.ps1",
+      "trigger": "first queue or reservation persistence",
+      "evidence": "atomic authorization, reserve-next, one-active constraints and lease recovery"
+    },
+    {
+      "id": "TH-SG-005",
+      "name": "Cross-practice and resource authorization",
+      "requiredPath": "avenchart/scripts/Test-TelehealthAuthorization.ps1",
+      "trigger": "first protected endpoint",
+      "evidence": "practice, patient, request, facility, purpose, role, list and realtime denial matrix"
+    },
+    {
+      "id": "TH-SG-006",
+      "name": "Synthetic-only lower environments",
+      "requiredPath": "avenchart/scripts/Test-TelehealthRuntimeSafety.ps1",
+      "trigger": "first adapter or browser workflow",
+      "evidence": "synthetic data and destination allowlist with no production credential or route"
+    },
+    {
+      "id": "TH-SG-007",
+      "name": "Production rejection of stubs and test identity",
+      "requiredPath": "avenchart/backend/tests/AvenChart.Api.Tests/Telehealth/TelehealthRuntimeSafetyPolicyTests.cs",
+      "trigger": "first production-configurable service",
+      "evidence": "startup fails for test identity, synthetic protocol/data, stub adapters or unsafe video"
+    },
+    {
+      "id": "TH-SG-008",
+      "name": "Accessible frontend and failure recovery",
+      "requiredPath": "avenchart-ui/e2e/telehealth-accessibility.spec.ts",
+      "trigger": "first telehealth React route",
+      "evidence": "desktop/mobile keyboard, screen reader semantics, zoom/reflow and recovery"
+    },
+    {
+      "id": "TH-SG-009",
+      "name": "Prospective identity isolation",
+      "requiredPath": "avenchart/scripts/Test-TelehealthProspectiveIdentity.ps1",
+      "trigger": "first new-patient applicant path",
+      "evidence": "hash-only applicant access, bounded challenge attempts, coarse duplicate disposition, append-only evidence and zero canonical-patient/request deltas"
+    },
+    {
+      "id": "TH-SG-010",
+      "name": "Connection-room isolation and no-capture boundary",
+      "requiredPath": "avenchart/scripts/Test-TelehealthQueueConcurrency.ps1",
+      "trigger": "first video or waiting-room path",
+      "evidence": "exact grant replay, patient and physician isolation, hash-only credentials, no capture or media transport, and pre-start zero encounter delta"
+    },
+    {
+      "id": "TH-SG-011",
+      "name": "Transactional consultation handoff and zero clinical-output boundary",
+      "requiredPath": "avenchart/backend/src/AvenChart.Api/Features/Telehealth/TelehealthConsultationRepository.cs",
+      "trigger": "first consultation or encounter linkage path",
+      "evidence": "owner-only affirmative start, exact replay, one concurrent winner, one appointment-linked encounter, opaque response, and zero notes, signatures, prescriptions, billing, or claims"
+    },
+    {
+      "id": "TH-SG-012",
+      "name": "Owner-bound read-only consultation projection",
+      "requiredPath": "avenchart/backend/src/AvenChart.Api/Features/Telehealth/TelehealthConsultationRepository.cs",
+      "trigger": "first consultation chart-read path",
+      "evidence": "adult and active-consultation gates, owning-physician/facility isolation, explicit bounded allowlist, no-store response, PHI audit correlation, excluded-field assertions, and accessible retry"
+    },
+    {
+      "id": "TH-SG-013",
+      "name": "Owner-bound conflict-safe consultation draft",
+      "requiredPath": "avenchart/backend/src/AvenChart.Api/Features/Telehealth/TelehealthConsultationRepository.cs",
+      "trigger": "first consultation documentation-write path",
+      "evidence": "atomic active-consultation ownership revalidation, canonical append-only SOAP versions, optimistic conflict and signature locking, authenticated author/server time, opaque audited no-store route, manual accessible save/reload, and no downstream clinical or financial actions"
+    },
+    {
+      "id": "TH-SG-014",
+      "name": "Monotonic physician-owned unfinished wrap-up",
+      "requiredPath": "avenchart/database/migrations/V0287__telehealth_consultation_wrap_up_handoff.sql",
+      "trigger": "first consultation session-end or wrap-up path",
+      "evidence": "one owner-only Started/InConsultation/Busy to MediaEnded/WrapUp/WrapUp transaction, exact replay and contention safety, immutable start facts and events, open appointment and encounter, continued unsigned draft access, physician unavailability, honest patient state, audited no-store responses, and no disposition, completion, signing, downstream clinical, financial, media, or external action"
+    },
+    {
+      "id": "TH-SG-015",
+      "name": "Neutral synthetic pharmacy directory and patient-confirmed destination draft",
+      "requiredPath": "avenchart/database/migrations/V0288__telehealth_synthetic_pharmacy_choice.sql",
+      "trigger": "first pharmacy search or destination-choice path",
+      "evidence": "owner-bound wrap-up search, deterministic neutral NON_PRODUCTION directory provenance, explicit entered-origin acknowledgment, active chart-preference rebinding, patient confirmation, append-only versioned choice and event, exact replay and contention safety, audited no-store responses, and zero prescription, medication, signature, billing, claim, lifecycle, external, coordinate, or browser-storage action"
+    },
+    {
+      "id": "TH-SG-016",
+      "name": "Owner-bound conditional safety-disposition draft",
+      "requiredPath": "avenchart/database/migrations/V0289__telehealth_synthetic_safety_disposition_draft.sql",
+      "trigger": "first consultation safety-disposition path",
+      "evidence": "physician-only unfinished-wrap-up rebinding, exact disposition vocabulary, no clinical defaults, conditional adequate-evaluation, urgent/emergency, communication and interrupted-contact facts, append-only versions/events, exact replay and contention safety, signature locking, audited no-store responses, accessible retry, and zero signing, delivery, completion, downstream clinical, financial, communication, integration, lifecycle, or browser-storage action"
+    },
+    {
+      "id": "TH-SG-017",
+      "name": "Owner-bound minimized completion-prerequisites review",
+      "requiredPath": "avenchart/backend/src/AvenChart.Api/Features/Telehealth/TelehealthCompletionReviewRepository.cs",
+      "trigger": "first pre-finalization or completion-prerequisites path",
+      "evidence": "current physician-only unfinished-wrap-up rebinding, SOAP section presence without content or sufficiency claims, structured disposition presence without authored text, optional nonblocking pharmacy-choice state, stable product blockers, false signing/completion/delivery/downstream capabilities, signature locking, private audited reads, accessible recovery, and repeated-read zero database, lifecycle, downstream, external-call, or browser-storage delta"
+    },
+    {
+      "id": "TH-SG-018",
+      "name": "Owner-bound synthetic prescription-preparation draft without legal effect",
+      "requiredPath": "avenchart/database/migrations/V0290__telehealth_synthetic_prescription_preparation_draft.sql",
+      "trigger": "first medication selection or prescription-preparation path",
+      "evidence": "physician-only unfinished-wrap-up rebinding, neutral active non-controlled catalog search, explicit manual directions and review acknowledgments, current patient-confirmed pharmacy-choice version, append-only versions/events, exact replay and contention safety, signature locking, hard-false legal/safety/signing/transmission/delivery/completion flags, audited no-store responses, accessible retry, and zero canonical prescription, medication, downstream, lifecycle, external-call, or browser-storage action"
+    },
+    {
+      "id": "TH-SG-019",
+      "name": "Staff-governed prospective-applicant identity-review decision without patient promotion",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantIdentityReview.ps1",
+      "trigger": "first staff applicant identity-review path",
+      "evidence": "administrator/facility/purpose/permission isolation, deterministic no-candidate/manual-review outcomes, exact replay/stale/contention safety, append-only decision/event provenance, candidate-safe private audited responses, accessible stable retry, and zero canonical patient, portal, intake, coverage, request, queue, clinical, financial, prescribing, integration, external-call, or browser-storage action"
+    },
+    {
+      "id": "TH-SG-020",
+      "name": "Applicant-owned emergency-first prospective safety screen without care authorization",
+      "requiredPath": "avenchart/scripts/Test-TelehealthProspectiveSafetyTriage.ps1",
+      "trigger": "first prospective-applicant clinical-safety answer path",
+      "evidence": "branded-host/access-key/current-version/no-candidate-review isolation, explicit supported-state location and nullable yes/no answers, deterministic emergency-first priority, fixed non-diagnostic outcomes, exact replay/stale/contention safety, append-only evaluation/event provenance, private minimized responses, accessible emergency action and stable retry, no clinical-answer browser persistence, and zero identity-proofing, patient, portal, intake, coverage, request, queue, clinical, financial, prescribing, integration, or external action"
+    },
+    {
+      "id": "TH-SG-021",
+      "name": "Applicant-owned controlled visit-purpose classification without clinical eligibility",
+      "requiredPath": "avenchart/scripts/Test-TelehealthProspectiveVisitPurpose.ps1",
+      "trigger": "first prospective-applicant visit-purpose classification path",
+      "evidence": "branded-host/access-key/current-version/passing-safety provenance isolation, exact migraine-or-sleep vocabulary and server labels, no free text or clinical evaluator, exact replay/stale/second/contention safety, append-only purpose/event evidence, private minimized responses, accessible emergency action and stable retry, no purpose browser persistence, hard-false protocol/eligibility/consequence flags, and zero identity-proofing, patient, portal, complete-intake, coverage, request, queue, clinical, financial, prescribing, integration, or external action"
+    },
+    {
+      "id": "TH-SG-022",
+      "name": "Applicant-owned synthetic practice-network fixture without individual eligibility or coverage",
+      "requiredPath": "avenchart/scripts/Test-TelehealthProspectivePracticeNetworkPrecheck.ps1",
+      "trigger": "first prospective-applicant insurance-plan discovery path",
+      "evidence": "branded-host/access-key/current-version/review/safety/purpose isolation, exactly three versioned NON_PRODUCTION server-owned plan fixtures, practice-only result semantics, no member or physician inputs, exact replay/stale/second/contention safety, append-only precheck/event evidence, private minimized responses, accessible emergency action and stable retry, no plan browser persistence, hard-false eligibility/benefits/exact-network/coverage/financial/care/integration/external flags, and zero insurance, patient, request, queue, downstream, payer, directory, clearinghouse, or X12 action"
+    },
+    {
+      "id": "TH-SG-023",
+      "name": "Protected synthetic prospective member-insurance receipt without eligibility or coverage",
+      "requiredPath": "avenchart/scripts/Test-TelehealthProspectiveMemberInsuranceDetails.ps1",
+      "trigger": "first prospective-applicant subscriber or member-detail capture path",
+      "evidence": "branded-host/access-key/current-version/review/safety/purpose/precheck isolation, SYN-only identifiers, conditional subscriber identity, dual confirmation, purpose-isolated protected payload with no plaintext-at-rest or public echo, exact replay/stale/second/contention and protection-failure safety, append-only receipt/event evidence, private mask-only responses, accessible conditional form and stable retry, no insurance-value browser persistence, hard-false eligibility/benefits/exact-network/coverage/financial/care/integration/external flags, and zero canonical insurance, patient, request, queue, downstream, payer, clearinghouse, or X12 action"
+    },
+    {
+      "id": "TH-SG-024",
+      "name": "Synthetic prospective eligibility adapter result without exact network or canonical coverage",
+      "requiredPath": "avenchart/scripts/Test-TelehealthProspectiveEligibility.ps1",
+      "trigger": "first prospective-applicant member eligibility or benefit-information path",
+      "evidence": "branded-host/access-key/current-version/complete-upstream provenance, protected-payload failure safety, server-owned date/service and deterministic NON_PRODUCTION adapter fixtures, ASC X12N 270/271 Version 5010-shaped metadata without transaction serialization, separate transport/match/eligibility/benefit/business statuses, exact replay/stale/second/contention safety, immutable result/event, private minimized response, accessible retry, no result browser persistence, exact-network/canonical-coverage/financial/care/integration/external flags false, and zero canonical insurance, patient, request, queue, downstream, payer, clearinghouse, or X12 action"
+    },
+    {
+      "id": "TH-SG-025",
+      "name": "Synthetic exact practice-network determination without rendering-physician or coverage consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthProspectivePracticeNetworkDetermination.ps1",
+      "trigger": "first prospective-applicant exact practice-network determination path",
+      "evidence": "branded-host/access-key/current-version/complete upstream and fresh eligibility provenance, no member data passed to the directory adapter, server-owned practice/facility/state/date/service facts, deterministic effective NON_PRODUCTION Plan-Net-shaped fixtures without FHIR serialization or endpoint call, separate transport/plan-network/affiliation/service/new-patient/business statuses, exact replay before adapter/stale/second/contention safety, immutable result/event, private minimized response, accessible retry, no result browser persistence, rendering-physician/aggregate exact-network/canonical-coverage/financial/care/integration/external flags false, and zero canonical insurance, patient, request, queue, downstream, payer, directory, clearinghouse, FHIR, or X12 action"
+    },
+    {
+      "id": "TH-SG-026",
+      "name": "Synthetic prospective identity-proofing process without real assurance or patient promotion",
+      "requiredPath": "avenchart/scripts/Test-TelehealthProspectiveIdentityProofing.ps1",
+      "trigger": "first prospective-applicant identity-provider or identity-proofing process path",
+      "evidence": "branded-host/access-key/current-version/complete upstream provenance, fresh active eligibility and positive practice-network gates, fixed privacy notice, opaque applicant/evidence references only, deterministic effective NON_PRODUCTION NIST SP 800-63A-4-concepts-only process fixture, separate transport/evidence-collection/evidence-validation/attribute-validation/applicant-verification/fraud/business statuses, assurance None and identityProofed false, exact replay before adapter/stale/second/contention safety, immutable result/event, private minimized response, accessible acknowledgments/retry/emergency action, no result/reference browser persistence, all real-evidence/government-identifier/biometric/authoritative-source/notification/redress/authenticator/patient/account/consent/request/queue/care/integration/external flags false, and zero canonical patient, portal, insurance, request, queue, appointment, encounter, downstream, identity-provider, authoritative-source, or external action"
+    },
+    {
+      "id": "TH-SG-027",
+      "name": "Staff-governed synthetic promotion authorization without canonical patient or downstream consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantPromotionAuthorization.ps1",
+      "trigger": "first prospective-applicant promotion authorization or denial path",
+      "evidence": "administrator/front-desk permission and practice/facility isolation, complete unexpired same-applicant provenance through one passing synthetic proofing result, fresh active eligibility and accepting practice-network gates, normalized minimized staff evidence, assurance None and identityProofed false, explicit no-assurance and synthetic-data acknowledgments, enumerated authorize-or-deny outcomes, exact replay before mutation, changed-key/stale/expired/second/contention safety, immutable decision/event, private audited no-store responses, accessible independent refresh and stable retry, coarse applicant-owned status, all identity/patient/chart/account/intake/consent/acceptance/coverage/financial/request/queue/appointment/encounter/care/prescribing/claim/communication/integration/external flags false, and zero canonical patient, portal, insurance, request, queue, appointment, encounter, downstream, identity-provider, authoritative-source, or external action"
+    },
+    {
+      "id": "TH-SG-028",
+      "name": "Atomic duplicate-rechecked synthetic patient promotion without portal or downstream capability",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantSyntheticPromotion.ps1",
+      "trigger": "first prospective-applicant canonical patient promotion path",
+      "evidence": "administrator-only practice/facility authorization, exact authorized unexpired same-applicant evidence, assurance None and identityProofed false, explicit patient-creation and no-portal/no-care acknowledgments, canonical registration advisory lock, in-transaction current duplicate recheck, deterministic minimal portal-disabled patient shell or privacy-safe possible-match block, no existing-patient link or candidate disclosure, exact replay/changed-key/stale/denied/second/contention safety, atomic patient/promotion/applicant/event provenance, append-only evidence, coarse applicant status, private audited no-store responses, accessible recovery, and zero portal/account/external-identity/chart/intake/consent/acceptance/insurance/coverage/financial/request/queue/appointment/encounter/care/prescribing/claim/communication/integration/external action"
+    },
+    {
+      "id": "TH-SG-029",
+      "name": "Applicant-owned state-specific telehealth notice acknowledgment without legal consent or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantNoticeAcknowledgment.ps1",
+      "trigger": "first post-promotion state-specific telehealth notice or acknowledgment path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact successful promotion and portal-disabled unmerged patient-shell provenance, server-selected GA/CA/FL notice from prior safety location, official-source metadata and pending independent legal review, independent current-location/mode/privacy/emergency/in-person/clinician-reconfirmation/synthetic affirmations, legalConsentEstablished and clinicianConsentDocumented false, exact replay/changed-key/stale/location/notice/second/contention safety, atomic applicant/receipt/event transition, append-only evidence, private no-store minimized response, accessible source/non-consent/retry/recovery behavior, and zero portal/account/intake/acceptance/insurance/coverage/financial/request/queue/appointment/encounter/care/prescribing/claim/communication/integration/external action"
+    },
+    {
+      "id": "TH-SG-030",
+      "name": "Applicant-owned no-edit minimum registration-details confirmation without patient or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantRegistrationDetailsConfirmation.ps1",
+      "trigger": "first post-notice copied minimum registration-details review or confirmation path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact acknowledged-notice/successful-promotion/portal-disabled-unmerged-patient provenance, applicant-to-patient equality, legal-name and birth-date display with masked contacts and residence region only, deterministic snapshot fingerprint, five independent no-edit and synthetic affirmations, correction stop guidance, exact replay/changed-key/stale/fingerprint/second/contention safety, atomic applicant/receipt/event transition, append-only evidence, private no-store minimized response, accessible stable retry/recovery, and zero patient mutation, portal/account, identity assurance, completed intake, consent, acceptance, insurance/coverage, financial, request, queue, appointment, encounter, care, prescribing, claim, communication, integration, or external action"
+    },
+    {
+      "id": "TH-SG-031",
+      "name": "Applicant-owned masked synthetic insurance handoff confirmation without coverage or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantInsuranceHandoffConfirmation.ps1",
+      "trigger": "first post-registration synthetic insurance handoff review or confirmation path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact registration/promotion/portal-disabled-unmerged-patient/member/eligibility/practice-network provenance, zero canonical insurance, current positive fixture evidence at confirmation, last-four-only masks, separate eligibility/practice-network outcomes, rendering-physician check false, deterministic snapshot fingerprint, five independent no-edit and limitations affirmations, correction stop guidance, exact replay/changed-key/stale/fingerprint/second/contention safety, atomic applicant/receipt/event transition, append-only evidence, private no-store minimized response, accessible stable retry/recovery, and zero patient/insurance mutation, portal/account, completed intake, consent, acceptance, financial, request, queue, appointment, encounter, care, prescribing, billing/claim, communication, integration, or external action"
+    },
+    {
+      "id": "TH-SG-032",
+      "name": "Applicant-owned synthetic communication/access readiness without arranging services or enabling care",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantCommunicationAccessReadiness.ps1",
+      "trigger": "first post-insurance communication/access-readiness path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact insurance-handoff/promotion/portal-disabled-unmerged-patient/safety/callback provenance, English-or-Spanish and boolean preference allowlists, five independent current-location/callback/safe-private/disconnection-emergency-plan/synthetic affirmations, no free text, deterministic snapshot fingerprint, exact replay/changed-key/stale/fingerprint/unsafe/second/contention safety, atomic applicant/receipt/event transition, append-only evidence, private no-store minimized response, accessible stable retry/recovery, explicit false interpreter/accommodation/communication/support/technology completion flags, and zero applicant-source/patient/insurance/financial/request/queue/appointment/encounter/care/prescribing/billing/claim/communication/integration/external action"
+    },
+    {
+      "id": "TH-SG-033",
+      "name": "Applicant-owned synthetic device preparation without media, readiness, or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantDevicePreparation.ps1",
+      "trigger": "first post-communication synthetic device-preparation path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact communication-readiness/insurance-handoff/promotion/portal-disabled-unmerged-patient/safety/callback provenance, all-pass coarse browser/camera/microphone/speaker fields, Unknown-or-Good connection allowlist with Limited rejected, three independent client-reported/no-guarantee/pre-consultation-recheck acknowledgments, immediate browser test-track stop, no media/device/browser/IP/WebRTC-negotiation/recording/transcript/precise-network fields, deterministic snapshot fingerprint, exact replay/changed-key/stale/fingerprint/partial/limited/second/contention safety, atomic applicant/receipt/event transition, append-only evidence, private no-store minimized response, accessible stable retry/recovery, explicit false technology/waiting-room/media/communication/support flags, and zero applicant-source/patient/insurance/financial/request/queue/appointment/encounter/care/prescribing/billing/claim/integration/external action"
+    },
+    {
+      "id": "TH-SG-034",
+      "name": "Applicant-owned coarse synthetic clinical-information inventory without clinical details, reconciliation, review, or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantClinicalInformationInventory.ps1",
+      "trigger": "first post-device-preparation synthetic clinical-information inventory path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact device-preparation/communication-readiness/insurance-handoff/promotion/portal-disabled-unmerged-patient provenance, three independent medications/allergies-or-intolerances/other-health-history categories restricted to PatientReportsNone, ItemsToReview, or Unsure, no medication/substance/reaction/dose/diagnosis/symptom/procedure/narrative/date/identifier/free text, PatientReportsNone never represented as clinician-reconciled no-known, three independent patient-reported/incomplete/no-details/reconciliation-required acknowledgments, server-owned route priority, deterministic snapshot fingerprint, exact replay/changed-key/stale/fingerprint/invalid/second/contention safety, atomic applicant/receipt/event transition, append-only evidence, private no-store minimized response, accessible stable retry/recovery, explicit false medication/allergy/history reconciliation, intake, clinical eligibility, clinician review, patient mutation, request, queue, care, and prescribing flags, and zero canonical clinical, patient, insurance, financial, request, queue, appointment, encounter, prescribing, claim, integration, or external action"
+    },
+    {
+      "id": "TH-SG-035",
+      "name": "Applicant-owned bounded synthetic medication information without canonical medication, reconciliation, review, or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantMedicationInformation.ps1",
+      "trigger": "first post-clinical-inventory synthetic medication-information path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact clinical-inventory/device/communication/insurance/promotion/portal-disabled-unmerged-patient provenance, fixed six-item LOCAL_SYNTHETIC_ONLY ingredient catalog with catalogComplete and rxNormMapped false, Taking/NotTaking/Unsure allowlist, additional-or-unlisted signal, no dose/directions/route/frequency/indication/prescriber/pharmacy/date/note/attachment/free text or external coding claim, four independent incompleteness/no-detail/reconciliation acknowledgments, deterministic snapshot fingerprint and route priority, exact replay/changed-key/stale/fingerprint/drift/invalid/second/contention safety, atomic parent/child/applicant/event transition with deferred exact-count and append-only guards, private no-store minimized response, accessible load and stable-submit recovery, explicit false MedicationStatement/MedicationRequest/reconciliation/interaction/review/intake/eligibility/patient/request/queue/care/prescribing flags, and zero canonical medication, prescription, clinical, patient, insurance, financial, request, queue, appointment, encounter, claim, integration, or external action"
+    },
+    {
+      "id": "TH-SG-036",
+      "name": "Applicant-owned bounded synthetic allergy information without canonical allergy, reconciliation, safety checking, or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantAllergyInformation.ps1",
+      "trigger": "first post-medication-information synthetic allergy/intolerance-information path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact medication-receipt-and-items/clinical-inventory/device/communication/insurance/promotion/portal-disabled-unmerged-patient provenance, fixed six-item LOCAL_SYNTHETIC_ONLY substance catalog with catalogComplete, snomedCtMapped, and rxNormMapped false, exact Medication/Food/Environment categories, additional-or-unlisted signal, no reaction/manifestation/type/clinical-status/verification-status/severity/criticality/onset/date/note/attachment/free text or external coding claim, four independent incompleteness/no-detail/verification acknowledgments, deterministic snapshot fingerprint and route priority, exact replay/changed-key/stale/fingerprint/canonical-allergy-drift/invalid/second/contention safety, atomic parent/child/applicant/event transition with deferred exact-count and append-only guards, private no-store minimized response, accessible load and stable-submit recovery, explicit false AllergyIntolerance/reconciliation/reaction/criticality/contraindication/review/intake/eligibility/patient/request/queue/care/prescribing flags, and zero canonical allergy, medication, prescription, clinical, alert, patient, insurance, financial, request, queue, appointment, encounter, claim, integration, or external action"
+    },
+    {
+      "id": "TH-SG-037",
+      "name": "Applicant-owned bounded synthetic health-history topics without diagnosis, reconciliation, risk evaluation, or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantHealthHistoryInformation.ps1",
+      "trigger": "first post-allergy-information synthetic health-history topic path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact allergy/medication/inventory and all earlier provenance, portal-disabled unmerged patient equality, zero canonical problem/allergy/medication/insurance data, fixed incomplete six-topic LOCAL_SYNTHETIC_ONLY catalog with SNOMED CT/ICD-10-CM/LOINC mapping flags false, exact topic categories, additional-or-unlisted signal, no diagnosis/symptom/status/verification/timing/date/note/attachment/free text or external coding claim, four independent incompleteness/not-diagnosis/no-status-or-timing/verification acknowledgments, deterministic snapshot fingerprint and route priority, exact replay/changed-key/stale/fingerprint/canonical-problem-drift/invalid/second/contention safety, atomic parent/child/applicant/event transition with deferred exact-count and append-only guards, private no-store minimized response, accessible load and stable-submit recovery, explicit false Condition/Procedure/Observation/FamilyMemberHistory/QuestionnaireResponse/reconciliation/risk/triage/review/intake/eligibility/patient/request/queue/care/prescribing flags, and zero canonical clinical, patient, insurance, financial, request, queue, appointment, encounter, claim, integration, or external action"
+    },
+    {
+      "id": "TH-SG-038",
+      "name": "Applicant-owned no-edit synthetic clinical-information summary without reconciliation, intake completion, task, or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantClinicalInformationSummary.ps1",
+      "trigger": "first post-health-history clinical-information summary review or confirmation path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact inventory/medication/allergy/health-history parent-and-child and all earlier provenance, portal-disabled unmerged patient equality, zero canonical insurance/medication/prescription/allergy/problem data, exactly three server-derived category keys with only prior coarse states, bounded counts, additional-or-unlisted signals, and route codes, no display labels or clinical/identity/contact/payer/narrative detail, four independent patient-source/non-reconciliation/non-completion/correction acknowledgments, deterministic snapshot fingerprint and route priority, exact replay/changed-key/stale/fingerprint/portal-drift/second/contention safety, atomic applicant/receipt/event transition, append-only evidence, private no-store minimized response, accessible load and stable-submit recovery, explicit false QuestionnaireResponse/reconciliation/confirmed-negative/review/intake/eligibility/triage/patient-mutation/acceptance/request/queue/care/prescribing flags, and zero source, canonical clinical, patient, insurance, financial, request, queue, appointment, encounter, claim, integration, or external action"
+    },
+    {
+      "id": "TH-SG-039",
+      "name": "Applicant-owned no-edit synthetic pre-request readiness acknowledgment without assurance, task, request, queue, financial, integration, or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantPreRequestReadiness.ps1",
+      "trigger": "first post-summary synthetic pre-request readiness review or acknowledgment path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact registration/insurance/communication/device/inventory/summary and all earlier provenance, portal-disabled unmerged patient equality, zero canonical insurance/medication/prescription/allergy/problem data, exactly five stable server-derived section keys with only coarse receipt states and unresolved route codes, friendly labels client-owned, no source values or clinical/identity/contact/payer/narrative detail, four independent prior-review/outstanding-step/no-request-or-queue/correction-workflow acknowledgments, deterministic snapshot fingerprint and priority routing, exact replay/changed-key/stale/fingerprint/patient-shell-drift/second/contention safety, atomic applicant/receipt/event transition, append-only evidence, private no-store minimized response, accessible load and stable-submit recovery, explicit false identity/coverage/rendering-clinician/support/technology/reconciliation/intake/eligibility/consent/task/acceptance/patient/request/queue/appointment/encounter/care/prescribing/billing/claim/integration/external flags, and zero source, canonical, patient, financial, operational, downstream, integration, or external action"
+    },
+    {
+      "id": "TH-SG-040",
+      "name": "Applicant-owned synthetic practice-review submission without acceptance, request, care queue, financial, integration, or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantPracticeReviewSubmission.ps1",
+      "trigger": "first post-readiness synthetic practice-intake review work-item submission path",
+      "evidence": "applicant-key ownership and branded-host isolation, exact readiness receipt/fingerprint/route and all earlier provenance, portal-disabled unmerged patient equality, zero canonical insurance/medication/prescription/allergy/problem data, server-owned review route, four independent patient-reported/review-may-request-or-decline/no-request-or-care-queue/worsening-symptom acknowledgments, no source value or clinical/identity/contact/payer/device/narrative/free-text input, exact replay with in-transaction provenance revalidation, changed-key/stale/fingerprint/second/contention safety, atomic applicant/case/receipt/event transition, immutable one-case cardinality, private no-store minimized response, accessible load and stable-submit recovery, staffReviewCreated true, every clinician-review/acceptance/patient/request/patient-queue/clinician-queue/appointment/encounter/care/prescribing/billing/claim/integration/external flag false, no priority/assignee/SLA/doctor/queue-position semantics, and zero source/canonical/patient/financial/request/queue/clinical/integration/external action"
+    },
+    {
+      "id": "TH-SG-041",
+      "name": "Read-only practice-review inbox cannot disclose source detail or create staff action, request, care queue, financial, integration, external, or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantPracticeReviewInbox.ps1",
+      "trigger": "first staff operational-awareness path over pending synthetic practice-review work items",
+      "evidence": "thirteen-check live proof of exact pending-case/submission/readiness/promotion/purpose/safety provenance, promoted patient-shell drift exclusion, Georgia/California/Florida practice and facility isolation, minimized masked contract, five coarse sections, deterministic ordering and repeated reads, private no-store behavior, role/purpose/permission enforcement, opaque PHI audit context, no POST counterpart, unchanged product-state fingerprint, staffReviewWorkItemExists true, and every staff-action/assignment/priority/acceptance/contact/request/queue/appointment/encounter/care/prescribing/financial/integration/external flag false"
+    },
+    {
+      "id": "TH-SG-042",
+      "name": "Short immutable practice-review claim cannot create priority, disposition, contact, request, care queue, financial, integration, external, or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantPracticeReviewClaim.ps1",
+      "trigger": "first staff duplicate-work claim over a pending synthetic practice-review item",
+      "evidence": "ten-check live proof of exact pending-case and full upstream provenance under a case lock, administrator/front-desk healthcare-operations scope with patients.demo.write, three independent boundary acknowledgments, exact actor-bound semantic replay, changed-key and active-claim conflict, eight-way first-writer convergence, immutable 120-second database-clock lease and expiry/reclaim history, active/mine/expiry-only inbox projection without claimant identity disclosure, append-only database enforcement, private no-store case-correlated PHI audit, accessible stable retry and cross-browser reflow, unchanged applicant/case/patient/request/queue/clinical/financial/integration product-state fingerprint, and every priority/decision/contact/request/queue/appointment/encounter/care/prescribing/financial/integration/external flag false"
+    },
+    {
+      "id": "TH-SG-043",
+      "name": "Claimant-bound minimized practice-review packet cannot extend the lease or create disposition, contact, request, care queue, financial, integration, external, or care consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantPracticeReviewPacket.ps1",
+      "trigger": "first current-claimant operational packet read over a pending synthetic practice-review item",
+      "evidence": "ten-check live proof of exact case/claim/submission/readiness/promotion/patient-shell/source-receipt/purpose/safety and zero-downstream provenance, active database-clock claim ownership, administrator/front-desk healthcare-operations scope with patients.demo.view, Georgia/California/Florida practice and facility isolation, exact field allowlist and source/clinical-detail denylist, masked contact and member/group identifiers, current synthetic eligibility and practice-entity-network evidence with rendering physician explicitly unchecked, coarse communication/access and client-reported device preparation, no chart navigation or another claimant identity, private no-store case-correlated PHI audit, safe expiry/drift denial and recovery, accessible packet retry and cross-browser reflow, unchanged claim expiry and product-state fingerprint, and every priority/decision/contact/request/queue/appointment/encounter/care/prescribing/financial/integration/external flag false"
+    },
+    {
+      "id": "TH-SG-044",
+      "name": "Positive-only claimant-bound practice-review authorization cannot create contact, request, queue, appointment, encounter, consent, care, financial, integration, external, or production consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantPracticeReviewAuthorization.ps1",
+      "trigger": "first operational authorization over a current claimant's minimized synthetic practice-review packet",
+      "evidence": "twelve-check Georgia/California/Florida live proof of exact case/submission/readiness/promotion/patient-shell/source-receipt/purpose/safety and zero-downstream provenance, current actor-owned database-clock claim, packet policy version binding, administrator/front-desk healthcare-operations scope with patients.demo.write, one controlled positive decision and rationale, three independent limitation acknowledgments, applicant-only status/version advance with immutable case and claim history, exact actor-bound replay and changed-content conflict, eight-way first-writer convergence, foreign-role/facility/claim and patient-shell-drift denial, append-only database enforcement, private no-store case-correlated PHI audit, accessible stable retry and four-engine reflow, requestCreationAuthorized true only, and every acceptance/contact/clinical-review/request/queue/appointment/encounter/consent/care/prescribing/financial/integration/external flag false"
+    }
+  ]
+}

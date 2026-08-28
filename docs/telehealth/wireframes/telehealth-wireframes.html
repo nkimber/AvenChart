@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AvenChart telehealth low-fidelity wireframes</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f5f7fb;
+      --surface: #ffffff;
+      --ink: #1b2559;
+      --muted: #536176;
+      --line: #c9d0dc;
+      --soft: #eef0fb;
+      --action: #2e37a4;
+      --action-ink: #ffffff;
+      --danger: #a51d2d;
+      --danger-soft: #fff1f2;
+      --success: #176b52;
+      --success-soft: #edf9f5;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--canvas); color: var(--ink); }
+    a { color: var(--action); }
+    button, input, select, textarea { font: inherit; }
+    button, input, select, textarea, a { outline-offset: 3px; }
+    .page { max-width: 1440px; margin: 0 auto; padding: 24px; }
+    .page-header { display: grid; gap: 8px; margin-bottom: 20px; }
+    .page-header h1, .page-header p { margin: 0; }
+    .page-header p { color: var(--muted); max-width: 78ch; }
+    .role-nav { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 26px; }
+    .role-nav a { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; text-decoration: none; font-weight: 600; }
+    .role-section { margin: 0 0 36px; }
+    .role-section > h2 { margin-bottom: 6px; }
+    .role-section > p { margin-top: 0; color: var(--muted); }
+    .frame-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 20px; align-items: start; }
+    .frame { background: var(--surface); border: 2px solid var(--ink); border-radius: 10px; min-width: 0; box-shadow: 0 2px 7px rgba(27, 37, 89, 0.08); }
+    .frame-head { border-bottom: 1px solid var(--line); padding: 12px 16px; display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .frame-head h3 { font-size: 1rem; margin: 0; }
+    .screen-id { color: var(--muted); font: 600 0.78rem ui-monospace, SFMono-Regular, Consolas, monospace; white-space: nowrap; }
+    .app-bar { background: var(--soft); padding: 12px 16px; display: flex; justify-content: space-between; gap: 10px; align-items: center; border-bottom: 1px solid var(--line); }
+    .brand { font-weight: 750; }
+    .platform { color: var(--muted); font-size: 0.78rem; }
+    .frame-body { padding: 18px 16px; display: grid; gap: 16px; }
+    .frame-body h4, .frame-body p { margin: 0; }
+    .frame-body h4 { font-size: 1.05rem; }
+    .muted { color: var(--muted); }
+    .status { border-left: 5px solid var(--action); background: var(--soft); padding: 12px; }
+    .status strong { display: block; margin-bottom: 4px; }
+    .status.danger { border-left-color: var(--danger); background: var(--danger-soft); }
+    .status.success { border-left-color: var(--success); background: var(--success-soft); }
+    .progress { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+    .progress span { height: 6px; background: var(--line); border-radius: 3px; }
+    .progress span.done { background: var(--action); }
+    .field { display: grid; gap: 6px; }
+    .field label, legend { font-weight: 650; }
+    .field input, .field select, .field textarea { width: 100%; border: 1px solid #778399; border-radius: 5px; padding: 10px; background: var(--surface); color: var(--ink); }
+    fieldset { margin: 0; border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: grid; gap: 10px; }
+    .choice { display: flex; align-items: flex-start; gap: 8px; }
+    .choice input { margin-top: 3px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
+    .button { border: 1px solid var(--action); border-radius: 5px; background: var(--surface); color: var(--action); padding: 10px 13px; font-weight: 700; }
+    .button.primary { background: var(--action); color: var(--action-ink); }
+    .button.danger { border-color: var(--danger); color: var(--danger); }
+    .button.ghost { border-color: transparent; text-decoration: underline; }
+    .facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .fact { border-top: 1px solid var(--line); padding-top: 8px; min-width: 0; }
+    .fact span { display: block; color: var(--muted); font-size: 0.78rem; }
+    .fact strong { overflow-wrap: anywhere; }
+    .step-list, .plain-list { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+    .queue-number { font-size: 2rem; font-weight: 750; }
+    .video { aspect-ratio: 16 / 9; border: 2px dashed #778399; background: #f1f3f7; display: grid; place-items: center; text-align: center; padding: 14px; }
+    .participant { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding: 8px 0; }
+    .two-col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+    .panel { border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: grid; gap: 9px; }
+    .panel h5 { margin: 0; font-size: 0.92rem; }
+    .tag { display: inline-block; border: 1px solid currentColor; border-radius: 999px; padding: 3px 8px; font-size: 0.75rem; font-weight: 650; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 650px; }
+    th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 9px 8px; vertical-align: top; }
+    th { background: var(--soft); }
+    tr.current { outline: 3px solid var(--action); outline-offset: -3px; }
+    .annotation { border-top: 1px dashed var(--line); padding: 12px 16px; color: var(--muted); font-size: 0.8rem; }
+    .annotation code { color: var(--ink); }
+
+    @media (max-width: 680px) {
+      .page { padding: 14px; }
+      .facts, .two-col { grid-template-columns: 1fr; }
+      .frame-grid { grid-template-columns: 1fr; }
+      .app-bar { align-items: flex-start; flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-header">
+      <h1>Immediate telehealth wireframes</h1>
+      <p>Static low-fidelity screens for a practice-branded patient journey, practice operations, and a physician telehealth shift. Synthetic names and data only.</p>
+    </header>
+
+    <nav class="role-nav" aria-label="Wireframe roles">
+      <a href="#patient">Patient</a>
+      <a href="#administrator">Practice administrator</a>
+      <a href="#physician">Physician</a>
+    </nav>
+
+    <section class="role-section" id="patient" aria-labelledby="patient-title">
+      <h2 id="patient-title">Patient experience</h2>
+      <p>Mobile-first sequence. The emergency action is available before and throughout intake and waiting.</p>
+      <div class="frame-grid">
+        <article class="frame" aria-labelledby="pat-01-title">
+          <div class="frame-head"><h3 id="pat-01-title">Practice landing</h3><span class="screen-id">PAT-01</span></div>
+          <div class="app-bar"><span class="brand">Peachtree Family Practice</span><span class="platform">Telehealth technology by AvenChart</span></div>
+          <div class="frame-body">
+            <h4>Talk with a physician today</h4>
+            <p>For adults with selected non-emergency concerns while physically located in Georgia, California, or Florida.</p>
+            <div class="status danger"><strong>Could this be an emergency?</strong><span>Call 911 now for severe or life-threatening symptoms. Call or text 988 for an immediate mental health crisis.</span></div>
+            <ul class="plain-list"><li>Open today until 7:00 PM Eastern</li><li>Video visit; treatment or a prescription is not guaranteed</li><li>Insurance and self-pay options available</li></ul>
+            <div class="actions"><button class="button primary" type="button">Sign in</button><button class="button" type="button">I'm a new patient</button><button class="button danger" type="button">Emergency help</button></div>
+          </div>
+          <div class="annotation"><code>TEL-PROD-001..003</code> · Provider identity and emergency scope precede PHI.</div>
+        </article>
+
+        <article class="frame" aria-labelledby="pat-02-title">
+          <div class="frame-head"><h3 id="pat-02-title">Location and safety</h3><span class="screen-id">PAT-02</span></div>
+          <div class="app-bar"><span class="brand">Peachtree Family Practice</span><span>Step 1 of 5</span></div>
+          <div class="frame-body">
+            <div class="progress" role="img" aria-label="Step 1 of 5"><span class="done"></span><span></span><span></span><span></span><span></span></div>
+            <h4>Where are you physically located right now?</h4>
+            <p class="muted">Your physician needs this for licensing and in case you need emergency help. This may be different from your home address.</p>
+            <div class="field"><label for="current-address">Current street address or location</label><input id="current-address" value="1280 Example Avenue, Atlanta, GA 30309" readonly></div>
+            <div class="field"><label for="callback">Callback number</label><input id="callback" value="(404) 555-0142" readonly></div>
+            <fieldset><legend>Do you need emergency help right now?</legend><label class="choice"><input type="radio" name="emergency"> Yes — show emergency help</label><label class="choice"><input type="radio" name="emergency" checked> No — continue safety questions</label><label class="choice"><input type="radio" name="emergency"> I'm not sure</label></fieldset>
+            <div class="actions"><button class="button primary" type="button">Continue safety check</button><button class="button danger" type="button">Emergency help</button></div>
+          </div>
+          <div class="annotation"><code>TEL-PROD-004..006</code> · Current location and universal safety screen occur before insurance.</div>
+        </article>
+
+        <article class="frame" aria-labelledby="pat-03-title">
+          <div class="frame-head"><h3 id="pat-03-title">Complaint and triage</h3><span class="screen-id">PAT-03</span></div>
+          <div class="app-bar"><span class="brand">Peachtree Family Practice</span><span>Step 2 of 5</span></div>
+          <div class="frame-body">
+            <div class="progress" role="img" aria-label="Step 2 of 5"><span class="done"></span><span class="done"></span><span></span><span></span><span></span></div>
+            <h4>Tell us about your headache</h4>
+            <div class="field"><label for="concern">What concerns you most?</label><textarea id="concern" rows="3" readonly>This feels like my usual migraine. It began this morning.</textarea></div>
+            <fieldset><legend>Did the pain become severe suddenly, within seconds or a few minutes?</legend><label class="choice"><input type="radio" name="sudden"> Yes</label><label class="choice"><input type="radio" name="sudden" checked> No</label><label class="choice"><input type="radio" name="sudden"> I'm not sure</label></fieldset>
+            <div class="status"><strong>This form does not diagnose you</strong><span>A physician may recommend emergency or in-person care even if your answers can be reviewed by video.</span></div>
+            <div class="actions"><button class="button primary" type="button">Save and continue</button><button class="button" type="button">Back</button><button class="button danger" type="button">Symptoms are worse</button></div>
+          </div>
+          <div class="annotation"><code>TEL-TRI-001..016</code> · Unknown and concerning answers never silently pass.</div>
+        </article>
+
+        <article class="frame" aria-labelledby="pat-04-title">
+          <div class="frame-head"><h3 id="pat-04-title">Insurance and estimate</h3><span class="screen-id">PAT-04</span></div>
+          <div class="app-bar"><span class="brand">Peachtree Family Practice</span><span>Step 4 of 5</span></div>
+          <div class="frame-body">
+            <h4>Coverage and expected cost</h4>
+            <div class="panel"><h5>Member eligibility</h5><span class="tag">Coverage appears active</span><p class="muted">Checked August 26 at 2:14 PM · Payer response reference ending 6192</p></div>
+            <div class="panel"><h5>Practice and physician network</h5><span class="tag">Confirmation pending</span><p class="muted">Active coverage does not prove that this exact physician and service are in your plan network.</p></div>
+            <div class="panel"><h5>Estimate</h5><div class="facts"><div class="fact"><span>Visit charge</span><strong>$89</strong></div><div class="fact"><span>Estimated responsibility</span><strong>Unable to determine</strong></div></div><p>This is an estimate, not a guarantee of coverage or payment.</p></div>
+            <fieldset><legend>Choose how to continue</legend><label class="choice"><input type="radio" name="financial" checked> Wait for practice review of my network status</label><label class="choice"><input type="radio" name="financial"> Choose the $89 self-pay option</label></fieldset>
+            <div class="actions"><button class="button primary" type="button">Confirm and submit</button><button class="button" type="button">Change insurance</button></div>
+          </div>
+          <div class="annotation"><code>TEL-INS-001..016</code> · Eligibility, exact network status and estimate are separate evidence.</div>
+        </article>
+
+        <article class="frame" aria-labelledby="pat-05-title">
+          <div class="frame-head"><h3 id="pat-05-title">Practice review and queue</h3><span class="screen-id">PAT-05</span></div>
+          <div class="app-bar"><span class="brand">Peachtree Family Practice</span><span>Last updated just now</span></div>
+          <div class="frame-body">
+            <div class="status success"><strong>Your practice accepted your request</strong><span>You are now in the physician queue.</span></div>
+            <div><span class="queue-number">2</span><p>requests are approximately ahead of you</p></div>
+            <p class="muted">Your position may change for clinical or operational reasons. Estimated wait: 15–30 minutes.</p>
+            <ol class="step-list"><li>Practice review <strong>complete</strong></li><li>Waiting for an eligible physician <strong>current</strong></li><li>Device check and waiting room</li></ol>
+            <div class="status danger"><strong>Do not wait if symptoms worsen</strong><span>Report a change now. Call 911 for an emergency.</span></div>
+            <div class="actions"><button class="button danger" type="button">My symptoms are worse</button><button class="button" type="button">Leave the queue</button><button class="button ghost" type="button">Refresh status</button></div>
+          </div>
+          <div class="annotation"><code>TEL-PRA-007..014</code> · Approximate position appears only after acceptance and has polling recovery.</div>
+        </article>
+
+        <article class="frame" aria-labelledby="pat-06-title">
+          <div class="frame-head"><h3 id="pat-06-title">Waiting room and consultation</h3><span class="screen-id">PAT-06</span></div>
+          <div class="app-bar"><span class="brand">Peachtree Family Practice</span><span class="tag">Private waiting room</span></div>
+          <div class="frame-body">
+            <div class="video"><strong>Camera preview</strong><span>Video and audio are not recorded.</span></div>
+            <div class="participant"><span>Jamie Parker (you)</span><strong>Ready</strong></div>
+            <div class="participant"><span>Dr. Maya Lee</span><strong>Joining</strong></div>
+            <div class="facts"><div class="fact"><span>Current location</span><strong>Atlanta, Georgia</strong></div><div class="fact"><span>Callback</span><strong>Ending 0142</strong></div><div class="fact"><span>Camera</span><strong>Ready</strong></div><div class="fact"><span>Microphone</span><strong>Ready</strong></div></div>
+            <div class="status"><strong>If the call disconnects</strong><span>Reconnect here. The physician will use the confirmed callback number if needed.</span></div>
+            <div class="actions"><button class="button primary" type="button">Join when physician is ready</button><button class="button" type="button">Change device</button><button class="button danger" type="button">Emergency help</button></div>
+          </div>
+          <div class="annotation"><code>TEL-VID-001..016</code> · Scoped grants, participant awareness, no recording and reconnect plan.</div>
+        </article>
+
+        <article class="frame" aria-labelledby="pat-07-title">
+          <div class="frame-head"><h3 id="pat-07-title">After-visit summary</h3><span class="screen-id">PAT-07</span></div>
+          <div class="app-bar"><span class="brand">Peachtree Family Practice</span><span>Visit complete</span></div>
+          <div class="frame-body">
+            <h4>Your care plan</h4>
+            <div class="panel"><h5>Today</h5><p>Concern reviewed: headache similar to a previously evaluated migraine pattern.</p><p>Follow the physician's signed instructions below.</p></div>
+            <div class="panel"><h5>Prescription</h5><p><strong>No prescription was issued.</strong></p><p class="muted">A prescription is not required for a completed visit.</p></div>
+            <div class="status danger"><strong>Get urgent help for new warning signs</strong><span>New weakness, trouble speaking, fainting, sudden severe headache, vision loss, or another emergency: call 911.</span></div>
+            <div class="panel"><h5>Claim status</h5><p>Claim is being prepared by the practice. This does not mean your payer accepted or paid it.</p></div>
+            <div class="actions"><button class="button primary" type="button">Download accessible summary</button><button class="button" type="button">Contact the practice</button></div>
+          </div>
+          <div class="annotation"><code>TEL-CON-010</code> · Signed AVS separates care, prescription and claim state.</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="role-section" id="administrator" aria-labelledby="admin-title">
+      <h2 id="admin-title">Practice administrator experience</h2>
+      <p>Operational evidence and actions are visible; clinical outcome remains read-only.</p>
+      <div class="frame-grid">
+        <article class="frame" aria-labelledby="adm-01-title">
+          <div class="frame-head"><h3 id="adm-01-title">Operational work queue</h3><span class="screen-id">ADM-01</span></div>
+          <div class="app-bar"><span class="brand">Telehealth operations</span><span>Peachtree Family Practice</span></div>
+          <div class="frame-body">
+            <div class="actions"><button class="button primary" type="button">Needs review (3)</button><button class="button" type="button">Queued (4)</button><button class="button" type="button">Held (1)</button></div>
+            <div class="table-wrap"><table><thead><tr><th>Request</th><th>Safety</th><th>Identity</th><th>Coverage/network</th><th>Next action</th></tr></thead><tbody><tr class="current"><td>TH-…81AF<br><span class="muted">12 min</span></td><td>Eligible<br><span class="muted">Fresh 18 min</span></td><td>Established<br><span class="muted">Confirmed</span></td><td>Active / pending<br><span class="muted">Manual review</span></td><td><button class="button" type="button">Review</button></td></tr><tr><td>TH-…190C<br><span class="muted">8 min</span></td><td>Clinical review<br><span class="muted">Clinician-owned</span></td><td>New applicant<br><span class="muted">Match review</span></td><td>Not started</td><td>No admin action</td></tr></tbody></table></div>
+            <p class="muted">Clinical review requests cannot be authorized by administrative staff.</p>
+          </div>
+          <div class="annotation"><code>TEL-PRA-005</code> · Minimum operational projection, freshness and owner are explicit.</div>
+        </article>
+
+        <article class="frame" aria-labelledby="adm-02-title">
+          <div class="frame-head"><h3 id="adm-02-title">Request review</h3><span class="screen-id">ADM-02</span></div>
+          <div class="app-bar"><span class="brand">Request TH-…81AF</span><span>Version 12</span></div>
+          <div class="frame-body">
+            <div class="status success"><strong>Clinical outcome: Telehealth eligible</strong><span>Read-only · Protocol HEADACHE-GA v3 · assessed 18 minutes ago</span></div>
+            <div class="two-col"><div class="panel"><h5>Identity and details</h5><ul class="plain-list"><li>Portal link confirmed</li><li>Current GA location confirmed</li><li>Demographics confirmed</li><li>Consent v4 accepted</li></ul></div><div class="panel"><h5>Financial route</h5><ul class="plain-list"><li>Coverage active</li><li>Network manually confirmed</li><li>Estimate v2 acknowledged</li><li>Evidence expires in 42 minutes</li></ul></div></div>
+            <div class="panel"><h5>Technology and access</h5><p>Camera, microphone and browser ready · No interpreter requested</p></div>
+            <div class="actions"><button class="button primary" type="button">Authorize for physician queue</button><button class="button" type="button">Request information</button><button class="button" type="button">Place operational hold</button><button class="button danger" type="button">Decline operationally</button></div>
+            <p class="muted">The server rechecks all gates and version 12 before authorization.</p>
+          </div>
+          <div class="annotation"><code>TEL-WF-007</code> · Atomic final gate, appointment and queue creation; no clinical override.</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="role-section" id="physician" aria-labelledby="physician-title">
+      <h2 id="physician-title">Physician experience</h2>
+      <p>The physician enters an eligible shift, receives next work in sequence, and completes a single consultation safely.</p>
+      <div class="frame-grid">
+        <article class="frame" aria-labelledby="phy-01-title">
+          <div class="frame-head"><h3 id="phy-01-title">Telehealth shift</h3><span class="screen-id">PHY-01</span></div>
+          <div class="app-bar"><span class="brand">Dr. Maya Lee</span><span>Peachtree Family Practice</span></div>
+          <div class="frame-body">
+            <div class="status success"><strong>Eligible to begin</strong><span>Georgia physician license and practice privileges current · Headache pathway enabled</span></div>
+            <div class="facts"><div class="fact"><span>Shift status</span><strong>Offline</strong></div><div class="fact"><span>Queue</span><strong>4 eligible requests</strong></div><div class="fact"><span>States</span><strong>Georgia</strong></div><div class="fact"><span>Service</span><strong>Immediate telehealth</strong></div></div>
+            <div class="actions"><button class="button primary" type="button">Start telehealth shift</button><button class="button" type="button">Review credentials</button></div>
+            <div class="panel"><h5>After starting</h5><p>The next eligible request is reserved in sequence. Patient details are not browsable before reservation.</p></div>
+          </div>
+          <div class="annotation"><code>TEL-PROD-011..012</code> · Explicit availability and atomic next-eligible reservation.</div>
+        </article>
+
+        <article class="frame" aria-labelledby="phy-02-title">
+          <div class="frame-head"><h3 id="phy-02-title">Consultation workspace</h3><span class="screen-id">PHY-02</span></div>
+          <div class="app-bar"><span class="brand">Jamie Parker · DOB confirmed</span><span class="tag">Atlanta, GA · callback …0142</span></div>
+          <div class="frame-body">
+            <div class="status danger"><strong>Safety and location banner</strong><span>Telehealth eligible · no universal red flags reported · reconfirm location and changes before start.</span></div>
+            <div class="two-col"><div class="panel"><h5>Patient video</h5><div class="video">Private media area<br>No recording</div><div class="actions"><button class="button primary" type="button">Start consultation</button><button class="button" type="button">Reconnect</button></div></div><div class="panel"><h5>Intake and chart</h5><p><strong>Concern:</strong> usual migraine pattern beginning today</p><p><strong>Source:</strong> patient entered 24 minutes ago</p><p><strong>Allergies:</strong> confirmed today</p><p><strong>Medications:</strong> chart + patient confirmed</p><button class="button" type="button">View full triage evidence</button></div></div>
+            <div class="panel"><h5>Documentation</h5><div class="field"><label for="hpi">History and remote examination</label><textarea id="hpi" rows="3" placeholder="Document performed evaluation and limitations"></textarea></div><div class="field"><label for="assessment">Assessment and plan</label><textarea id="assessment" rows="3"></textarea></div></div>
+            <div class="actions"><button class="button primary" type="button">Save draft</button><button class="button" type="button">Recommend in-person care</button><button class="button danger" type="button">Emergency disposition</button></div>
+          </div>
+          <div class="annotation"><code>TEL-CON-001..007</code> · Start checks, provenance, exam limitations and safe redirect remain visible.</div>
+        </article>
+
+        <article class="frame" aria-labelledby="phy-03-title">
+          <div class="frame-head"><h3 id="phy-03-title">Prescription and close visit</h3><span class="screen-id">PHY-03</span></div>
+          <div class="app-bar"><span class="brand">Jamie Parker</span><span>Encounter draft v6</span></div>
+          <div class="frame-body">
+            <div class="two-col"><div class="panel"><h5>Medication safety</h5><ul class="plain-list"><li>Allergies reviewed</li><li>Medication reconciliation complete</li><li>No controlled substances permitted</li><li>Interaction source v2026.08</li></ul></div><div class="panel"><h5>Patient-selected pharmacy</h5><p><strong>Example Community Pharmacy</strong><br>100 Synthetic Road, Atlanta, GA</p><button class="button" type="button">Confirm or change destination</button></div></div>
+            <fieldset><legend>Prescription decision</legend><label class="choice"><input type="radio" name="rx" checked> No prescription</label><label class="choice"><input type="radio" name="rx"> Create non-controlled prescription</label></fieldset>
+            <div class="field"><label for="disposition">Final disposition</label><select id="disposition"><option>Treated by telehealth</option><option>Testing or referral required</option><option>Urgent in-person care</option><option>Emergency transfer recommended</option><option>Technical abort with safety disposition</option></select></div>
+            <div class="panel"><h5>Completion checks</h5><ul class="plain-list"><li>Plan and warning signs complete</li><li>Follow-up owner and timeframe complete</li><li>After-visit summary previewed</li><li>Claim-ready facts require billing review</li></ul></div>
+            <div class="actions"><button class="button primary" type="button">Sign and finalize visit</button><button class="button" type="button">Save for wrap-up</button></div>
+          </div>
+          <div class="annotation"><code>TEL-RX-001..016</code> · Prescription is optional, pharmacy is patient-selected, finalization is server-validated.</div>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+

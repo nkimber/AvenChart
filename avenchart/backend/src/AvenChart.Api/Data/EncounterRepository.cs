@@ -462,6 +462,28 @@ public sealed class EncounterRepository(
         string actor,
         CancellationToken cancellationToken)
     {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var id = await AppendSoapNoteVersionAsync(
+            connection,
+            transaction,
+            encounter,
+            request,
+            actor,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        var detail = await GetByEncounterAsync(encounter, cancellationToken);
+        return detail is null ? null : new EncounterFormMutationResponse(id, detail);
+    }
+
+    internal static async Task<int> AppendSoapNoteVersionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int encounter,
+        EncounterSoapNoteCreateRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
         if (!TryParseDateTime(request.DateTime, out var noteDateTime))
         {
             throw new ArgumentException("SOAP note date/time must be a valid ISO-style timestamp.");
@@ -488,9 +510,6 @@ public sealed class EncounterRepository(
         {
             throw new ArgumentException("Expected version cannot be negative.");
         }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         string patientId;
         int pid;
@@ -645,9 +664,7 @@ public sealed class EncounterRepository(
             await versionCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await transaction.CommitAsync(cancellationToken);
-        var detail = await GetByEncounterAsync(encounter, cancellationToken);
-        return detail is null ? null : new EncounterFormMutationResponse(Convert.ToInt32(id), detail);
+        return Convert.ToInt32(id);
     }
 
     public async Task<EncounterSignatureMutationResponse?> SignAsync(

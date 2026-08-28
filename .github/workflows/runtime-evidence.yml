@@ -26,9 +26,9 @@ jobs:
       - name: Install modern UI dependencies
         working-directory: avenchart-ui
         run: npm ci
-      - name: Install Chromium for browser evidence
+      - name: Install browsers for telehealth evidence
         working-directory: avenchart-ui
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
       - name: Start seeded AvenChart runtime
         working-directory: avenchart
         shell: pwsh
@@ -75,6 +75,69 @@ jobs:
         working-directory: avenchart
         shell: pwsh
         run: ./scripts/Test-AvenChartPersistenceEvidence.ps1
+      - name: Start disabled-by-default synthetic telehealth runtime
+        working-directory: avenchart
+        shell: pwsh
+        run: |
+          docker compose stop api
+          docker compose run -d --name avenchart-telehealth-api --no-deps --service-ports -e Telehealth__Enabled=true -e RuntimeSafety__RateLimitPermitLimit=10000 api
+          $deadline = (Get-Date).AddSeconds(90)
+          do {
+            try {
+              $health = Invoke-RestMethod http://127.0.0.1:5001/health/ready -TimeoutSec 5
+              if ($health.status -eq "healthy") { break }
+            } catch { }
+            Start-Sleep -Seconds 2
+          } while ((Get-Date) -lt $deadline)
+          if ($health.status -ne "healthy") { throw "Synthetic telehealth runtime did not become ready." }
+      - name: Run telehealth migration and runtime-safety evidence
+        working-directory: avenchart
+        shell: pwsh
+        run: |
+          ./scripts/Test-TelehealthMigrationResilience.ps1 -SkipBaseRehearsal
+          ./scripts/Test-TelehealthRuntimeSafety.ps1 -ApiBaseUrl http://127.0.0.1:5001
+      - name: Run telehealth OpenAPI and authorization evidence
+        working-directory: avenchart
+        shell: pwsh
+        run: |
+          ./scripts/Test-TelehealthOpenApiContract.ps1
+          ./scripts/Test-TelehealthAuthorization.ps1
+          ./scripts/Test-TelehealthProspectiveIdentity.ps1
+          ./scripts/Test-TelehealthApplicantIdentityReview.ps1
+          ./scripts/Test-TelehealthProspectiveSafetyTriage.ps1
+          ./scripts/Test-TelehealthProspectiveVisitPurpose.ps1
+          ./scripts/Test-TelehealthProspectivePracticeNetworkPrecheck.ps1
+          ./scripts/Test-TelehealthProspectiveMemberInsuranceDetails.ps1
+          ./scripts/Test-TelehealthProspectiveEligibility.ps1
+          ./scripts/Test-TelehealthProspectivePracticeNetworkDetermination.ps1
+          ./scripts/Test-TelehealthProspectiveIdentityProofing.ps1
+          ./scripts/Test-TelehealthApplicantPromotionAuthorization.ps1
+          ./scripts/Test-TelehealthApplicantRegistrationDetailsConfirmation.ps1
+          ./scripts/Test-TelehealthApplicantInsuranceHandoffConfirmation.ps1
+          ./scripts/Test-TelehealthApplicantCommunicationAccessReadiness.ps1
+          ./scripts/Test-TelehealthApplicantDevicePreparation.ps1
+          ./scripts/Test-TelehealthApplicantClinicalInformationInventory.ps1
+          ./scripts/Test-TelehealthApplicantMedicationInformation.ps1
+          ./scripts/Test-TelehealthApplicantAllergyInformation.ps1
+          ./scripts/Test-TelehealthApplicantHealthHistoryInformation.ps1
+          ./scripts/Test-TelehealthApplicantClinicalInformationSummary.ps1
+          ./scripts/Test-TelehealthApplicantPreRequestReadiness.ps1
+          ./scripts/Test-TelehealthApplicantPracticeReviewSubmission.ps1
+          ./scripts/Test-TelehealthApplicantPracticeReviewInbox.ps1
+          ./scripts/Test-TelehealthApplicantPracticeReviewAuthorization.ps1
+      - name: Run telehealth real PostgreSQL queue-concurrency evidence
+        working-directory: avenchart
+        shell: pwsh
+        run: ./scripts/Test-TelehealthQueueConcurrency.ps1 -CallerCount 20
+      - name: Run telehealth browser accessibility and recovery evidence
+        working-directory: avenchart-ui
+        run: |
+          set +e
+          npx playwright test e2e/telehealth-accessibility.spec.ts e2e/telehealth-failure-recovery.spec.ts --workers=1
+          telehealth_exit_code=$?
+          if [ -d test-results ]; then mv test-results telehealth-test-results; fi
+          if [ -d playwright-report ]; then mv playwright-report telehealth-playwright-report; fi
+          exit "$telehealth_exit_code"
       - name: Run modern UI browser evidence in Chromium
         working-directory: avenchart-ui
         run: |
@@ -109,6 +172,8 @@ jobs:
             avenchart-ui/route-smoke-test-results/
             avenchart-ui/accessibility-playwright-report/
             avenchart-ui/accessibility-test-results/
+            avenchart-ui/telehealth-playwright-report/
+            avenchart-ui/telehealth-test-results/
           if-no-files-found: ignore
       - name: Collect Docker logs
         if: always()

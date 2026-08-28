@@ -11,6 +11,13 @@ permissions:
   contents: read
 
 jobs:
+  telehealth-planning:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Verify telehealth planning artifacts
+        run: pwsh -NoProfile -File ./scripts/Test-TelehealthPlanningArtifacts.ps1
+
   backend:
     runs-on: ubuntu-latest
     steps:
@@ -24,6 +31,9 @@ jobs:
         run: dotnet build avenchart/AvenChart.slnx --configuration Release --no-restore
       - name: Test
         run: dotnet test avenchart/AvenChart.slnx --configuration Release --no-build --no-restore
+      - name: Verify telehealth synthetic runtime safety
+        shell: pwsh
+        run: ./avenchart/scripts/Test-TelehealthRuntimeSafety.ps1
       - name: Verify C# formatting
         run: dotnet format avenchart/AvenChart.slnx --verify-no-changes --no-restore
 

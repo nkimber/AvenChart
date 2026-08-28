@@ -1,0 +1,272 @@
+# AvenChart immediate telehealth master specification
+
+Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–39 scopes active under Decisions 0003 and 0005–0042  
+Version: 0.1  
+Last reviewed: 2026-08-28  
+Initial jurisdictions: Georgia, California, and Florida  
+Initial delivery channel: a specific medical practice's branded site
+
+## 1. Purpose
+
+This document set specifies an immediate, synchronous, low-acuity telehealth service for established and new adult patients. A patient enters through a practice-branded experience, confirms identity, current location, demographics, consent, and coverage information, completes deterministic clinical triage, and—when eligible—joins the practice's operational queue. Authorized practice staff release clinically eligible requests to the clinician queue. An available, appropriately licensed physician conducts a video consultation, documents the encounter, optionally sends a non-controlled prescription through a stubbed standards-oriented adapter, completes follow-up, and creates the data required for a professional claim through a stubbed clearinghouse adapter.
+
+This is a product and engineering specification, not legal advice, payer policy, or a clinical protocol. Before production use, the named clinical, compliance, privacy, security, accessibility, billing, and legal owners must approve the applicable gates in [20-rollout-metrics-risks-and-approvals.md](20-rollout-metrics-risks-and-approvals.md).
+
+## 2. Normative language
+
+- **MUST** and **MUST NOT** are release requirements.
+- **SHOULD** and **SHOULD NOT** are expected unless an approved architecture decision record explains the exception.
+- **MAY** identifies an optional implementation.
+- A requirement is complete only when its acceptance evidence is satisfied and linked in the traceability register.
+
+Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TEL-IDN`, `TEL-TRI`, `TEL-REG`, `TEL-PRA`, `TEL-INS`, `TEL-CON`, `TEL-VID`, `TEL-RX`, `TEL-CLM`, `TEL-ARC`, `TEL-DAT`, `TEL-API`, `TEL-SEC`, `TEL-UX`, `TEL-NFR`, `TEL-TST`, and `TEL-ROL`.
+
+## 3. Release decisions
+
+| Topic | Initial-release decision |
+|---|---|
+| Market entry | A patient enters through a known practice's branded domain or approved embedded experience. |
+| Provider of record | The medical practice, never AvenChart. AvenChart supplies technology and administrative capabilities. |
+| Patients | Established and new adults, age 18 or older. Pediatric and guardian workflows are deferred. |
+| Clinicians | Physicians only for the initial release. Each must have an active authority to treat a patient physically located in the relevant state. |
+| States | Georgia, California, and Florida, controlled independently by practice, clinician, service, and protocol configuration. |
+| Modality | Synchronous video is the default clinical modality. No session recording. Audio-only fallback is allowed only when state, payer, practice, and clinical policy all permit it and the physician documents why it remained adequate. |
+| Clinical scope | Low-acuity, non-emergency complaints authorized by versioned, medical-director-approved protocols. No diagnosis is promised at intake. |
+| Controlled substances | Out of scope. The platform must prevent initial-release electronic prescribing of controlled substances. |
+| Matching | The practice is already selected. Eligible requests are offered to the next eligible clinician; patients do not select a clinician in the initial release. |
+| Insurance | Eligibility and exact network participation are distinct checks. Failure to confirm is never represented as a guarantee of coverage. A disclosed self-pay route may be offered. |
+| Queue | Position is shown only after practice acceptance. It is approximate, privacy-preserving, and may change for safety or operational reasons. |
+| External systems | Video, eligibility/network, e-prescribing, pharmacy directory, and claims use vendor-neutral ports with deterministic development stubs. No live external integration is part of this release baseline. |
+| Future marketplace | Deferred. The architecture preserves a match-before-enrollment seam without exposing one practice's data, clinicians, or relationships to another. |
+
+## 4. Product invariants
+
+1. Emergency screening occurs before insurance collection, payment, or queuing.
+2. Administrative staff can accept, hold, or decline a request for documented operational reasons, but cannot change or override a clinical triage outcome.
+3. Unknown, missing, inconsistent, or concerning clinical answers never silently pass; they route to physician review or a higher level of care.
+4. A patient is treated under the law and policy applicable to the patient's confirmed physical location at the time of service.
+5. Only a clinician eligible for that state, practice, service, payer arrangement, and time may reserve a request.
+6. A new applicant does not become a canonical patient merely by starting intake. Promotion or linkage is atomic and duplicate-aware.
+7. Clinical records, consent evidence, rules evaluated, queue transitions, administrative actions, clinician actions, prescriptions, and integration attempts are immutable or versioned and auditable.
+8. A consultation claim and a pharmacy claim are different transactions. AvenChart prepares the professional consultation claim; the dispensing pharmacy submits its own drug claim.
+9. No video, audio, screen, or chat recording occurs. Only clinically relevant written communication deliberately incorporated into the chart is retained as clinical content.
+10. AvenChart does not promise treatment, a prescription, clinician availability, insurance payment, or an exact wait time.
+
+## 5. Specification map
+
+| Document | Subject and primary requirement family |
+|---|---|
+| [01-product-scope.md](01-product-scope.md) | Goals, boundaries, release capabilities, and product requirements (`TEL-PROD`) |
+| [02-actors-and-journeys.md](02-actors-and-journeys.md) | Roles, permissions, and end-to-end journeys (`TEL-ACT`) |
+| [03-workflows-and-state-machines.md](03-workflows-and-state-machines.md) | Request, queue, clinician-shift, consultation, and integration lifecycles (`TEL-WF`) |
+| [04-patient-onboarding-and-identity.md](04-patient-onboarding-and-identity.md) | Established/new-patient intake, identity, matching, and promotion (`TEL-IDN`) |
+| [05-clinical-triage-and-safety.md](05-clinical-triage-and-safety.md) | Eligibility, red flags, protocols, escalation, and governance (`TEL-TRI`) |
+| [06-state-regulatory-and-clinical-governance.md](06-state-regulatory-and-clinical-governance.md) | Georgia, California, Florida, consent, licensure, ownership, and review (`TEL-REG`) |
+| [07-practice-configuration-and-queue-operations.md](07-practice-configuration-and-queue-operations.md) | Branded entry, configuration, administrator workflow, matching, and queue (`TEL-PRA`) |
+| [08-insurance-eligibility-network-and-pricing.md](08-insurance-eligibility-network-and-pricing.md) | Coverage, network, evidence, estimates, manual review, and self-pay (`TEL-INS`) |
+| [09-consultation-documentation-and-follow-up.md](09-consultation-documentation-and-follow-up.md) | Physician workspace, charting, orders, after-visit care, and completion (`TEL-CON`) |
+| [10-video-realtime-and-communications.md](10-video-realtime-and-communications.md) | WebRTC, waiting room, tokens, signaling, chat, fallback, and failure recovery (`TEL-VID`) |
+| [11-prescribing-and-pharmacy.md](11-prescribing-and-pharmacy.md) | Pharmacy choice, medication safety, prescription lifecycle, and NCPDP seam (`TEL-RX`) |
+| [12-claims-and-financial-integration.md](12-claims-and-financial-integration.md) | Professional claims, coding, X12 lifecycles, acknowledgments, and reconciliation (`TEL-CLM`) |
+| [13-technical-architecture.md](13-technical-architecture.md) | Target architecture, feature boundaries, dependencies, concurrency, and delivery increments (`TEL-ARC`) |
+| [14-data-model-and-retention.md](14-data-model-and-retention.md) | Logical schema, constraints, provenance, retention, and recovery (`TEL-DAT`) |
+| [15-api-events-and-integration-contracts.md](15-api-events-and-integration-contracts.md) | HTTP APIs, Problem Details, events, adapters, idempotency, FHIR, and versioning (`TEL-API`) |
+| [16-security-privacy-consent-and-audit.md](16-security-privacy-consent-and-audit.md) | Threat boundaries, authentication, authorization, HIPAA controls, consent, audit, and incident response (`TEL-SEC`) |
+| [17-ux-content-and-accessibility.md](17-ux-content-and-accessibility.md) | Patient/staff/physician UX, content rules, mobile behavior, and WCAG 2.2 AA (`TEL-UX`) |
+| [18-nonfunctional-observability-and-operations.md](18-nonfunctional-observability-and-operations.md) | SLOs, performance, telemetry, resilience, support, backup, and continuity (`TEL-NFR`) |
+| [19-testing-acceptance-and-traceability.md](19-testing-acceptance-and-traceability.md) | Test layers, safety cases, fixtures, acceptance, and traceability (`TEL-TST`) |
+| [20-rollout-metrics-risks-and-approvals.md](20-rollout-metrics-risks-and-approvals.md) | Phased rollout, KPIs, risks, readiness evidence, owners, and approval gates (`TEL-ROL`) |
+| [references.md](references.md) | Authoritative sources and retrieval dates |
+
+## 5.1 Pre-development assets
+
+| Asset | Purpose |
+|---|---|
+| [Decision 0001](decisions/0001-g0-development-baseline.md) | Records the project owner's G0 scope, architecture, clinical-framework, backlog, safeguard and wireframe decisions, together with the separate Phase 2 implementation constraint |
+| [Decision 0002](decisions/0002-proposed-scoped-verification-authorization.md) | Approved, time-bounded authorization for only the active planning validator and its existing-CI invocation; application and runtime implementation remain closed |
+| [Decision 0003](decisions/0003-proposed-sprint-01-synthetic-foundation.md) | Approved, time-bounded exception for only the complete disabled, synthetic Sprint 1 vertical slice; no production or patient-care authorization |
+| [Decision 0004](decisions/0004-proposed-bootstrap-schema-reconciliation.md) | Approved minimal scope amendment under which the generated bootstrap was normalized, verified, and exercised by the full recovery rehearsal |
+| [Decision 0005](decisions/0005-approved-sprint-02-established-patient-readiness.md) | Approved, time-bounded exception for established-patient confirmation, intake, synthetic acknowledgment, and separate non-production eligibility/network evidence only |
+| [Decision 0006](decisions/0006-approved-sprint-03-patient-queue-transparency.md) | Approved, time-bounded exception for a patient-owned authoritative status projection and resilient HTTP polling without exact wait promises or realtime transport |
+| [Decision 0007](decisions/0007-approved-sprint-04-prospective-patient-identity-shell.md) | Approved, time-bounded exception for a separated synthetic prospective applicant, demonstration contact control, and privacy-safe duplicate disposition that cannot create a patient or request |
+| [Decision 0008](decisions/0008-approved-sprint-05-connection-room-shell.md) | Approved, time-bounded exception for a provider-neutral synthetic connection room, coarse device preflight, scoped ephemeral grants, and `Reserved -> Connecting` without media or encounter start |
+| [Decision 0009](decisions/0009-approved-sprint-06-consultation-start-handoff.md) | Approved, time-bounded exception for an affirmative, owner-only synthetic start handoff into one existing appointment-linked encounter and opaque consultation context without clinical output |
+| [Decision 0010](decisions/0010-approved-sprint-07-read-only-consultation-workspace.md) | Approved, time-bounded exception for an owner-bound, audited, bounded read-only active-consultation projection with no general chart navigation or clinical mutation |
+| [Decision 0011](decisions/0011-approved-sprint-08-consultation-documentation-draft.md) | Approved, time-bounded exception for an owner-bound explicit-save unsigned SOAP draft using canonical append-only note versions, optimistic conflict handling, signature locking, and no downstream clinical or financial action |
+| [Decision 0012](decisions/0012-approved-sprint-09-consultation-wrap-up-handoff.md) | Approved, time-bounded exception for an owner-only monotonic handoff into unfinished wrap-up that keeps the encounter open, physician responsible, and all disposition/completion/downstream actions disabled |
+| [Decision 0013](decisions/0013-approved-sprint-10-synthetic-pharmacy-choice.md) | Approved, time-bounded exception for owner-bound neutral synthetic pharmacy search and an append-only patient-confirmed destination draft with no medication, prescription, transmission, lifecycle, financial, or external action |
+| [Decision 0014](decisions/0014-approved-sprint-11-synthetic-safety-disposition-draft.md) | Approved, time-bounded exception for an owner-bound append-only physician-authored safety-disposition draft with conditional safety facts and no signing, delivery, completion, downstream, lifecycle, or external action |
+| [Decision 0015](decisions/0015-approved-sprint-12-completion-prerequisites-review.md) | Approved, time-bounded exception for an owner-bound minimized completion-prerequisites review with structural presence only, optional nonblocking pharmacy state, explicit product blockers, and no mutation, signing, completion, delivery, downstream, lifecycle, or external action |
+| [Decision 0016](decisions/0016-approved-sprint-13-synthetic-prescription-preparation-draft.md) | Approved, time-bounded exception for owner-bound active non-controlled catalog search and an append-only physician-authored preparation draft with no recommendation, safety adjudication, legal effect, signing, transmission, canonical prescription/medication, downstream, lifecycle, or external action |
+| [Decision 0017](decisions/0017-approved-sprint-14-synthetic-applicant-identity-review.md) | Approved, time-bounded exception for a staff-governed, deterministic contact-control and duplicate-disposition review of a synthetic prospective applicant, without identity proofing, patient promotion, portal enrollment, intake completion, request creation, queueing, or downstream action |
+| [Decision 0018](decisions/0018-approved-sprint-15-prospective-safety-triage.md) | Approved, time-bounded exception for one applicant-owned, emergency-first universal synthetic safety screen after no-candidate staff review, with no patient promotion, complete triage, request, queue, care, or downstream action |
+| [Decision 0019](decisions/0019-approved-sprint-16-prospective-visit-purpose.md) | Approved, time-bounded exception for one controlled applicant-owned migraine-or-sleep navigation classification after a passing safety screen, with no clinical protocol, eligibility, patient promotion, request, queue, care, or downstream action |
+| [Decision 0020](decisions/0020-approved-sprint-17-prospective-practice-network-precheck.md) | Approved, time-bounded exception for one applicant-owned versioned NON_PRODUCTION practice-plan fixture after visit-purpose classification, with no member eligibility, benefits, physician participation, exact network, coverage, financial, patient, request, queue, care, or external action |
+| [Decision 0021](decisions/0021-approved-sprint-18-prospective-member-insurance-details.md) | Approved, time-bounded exception for one protected synthetic member-insurance detail receipt after practice-plan discovery, with no member matching, eligibility, benefits, exact network, canonical coverage, financial, patient, request, queue, care, or external action |
+| [Decision 0022](decisions/0022-approved-sprint-19-synthetic-prospective-eligibility-result.md) | Approved, time-bounded exception for one normalized synthetic member eligibility/benefit-information result through an internal standards-shaped adapter, with no X12 transaction, payer call, exact network, canonical coverage, financial, patient, request, queue, care, or external action |
+| [Decision 0023](decisions/0023-approved-sprint-20-synthetic-practice-network-determination.md) | Approved, time-bounded exception for one synthetic practice/facility/service network determination with Plan-Net compatibility metadata, no member or rendering-physician inquiry data, no FHIR resource or external directory call, and no exact-network, coverage, financial, patient, request, queue, care, or external consequence |
+| [Decision 0024](decisions/0024-approved-sprint-21-synthetic-identity-proofing-process.md) | Approved, time-bounded exception for one opaque-reference-only synthetic identity-proofing process fixture after positive fresh eligibility and practice-network evidence, with NIST SP 800-63A-4 concepts metadata but no real evidence, identifier, biometric, authoritative source, IAL claim, patient promotion, request, queue, care, or external consequence |
+| [Decision 0025](decisions/0025-approved-sprint-22-synthetic-promotion-authorization.md) | Approved, time-bounded exception for a staff-governed synthetic promotion authorization or denial after complete unexpired process evidence, with assurance `None`, explicit acknowledgments, and no patient/chart/account, request, queue, care, downstream, or external consequence |
+| [Decision 0026](decisions/0026-approved-sprint-23-atomic-synthetic-patient-promotion.md) | Approved, time-bounded exception for an administrator-only atomic duplicate recheck that either creates one minimal portal-disabled synthetic patient shell or records a privacy-safe possible-match block, with no existing-patient linkage, portal, intake completion, consent, coverage, request, queue, care, downstream, or external consequence |
+| [Decision 0027](decisions/0027-approved-sprint-24-state-specific-telehealth-notice-acknowledgment.md) | Approved, time-bounded exception for applicant-owned retrieval and immutable acknowledgment of one server-selected Georgia, California, or Florida synthetic telehealth notice after successful promotion, with legal and clinician consent permanently false and no portal, completed intake, practice acceptance, coverage, request, queue, care, downstream, or external consequence |
+| [Decision 0028](decisions/0028-approved-sprint-25-minimum-registration-details-confirmation.md) | Approved, time-bounded exception for applicant-owned review and immutable no-edit confirmation of legal name, birth date, masked contacts, residence state, and postal code copied into a promoted portal-disabled synthetic patient shell, with no identity assurance, correction, patient mutation, completed intake, consent, insurance confirmation, request, queue, care, downstream, or external consequence |
+| [Decision 0029](decisions/0029-approved-sprint-26-synthetic-insurance-handoff-confirmation.md) | Approved, time-bounded exception for applicant-owned review and immutable no-edit confirmation of a masked synthetic insurance handoff with current positive eligibility/practice fixtures and explicit rendering-physician/coverage limitations, with no canonical coverage, patient mutation, financial, request, queue, care, downstream, or external consequence |
+| [Decision 0030](decisions/0030-approved-sprint-27-synthetic-communication-access-readiness.md) | Approved, time-bounded exception for applicant-owned recording of bounded spoken-language and support preferences plus current-location, callback, safe/private, disconnection/emergency-plan, and synthetic-use confirmations, with no interpreter/accommodation arrangement, technology readiness, patient mutation, intake, consent, acceptance, request, queue, care, downstream, or external consequence |
+| [Decision 0031](decisions/0031-approved-sprint-28-synthetic-device-preparation.md) | Approved, time-bounded exception for applicant-owned recording of one coarse client-reported browser, camera, microphone, speaker, and connection preparation result with three mandatory limitations acknowledgments, with no media or device identifiers, technology readiness, waiting room, communication, patient mutation, intake, consent, acceptance, request, queue, care, downstream, or external consequence |
+| [Decision 0032](decisions/0032-approved-sprint-29-synthetic-clinical-information-inventory.md) | Approved, time-bounded exception for applicant-owned recording of three coarse patient-reported inventory states and a server-derived informational route, with no clinical details, reconciliation, verified “no known” assertion, clinician task, intake, eligibility, canonical chart mutation, request, queue, care, prescribing, downstream, or external consequence |
+| [Decision 0033](decisions/0033-approved-sprint-30-synthetic-medication-information.md) | Approved, time-bounded exception for applicant-owned recording of bounded patient-reported medication selections from a fixed incomplete local synthetic ingredient catalog, with no dose or directions, external coding claim, canonical medication resource, reconciliation, interaction check, clinician task, intake, eligibility, request, queue, care, prescribing, downstream, or external consequence |
+| [Decision 0034](decisions/0034-approved-sprint-31-synthetic-allergy-information.md) | Approved, time-bounded exception for applicant-owned recording of bounded patient-reported allergy/intolerance substance selections from a fixed incomplete local synthetic catalog, with no reaction, severity, criticality, type, status, confirmed negation, external coding claim, canonical allergy resource, reconciliation, contraindication check, alert, clinician task, intake, eligibility, request, queue, care, prescribing, downstream, or external consequence |
+| [Decision 0035](decisions/0035-approved-sprint-32-synthetic-health-history-topics.md) | Approved, time-bounded exception for applicant-owned recording of bounded broad patient-reported health-history topics from a fixed incomplete local synthetic catalog, with no diagnosis, status, timing, external coding claim, canonical clinical resource, reconciliation, risk evaluation, triage change, clinician task, intake, eligibility, request, queue, care, prescribing, downstream, or external consequence |
+| [Decision 0036](decisions/0036-approved-sprint-33-synthetic-clinical-information-summary-confirmation.md) | Approved, time-bounded exception for applicant-owned no-edit confirmation of a minimized three-category server-derived clinical-information summary, with no new clinical detail, correction, confirmed negative, canonical record, reconciliation, QuestionnaireResponse, clinician task, completed intake, eligibility, acceptance, request, queue, care, prescribing, downstream, or external consequence |
+| [Decision 0037](decisions/0037-approved-sprint-34-synthetic-pre-request-readiness-acknowledgment.md) | Approved, time-bounded exception for applicant-owned no-edit acknowledgment of five coarse server-derived pre-request receipt sections, with no identity or coverage assurance, fulfilled support, technology readiness, reconciliation, consent, task, acceptance, patient mutation, request, queue, appointment, encounter, care, prescribing, billing, claim, integration, or external consequence |
+| [Decision 0038](decisions/0038-approved-sprint-35-synthetic-practice-review-submission.md) | Approved, time-bounded exception for one applicant-owned immutable `PendingPracticeReview` work item with `staffReviewCreated=true`, while every acceptance, telehealth-request, patient/clinician-queue, appointment, encounter, care, prescribing, financial, integration, and external consequence remains false |
+| [Decision 0039](decisions/0039-approved-sprint-36-read-only-practice-review-inbox.md) | Approved, time-bounded exception for an administrator/front-desk GET-only, practice/facility-scoped, masked inbox of pending synthetic practice-review work items, with no assignment, priority, staff decision, contact, request, queue, appointment, care, financial, integration, or external consequence |
+| [Decision 0040](decisions/0040-approved-sprint-37-synthetic-practice-review-claim.md) | Approved, time-bounded exception for one administrator/front-desk 120-second first-writer-wins claim over an exact pending synthetic practice-review item; duplicate-work prevention only, with no priority, disposition, contact, request, queue, appointment, care, financial, integration, or external consequence |
+| [Decision 0041](decisions/0041-approved-sprint-38-claimant-bound-practice-review-packet.md) | Approved, time-bounded exception for the current claimant to read one private, minimized operational packet with masked registration, synthetic insurance/network, communication/access, coarse device, purpose, and routing evidence; no claim extension, chart or source detail, disposition, contact, request, queue, care, financial, integration, or external consequence |
+| [Decision 0042](decisions/0042-approved-sprint-39-synthetic-practice-review-authorization.md) | Approved, time-bounded exception for the current claimant to record one immutable positive-only operational authorization for a separately gated future synthetic request-creation step; no acceptance, contact, request, queue, appointment, encounter, consent, care, financial, integration, or external consequence |
+| [Implementation backlog](backlog/README.md) | Delivery model for 20 epics and 60 stories, with every one of the 329 requirements assigned exactly once as a primary responsibility |
+| [Machine-readable backlog](backlog/backlog.json) | Structured epic, story, dependency, priority, gate and requirement-range source for planning and future traceability automation |
+| [Sprint 1 foundation plan](backlog/sprint-01-foundation.md) | Recommended synthetic vertical slice from branded entry through safety/triage, administrator authorization, queueing and atomic clinician reservation |
+| [Sprint 1 evidence packet](backlog/sprint-01-evidence.md) | Implementation/test mapping, automated results and explicitly open independent-review criteria for the bounded slice |
+| [Sprint 1 runbook](backlog/sprint-01-runbook.md) | Local-only activation, verification, rollback, recovery and incident stop conditions |
+| [Sprint 1 release manifest](backlog/sprint-01-release-manifest.json) | Machine-readable feature, API, schema, protocol, test and release-gate versions |
+| [Sprint 2 readiness plan](backlog/sprint-02-established-patient-readiness.md) | Bounded synthetic established-patient `Intake -> Verification -> OperationalReview` increment |
+| [Sprint 2 evidence packet](backlog/sprint-02-evidence.md) | Implementation/test mapping, automated results, fail-closed evidence, and explicitly open independent-review criteria for the established-patient readiness increment |
+| [Sprint 3 queue-transparency plan](backlog/sprint-03-patient-queue-transparency.md) | Bounded synthetic authoritative patient status, approximate queue count, and resilient polling increment |
+| [Sprint 3 evidence packet](backlog/sprint-03-evidence.md) | Implementation/test mapping, scoped-position and recovery evidence, and explicitly open independent-review criteria for queue transparency |
+| [Sprint 4 prospective-patient identity-shell plan](backlog/sprint-04-prospective-patient-identity-shell.md) | Bounded synthetic minimum-data applicant, contact-control, and duplicate-disposition increment that stops before canonical promotion |
+| [Sprint 4 evidence packet](backlog/sprint-04-evidence.md) | Hash-only credential, bounded challenge, duplicate-privacy, zero-canonical-delta, migration, API, and browser evidence with independent reviews still open |
+| [Sprint 5 connection-room plan](backlog/sprint-05-connection-room-shell.md) | Bounded synthetic device-preflight, opaque session, participant-scoped grant, and isolated waiting-room increment |
+| [Sprint 5 evidence packet](backlog/sprint-05-evidence.md) | Runtime, migration, authorization, no-capture, zero-encounter-delta, accessibility, and regression evidence with independent reviews still open |
+| [Sprint 6 consultation-start plan](backlog/sprint-06-consultation-start-handoff.md) | Bounded appointment/encounter linkage, affirmative start gate, opaque consultation context, and `Connecting -> InConsultation` increment |
+| [Sprint 6 evidence packet](backlog/sprint-06-evidence.md) | Transaction, contention, authorization, zero-clinical-output, migration, accessibility, and regression evidence with independent reviews still open |
+| [Sprint 7 consultation workspace plan](backlog/sprint-07-read-only-consultation-workspace.md) | Bounded adult/current/owner-gated read-only consultation projection, PHI audit, cache prevention, and accessible recovery increment |
+| [Sprint 7 evidence packet](backlog/sprint-07-evidence.md) | Adult-boundary, owner/non-owner, allowlist, PHI-audit, cache, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 8 consultation documentation plan](backlog/sprint-08-consultation-documentation-draft.md) | Bounded owner/current/adult-gated explicit-save SOAP draft, canonical versioning, conflict and signature locking, PHI audit, and accessible recovery increment |
+| [Sprint 8 evidence packet](backlog/sprint-08-evidence.md) | Owner/non-owner, canonical-version, stale-conflict, signature-lock, audit/cache/privacy, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 9 consultation wrap-up plan](backlog/sprint-09-consultation-wrap-up-handoff.md) | Bounded owner-only consultation/request/shift transition into unfinished physician-owned wrap-up |
+| [Sprint 9 evidence packet](backlog/sprint-09-evidence.md) | Atomicity, exact replay, contention, ownership, unfinished-record, audit/cache/privacy, accessibility, bootstrap/migration, and regression evidence with independent reviews still open |
+| [Sprint 10 synthetic pharmacy-choice plan](backlog/sprint-10-synthetic-pharmacy-choice.md) | Bounded owner-only neutral synthetic directory search and patient-confirmed unsigned destination draft during unfinished wrap-up |
+| [Sprint 10 evidence packet](backlog/sprint-10-evidence.md) | Directory determinism, provenance, preference rebinding, owner/non-owner, exact replay, contention, audit/cache/privacy, zero downstream delta, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 11 safety-disposition draft plan](backlog/sprint-11-synthetic-safety-disposition-draft.md) | Bounded owner-only structured physician-authored safety-disposition draft during unfinished wrap-up |
+| [Sprint 11 evidence packet](backlog/sprint-11-evidence.md) | Conditional clinical-fact gates, owner/non-owner, exact replay, contention, append-only history, signature locking, audit/cache/privacy, zero downstream delta, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 12 completion-prerequisites review plan](backlog/sprint-12-completion-prerequisites-review.md) | Bounded owner-only read projection of minimized structural evidence and unavailable finalization dependencies during unfinished wrap-up |
+| [Sprint 12 evidence packet](backlog/sprint-12-evidence.md) | Owner/non-owner, payload minimization, optional-pharmacy, stable-blocker, read-only/no-delta, signature-lock, audit/cache/privacy, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 13 prescription-preparation plan](backlog/sprint-13-synthetic-prescription-preparation-draft.md) | Bounded owner-only active non-controlled catalog search and physician-authored unsigned preparation draft during unfinished wrap-up |
+| [Sprint 13 evidence packet](backlog/sprint-13-evidence.md) | Neutral-search, controlled/unknown rejection, exact replay, contention, revision history, signature-lock, zero-canonical/downstream-delta, privacy, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 14 applicant identity-review plan](backlog/sprint-14-synthetic-applicant-identity-review.md) | Bounded administrator/front-desk review of contact-verified synthetic prospective applicants with server-derived no-candidate/manual-review outcomes |
+| [Sprint 14 evidence packet](backlog/sprint-14-evidence.md) | Deterministic outcome, actor/facility/purpose isolation, exact replay, stale/contention, append-only provenance, zero-promotion/downstream-delta, privacy, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 15 prospective safety-triage plan](backlog/sprint-15-prospective-safety-triage.md) | Bounded applicant-owned emergency-first universal safety screen after no-candidate staff review, ending in a coarse prospective state without care authorization |
+| [Sprint 15 evidence packet](backlog/sprint-15-evidence.md) | Outcome-priority, missing/stale/access/contention, append-only provenance, zero-promotion/downstream-delta, privacy, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 16 prospective visit-purpose plan](backlog/sprint-16-prospective-visit-purpose.md) | Bounded applicant-owned controlled migraine-or-sleep navigation classification after a passing universal safety screen, ending without clinical eligibility or care authorization |
+| [Sprint 16 evidence packet](backlog/sprint-16-evidence.md) | Controlled-vocabulary, provenance, access/version/replay/contention, append-only, zero-promotion/downstream-delta, privacy, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 17 prospective practice-network precheck plan](backlog/sprint-17-prospective-practice-network-precheck.md) | Bounded applicant-owned versioned synthetic practice-plan discovery after visit-purpose classification, ending before member eligibility, benefits, physician participation, exact network, coverage, financial, patient, request, queue, or care gates |
+| [Sprint 17 evidence packet](backlog/sprint-17-evidence.md) | Exact-catalog, access/version/replay/contention, append-only, hard-false consequence, zero-canonical/downstream-delta, privacy, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 18 prospective member-insurance details plan](backlog/sprint-18-prospective-member-insurance-details.md) | Bounded applicant-owned protected synthetic member/group/subscriber detail capture after practice-plan discovery, ending before matching, eligibility, benefits, exact network, canonical coverage, financial, patient, request, queue, or care gates |
+| [Sprint 18 evidence packet](backlog/sprint-18-evidence.md) | Protection-at-rest, cross-applicant provenance rejection, access/conditional/replay/contention, mask-only minimization, hard-false consequence, zero-canonical/downstream-delta, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 19 synthetic eligibility plan](backlog/sprint-19-synthetic-prospective-eligibility-result.md) | Bounded applicant-owned normalized NON_PRODUCTION eligibility result after protected member details, ending before real X12, payer communication, exact network, canonical coverage, financial, patient, request, queue, or care gates |
+| [Sprint 19 evidence packet](backlog/sprint-19-evidence.md) | Four-outcome adapter, protected-input, access/replay/contention, separate-status, public-minimization, zero-canonical/downstream-delta, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 20 synthetic practice-network plan](backlog/sprint-20-synthetic-practice-network-determination.md) | Bounded applicant-owned practice/facility/service network determination after fresh eligibility, ending before rendering-physician participation, aggregate exact network, canonical coverage, financial, patient, request, queue, or care gates |
+| [Sprint 20 evidence packet](backlog/sprint-20-evidence.md) | Three-outcome Plan-Net-shaped adapter, no-member inquiry, provenance, replay/contention, separate eligibility/network status, minimization, zero-canonical/downstream-delta, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 21 synthetic identity-proofing process plan](backlog/sprint-21-synthetic-identity-proofing-process.md) | Bounded opaque-reference-only process fixture after positive eligibility and practice-network evidence, ending before real identity assurance, patient promotion, account/authenticator, consent, request, queue, or care gates |
+| [Sprint 21 evidence packet](backlog/sprint-21-evidence.md) | NIST-process-shaped but explicitly nonconformant fixture, opaque-reference-only inquiry, positive upstream gates, normalized stages, `None` assurance, replay/contention, minimization, zero-canonical/downstream-delta, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 22 synthetic promotion-authorization plan](backlog/sprint-22-synthetic-promotion-authorization.md) | Bounded staff-governed authorization or denial after complete unexpired synthetic evidence, ending before patient creation, account/portal, complete intake, consent, acceptance, request, queue, care, or downstream action |
+| [Sprint 22 evidence packet](backlog/sprint-22-evidence.md) | Permission and practice/facility isolation, complete-chain provenance, explicit no-assurance/synthetic acknowledgments, replay/contention, append-only history, minimization, zero-canonical/downstream-delta, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 23 atomic synthetic patient-promotion plan](backlog/sprint-23-atomic-synthetic-patient-promotion.md) | Administrator-only atomic current-duplicate recheck and exactly-one minimal portal-disabled synthetic patient-shell creation, or a privacy-safe possible-match block with no linkage or candidate disclosure |
+| [Sprint 23 evidence packet](backlog/sprint-23-evidence.md) | Authorization, transaction/provenance, replay/contention, duplicate blocking, deterministic minimal patient mapping, response minimization, zero portal/downstream delta, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 24 state-specific telehealth-notice acknowledgment plan](backlog/sprint-24-state-specific-telehealth-notice-acknowledgment.md) | Applicant-owned retrieval and immutable acknowledgment of one server-selected Georgia, California, or Florida notice after successful synthetic patient-shell promotion, without final/legal clinician consent or downstream capability |
+| [Sprint 24 evidence packet](backlog/sprint-24-evidence.md) | State selection/source, promotion and location provenance, replay/contention, append-only receipt, response minimization, zero consent/downstream delta, accessibility, migration, and regression evidence with independent reviews still open |
+| [Sprint 25 minimum registration-details confirmation plan](backlog/sprint-25-minimum-registration-details-confirmation.md) | Applicant-owned no-edit review and immutable confirmation of the exact minimum copied details after notice acknowledgment, with masked contacts and explicit correction stop guidance |
+| [Sprint 25 evidence packet](backlog/sprint-25-evidence.md) | Applicant/patient snapshot equality, masking/minimization, no-edit input, portal/drift rejection, replay/contention, append-only provenance, zero patient/downstream delta, accessibility, migration, and full regression evidence with independent reviews still open |
+| [Sprint 26 synthetic insurance handoff confirmation plan](backlog/sprint-26-synthetic-insurance-handoff-confirmation.md) | Applicant-owned no-edit review and immutable confirmation of masked copied synthetic insurance inputs and fixture limitations after minimum registration confirmation |
+| [Sprint 26 evidence packet](backlog/sprint-26-evidence.md) | Bounded automated evidence passing; independent reviews and every broader product/production gate remain open |
+| [Sprint 27 synthetic communication/access-readiness plan](backlog/sprint-27-synthetic-communication-access-readiness.md) | Applicant-owned immutable recording of bounded communication preferences and five readiness acknowledgments after synthetic insurance handoff confirmation, without arranging services or enabling care |
+| [Sprint 27 evidence packet](backlog/sprint-27-evidence.md) | Bounded policy, live API, concurrency, authorization, migration, accessibility, and regression evidence; independent reviews and every broader product/production gate remain open |
+| [Sprint 28 synthetic device-preparation plan](backlog/sprint-28-synthetic-device-preparation.md) | Applicant-owned immutable recording of one passing coarse local device check after communication/access readiness, without storing media or identifiers or establishing technology readiness |
+| [Sprint 28 evidence packet](backlog/sprint-28-evidence.md) | Bounded policy, live API, concurrency, authorization, migration, cross-browser accessibility, and regression evidence; independent reviews and every broader product/production gate remain open |
+| [Sprint 29 synthetic clinical-information-inventory plan](backlog/sprint-29-synthetic-clinical-information-inventory.md) | Applicant-owned immutable recording of coarse medication, allergy/intolerance, and other-health-history inventory states after device preparation, without detailed clinical data, reconciliation, task creation, or clinical consequence |
+| [Sprint 29 evidence packet](backlog/sprint-29-evidence.md) | Bounded policy, live API, concurrency, authorization, migration, cross-browser accessibility, and regression evidence; independent reviews and every broader product/production gate remain open |
+| [Sprint 30 synthetic medication-information plan](backlog/sprint-30-synthetic-medication-information.md) | Applicant-owned immutable recording of bounded ingredient selections and coarse use states from a fixed incomplete local synthetic catalog after the clinical-information inventory, without canonical medication data, reconciliation, interaction checking, task creation, or clinical consequence |
+| [Sprint 30 evidence packet](backlog/sprint-30-evidence.md) | Bounded policy, live API, concurrency, authorization, migration, cross-browser accessibility, and regression evidence; independent reviews and every broader product/production gate remain open |
+| [Sprint 31 synthetic allergy/intolerance-information plan](backlog/sprint-31-synthetic-allergy-information.md) | Applicant-owned immutable recording of bounded substance selections from a fixed incomplete local synthetic catalog after medication information, without reactions, canonical allergy data, confirmed negation, reconciliation, safety checking, alerts, task creation, or clinical consequence |
+| [Sprint 31 evidence packet](backlog/sprint-31-evidence.md) | Implementation and bounded automated evidence passed; independent reviews and every broader product/production gate remain open |
+| [Sprint 32 synthetic health-history-topic plan](backlog/sprint-32-synthetic-health-history-topics.md) | Applicant-owned immutable recording of broad topic prompts from a fixed incomplete local synthetic catalog after allergy information, without diagnosis, detailed history, canonical clinical data, reconciliation, risk evaluation, triage change, task creation, or clinical consequence |
+| [Sprint 32 evidence packet](backlog/sprint-32-evidence.md) | Implementation and bounded automated evidence passed; independent reviews and every broader product/production gate remain open |
+| [Sprint 33 synthetic clinical-information summary plan](backlog/sprint-33-synthetic-clinical-information-summary-confirmation.md) | Applicant-owned immutable no-edit confirmation of a server-derived three-category summary after health-history topics, without new clinical detail, reconciliation, intake completion, task creation, or clinical/operational consequence |
+| [Sprint 33 evidence packet](backlog/sprint-33-evidence.md) | Implementation and bounded automated evidence passed; independent reviews and every broader product/production gate remain open |
+| [Sprint 34 synthetic pre-request readiness plan](backlog/sprint-34-synthetic-pre-request-readiness-acknowledgment.md) | Applicant-owned immutable no-edit acknowledgment of five coarse readiness sections after the clinical-information summary, without task, acceptance, request, queue, financial, integration, or clinical consequence |
+| [Sprint 34 evidence packet](backlog/sprint-34-evidence.md) | Implementation and bounded automated evidence; independent reviews and every broader product/production gate remain open |
+| [Sprint 35 synthetic practice-review submission plan](backlog/sprint-35-synthetic-practice-review-submission.md) | Applicant-owned submission of one immutable practice-intake review work item after readiness acknowledgment, without practice decision, telehealth request, care queue, appointment, encounter, financial, integration, or care consequence |
+| [Sprint 35 evidence packet](backlog/sprint-35-evidence.md) | Implementation and bounded automated evidence; independent reviews and every broader product/production gate remain open |
+| [Sprint 36 read-only practice-review inbox plan](backlog/sprint-36-read-only-practice-review-inbox.md) | Minimized operational awareness of pending synthetic practice-review work items for authorized administrator/front-desk staff, without any action or downstream capability |
+| [Sprint 36 evidence packet](backlog/sprint-36-evidence.md) | Implementation and bounded automated evidence for the GET-only staff inbox; independent reviews and every broader product/production gate remain open |
+| [Sprint 37 synthetic practice-review claim plan](backlog/sprint-37-synthetic-practice-review-claim.md) | A short immutable first-writer-wins staff review claim that prevents duplicate operational work without creating priority, a decision, contact, a request, a care queue, or downstream capability |
+| [Sprint 37 evidence packet](backlog/sprint-37-evidence.md) | Implementation and bounded automated evidence for the short review claim; independent reviews and every broader product/production gate remain open |
+| [Sprint 38 claimant-bound practice-review packet plan](backlog/sprint-38-claimant-bound-practice-review-packet.md) | A private, read-only, minimized operational packet for the staff member holding the active short review claim, without lease extension or downstream capability |
+| [Sprint 38 evidence packet](backlog/sprint-38-evidence.md) | Implementation and bounded automated evidence for the claimant-only operational packet; independent reviews and every broader product/production gate remain open |
+| [Sprint 39 synthetic practice-review authorization plan](backlog/sprint-39-synthetic-practice-review-authorization.md) | A positive-only current-claimant authorization for one separately gated future synthetic request-creation step, without creating the request or any downstream capability |
+| [Sprint 39 evidence packet](backlog/sprint-39-evidence.md) | Implementation and bounded automated evidence for the immutable claimant-bound authorization; independent reviews and every broader product/production gate remain open |
+| [Engineering safeguards](backlog/engineering-safeguards.md) | Approved merge-gate design and activation conditions |
+| [Safeguard manifest](backlog/safeguards.json) | Machine-readable safeguard triggers, commands, required paths and evidence expectations |
+| [Planning validation](backlog/validation-report.md) | Structural evidence for requirement coverage, identifiers, dependencies, links and static wireframe integrity |
+| [Low-fidelity wireframes](wireframes/README.md) | Patient, administrator and physician screen inventory, safety rules and accessibility expectations |
+| [Wireframe sheet](wireframes/telehealth-wireframes.html) | Responsive static visual reference with stable screen identifiers |
+
+## 6. System context
+
+```text
+Practice-branded site
+  -> Consumer account / prospective-patient intake
+  -> Emergency screen and versioned clinical triage
+  -> Identity, demographics, consent, coverage, network and price checks
+  -> Practice operational review
+  -> Clinically-ready practice queue
+  -> Atomic clinician reservation and video waiting room
+  -> Telehealth encounter and signed clinical documentation
+  -> Optional e-prescribing adapter -> chosen pharmacy
+  -> Professional claim adapter -> clearinghouse/payer
+  -> Patient after-visit summary, follow-up and status
+```
+
+The future marketplace inserts `Marketplace search and practice match` before practice enrollment. It must not bypass any practice-specific enrollment, clinical, regulatory, network, consent, or queue requirement.
+
+## 7. Fit with the existing repository
+
+The implementation is an extension of the current AvenChart platform, not a replacement:
+
+- Backend: .NET 10 ASP.NET Core Minimal APIs, route groups, DI, health checks, Problem Details, Npgsql/PostgreSQL, and the existing audit/security services.
+- Frontend: React 19, TypeScript 6, and Vite 8. New patient-facing and staff-facing slices should be modular rather than extending the existing monolithic application component.
+- Reuse: patient portal identity/session boundaries, patient duplicate workflows, patient insurance data, appointments, encounters and signed notes, clinical form definitions/revisions/instances, prescriptions/medications, billing, FHIR R4, and the integration outbox.
+- Extend: public applicant onboarding, practice-brand resolution, telehealth domain state, triage evaluation, eligibility/network evidence, clinician shift/matching, realtime notifications, video provider abstraction, pharmacy directory, e-prescribing, and professional-claim transport.
+- Do not reuse as-is: staff-only patient creation for public registration; clinician-only clinical-form endpoints for patient intake; clinical-alert rules as a triage engine; simulated billing adjudication as a real payer response; or local deterministic transport as production delivery.
+
+## 8. Core domain terms
+
+| Term | Definition |
+|---|---|
+| Consumer account | Authentication identity for a person using patient-facing services; it may exist before a patient chart link. |
+| Prospective patient | Temporary, practice-scoped applicant data collected before safe linkage or promotion to a canonical patient. |
+| Practice enrollment | Relationship between a consumer/patient and a particular practice, including notices, consent, policies, and status. |
+| Practice patient chart | The practice-authorized clinical view of the canonical patient record; access is context-bound. |
+| Telehealth request | Aggregate containing intake, eligibility evidence, workflow state, assignments, and the link to an encounter when created. |
+| Triage assessment | Immutable result produced by one version of a deterministic clinical protocol from one answer snapshot. |
+| Operational authorization | A practice decision that non-clinical prerequisites are satisfied and a clinically eligible request may enter the clinician queue. |
+| Ready time | Timestamp at which all required clinical and operational gates were satisfied; default FIFO ordering uses this value. |
+| Reservation | Time-limited, atomic assignment of one request to one clinician, protected by a lease and version. |
+| Patient location | Patient's attested physical location at the time of intake and reconfirmed at consultation start. It is not merely the home address. |
+| Eligibility | Whether coverage is active and the service has stated benefits, typically evidenced by an X12 270/271 exchange or manual verification. |
+| Network participation | Whether the exact billing/rendering entity and service context participate in the member's exact payer product/network. |
+| Protocol | Versioned questions, rules, outcomes, content, and effective dates approved by the practice medical director. |
+| Encounter | Legal clinical record of the consultation, distinct from the request and video session. |
+| Adapter | Vendor-neutral boundary for a replaceable external service, with a deterministic stub for development and contract testing. |
+
+## 9. Completion and change control
+
+The project owner approved this baseline for development planning in [Decision 0001](decisions/0001-g0-development-baseline.md). That approval does not close the repository's separate [Phase 2 exit gate](../phase-2/phase-2-exit-gate.md), authorize real patient care, or replace the qualified reviews required by later rollout gates. A requirement may be changed only through a reviewed change that:
+
+1. preserves its ID or marks it superseded by another ID;
+2. updates affected workflows, data, API, test, and traceability material;
+3. records clinical, legal, privacy, security, billing, or accessibility review when relevant; and
+4. evaluates active requests and retained records against the new behavior.
+
+Clinical and payer rules are configuration with governed content, not ordinary feature flags. A new version never rewrites the protocol or policy evidence used by a prior request.

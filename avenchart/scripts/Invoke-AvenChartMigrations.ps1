@@ -66,12 +66,24 @@ try {
     }
 
     $connectionString = "Host=postgres;Port=5432;Database=$DatabaseName;Username=avenchart;Password=avenchart_demo"
+    if (-not $SkipImageBuild) {
+        $priorBuildErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $buildOutput = @(& docker compose build --quiet api 2>&1)
+            $buildExitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $priorBuildErrorActionPreference
+        }
+        if ($buildExitCode -ne 0) {
+            $buildOutput | ForEach-Object { Write-Host $_ }
+            throw "Failed to rebuild the packaged schema migrator image (exit code $buildExitCode)."
+        }
+    }
     $composeArguments = @(
         "compose", "run", "--rm", "--no-deps"
     )
-    if (-not $SkipImageBuild) {
-        $composeArguments += @("--build", "--quiet-build")
-    }
     $composeArguments += @(
         "-e", "ConnectionStrings__AvenChart=$connectionString",
         "-e", "DatabaseSchema__MigrationsPath=/app/database/migrations"

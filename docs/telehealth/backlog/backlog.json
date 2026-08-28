@@ -1,0 +1,677 @@
+{
+  "schemaVersion": 1,
+  "baselineDecision": "TH-DEC-0001",
+  "baselineDate": "2026-08-26",
+  "decisionOwner": "Project owner",
+  "implementationAuthorization": "disabled-synthetic-sprints-01-through-39-authorized-by-th-dec-0003-and-th-dec-0005-through-th-dec-0042-through-2026-10-31; all-other-feature-code-blocked-by-phase-2-exit-gate",
+  "allowedStatuses": [
+    "planned",
+    "ready",
+    "in_progress",
+    "blocked",
+    "verification",
+    "done"
+  ],
+  "epics": [
+    {
+      "id": "TH-E01",
+      "title": "Product shell and feature boundaries",
+      "requirementFamily": "TEL-PROD",
+      "gate": "G1-G4",
+      "dependsOnEpics": ["TH-E13", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E01-S01",
+          "title": "Practice-branded safe entry and patient eligibility shell",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-PROD-001", "to": "TEL-PROD-008" },
+          "acceptance": "Resolve one practice, support established/new adult entry, collect location, run emergency-first triage, and expose non-clinical administrative gates."
+        },
+        {
+          "id": "TH-E01-S02",
+          "title": "Queue, matching, consultation and video product path",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-PROD-009", "to": "TEL-PROD-016" },
+          "acceptance": "Implement fair queueing, realtime status, clinician eligibility, atomic reservation, chart context, private video and complete encounter behavior."
+        },
+        {
+          "id": "TH-E01-S03",
+          "title": "Pharmacy, claims, audit, kill switches and marketplace seam",
+          "status": "in_progress",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-PROD-017", "to": "TEL-PROD-024" },
+          "acceptance": "Preserve pharmacy choice, claim-ready output, AVS, complete audit, scoped disablement, vendor-neutral adapters and future marketplace isolation."
+        }
+      ]
+    },
+    {
+      "id": "TH-E02",
+      "title": "Actors and authorization relationships",
+      "requirementFamily": "TEL-ACT",
+      "gate": "G1-G2",
+      "dependsOnEpics": ["TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E02-S01",
+          "title": "Workforce and patient resource authorization",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-ACT-001", "to": "TEL-ACT-006" },
+          "acceptance": "Enforce identity, practice/facility/purpose, patient/request relationships and separated administrative, clinical, billing and support views."
+        },
+        {
+          "id": "TH-E02-S02",
+          "title": "Break-glass, service identity and stale authority controls",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-ACT-007", "to": "TEL-ACT-012" },
+          "acceptance": "Govern exceptional access, adapter identities, delegation, server authority, resume and patient cancellation without privilege expansion."
+        },
+        {
+          "id": "TH-E02-S03",
+          "title": "Recoverable journeys and accurate actor-facing state",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-ACT-013", "to": "TEL-ACT-018" },
+          "acceptance": "Keep failed work owned/recoverable, prioritize deterioration, carry accommodations, expose accurate status and protect support/integration semantics."
+        }
+      ]
+    },
+    {
+      "id": "TH-E03",
+      "title": "Workflow and state machines",
+      "requirementFamily": "TEL-WF",
+      "gate": "G1-G2",
+      "dependsOnEpics": ["TH-E13", "TH-E14", "TH-E15", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E03-S01",
+          "title": "Versioned request state and safe invalidation",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-WF-001", "to": "TEL-WF-005" },
+          "acceptance": "Expose machine state/actions/blockers/version, enforce idempotent transitions, separate domains, preserve ready time and invalidate affected evidence."
+        },
+        {
+          "id": "TH-E03-S02",
+          "title": "Readiness, appointment, queue and reservation transactions",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-WF-006", "to": "TEL-WF-010" },
+          "acceptance": "Enforce freshness, atomic promotion/appointment/queueing, leased reservation, reasoned terminal actions and emergency terminality."
+        },
+        {
+          "id": "TH-E03-S03",
+          "title": "Consultation closure, immutable history and recovery ownership",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-WF-011", "to": "TEL-WF-015" },
+          "acceptance": "Require interrupted-visit disposition, append-only events, versioned client reconciliation, accountable recovery and safe kill-switch drain."
+        }
+      ]
+    },
+    {
+      "id": "TH-E04",
+      "title": "Patient onboarding and identity",
+      "requirementFamily": "TEL-IDN",
+      "gate": "G1-G3",
+      "dependsOnEpics": ["TH-E02", "TH-E14", "TH-E15", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E04-S01",
+          "title": "Separated consumer, applicant, patient and enrollment identities",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-IDN-001", "to": "TEL-IDN-006" },
+          "acceptance": "Model identity stages, minimize data, distinguish contact verification from proofing and implement approved NIST-aligned assurance and step-up."
+        },
+        {
+          "id": "TH-E04-S02",
+          "title": "Duplicate-safe linkage and atomic promotion",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-IDN-007", "to": "TEL-IDN-011" },
+          "acceptance": "Require independent linkage evidence, hide match candidates, atomically link/create/enroll/queue, fail conflicts closed and preserve change provenance."
+        },
+        {
+          "id": "TH-E04-S03",
+          "title": "Identity abuse, evidence and lifecycle controls",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-IDN-012", "to": "TEL-IDN-016" },
+          "acceptance": "Test identity attacks, restrict evidence, revoke on lifecycle changes, govern manual review and expire abandoned applicant records safely."
+        }
+      ]
+    },
+    {
+      "id": "TH-E05",
+      "title": "Clinical protocol and triage engine",
+      "requirementFamily": "TEL-TRI",
+      "gate": "G2",
+      "dependsOnEpics": ["TH-E03", "TH-E14", "TH-E15", "TH-E19"],
+      "stories": [
+        {
+          "id": "TH-E05-S01",
+          "title": "Emergency-first deterministic evaluator",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-TRI-001", "to": "TEL-TRI-006" },
+          "acceptance": "Evaluate universal emergency rules first, make unknown unsafe, prohibit opaque AI and publish only approved immutable protocol versions."
+        },
+        {
+          "id": "TH-E05-S02",
+          "title": "Reproducible assessment and clinician-only review",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-TRI-007", "to": "TEL-TRI-011" },
+          "acceptance": "Retain exact evidence, deny admin changes, require qualified reasoned review and record direct emergency communication without false dispatch claims."
+        },
+        {
+          "id": "TH-E05-S03",
+          "title": "Freshness, exam sufficiency, monitoring and localization",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-TRI-012", "to": "TEL-TRI-016" },
+          "acceptance": "Expire changed assessments, enforce remote-exam needs, preserve physician redirection and monitor safety/disparity with governed translations."
+        }
+      ]
+    },
+    {
+      "id": "TH-E06",
+      "title": "State and clinical governance",
+      "requirementFamily": "TEL-REG",
+      "gate": "G2-G4",
+      "dependsOnEpics": ["TH-E05", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E06-S01",
+          "title": "Patient-location jurisdiction and clinician authority",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-REG-001", "to": "TEL-REG-005" },
+          "acceptance": "Use attested/reconfirmed location, effective authority, deny unknown rules and enforce approved Georgia and California controls."
+        },
+        {
+          "id": "TH-E06-S02",
+          "title": "Florida, prescribing, service and consent controls",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-REG-006", "to": "TEL-REG-010" },
+          "acceptance": "Enforce Florida authority/disclosures, controlled-drug and excluded-service blocks, versioned consent and practice control of medicine."
+        },
+        {
+          "id": "TH-E06-S03",
+          "title": "Regulatory monitoring, retention and state expansion",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-REG-011", "to": "TEL-REG-014" },
+          "acceptance": "Operate source review, longest-rule retention, deny-by-default state expansion and historical policy/license/consent reconstruction."
+        }
+      ]
+    },
+    {
+      "id": "TH-E07",
+      "title": "Practice configuration and queue operations",
+      "requirementFamily": "TEL-PRA",
+      "gate": "G1-G2",
+      "dependsOnEpics": ["TH-E02", "TH-E03", "TH-E13", "TH-E14", "TH-E15", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E07-S01",
+          "title": "Verified practice branding and governed configuration",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-PRA-001", "to": "TEL-PRA-006" },
+          "acceptance": "Bind host/origin, constrain branding, publish typed approved configuration, reject unsafe combinations and revalidate admin authorization server-side."
+        },
+        {
+          "id": "TH-E07-S02",
+          "title": "Fair atomic clinician queue and patient status",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-PRA-007", "to": "TEL-PRA-011" },
+          "acceptance": "Match deterministically, preserve FIFO/clinical reason, provide honest approximate status with realtime fallback and configured capacity/hours."
+        },
+        {
+          "id": "TH-E07-S03",
+          "title": "Delay communication, monitored exceptions and isolation",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-PRA-012", "to": "TEL-PRA-016" },
+          "acceptance": "Prevent endless waits, govern contact, review queue exceptions/bias, exercise kill switches and prove cross-practice isolation."
+        }
+      ]
+    },
+    {
+      "id": "TH-E08",
+      "title": "Insurance, network participation and pricing",
+      "requirementFamily": "TEL-INS",
+      "gate": "G2-G3",
+      "dependsOnEpics": ["TH-E04", "TH-E07", "TH-E13", "TH-E14", "TH-E15", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E08-S01",
+          "title": "Separate eligibility and exact network evidence",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-INS-001", "to": "TEL-INS-006" },
+          "acceptance": "Model 270/271 semantics, exact product/entity/service network check, reject weak proof, require patient confirmation and version coverage."
+        },
+        {
+          "id": "TH-E08-S02",
+          "title": "Fresh evidence, estimates and governed financial routes",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-INS-007", "to": "TEL-INS-011" },
+          "acceptance": "Make evidence reproducible/expiring, structure manual proof, provide estimate/GFE, require explicit self-pay and scope payer rules."
+        },
+        {
+          "id": "TH-E08-S03",
+          "title": "Coverage privacy, resilience and changed-state handling",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-INS-012", "to": "TEL-INS-016" },
+          "acceptance": "Protect identifiers, handle vendor failure, disclose directory limits, preserve acknowledgments and re-evaluate in-queue financial changes."
+        }
+      ]
+    },
+    {
+      "id": "TH-E09",
+      "title": "Consultation, documentation and follow-up",
+      "requirementFamily": "TEL-CON",
+      "gate": "G2",
+      "dependsOnEpics": ["TH-E03", "TH-E04", "TH-E05", "TH-E06", "TH-E07", "TH-E10"],
+      "stories": [
+        {
+          "id": "TH-E09-S01",
+          "title": "Purpose-limited clinical context and safe consultation start",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-CON-001", "to": "TEL-CON-006" },
+          "acceptance": "Authorize chart context, require start checks, support safe redirect, prevent false template assertions and complete signed dispositions."
+        },
+        {
+          "id": "TH-E09-S02",
+          "title": "Interrupted care, coding, follow-up and AVS",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-CON-007", "to": "TEL-CON-011" },
+          "acceptance": "Close interrupted visits, govern coding, own orders/referrals, deliver accessible AVS and use signed append-only amendments."
+        },
+        {
+          "id": "TH-E09-S03",
+          "title": "Prescription independence, communication provenance and finalization",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-CON-012", "to": "TEL-CON-016" },
+          "acceptance": "Keep prescriptions optional, preserve incorporated communication, autosave safely, manage incomplete charts and atomically create downstream work."
+        }
+      ]
+    },
+    {
+      "id": "TH-E10",
+      "title": "Video, realtime and communication",
+      "requirementFamily": "TEL-VID",
+      "gate": "G2-G3",
+      "dependsOnEpics": ["TH-E02", "TH-E03", "TH-E07", "TH-E13", "TH-E14", "TH-E15", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E10-S01",
+          "title": "Approved provider, no recording and scoped waiting rooms",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-VID-001", "to": "TEL-VID-006" },
+          "acceptance": "Certify provider/BAA, disable media capture, issue scoped grants, isolate waiting rooms, support accessible preflight and validate provider events."
+        },
+        {
+          "id": "TH-E10-S02",
+          "title": "Realtime reconciliation, reconnect and governed fallback",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-VID-007", "to": "TEL-VID-011" },
+          "acceptance": "Authorize minimal SignalR, provide polling, preserve encounters through disconnect, deny audio fallback by default and minimize vendor metadata."
+        },
+        {
+          "id": "TH-E10-S03",
+          "title": "Idempotent callbacks, communication lifecycle and outage safety",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-VID-012", "to": "TEL-VID-016" },
+          "acceptance": "Handle duplicate callbacks, retain/incorporate chat safely, exercise outage continuity, block simulator in production and certify compatibility."
+        }
+      ]
+    },
+    {
+      "id": "TH-E11",
+      "title": "Prescribing and pharmacy",
+      "requirementFamily": "TEL-RX",
+      "gate": "G2-G3",
+      "dependsOnEpics": ["TH-E09", "TH-E13", "TH-E14", "TH-E15", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E11-S01",
+          "title": "Prescriber authority and medication safety",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-RX-001", "to": "TEL-RX-006" },
+          "acceptance": "Authorize prescriber, fail closed for controlled/unknown drugs, require complete safety review and preserve neutral pharmacy choice."
+        },
+        {
+          "id": "TH-E11-S02",
+          "title": "Pharmacy identity, lifecycle and SCRIPT mapping",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-RX-007", "to": "TEL-RX-011" },
+          "acceptance": "Protect proximity search, snapshot pharmacy, separate states, map canonical NCPDP SCRIPT and version signed corrections."
+        },
+        {
+          "id": "TH-E11-S03",
+          "title": "Delivery recovery, patient status and production certification",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-RX-012", "to": "TEL-RX-016" },
+          "acceptance": "Prevent duplicate prescriptions, own rejected/cancel work, communicate accurate AVS status, approve vendors and block uncertified/stub production delivery."
+        }
+      ]
+    },
+    {
+      "id": "TH-E12",
+      "title": "Professional claims and financial integration",
+      "requirementFamily": "TEL-CLM",
+      "gate": "G2-G3",
+      "dependsOnEpics": ["TH-E08", "TH-E09", "TH-E13", "TH-E14", "TH-E15", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E12-S01",
+          "title": "Claim-ready signed encounter and governed coding",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-CLM-001", "to": "TEL-CLM-006" },
+          "acceptance": "Snapshot source evidence, validate claim fields, derive POS from actual location, govern code rules and separate claim lifecycle states."
+        },
+        {
+          "id": "TH-E12-S02",
+          "title": "Human approval, X12 semantics and recovery work",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-CLM-007", "to": "TEL-CLM-011" },
+          "acceptance": "Require billing approval, preserve idempotent correction relationships, parse acknowledgments accurately, own failures and prevent pharmacy misrouting."
+        },
+        {
+          "id": "TH-E12-S03",
+          "title": "Versioned correction, protected transport and certification",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-CLM-012", "to": "TEL-CLM-016" },
+          "acceptance": "Version submitted corrections, protect EDI, exercise robust stub scenarios, gate production trading partners and show accurate patient status."
+        }
+      ]
+    },
+    {
+      "id": "TH-E13",
+      "title": "Technical architecture",
+      "requirementFamily": "TEL-ARC",
+      "gate": "G1",
+      "dependsOnEpics": [],
+      "stories": [
+        {
+          "id": "TH-E13-S01",
+          "title": "Cohesive feature modules and systems-of-record integration",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-ARC-001", "to": "TEL-ARC-005" },
+          "acceptance": "Create bounded modules/application services, reuse legal records, centralize domain commands, isolate adapters and avoid network calls in transactions."
+        },
+        {
+          "id": "TH-E13-S02",
+          "title": "Database and distributed-system correctness",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-ARC-006", "to": "TEL-ARC-010" },
+          "acceptance": "Enforce constraints, reconciled realtime, horizontal safety, environment separation and a tenant-safe marketplace seam."
+        },
+        {
+          "id": "TH-E13-S03",
+          "title": "API/worker/flag and upgrade architecture",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-ARC-011", "to": "TEL-ARC-014" },
+          "acceptance": "Use centralized Minimal API conventions, durable workers, audited safe flags and gated framework/provider upgrades."
+        }
+      ]
+    },
+    {
+      "id": "TH-E14",
+      "title": "Data model, provenance and retention",
+      "requirementFamily": "TEL-DAT",
+      "gate": "G1",
+      "dependsOnEpics": ["TH-E13"],
+      "stories": [
+        {
+          "id": "TH-E14-S01",
+          "title": "Tenant-safe opaque aggregates and immutable evidence",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-DAT-001", "to": "TEL-DAT-005" },
+          "acceptance": "Constrain practice ownership, use opaque IDs/versions, protect published/signed artifacts and retain reconstructable evidence."
+        },
+        {
+          "id": "TH-E14-S02",
+          "title": "Separated state, protected payloads and retention",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-DAT-006", "to": "TEL-DAT-010" },
+          "acceptance": "Separate domain states, govern object storage and telemetry, execute holds/purge and rehearse additive migrations."
+        },
+        {
+          "id": "TH-E14-S03",
+          "title": "Recovery, synthetic data, performance and dictionary",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-DAT-011", "to": "TEL-DAT-014" },
+          "acceptance": "Restore aggregate/outbox integrity, isolate production PHI, index target queries and maintain complete data definitions."
+        }
+      ]
+    },
+    {
+      "id": "TH-E15",
+      "title": "API, events and interoperability",
+      "requirementFamily": "TEL-API",
+      "gate": "G1-G3",
+      "dependsOnEpics": ["TH-E13", "TH-E14", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E15-S01",
+          "title": "Versioned Minimal API and server authority contract",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-API-001", "to": "TEL-API-005" },
+          "acceptance": "Document auth/context/validation, enforce semantic idempotency and versions, return safe Problem Details and derive authority server-side."
+        },
+        {
+          "id": "TH-E15-S02",
+          "title": "Callback inbox and durable event semantics",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-API-006", "to": "TEL-API-010" },
+          "acceptance": "Validate/persist callbacks, emit minimum immutable events, tolerate delivery disorder, distinguish outcomes and version breaking changes."
+        },
+        {
+          "id": "TH-E15-S03",
+          "title": "FHIR/SMART, API protection and safe stubs",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-API-011", "to": "TEL-API-014" },
+          "acceptance": "Validate declared FHIR profiles, layer SMART on resource auth, enforce API limits and isolate synthetic examples/stubs."
+        }
+      ]
+    },
+    {
+      "id": "TH-E16",
+      "title": "Security, privacy, consent and audit",
+      "requirementFamily": "TEL-SEC",
+      "gate": "G1-G4",
+      "dependsOnEpics": ["TH-E13"],
+      "stories": [
+        {
+          "id": "TH-E16-S01",
+          "title": "Risk, production identity and resource authorization foundation",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-SEC-001", "to": "TEL-SEC-006" },
+          "acceptance": "Complete governed risk evidence, reject test identity in production, enforce resource/purpose auth, separate roles, prevent PHI leakage and secure sessions."
+        },
+        {
+          "id": "TH-E16-S02",
+          "title": "Untrusted content, external boundaries and audit monitoring",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-SEC-007", "to": "TEL-SEC-011" },
+          "acceptance": "Protect uploads/payloads, restrict egress/callbacks, prohibit media capture, ensure audit integrity and alert high-risk events."
+        },
+        {
+          "id": "TH-E16-S03",
+          "title": "Incident, security testing, consent, support and environment isolation",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-SEC-012", "to": "TEL-SEC-016" },
+          "acceptance": "Exercise continuity/breach playbooks, gate security testing, preserve lawful consent, minimize support access and keep production data out of lower environments."
+        }
+      ]
+    },
+    {
+      "id": "TH-E17",
+      "title": "UX, content and accessibility",
+      "requirementFamily": "TEL-UX",
+      "gate": "G1-G4",
+      "dependsOnEpics": ["TH-E01", "TH-E02", "TH-E03", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E17-S01",
+          "title": "WCAG foundation, keyboard semantics and responsive forms",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-UX-001", "to": "TEL-UX-007" },
+          "acceptance": "Meet WCAG 2.2 AA, keyboard/focus/semantics/reflow/contrast/form recovery and persistent emergency actions."
+        },
+        {
+          "id": "TH-E17-S02",
+          "title": "Realtime, video, plain-language state and timeout recovery",
+          "status": "in_progress",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-UX-008", "to": "TEL-UX-014" },
+          "acceptance": "Make updates assistive-technology safe, support video accessibility, govern content/translation, map exact state and recover identity/timeouts/queues."
+        },
+        {
+          "id": "TH-E17-S03",
+          "title": "Consequential actions, notifications, documents and inclusive research",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-UX-015", "to": "TEL-UX-020" },
+          "acceptance": "Prevent duplicate actions, minimize notifications, produce accessible documents, block PHI analytics, carry accommodations and complete inclusive usability studies."
+        }
+      ]
+    },
+    {
+      "id": "TH-E18",
+      "title": "Nonfunctional requirements and operations",
+      "requirementFamily": "TEL-NFR",
+      "gate": "G1-G4",
+      "dependsOnEpics": ["TH-E13", "TH-E14", "TH-E15", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E18-S01",
+          "title": "SLO, invariant, capacity and resilience foundation",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-NFR-001", "to": "TEL-NFR-007" },
+          "acceptance": "Approve SLOs, alert zero-tolerance invariants, prove capacity/noisy-neighbor behavior, bound retries, define degraded modes and safe telemetry."
+        },
+        {
+          "id": "TH-E18-S02",
+          "title": "On-call, health, recovery, deployment and expiry operations",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-NFR-008", "to": "TEL-NFR-014" },
+          "acceptance": "Make alerts actionable, separate health, meet DR, deploy compatibly, roll back configs, monitor expiry and present honest outage status."
+        },
+        {
+          "id": "TH-E18-S03",
+          "title": "Support, privacy-aware performance and operational readiness",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-NFR-015", "to": "TEL-NFR-020" },
+          "acceptance": "Provide safe support correlation, governed segmentation, web/query budgets, signed readiness and multidisciplinary incident review."
+        }
+      ]
+    },
+    {
+      "id": "TH-E19",
+      "title": "Testing, acceptance and traceability",
+      "requirementFamily": "TEL-TST",
+      "gate": "G1-G4",
+      "dependsOnEpics": ["TH-E13", "TH-E14", "TH-E15", "TH-E16"],
+      "stories": [
+        {
+          "id": "TH-E19-S01",
+          "title": "Requirement, protocol and authorization test gates",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-TST-001", "to": "TEL-TST-006" },
+          "acceptance": "Trace every requirement, fail CI drift, validate protocol golden cases, cover complete auth, use real PostgreSQL and certify adapters."
+        },
+        {
+          "id": "TH-E19-S02",
+          "title": "State, accessibility, security, resilience and production safety tests",
+          "status": "in_progress",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-TST-007", "to": "TEL-TST-011" },
+          "acceptance": "Replay state/payer packs, test WCAG manually/automatically, attack trust boundaries, exercise production-shaped recovery and reject stubs in production."
+        },
+        {
+          "id": "TH-E19-S03",
+          "title": "Content, defect, rehearsal, independent and regression evidence",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-TST-012", "to": "TEL-TST-016" },
+          "acceptance": "Snapshot accurate content, classify defects, rehearse all E2E cases, independently verify high risks and run shared-platform regressions."
+        }
+      ]
+    },
+    {
+      "id": "TH-E20",
+      "title": "Rollout, metrics, risks and approvals",
+      "requirementFamily": "TEL-ROL",
+      "gate": "G1-G5",
+      "dependsOnEpics": ["TH-E01", "TH-E02", "TH-E03", "TH-E04", "TH-E05", "TH-E06", "TH-E07", "TH-E08", "TH-E09", "TH-E10", "TH-E11", "TH-E12", "TH-E13", "TH-E14", "TH-E15", "TH-E16", "TH-E17", "TH-E18", "TH-E19"],
+      "stories": [
+        {
+          "id": "TH-E20-S01",
+          "title": "Gated development, scoped enablement and safety-first pilot",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-ROL-001", "to": "TEL-ROL-006" },
+          "acceptance": "Govern G0/G4, independently enable scopes, prioritize guardrails, bound the pilot and prohibit uncertified live adapters."
+        },
+        {
+          "id": "TH-E20-S02",
+          "title": "Protocol/config freshness, metrics and immediate pause",
+          "status": "planned",
+          "priority": "critical",
+          "primaryRequirements": { "from": "TEL-ROL-007", "to": "TEL-ROL-011" },
+          "acceptance": "Gate protocols, prove configuration freshness, govern metrics, exercise pause criteria and communicate continuity accurately."
+        },
+        {
+          "id": "TH-E20-S03",
+          "title": "Evidence-based expansion, marketplace separation and independent review",
+          "status": "planned",
+          "priority": "high",
+          "primaryRequirements": { "from": "TEL-ROL-012", "to": "TEL-ROL-016" },
+          "acceptance": "Require expansion evidence, balanced success, separate marketplace approval, expire exceptions and independently review pilot outcomes."
+        }
+      ]
+    }
+  ]
+}

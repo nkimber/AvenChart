@@ -51,6 +51,7 @@ const requestHeaderNames = new Map<string, string>([
   ["x-avenchart-patient-portal-session", "X-AvenChart-Patient-Portal-Session"],
   ["x-avenchart-purpose-of-use", "X-AvenChart-Purpose-Of-Use"],
   ["x-avenchart-session", "X-AvenChart-Session"],
+  ["x-avenchart-telehealth-applicant-key", "X-AvenChart-Telehealth-Applicant-Key"],
 ]);
 
 function materializeRequestHeaders(headers: Headers): Record<string, string> {
