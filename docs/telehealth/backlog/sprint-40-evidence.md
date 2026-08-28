@@ -32,7 +32,7 @@ The request is not practice acceptance, patient contact, clinical eligibility, a
 | Full migration and recovery rehearsal | 271 migrations / 29 scenarios |
 | Queue and consultation lifecycle regression | 134 checks / 20 concurrent callers |
 | Planning and governance validation | 85 checks / 150 Markdown files / 501 relative links / 3 rejected mutations |
-| Deterministic code graph | 9,261 nodes / 20,711 edges / 510 communities / 2 portable artifacts passed |
+| Deterministic code graph | 9,319 nodes / 20,829 edges / 517 communities / 2 portable artifacts passed |
 | Generated bootstrap fingerprint | Unchanged SHA-256 `6a1a6ca3de61608654921edb843d48a4b07dcc8899d3e6ca4056cf8b838745a2` |
 
 ## Controls demonstrated
@@ -55,7 +55,7 @@ The first broad browser invocation used the frontend's default API base instead 
 
 The live proof ran against the exact disposable `avenchart_test_sprint40` database and `avenchart-api-sprint40-e2e` API container with synthetic Georgia, California and Florida fixtures. No real person, PHI, credential, payer, pharmacy, provider directory, notification, media, clearinghouse, or other external destination was used. The normal database remained outside the proof and was verified unchanged at 237 recorded migrations, maximum numeric migration version 281, and 1,000 patients. The generated bootstrap verified unchanged with the recorded fingerprint.
 
-The deterministic graph was rebuilt from 1,004 code files into 9,261 nodes, 20,711 edges and 510 communities. Its two durable artifacts passed the repository portability check. The Sprint 40 review delta identified the endpoint and shared frontend API surfaces as hubs and surfaced the expected applicant entry/API dependencies; direct backend, frontend, policy, four-engine browser, schema, live replay/contention/isolation/drift, OpenAPI, runtime and authorization coverage addresses the graph's conservative test-gap warnings.
+The deterministic graph was rebuilt from 1,010 code files into 9,319 nodes, 20,829 edges and 517 communities. Its two durable artifacts passed the repository portability check. The Sprint 40 review delta identified all seven selected policy, repository, service, endpoint, contract, frontend API and applicant-entry files, with the endpoint, repository and shared frontend API surfaces as hubs. Direct backend, frontend, policy, four-engine browser, schema, live replay/contention/isolation/drift, OpenAPI, runtime and authorization coverage addresses the graph's conservative test-gap warnings.
 
 The exact disposable Sprint 40 API container and database were removed after every API-dependent verification completed and the normal database was confirmed unchanged. Both disposable targets were then confirmed absent; this synthetic proof environment is intentionally not recoverable.
 
