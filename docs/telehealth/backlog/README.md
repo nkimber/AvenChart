@@ -1,13 +1,13 @@
 # Telehealth implementation backlog
 
-Status: Exact disabled synthetic Sprints 1–40 active only within Decisions 0003 and 0005–0043
+Status: Exact disabled synthetic Sprints 1–41 active only within Decisions 0003 and 0005–0044
 Decision baseline: [Decision 0001](../decisions/0001-g0-development-baseline.md)  
 Machine-readable source: [backlog.json](backlog.json)  
 First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 40 applicant-bound request creation](sprint-40-applicant-bound-request-creation.md); bounded automated evidence is recorded in the [Sprint 40 evidence packet](sprint-40-evidence.md)
+Current increment: [Sprint 41 applicant request location confirmation](sprint-41-applicant-request-location-confirmation.md); implementation evidence remains pending until the bounded slice is complete
 
 ## 1. Backlog contract
 
@@ -94,4 +94,4 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 
 [Decision 0003](../decisions/0003-proposed-sprint-01-synthetic-foundation.md) authorizes the complete disabled, synthetic Sprint 1 vertical slice only on its listed paths and with its stop conditions. It does not authorize production enablement, real patient care, or any live integration.
 
-[Decisions 0005–0043](../decisions/0043-approved-sprint-40-applicant-bound-request-creation.md) add only the bounded synthetic increments documented for Sprints 2–40. Decisions 0038–0042 govern practice-review submission, inbox, claimant, packet, and positive operational authorization. Decision 0043 permits the access-key owner to separately create exactly one source-linked `Draft` request after that authorization. The Draft is not a doctor search or patient/clinician care-queue entry and creates no queue position, appointment, encounter, consent, care, prescribing, billing, claim, integration, or external action.
+[Decisions 0005–0044](../decisions/0044-approved-sprint-41-applicant-request-location-confirmation.md) add only the bounded synthetic increments documented for Sprints 2–41. Decisions 0038–0042 govern practice-review submission, inbox, claimant, packet, and positive operational authorization. Decision 0043 permits the access-key owner to separately create exactly one source-linked `Draft` request after that authorization. Decision 0044 permits the same owner to bind the exact prior supported current-location state and masked callback route to that request and advance it only to `LocationConfirmed` version 2. No triage result, doctor search, patient/clinician care-queue entry, queue position, appointment, encounter, consent, care, prescribing, billing, claim, integration, or external action is created.

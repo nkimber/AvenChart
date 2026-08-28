@@ -1,6 +1,6 @@
 # AvenChart immediate telehealth master specification
 
-Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–40 scopes active under Decisions 0003 and 0005–0043
+Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–41 scopes active under Decisions 0003 and 0005–0044
 Version: 0.1  
 Last reviewed: 2026-08-28  
 Initial jurisdictions: Georgia, California, and Florida  
@@ -124,6 +124,8 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Decision 0040](decisions/0040-approved-sprint-37-synthetic-practice-review-claim.md) | Approved, time-bounded exception for one administrator/front-desk 120-second first-writer-wins claim over an exact pending synthetic practice-review item; duplicate-work prevention only, with no priority, disposition, contact, request, queue, appointment, care, financial, integration, or external consequence |
 | [Decision 0041](decisions/0041-approved-sprint-38-claimant-bound-practice-review-packet.md) | Approved, time-bounded exception for the current claimant to read one private, minimized operational packet with masked registration, synthetic insurance/network, communication/access, coarse device, purpose, and routing evidence; no claim extension, chart or source detail, disposition, contact, request, queue, care, financial, integration, or external consequence |
 | [Decision 0042](decisions/0042-approved-sprint-39-synthetic-practice-review-authorization.md) | Approved, time-bounded exception for the current claimant to record one immutable positive-only operational authorization for a separately gated future synthetic request-creation step; no acceptance, contact, request, queue, appointment, encounter, consent, care, financial, integration, or external consequence |
+| [Decision 0043](decisions/0043-approved-sprint-40-applicant-bound-request-creation.md) | Approved, time-bounded exception for the applicant owner to create one source-linked `Draft` request after exact positive practice authorization; no contact, doctor search, queue, queue position, appointment, encounter, consent, care, prescribing, financial, integration, or external consequence |
+| [Decision 0044](decisions/0044-approved-sprint-41-applicant-request-location-confirmation.md) | Approved, time-bounded exception for the applicant owner to bind the exact prior supported location and masked callback context to the Sprint 40 request and advance it only from `Draft` version 1 to `LocationConfirmed` version 2; no triage result, clinical review, contact, queue, appointment, encounter, consent, care, financial, integration, or external consequence |
 | [Implementation backlog](backlog/README.md) | Delivery model for 20 epics and 60 stories, with every one of the 329 requirements assigned exactly once as a primary responsibility |
 | [Machine-readable backlog](backlog/backlog.json) | Structured epic, story, dependency, priority, gate and requirement-range source for planning and future traceability automation |
 | [Sprint 1 foundation plan](backlog/sprint-01-foundation.md) | Recommended synthetic vertical slice from branded entry through safety/triage, administrator authorization, queueing and atomic clinician reservation |
@@ -208,6 +210,7 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Sprint 39 evidence packet](backlog/sprint-39-evidence.md) | Implementation and bounded automated evidence for the immutable claimant-bound authorization; independent reviews and every broader product/production gate remain open |
 | [Sprint 40 applicant-bound request-creation plan](backlog/sprint-40-applicant-bound-request-creation.md) | An access-key-owned, authorization-gated creation of exactly one source-linked `Draft` telehealth request without contact, doctor search, queueing, appointment, encounter, consent, care, financial, integration, or external consequence |
 | [Sprint 40 evidence packet](backlog/sprint-40-evidence.md) | Implementation and bounded automated evidence for applicant-owned Draft request creation; independent reviews and every broader product/production gate remain open |
+| [Sprint 41 applicant request location-confirmation plan](backlog/sprint-41-applicant-request-location-confirmation.md) | Applicant-owned, source-bound confirmation of the request-time supported state and masked callback route, advancing only `Draft` version 1 to `LocationConfirmed` version 2 without triage or downstream capability |
 | [Engineering safeguards](backlog/engineering-safeguards.md) | Approved merge-gate design and activation conditions |
 | [Safeguard manifest](backlog/safeguards.json) | Machine-readable safeguard triggers, commands, required paths and evidence expectations |
 | [Planning validation](backlog/validation-report.md) | Structural evidence for requirement coverage, identifiers, dependencies, links and static wireframe integrity |

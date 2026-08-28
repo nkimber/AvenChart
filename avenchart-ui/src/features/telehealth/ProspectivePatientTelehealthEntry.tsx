@@ -10,6 +10,7 @@ import {
   confirmApplicantInsuranceHandoff,
   confirmApplicantClinicalInformationSummary,
   confirmApplicantRegistrationDetails,
+  confirmApplicantTelehealthRequestLocation,
   createProspectiveApplicant,
   createApplicantTelehealthRequest,
   evaluateProspectiveSafetyTriage,
@@ -20,6 +21,7 @@ import {
   getApplicantPreRequestReadiness,
   getApplicantPracticeReviewSubmission,
   getApplicantTelehealthRequest,
+  getApplicantTelehealthRequestLocation,
   getApplicantMedicationInformation,
   getApplicantDevicePreparation,
   getApplicantTelehealthNotice,
@@ -86,6 +88,8 @@ import {
   type TelehealthApplicantPracticeReviewInput,
   type TelehealthApplicantRequestCreation,
   type TelehealthApplicantRequestCreationInput,
+  type TelehealthApplicantRequestLocation,
+  type TelehealthApplicantRequestLocationInput,
   type TelehealthApplicantDevicePreparation,
   type TelehealthApplicantDevicePreparationInput,
 } from './api.ts'
@@ -136,6 +140,7 @@ type PendingClinicalInformationSummary = { content: string; idempotencyKey: stri
 type PendingPreRequestReadiness = { content: string; idempotencyKey: string }
 type PendingPracticeReview = { content: string; idempotencyKey: string }
 type PendingRequestCreation = { content: string; idempotencyKey: string }
+type PendingRequestLocation = { content: string; idempotencyKey: string }
 type YesNoAnswer = '' | 'yes' | 'no'
 
 const initialSafetyAnswers = {
@@ -236,6 +241,13 @@ const initialPracticeReviewAcknowledgments = {
 const initialRequestCreationAcknowledgments = {
   createRequest: false,
   noQueueOrCare: false,
+  urgentOrWorseningSymptomsRequireImmediateAction: false,
+}
+
+const initialRequestLocationAcknowledgments = {
+  currentLocation: false,
+  callbackNumber: false,
+  changedLocationRequiresRestart: false,
   urgentOrWorseningSymptomsRequireImmediateAction: false,
 }
 
@@ -363,6 +375,11 @@ export default function ProspectivePatientTelehealthEntry() {
   const [requestCreationLoading, setRequestCreationLoading] = useState(false)
   const [requestCreationLoadAttempt, setRequestCreationLoadAttempt] = useState(0)
   const [requestCreationAcknowledgments, setRequestCreationAcknowledgments] = useState(initialRequestCreationAcknowledgments)
+  const [requestLocation, setRequestLocation] = useState<TelehealthApplicantRequestLocation | null>(null)
+  const [requestLocationLoading, setRequestLocationLoading] = useState(false)
+  const [requestLocationLoadAttempt, setRequestLocationLoadAttempt] = useState(0)
+  const [requestLocationStateCode, setRequestLocationStateCode] = useState<'' | 'GA' | 'CA' | 'FL'>('')
+  const [requestLocationAcknowledgments, setRequestLocationAcknowledgments] = useState(initialRequestLocationAcknowledgments)
   const [loading, setLoading] = useState(Boolean(applicantSession))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -389,6 +406,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const pendingPreRequestReadiness = useRef<PendingPreRequestReadiness | null>(null)
   const pendingPracticeReview = useRef<PendingPracticeReview | null>(null)
   const pendingRequestCreation = useRef<PendingRequestCreation | null>(null)
+  const pendingRequestLocation = useRef<PendingRequestLocation | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const safetyResultRef = useRef<HTMLDivElement>(null)
   const purposeResultRef = useRef<HTMLDivElement>(null)
@@ -410,6 +428,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const preRequestReadinessResultRef = useRef<HTMLDivElement>(null)
   const practiceReviewResultRef = useRef<HTMLDivElement>(null)
   const requestCreationResultRef = useRef<HTMLDivElement>(null)
+  const requestLocationResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -494,6 +513,10 @@ export default function ProspectivePatientTelehealthEntry() {
   useEffect(() => {
     if (requestCreation?.requestCreated) requestCreationResultRef.current?.focus()
   }, [requestCreation])
+
+  useEffect(() => {
+    if (requestLocation?.locationConfirmed) requestLocationResultRef.current?.focus()
+  }, [requestLocation])
 
   useEffect(() => {
     if (!applicantSession) {
@@ -845,6 +868,27 @@ export default function ProspectivePatientTelehealthEntry() {
       })
     return () => controller.abort()
   }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestCreationLoadAttempt])
+
+  useEffect(() => {
+    if (!applicantSession || applicant?.status !== 'SyntheticRequestCreated') return
+    const controller = new AbortController()
+    setRequestLocationLoading(true)
+    setError(null)
+    getApplicantTelehealthRequestLocation(
+      applicant.applicantId,
+      applicantSession.applicantAccessKey,
+      controller.signal,
+    )
+      .then(setRequestLocation)
+      .catch((caught: unknown) => {
+        if (isRequestCancellation(caught)) return
+        setError(caught instanceof Error ? caught.message : 'The request location-confirmation step could not be loaded.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestLocationLoading(false)
+      })
+    return () => controller.abort()
+  }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestLocationLoadAttempt])
 
   function updateValue<Key extends keyof FormValues>(key: Key, value: FormValues[Key]) {
     pendingCreate.current = null
@@ -2144,6 +2188,60 @@ export default function ProspectivePatientTelehealthEntry() {
     }
   }
 
+  function updateRequestLocationAcknowledgment(
+    key: keyof typeof initialRequestLocationAcknowledgments,
+    checked: boolean,
+  ) {
+    pendingRequestLocation.current = null
+    setRequestLocationAcknowledgments((current) => ({ ...current, [key]: checked }))
+  }
+
+  async function confirmRequestLocation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!applicant || !applicantSession || !requestLocation || !requestLocationStateCode) return
+    if (!Object.values(requestLocationAcknowledgments).every(Boolean)) {
+      setError('Confirm every location, callback, restart, and safety boundary before continuing.')
+      return
+    }
+
+    setError(null)
+    const input = {
+      expectedRequestVersion: requestLocation.requestVersion,
+      contextSnapshotFingerprint: requestLocation.contextSnapshotFingerprint,
+      currentLocationStateCode: requestLocationStateCode,
+      currentLocationConfirmed: true,
+      callbackNumberConfirmed: true,
+      changedLocationRequiresRestartAcknowledged: true,
+      urgentOrWorseningSymptomsRequireImmediateActionAcknowledged: true,
+    } satisfies TelehealthApplicantRequestLocationInput
+    const content = JSON.stringify(input)
+    if (!pendingRequestLocation.current || pendingRequestLocation.current.content !== content) {
+      pendingRequestLocation.current = { content, idempotencyKey: crypto.randomUUID() }
+    }
+
+    setSubmitting(true)
+    try {
+      const result = await confirmApplicantTelehealthRequestLocation(
+        applicant.applicantId,
+        applicantSession.applicantAccessKey,
+        input,
+        pendingRequestLocation.current.idempotencyKey,
+      )
+      setRequestLocation(result)
+      pendingRequestLocation.current = null
+      setRequestLocationAcknowledgments(initialRequestLocationAcknowledgments)
+    } catch (caught: unknown) {
+      if (caught instanceof ApiRequestError && caught.status && caught.status < 500) {
+        pendingRequestLocation.current = null
+      }
+      setError(caught instanceof Error
+        ? caught.message
+        : 'The request location and callback could not be confirmed.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   function restart() {
     clearApplicantSession()
     pendingCreate.current = null
@@ -2168,6 +2266,7 @@ export default function ProspectivePatientTelehealthEntry() {
     pendingPreRequestReadiness.current = null
     pendingPracticeReview.current = null
     pendingRequestCreation.current = null
+    pendingRequestLocation.current = null
     setApplicantSession(null)
     setApplicant(null)
     setValues(initialValues)
@@ -2268,6 +2367,11 @@ export default function ProspectivePatientTelehealthEntry() {
     setRequestCreationLoading(false)
     setRequestCreationLoadAttempt(0)
     setRequestCreationAcknowledgments(initialRequestCreationAcknowledgments)
+    setRequestLocation(null)
+    setRequestLocationLoading(false)
+    setRequestLocationLoadAttempt(0)
+    setRequestLocationStateCode('')
+    setRequestLocationAcknowledgments(initialRequestLocationAcknowledgments)
     setError(null)
   }
 
@@ -3964,7 +4068,8 @@ export default function ProspectivePatientTelehealthEntry() {
               </div>
             ) : null}
             {applicant.status === 'SyntheticRequestCreated' ? (
-              <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestCreationResultRef}>
+              <>
+                <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestCreationResultRef}>
                 <h3>Draft telehealth request created</h3>
                 {requestCreation?.requestCreated ? (
                   <>
@@ -3987,7 +4092,87 @@ export default function ProspectivePatientTelehealthEntry() {
                   <strong>Emergency symptoms now?</strong>
                   <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a>
                 </div>
-              </div>
+                </div>
+                {requestLocationLoading ? <p role="status">Loading location and callback confirmation…</p> : null}
+                {!requestLocationLoading && !requestLocation ? (
+                  <button className="telehealth-button" type="button" onClick={() => setRequestLocationLoadAttempt((value) => value + 1)}>
+                    Retry location-confirmation load
+                  </button>
+                ) : null}
+                {requestLocation?.confirmationReady ? (
+                  <div className="telehealth-coverage-result" aria-labelledby="request-location-title">
+                    <h3 id="request-location-title">Confirm where you are now</h3>
+                    <p>Your current physical location controls which state-specific telehealth rules apply. It must match the state already used for this request.</p>
+                    <form onSubmit={confirmRequestLocation}>
+                      <label htmlFor="request-current-location-state">Current physical location</label>
+                      <select
+                        id="request-current-location-state"
+                        required
+                        value={requestLocationStateCode}
+                        onChange={(event) => {
+                          pendingRequestLocation.current = null
+                          setRequestLocationStateCode(event.target.value as '' | 'GA' | 'CA' | 'FL')
+                        }}
+                      >
+                        <option value="">Select your current state</option>
+                        <option value="GA">Georgia</option>
+                        <option value="CA">California</option>
+                        <option value="FL">Florida</option>
+                      </select>
+                      <dl className="telehealth-details">
+                        <div><dt>State previously established</dt><dd>{requestLocation.currentLocationStateCode}</dd></div>
+                        <div><dt>Callback number</dt><dd>{requestLocation.maskedCallbackPhone}</dd></div>
+                        <div><dt>Request status before confirmation</dt><dd>{requestLocation.requestStatus}</dd></div>
+                        <div><dt>Doctor search or queue</dt><dd>Not started</dd></div>
+                      </dl>
+                      <p className="telehealth-inline-warning"><strong>If your state or callback route changed, stop here.</strong> Start again or ask the practice to review the change so state-specific evidence can be rebuilt.</p>
+                      <ul>{requestLocation.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                      <fieldset className="telehealth-fieldset">
+                        <legend>Required location and safety confirmations</legend>
+                        <label className="telehealth-check"><input required type="checkbox" checked={requestLocationAcknowledgments.currentLocation} onChange={(event) => updateRequestLocationAcknowledgment('currentLocation', event.target.checked)} /><span>The state I selected is my current physical location.</span></label>
+                        <label className="telehealth-check"><input required type="checkbox" checked={requestLocationAcknowledgments.callbackNumber} onChange={(event) => updateRequestLocationAcknowledgment('callbackNumber', event.target.checked)} /><span>The displayed masked callback number remains correct.</span></label>
+                        <label className="telehealth-check"><input required type="checkbox" checked={requestLocationAcknowledgments.changedLocationRequiresRestart} onChange={(event) => updateRequestLocationAcknowledgment('changedLocationRequiresRestart', event.target.checked)} /><span>I understand that a changed state or callback route requires a restart or practice review.</span></label>
+                        <label className="telehealth-check"><input required type="checkbox" checked={requestLocationAcknowledgments.urgentOrWorseningSymptomsRequireImmediateAction} onChange={(event) => updateRequestLocationAcknowledgment('urgentOrWorseningSymptomsRequireImmediateAction', event.target.checked)} /><span>I will seek appropriate immediate care instead of waiting if symptoms are urgent or worsening.</span></label>
+                      </fieldset>
+                      <button
+                        className="telehealth-button"
+                        type="submit"
+                        disabled={submitting || !requestLocationStateCode || !Object.values(requestLocationAcknowledgments).every(Boolean)}
+                      >
+                        {submitting ? 'Confirming location…' : 'Confirm location and callback'}
+                      </button>
+                    </form>
+                    <div className="telehealth-emergency-action">
+                      <strong>Emergency symptoms now?</strong>
+                      <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a>
+                    </div>
+                  </div>
+                ) : null}
+                {requestLocation?.locationConfirmed ? (
+                  <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestLocationResultRef}>
+                    <h3>Location and callback confirmed</h3>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestLocation.requestId}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestLocation.requestStatus}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestLocation.requestVersion}</dd></div>
+                      <div><dt>Current location state</dt><dd>{requestLocation.currentLocationStateCode}</dd></div>
+                      <div><dt>Callback number</dt><dd>{requestLocation.maskedCallbackPhone}</dd></div>
+                      <div><dt>Triage assessment created</dt><dd>{requestLocation.triageAssessmentCreated ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Doctor search started</dt><dd>{requestLocation.doctorSearchStarted ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Patient or clinician queue entered</dt><dd>{requestLocation.patientCareQueueEntered || requestLocation.clinicianQueueEntered ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Appointment, encounter, consent, or care created</dt><dd>No</dd></div>
+                      <div><dt>Confirmed</dt><dd>{requestLocation.confirmedAt ? new Date(requestLocation.confirmedAt).toLocaleString() : 'Confirmed'}</dd></div>
+                    </dl>
+                    <p>{requestLocation.direction}</p>
+                    <p><strong>No triage result, doctor search, queue, queue position, appointment, encounter, consent, care, prescribing, billing, claim, integration, or external action was created.</strong></p>
+                    <ul>{requestLocation.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                    <div className="telehealth-emergency-action">
+                      <strong>Emergency symptoms now?</strong>
+                      <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a>
+                    </div>
+                  </div>
+                ) : null}
+              </>
             ) : null}
             {applicant.status === 'VerificationLocked' || applicant.status === 'Expired' ? (
               <p className="telehealth-inline-warning">This synthetic applicant cannot continue. Start again to obtain a new short-lived credential.</p>

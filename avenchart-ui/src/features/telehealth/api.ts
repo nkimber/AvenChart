@@ -1507,6 +1507,51 @@ export type TelehealthApplicantRequestCreation = {
   limitations: string[]
 }
 
+export type TelehealthApplicantRequestLocationInput = {
+  expectedRequestVersion: number
+  contextSnapshotFingerprint: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  currentLocationConfirmed: true
+  callbackNumberConfirmed: true
+  changedLocationRequiresRestartAcknowledged: true
+  urgentOrWorseningSymptomsRequireImmediateActionAcknowledged: true
+}
+
+export type TelehealthApplicantRequestLocation = {
+  applicantId: string
+  applicantVersion: number
+  applicantStatus: 'SyntheticRequestCreated'
+  requestId: string
+  requestVersion: 1 | 2
+  requestStatus: 'Draft' | 'LocationConfirmed'
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_LOCATION_CONFIRMATION'
+  policyVersion: 1
+  contextSnapshotFingerprint: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  maskedCallbackPhone: string
+  confirmationReady: boolean
+  locationConfirmed: boolean
+  confirmedAt: string | null
+  triageAssessmentCreated: false
+  clinicalReviewCreated: false
+  patientContacted: false
+  patientCareQueueEntered: false
+  clinicianQueueEntered: false
+  doctorSearchStarted: false
+  queuePositionAssigned: false
+  appointmentCreated: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  prescribingEnabled: false
+  billingEnabled: false
+  claimCreated: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -2693,6 +2738,41 @@ export function createApplicantTelehealthRequest(
 ) {
   return json<TelehealthApplicantRequestCreation>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequestLocation(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestLocation>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/location`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function confirmApplicantTelehealthRequestLocation(
+  applicantId: string,
+  applicantAccessKey: string,
+  input: TelehealthApplicantRequestLocationInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestLocation>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/location`,
     {
       method: 'POST',
       headers: applicantHeaders(applicantAccessKey, {

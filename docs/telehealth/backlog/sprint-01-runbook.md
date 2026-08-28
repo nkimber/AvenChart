@@ -1,17 +1,17 @@
 # Sprint 1 synthetic telehealth runbook
 
-Scope: local deterministic evidence only under Decisions 0003 and 0005–0043, most recently [Decision 0043](../decisions/0043-approved-sprint-40-applicant-bound-request-creation.md). Never use live data, credentials, destinations or a production-like host.
+Scope: local deterministic evidence only under Decisions 0003 and 0005–0044, most recently [Decision 0044](../decisions/0044-approved-sprint-41-applicant-request-location-confirmation.md). Never use live data, credentials, destinations or a production-like host.
 
 ## Preconditions
 
-- PostgreSQL contains the deterministic AvenChart gold dataset and migrations `V0282` through `V0315`.
+- PostgreSQL contains the deterministic AvenChart gold dataset and migrations `V0282` through `V0316`.
 - ASP.NET Core environment is `Development` or `Testing`.
 - `Telehealth:Enabled` is false in committed base and Development settings.
 - Only `127.0.0.1`, `localhost` and the configured `.example.test` branded host are used.
 
 ## Local activation
 
-Start an isolated API process/container with only `Telehealth__Enabled=true`. Do not edit committed configuration to enable the feature. Readiness must report `details.telehealth.data.enabled=true`, `mode=Synthetic`, and 58 present tables before tests begin.
+Start an isolated API process/container with only `Telehealth__Enabled=true`. Do not edit committed configuration to enable the feature. Readiness must report `details.telehealth.data.enabled=true`, `mode=Synthetic`, and 60 present tables before tests begin.
 
 Run, in order:
 

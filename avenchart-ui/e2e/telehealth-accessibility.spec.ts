@@ -1289,6 +1289,177 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
+  test('applicant confirms current location and masked callback with stable retry, reflow, and no downstream care semantics', async ({ page }) => {
+    await page.addInitScript((session) => {
+      sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
+    }, { applicantId: prospectiveApplicant.applicantId, applicantAccessKey: 'h'.repeat(64) })
+    const requestCreatedApplicant = {
+      ...prospectiveApplicant,
+      status: 'SyntheticRequestCreated',
+      version: 26,
+      contactVerified: true,
+      identityAssurance: 'ContactControlOnly',
+      duplicateDisposition: 'NoCandidate',
+      canonicalPatientCreated: true,
+      verificationAttemptsRemaining: 0,
+      demonstrationVerificationCode: null,
+      nextAction: 'Confirm current physical location and callback.',
+    }
+    const requestReceipt = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      policyKey: 'SYNTHETIC_APPLICANT_TELEHEALTH_REQUEST_CREATION',
+      policyVersion: 1,
+      authorizationPolicyVersion: 1,
+      requestCreationReady: false,
+      requestCreated: true,
+      requestId: '1e000000-0000-4000-8000-00000000001e',
+      requestStatus: 'Draft',
+      requestVersion: 1,
+      complaintCategory: 'migraine',
+      createdAt: '2026-08-28T16:00:00Z',
+      telehealthRequestCreated: true,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'The Draft request was created; no doctor search or queue exists.',
+      limitations: ['No queue or care exists.'],
+    }
+    const readyLocation = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 1,
+      requestStatus: 'Draft',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_LOCATION_CONFIRMATION',
+      policyVersion: 1,
+      contextSnapshotFingerprint: '2'.repeat(64),
+      currentLocationStateCode: 'GA',
+      maskedCallbackPhone: '***-***-0199',
+      confirmationReady: true,
+      locationConfirmed: false,
+      confirmedAt: null,
+      triageAssessmentCreated: false,
+      clinicalReviewCreated: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Confirm the current physical location and masked callback route.',
+      limitations: ['No triage, queue, appointment, encounter, consent, or care is created.'],
+    }
+    const confirmedLocation = {
+      ...readyLocation,
+      requestVersion: 2,
+      requestStatus: 'LocationConfirmed',
+      confirmationReady: false,
+      locationConfirmed: true,
+      confirmedAt: '2026-08-28T17:00:00Z',
+      direction: 'Location and callback are confirmed; no triage or care workflow was created.',
+    }
+    let loadCalls = 0
+    let confirmationCalls = 0
+    const confirmationKeys: Array<string | undefined> = []
+    const confirmationBodies: Array<Record<string, unknown>> = []
+    await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('h'.repeat(64))
+      if (path.endsWith('/telehealth-request/location')) {
+        if (request.method() === 'POST') {
+          confirmationCalls += 1
+          confirmationKeys.push(request.headers()['x-idempotency-key'])
+          confirmationBodies.push(request.postDataJSON() as Record<string, unknown>)
+          if (confirmationCalls === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Location confirmation result unknown; retry unchanged.' }) })
+            return
+          }
+          await route.fulfill({ json: confirmedLocation })
+          return
+        }
+        loadCalls += 1
+        if (loadCalls === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Location confirmation temporarily unavailable.' }) })
+          return
+        }
+        await route.fulfill({ json: readyLocation })
+        return
+      }
+      if (path.endsWith('/telehealth-request')) {
+        await route.fulfill({ json: requestReceipt })
+        return
+      }
+      await route.fulfill({ json: requestCreatedApplicant })
+    })
+
+    await page.goto('/telehealth/new')
+    await expect(page.getByRole('alert')).toContainText('Location confirmation temporarily unavailable.')
+    await page.getByRole('button', { name: 'Retry location-confirmation load' }).click()
+    const heading = page.getByRole('heading', { name: 'Confirm where you are now' })
+    await expect(heading).toBeVisible()
+    await expect(heading.locator('..')).toContainText('Callback number***-***-0199')
+    await expect(heading.locator('..')).toContainText(/changed, stop here/i)
+    await expect(heading.locator('..').locator('input[type="tel"]')).toHaveCount(0)
+    await expect(heading.locator('..').locator('input[type="text"]')).toHaveCount(0)
+    await expect(heading.locator('..').locator('textarea')).toHaveCount(0)
+    await page.getByLabel('Current physical location', { exact: true }).selectOption('GA')
+    await page.getByLabel(/state I selected is my current physical location/i).check()
+    await page.getByLabel(/masked callback number remains correct/i).check()
+    await page.getByLabel(/changed state or callback route requires/i).check()
+    await page.getByLabel(/urgent or worsening/i).check()
+    const confirm = page.getByRole('button', { name: 'Confirm location and callback' })
+    await confirm.click()
+    await expect(page.getByRole('alert')).toContainText('Location confirmation result unknown; retry unchanged.')
+    await expect(page.getByLabel(/state I selected is my current physical location/i)).toBeChecked()
+    await confirm.click()
+
+    const result = page.getByRole('heading', { name: 'Location and callback confirmed' })
+    await expect(result).toBeVisible()
+    await expect(result.locator('..')).toContainText('Request statusLocationConfirmed')
+    await expect(result.locator('..')).toContainText('Request version2')
+    await expect(result.locator('..')).toContainText('Triage assessment createdNo')
+    await expect(result.locator('..')).toContainText('Doctor search startedNo')
+    await expect(result.locator('..')).toContainText('Patient or clinician queue enteredNo')
+    expect(confirmationKeys).toHaveLength(2)
+    expect(confirmationKeys[0]).toBe(confirmationKeys[1])
+    expect(confirmationBodies[0]).toEqual({
+      expectedRequestVersion: 1,
+      contextSnapshotFingerprint: '2'.repeat(64),
+      currentLocationStateCode: 'GA',
+      currentLocationConfirmed: true,
+      callbackNumberConfirmed: true,
+      changedLocationRequiresRestartAcknowledged: true,
+      urgentOrWorseningSymptomsRequireImmediateActionAcknowledged: true,
+    })
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|maskedCallbackPhone|requestId|currentLocationStateCode|patientId/i)
+
+    await expectNoSeriousAccessibilityViolations(page)
+    await expectTelehealthReflow(page)
+  })
+
   test('promoted applicant completes bounded post-promotion confirmations through practice-review submission without implying acceptance, queueing, or care', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })

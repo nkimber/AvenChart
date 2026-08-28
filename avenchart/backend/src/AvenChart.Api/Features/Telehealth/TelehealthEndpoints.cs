@@ -365,6 +365,24 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/location", GetApplicantTelehealthRequestLocationAsync)
+            .WithName("GetTelehealthApplicantRequestLocation")
+            .WithDescription("Returns the applicant owner's private masked request-time location and callback confirmation state. It creates no triage result, clinical review, contact, queue, appointment, encounter, consent, care, financial, integration, or external capability.")
+            .Produces<TelehealthApplicantRequestLocationResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/location", ConfirmApplicantTelehealthRequestLocationAsync)
+            .WithName("ConfirmTelehealthApplicantRequestLocation")
+            .WithDescription("Binds the exact supported location and masked callback context to one applicant-created Draft request and advances it only to LocationConfirmed. It does not perform triage or create any downstream care workflow.")
+            .Accepts<ConfirmTelehealthApplicantRequestLocation>("application/json")
+            .Produces<TelehealthApplicantRequestLocationResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1274,6 +1292,39 @@ public static class TelehealthEndpoints
             return Results.Created(
                 $"/api/telehealth/v1/applicants/{applicantId:D}/telehealth-request",
                 result);
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestLocationAsync(
+        TelehealthApplicantRequestLocationService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> ConfirmApplicantTelehealthRequestLocationAsync(
+        TelehealthApplicantRequestLocationService service,
+        HttpContext context,
+        Guid applicantId,
+        ConfirmTelehealthApplicantRequestLocation request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.ConfirmAsync(
+                context,
+                applicantId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
+                cancellationToken));
         });
 
     private static Task<IResult> ListPatientRequestsAsync(

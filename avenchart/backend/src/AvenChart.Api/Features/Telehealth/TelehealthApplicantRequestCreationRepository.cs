@@ -443,10 +443,14 @@ public sealed class TelehealthApplicantRequestCreationRepository(NpgsqlDataSourc
         command.Transaction = transaction;
         command.CommandText = $"""
             select c.applicant_id,c.resulting_applicant_version,c.resulting_applicant_status,
-                   r.request_id,r.status,r.version,r.complaint_category,c.created_at,
+                   c.request_id,c.request_status,c.request_version,c.complaint_category,c.created_at,
                    c.command_fingerprint
             from telehealth_applicant_request_creations c
             join telehealth_requests r on r.request_id=c.request_id
+             and r.source_applicant_id=c.applicant_id
+             and r.source_promotion_id=c.promotion_id
+             and r.source_practice_review_case_id=c.practice_review_case_id
+             and r.source_practice_review_authorization_id=c.practice_review_authorization_id
             where c.applicant_id=@applicantId and c.practice_id=@practiceId
               and c.facility_id=@facilityId
               {(idempotencyKey is null ? string.Empty : "and c.idempotency_key=@idempotencyKey")};

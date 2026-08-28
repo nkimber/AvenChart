@@ -179,7 +179,7 @@ public sealed class TelehealthProspectiveApplicantService(
             "SyntheticPreRequestReadinessAcknowledged" => "The five-section synthetic pre-request readiness review was acknowledged. Outstanding steps remain; no practice acceptance, request, queue entry, appointment, encounter, prescribing, or care capability was created.",
             "SyntheticPracticeReviewSubmitted" => "The synthetic information was submitted for practice review. One staff review work item exists, but no practice decision, telehealth request, doctor search, patient or clinician queue entry, appointment, encounter, prescribing, or care capability was created.",
             "SyntheticPracticeReviewAuthorized" => "The practice authorized one separately confirmed synthetic request-creation step. No request, doctor search, queue, appointment, encounter, consent, prescribing, or care capability exists until you explicitly continue.",
-            "SyntheticRequestCreated" => "One Draft synthetic telehealth request exists. It is not searching for a doctor and is not in a patient or clinician care queue; later workflow gates remain separately unavailable.",
+            "SyntheticRequestCreated" => "One synthetic telehealth request exists. Complete only the separately available request-owned steps; no doctor search or patient or clinician care queue is active.",
             "VerificationLocked" => "The attempt limit was reached. Start a new synthetic applicant session.",
             _ => "This synthetic applicant session expired. Start again."
         };
@@ -290,8 +290,8 @@ public sealed class TelehealthProspectiveApplicantService(
         ],
         "SyntheticRequestCreated" =>
         [
-            "Synthetic demonstration only; one source-linked Draft request shell exists and the synthetic patient account remains portal-disabled.",
-            "Draft is not clinical eligibility, exact rendering-clinician network confirmation, coverage, acceptance, a doctor search, or a queue entry.",
+            "Synthetic demonstration only; one source-linked request exists and the synthetic patient account remains portal-disabled.",
+            "A request status is not clinical eligibility, exact rendering-clinician network confirmation, coverage, acceptance, a doctor search, or a queue entry.",
             "No queue position, appointment, encounter, consent, media, care, prescribing, billing, claim, integration, or external action was created."
         ],
         "SyntheticPromotionBlockedPossibleMatch" =>

@@ -1765,6 +1765,49 @@ public sealed record TelehealthApplicantRequestCreationResponse(
     string Direction,
     IReadOnlyList<string> Limitations);
 
+public sealed record ConfirmTelehealthApplicantRequestLocation(
+    int ExpectedRequestVersion,
+    string ContextSnapshotFingerprint,
+    string CurrentLocationStateCode,
+    bool CurrentLocationConfirmed,
+    bool CallbackNumberConfirmed,
+    bool ChangedLocationRequiresRestartAcknowledged,
+    bool UrgentOrWorseningSymptomsRequireImmediateActionAcknowledged);
+
+public sealed record TelehealthApplicantRequestLocationResponse(
+    Guid ApplicantId,
+    int ApplicantVersion,
+    string ApplicantStatus,
+    Guid RequestId,
+    int RequestVersion,
+    string RequestStatus,
+    string PolicyKey,
+    int PolicyVersion,
+    string ContextSnapshotFingerprint,
+    string CurrentLocationStateCode,
+    string MaskedCallbackPhone,
+    bool ConfirmationReady,
+    bool LocationConfirmed,
+    DateTimeOffset? ConfirmedAt,
+    bool TriageAssessmentCreated,
+    bool ClinicalReviewCreated,
+    bool PatientContacted,
+    bool PatientCareQueueEntered,
+    bool ClinicianQueueEntered,
+    bool DoctorSearchStarted,
+    bool QueuePositionAssigned,
+    bool AppointmentCreated,
+    bool EncounterCreated,
+    bool ConsentCreated,
+    bool CareAuthorized,
+    bool PrescribingEnabled,
+    bool BillingEnabled,
+    bool ClaimCreated,
+    bool IntegrationEnabled,
+    bool ExternalCallPerformed,
+    string Direction,
+    IReadOnlyList<string> Limitations);
+
 public sealed record TelehealthApplicantPracticeReviewInboxSectionResponse(
     string SectionKey,
     string ReceiptState,
