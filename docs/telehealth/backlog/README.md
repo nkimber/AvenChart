@@ -1,13 +1,13 @@
 # Telehealth implementation backlog
 
-Status: Exact disabled synthetic Sprints 1–39 active only within Decisions 0003 and 0005–0042  
+Status: Exact disabled synthetic Sprints 1–40 active only within Decisions 0003 and 0005–0043
 Decision baseline: [Decision 0001](../decisions/0001-g0-development-baseline.md)  
 Machine-readable source: [backlog.json](backlog.json)  
 First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 39 synthetic practice-review authorization](sprint-39-synthetic-practice-review-authorization.md); bounded automated evidence is recorded in the [Sprint 39 evidence packet](sprint-39-evidence.md)
+Current increment: [Sprint 40 applicant-bound request creation](sprint-40-applicant-bound-request-creation.md); bounded automated evidence is recorded in the [Sprint 40 evidence packet](sprint-40-evidence.md)
 
 ## 1. Backlog contract
 
@@ -86,7 +86,7 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 - Telehealth G0 product baseline: **approved** by Decision 0001.
 - Backlog and wireframe preparation: **authorized**.
 - Planning-artifact validator and existing-CI invocation: **authorized and active under Decision 0002**.
-- Decisions 0003 and 0005–0042 authorize only their exact disabled synthetic Sprint 1–39 application/database/feature-test/runtime paths through 2026-10-31.
+- Decisions 0003 and 0005–0043 authorize only their exact disabled synthetic Sprint 1–40 application/database/feature-test/runtime paths through 2026-10-31.
 - All implementation outside those decisions remains **blocked by the existing Phase 2 exit gate** until explicit closure or another scoped override.
 - Real patient care: separately blocked until G4 regardless of implementation authorization.
 
@@ -94,4 +94,4 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 
 [Decision 0003](../decisions/0003-proposed-sprint-01-synthetic-foundation.md) authorizes the complete disabled, synthetic Sprint 1 vertical slice only on its listed paths and with its stop conditions. It does not authorize production enablement, real patient care, or any live integration.
 
-[Decisions 0005–0042](../decisions/0042-approved-sprint-39-synthetic-practice-review-authorization.md) add only the bounded synthetic increments documented for Sprints 2–39. Decision 0038 permits the access-key owner of a synthetic applicant who acknowledged the five-section readiness boundary to submit exactly one immutable, practice/facility-scoped `PendingPracticeReview` work item. Decision 0039 permits authorized administrator/front-desk staff to read a private, masked, practice/facility-scoped inbox of those exact items. Decision 0040 permits one authorized staff member to hold a 120-second immutable first-writer-wins duplicate-work claim. Decision 0041 permits only that current claimant to read a private, masked and minimized operational packet without extending the claim. Decision 0042 permits that same current claimant to record one immutable positive-only operational authorization for a separately gated future synthetic request-creation step. These increments do not create priority, a negative disposition, clinical review, practice acceptance, patient contact or mutation, a telehealth request, patient or clinician care queue, queue position, appointment, encounter, consent, care, prescribing, billing, claim, integration, or external action.
+[Decisions 0005–0043](../decisions/0043-approved-sprint-40-applicant-bound-request-creation.md) add only the bounded synthetic increments documented for Sprints 2–40. Decisions 0038–0042 govern practice-review submission, inbox, claimant, packet, and positive operational authorization. Decision 0043 permits the access-key owner to separately create exactly one source-linked `Draft` request after that authorization. The Draft is not a doctor search or patient/clinician care-queue entry and creates no queue position, appointment, encounter, consent, care, prescribing, billing, claim, integration, or external action.

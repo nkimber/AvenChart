@@ -25,7 +25,7 @@ export type TelehealthProspectiveApplicantInput = {
 
 export type TelehealthProspectiveApplicant = {
   applicantId: string
-  status: 'ContactVerificationPending' | 'IdentityReviewPending' | 'IdentityReviewApproved' | 'ManualReviewRequired' | 'SafetyScreenPassed' | 'SafetyClinicalReviewRequired' | 'SafetyInPersonRequired' | 'SafetyEmergencyRedirect' | 'VisitPurposeRecorded' | 'PracticeNetworkPrecheckRecorded' | 'MemberInsuranceDetailsRecorded' | 'SyntheticEligibilityRecorded' | 'SyntheticPracticeNetworkRecorded' | 'SyntheticIdentityProofingRecorded' | 'SyntheticPromotionAuthorized' | 'SyntheticPromotionDenied' | 'SyntheticPatientPromoted' | 'SyntheticTelehealthNoticeAcknowledged' | 'SyntheticMinimumRegistrationDetailsConfirmed' | 'SyntheticInsuranceDetailsConfirmed' | 'SyntheticCommunicationAccessReadinessRecorded' | 'SyntheticDevicePreparationRecorded' | 'SyntheticClinicalInformationInventoryRecorded' | 'SyntheticMedicationInformationRecorded' | 'SyntheticAllergyInformationRecorded' | 'SyntheticHealthHistoryInformationRecorded' | 'SyntheticClinicalInformationSummaryConfirmed' | 'SyntheticPreRequestReadinessAcknowledged' | 'SyntheticPracticeReviewSubmitted' | 'SyntheticPromotionBlockedPossibleMatch' | 'VerificationLocked' | 'Expired'
+  status: 'ContactVerificationPending' | 'IdentityReviewPending' | 'IdentityReviewApproved' | 'ManualReviewRequired' | 'SafetyScreenPassed' | 'SafetyClinicalReviewRequired' | 'SafetyInPersonRequired' | 'SafetyEmergencyRedirect' | 'VisitPurposeRecorded' | 'PracticeNetworkPrecheckRecorded' | 'MemberInsuranceDetailsRecorded' | 'SyntheticEligibilityRecorded' | 'SyntheticPracticeNetworkRecorded' | 'SyntheticIdentityProofingRecorded' | 'SyntheticPromotionAuthorized' | 'SyntheticPromotionDenied' | 'SyntheticPatientPromoted' | 'SyntheticTelehealthNoticeAcknowledged' | 'SyntheticMinimumRegistrationDetailsConfirmed' | 'SyntheticInsuranceDetailsConfirmed' | 'SyntheticCommunicationAccessReadinessRecorded' | 'SyntheticDevicePreparationRecorded' | 'SyntheticClinicalInformationInventoryRecorded' | 'SyntheticMedicationInformationRecorded' | 'SyntheticAllergyInformationRecorded' | 'SyntheticHealthHistoryInformationRecorded' | 'SyntheticClinicalInformationSummaryConfirmed' | 'SyntheticPreRequestReadinessAcknowledged' | 'SyntheticPracticeReviewSubmitted' | 'SyntheticPracticeReviewAuthorized' | 'SyntheticRequestCreated' | 'SyntheticPromotionBlockedPossibleMatch' | 'VerificationLocked' | 'Expired'
   version: number
   practiceDisplayName: string
   residenceStateCode: string
@@ -1466,6 +1466,47 @@ export type TelehealthApplicantPracticeReview = {
   limitations: string[]
 }
 
+export type TelehealthApplicantRequestCreationInput = {
+  expectedApplicantVersion: number
+  authorizationPolicyVersion: 1
+  requestCreationConfirmed: true
+  noQueueOrCareAcknowledged: true
+  urgentOrWorseningSymptomsRequireImmediateActionAcknowledged: true
+}
+
+export type TelehealthApplicantRequestCreation = {
+  applicantId: string
+  applicantVersion: number
+  applicantStatus: 'SyntheticPracticeReviewAuthorized' | 'SyntheticRequestCreated'
+  policyKey: 'SYNTHETIC_APPLICANT_TELEHEALTH_REQUEST_CREATION'
+  policyVersion: 1
+  authorizationPolicyVersion: 1
+  requestCreationReady: boolean
+  requestCreated: boolean
+  requestId: string | null
+  requestStatus: 'Draft' | null
+  requestVersion: 1 | null
+  complaintCategory: 'migraine' | 'sleep'
+  createdAt: string | null
+  telehealthRequestCreated: boolean
+  patientContacted: false
+  patientCareQueueEntered: false
+  clinicianQueueEntered: false
+  doctorSearchStarted: false
+  queuePositionAssigned: false
+  appointmentCreated: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  prescribingEnabled: false
+  billingEnabled: false
+  claimCreated: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -2617,6 +2658,41 @@ export function submitApplicantPracticeReview(
 ) {
   return json<TelehealthApplicantPracticeReview>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/practice-review-submission`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequest(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestCreation>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function createApplicantTelehealthRequest(
+  applicantId: string,
+  applicantAccessKey: string,
+  input: TelehealthApplicantRequestCreationInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestCreation>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request`,
     {
       method: 'POST',
       headers: applicantHeaders(applicantAccessKey, {

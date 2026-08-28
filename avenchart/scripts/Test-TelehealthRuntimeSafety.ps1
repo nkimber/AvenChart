@@ -774,6 +774,25 @@ try {
         $practiceReviewAuthorizationMigrationSource -match 'reject_telehealth_evidence_mutation' -and
         $practiceReviewAuthorizationMigrationSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
         $endpointSource -match 'applicant-practice-review/\{practiceReviewCaseId:guid\}/authorization')
+    $applicantRequestCreationRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestCreationRepository.cs')
+    $applicantRequestCreationServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestCreationService.cs')
+    $applicantRequestCreationPolicySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestCreationPolicy.cs')
+    $applicantRequestCreationMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0315__telehealth_applicant_request_creation.sql')
+    Add-Check 'Applicant request creation is access-key and authorization bound, creates one Draft shell, and exposes no queue, care, financial, integration, or external path' (
+        $applicantRequestCreationRepositorySource -match "status='SyntheticPracticeReviewAuthorized'" -and
+        $applicantRequestCreationRepositorySource -match "'Draft'" -and
+        $applicantRequestCreationRepositorySource -match 'telehealth_applicant_request_creations' -and
+        $applicantRequestCreationRepositorySource -match 'source_practice_review_authorization_id' -and
+        $applicantRequestCreationRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|WebRequest|SendAsync' -and
+        $applicantRequestCreationServiceSource -match 'not searching for a doctor' -and
+        $applicantRequestCreationServiceSource -match 'patient or clinician care queue' -and
+        $applicantRequestCreationServiceSource -match 'No contact, doctor search, queue position' -and
+        $applicantRequestCreationPolicySource -match 'SYNTHETIC_APPLICANT_TELEHEALTH_REQUEST_CREATION' -and
+        $applicantRequestCreationPolicySource -match 'SyntheticRequestCreated' -and
+        $applicantRequestCreationMigrationSource -match 'enforce_telehealth_applicant_request_creation' -and
+        $applicantRequestCreationMigrationSource -match 'protect_telehealth_request_applicant_provenance' -and
+        $applicantRequestCreationMigrationSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
+        $endpointSource -match '/\{applicantId:guid\}/telehealth-request')
     $videoProviderSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoProvider.cs')
     $videoServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoService.cs')
     $videoRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoRepository.cs')
@@ -874,8 +893,8 @@ try {
             $health.status -eq 'healthy' -and
             $telehealth.data.enabled -eq $true -and
             $telehealth.data.mode -eq 'Synthetic' -and
-            [int]$telehealth.data.requiredTableCount -eq 58 -and
-            [int]$telehealth.data.presentTableCount -eq 58) $telehealth
+            [int]$telehealth.data.requiredTableCount -eq 59 -and
+            [int]$telehealth.data.presentTableCount -eq 59) $telehealth
     }
 }
 catch {
@@ -885,7 +904,7 @@ finally {
     $result = [ordered]@{
         status=$(if ($passed) { 'passed' } else { 'failed' })
         generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O')
-        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042')
+        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043')
         checks=$checks
     }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8

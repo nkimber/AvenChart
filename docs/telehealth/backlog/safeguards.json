@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "status": "active-for-decisions-0003-0005-through-0042-synthetic-sprints-01-through-39",
+  "status": "active-for-decisions-0003-0005-through-0043-synthetic-sprints-01-through-40",
   "decisionOwner": "Project owner",
   "approvedAt": "2026-08-27",
-  "authorizationDecisions": ["TH-DEC-0002", "TH-DEC-0003", "TH-DEC-0005", "TH-DEC-0006", "TH-DEC-0007", "TH-DEC-0008", "TH-DEC-0009", "TH-DEC-0010", "TH-DEC-0011", "TH-DEC-0012", "TH-DEC-0013", "TH-DEC-0014", "TH-DEC-0015", "TH-DEC-0016", "TH-DEC-0017", "TH-DEC-0018", "TH-DEC-0019", "TH-DEC-0020", "TH-DEC-0021", "TH-DEC-0022", "TH-DEC-0023", "TH-DEC-0024", "TH-DEC-0025", "TH-DEC-0026", "TH-DEC-0027", "TH-DEC-0028", "TH-DEC-0029", "TH-DEC-0030", "TH-DEC-0031", "TH-DEC-0032", "TH-DEC-0033", "TH-DEC-0034", "TH-DEC-0035", "TH-DEC-0036", "TH-DEC-0037", "TH-DEC-0038", "TH-DEC-0039", "TH-DEC-0040", "TH-DEC-0041", "TH-DEC-0042"],
-  "activeSafeguards": ["TH-SG-001", "TH-SG-002", "TH-SG-003", "TH-SG-004", "TH-SG-005", "TH-SG-006", "TH-SG-007", "TH-SG-008", "TH-SG-009", "TH-SG-010", "TH-SG-011", "TH-SG-012", "TH-SG-013", "TH-SG-014", "TH-SG-015", "TH-SG-016", "TH-SG-017", "TH-SG-018", "TH-SG-019", "TH-SG-020", "TH-SG-021", "TH-SG-022", "TH-SG-023", "TH-SG-024", "TH-SG-025", "TH-SG-026", "TH-SG-027", "TH-SG-028", "TH-SG-029", "TH-SG-030", "TH-SG-031", "TH-SG-032", "TH-SG-033", "TH-SG-034", "TH-SG-035", "TH-SG-036", "TH-SG-037", "TH-SG-038", "TH-SG-039", "TH-SG-040", "TH-SG-041", "TH-SG-042", "TH-SG-043", "TH-SG-044"],
-  "activationPrerequisite": "Active only for the exact disabled synthetic Sprints 1 through 39 scopes and paths in TH-DEC-0003 and TH-DEC-0005 through TH-DEC-0042 through 2026-10-31",
+  "authorizationDecisions": ["TH-DEC-0002", "TH-DEC-0003", "TH-DEC-0005", "TH-DEC-0006", "TH-DEC-0007", "TH-DEC-0008", "TH-DEC-0009", "TH-DEC-0010", "TH-DEC-0011", "TH-DEC-0012", "TH-DEC-0013", "TH-DEC-0014", "TH-DEC-0015", "TH-DEC-0016", "TH-DEC-0017", "TH-DEC-0018", "TH-DEC-0019", "TH-DEC-0020", "TH-DEC-0021", "TH-DEC-0022", "TH-DEC-0023", "TH-DEC-0024", "TH-DEC-0025", "TH-DEC-0026", "TH-DEC-0027", "TH-DEC-0028", "TH-DEC-0029", "TH-DEC-0030", "TH-DEC-0031", "TH-DEC-0032", "TH-DEC-0033", "TH-DEC-0034", "TH-DEC-0035", "TH-DEC-0036", "TH-DEC-0037", "TH-DEC-0038", "TH-DEC-0039", "TH-DEC-0040", "TH-DEC-0041", "TH-DEC-0042", "TH-DEC-0043"],
+  "activeSafeguards": ["TH-SG-001", "TH-SG-002", "TH-SG-003", "TH-SG-004", "TH-SG-005", "TH-SG-006", "TH-SG-007", "TH-SG-008", "TH-SG-009", "TH-SG-010", "TH-SG-011", "TH-SG-012", "TH-SG-013", "TH-SG-014", "TH-SG-015", "TH-SG-016", "TH-SG-017", "TH-SG-018", "TH-SG-019", "TH-SG-020", "TH-SG-021", "TH-SG-022", "TH-SG-023", "TH-SG-024", "TH-SG-025", "TH-SG-026", "TH-SG-027", "TH-SG-028", "TH-SG-029", "TH-SG-030", "TH-SG-031", "TH-SG-032", "TH-SG-033", "TH-SG-034", "TH-SG-035", "TH-SG-036", "TH-SG-037", "TH-SG-038", "TH-SG-039", "TH-SG-040", "TH-SG-041", "TH-SG-042", "TH-SG-043", "TH-SG-044", "TH-SG-045"],
+  "activationPrerequisite": "Active only for the exact disabled synthetic Sprints 1 through 40 scopes and paths in TH-DEC-0003 and TH-DEC-0005 through TH-DEC-0043 through 2026-10-31",
   "safeguards": [
     {
       "id": "TH-SG-001",
@@ -314,6 +314,13 @@
       "requiredPath": "avenchart/scripts/Test-TelehealthApplicantPracticeReviewAuthorization.ps1",
       "trigger": "first operational authorization over a current claimant's minimized synthetic practice-review packet",
       "evidence": "twelve-check Georgia/California/Florida live proof of exact case/submission/readiness/promotion/patient-shell/source-receipt/purpose/safety and zero-downstream provenance, current actor-owned database-clock claim, packet policy version binding, administrator/front-desk healthcare-operations scope with patients.demo.write, one controlled positive decision and rationale, three independent limitation acknowledgments, applicant-only status/version advance with immutable case and claim history, exact actor-bound replay and changed-content conflict, eight-way first-writer convergence, foreign-role/facility/claim and patient-shell-drift denial, append-only database enforcement, private no-store case-correlated PHI audit, accessible stable retry and four-engine reflow, requestCreationAuthorized true only, and every acceptance/contact/clinical-review/request/queue/appointment/encounter/consent/care/prescribing/financial/integration/external flag false"
+    },
+    {
+      "id": "TH-SG-045",
+      "name": "Applicant-bound authorized Draft request creation cannot enter a queue or create doctor-search, appointment, encounter, consent, care, financial, integration, external, or production consequence",
+      "requiredPath": "avenchart/scripts/Test-TelehealthApplicantRequestCreation.ps1",
+      "trigger": "first applicant-owned telehealth request creation after positive synthetic practice-review authorization",
+      "evidence": "ten-check Georgia/California/Florida live proof of access-key ownership, exact positive authorization and full immutable source provenance, portal-disabled unmerged patient equality, controlled server-derived migraine or sleep category, three independent creation/no-queue/safety confirmations, one atomic applicant transition plus Draft request/receipt/request-event/applicant-event, exact replay and durable GET, changed-content and second-command conflict, eight-way first-writer convergence, foreign/expired/stale/policy/patient-shell-drift denial, append-only receipt and immutable request-source provenance, private no-store minimized response, accessible stable retry and result recovery, telehealthRequestCreated true only, and every contact/patient-queue/clinician-queue/doctor-search/queue-position/appointment/encounter/consent/care/prescribing/financial/integration/external flag false"
     }
   ]
 }

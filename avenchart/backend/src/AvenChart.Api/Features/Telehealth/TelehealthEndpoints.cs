@@ -347,6 +347,24 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request", GetApplicantTelehealthRequestAsync)
+            .WithName("GetTelehealthApplicantRequestCreation")
+            .WithDescription("Returns the applicant owner's private synthetic Draft-request creation state. It exposes no patient identifier or source detail and creates no queue, doctor search, appointment, encounter, consent, care, prescribing, financial, integration, or external capability.")
+            .Produces<TelehealthApplicantRequestCreationResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request", CreateApplicantTelehealthRequestAsync)
+            .WithName("CreateTelehealthApplicantRequest")
+            .WithDescription("Creates exactly one authorization-gated synthetic Draft telehealth request. It does not start a doctor search or create a patient or clinician queue entry, queue position, appointment, encounter, consent, care, prescribing, financial, integration, or external action.")
+            .Accepts<CreateTelehealthApplicantRequest>("application/json")
+            .Produces<TelehealthApplicantRequestCreationResponse>(StatusCodes.Status201Created)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1220,6 +1238,42 @@ public static class TelehealthEndpoints
                 ReadApplicantAccessKey(context),
                 ReadIdempotencyKey(context),
                 cancellationToken));
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestAsync(
+        TelehealthApplicantRequestCreationService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> CreateApplicantTelehealthRequestAsync(
+        TelehealthApplicantRequestCreationService service,
+        HttpContext context,
+        Guid applicantId,
+        CreateTelehealthApplicantRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            var result = await service.CreateAsync(
+                context,
+                applicantId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
+                cancellationToken);
+            return Results.Created(
+                $"/api/telehealth/v1/applicants/{applicantId:D}/telehealth-request",
+                result);
         });
 
     private static Task<IResult> ListPatientRequestsAsync(

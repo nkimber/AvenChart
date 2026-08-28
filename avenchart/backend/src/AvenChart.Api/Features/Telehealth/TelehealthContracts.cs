@@ -1726,6 +1726,45 @@ public sealed record TelehealthApplicantPracticeReviewResponse(
     string Direction,
     IReadOnlyList<string> Limitations);
 
+public sealed record CreateTelehealthApplicantRequest(
+    int ExpectedApplicantVersion,
+    int AuthorizationPolicyVersion,
+    bool RequestCreationConfirmed,
+    bool NoQueueOrCareAcknowledged,
+    bool UrgentOrWorseningSymptomsRequireImmediateActionAcknowledged);
+
+public sealed record TelehealthApplicantRequestCreationResponse(
+    Guid ApplicantId,
+    int ApplicantVersion,
+    string ApplicantStatus,
+    string PolicyKey,
+    int PolicyVersion,
+    int AuthorizationPolicyVersion,
+    bool RequestCreationReady,
+    bool RequestCreated,
+    Guid? RequestId,
+    string? RequestStatus,
+    int? RequestVersion,
+    string ComplaintCategory,
+    DateTimeOffset? CreatedAt,
+    bool TelehealthRequestCreated,
+    bool PatientContacted,
+    bool PatientCareQueueEntered,
+    bool ClinicianQueueEntered,
+    bool DoctorSearchStarted,
+    bool QueuePositionAssigned,
+    bool AppointmentCreated,
+    bool EncounterCreated,
+    bool ConsentCreated,
+    bool CareAuthorized,
+    bool PrescribingEnabled,
+    bool BillingEnabled,
+    bool ClaimCreated,
+    bool IntegrationEnabled,
+    bool ExternalCallPerformed,
+    string Direction,
+    IReadOnlyList<string> Limitations);
+
 public sealed record TelehealthApplicantPracticeReviewInboxSectionResponse(
     string SectionKey,
     string ReceiptState,

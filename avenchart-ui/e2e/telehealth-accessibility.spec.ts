@@ -1165,6 +1165,130 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
+  test('authorized applicant creates one Draft request with stable retry, minimization, reflow, and no queue semantics', async ({ page }) => {
+    await page.addInitScript((session) => {
+      sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
+    }, { applicantId: prospectiveApplicant.applicantId, applicantAccessKey: 'g'.repeat(64) })
+    const authorizedApplicant = {
+      ...prospectiveApplicant,
+      status: 'SyntheticPracticeReviewAuthorized',
+      version: 25,
+      contactVerified: true,
+      identityAssurance: 'ContactControlOnly',
+      duplicateDisposition: 'NoCandidate',
+      canonicalPatientCreated: true,
+      verificationAttemptsRemaining: 0,
+      demonstrationVerificationCode: null,
+      nextAction: 'Confirm the authorized synthetic request creation.',
+    }
+    const readyRequest = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 25,
+      applicantStatus: 'SyntheticPracticeReviewAuthorized',
+      policyKey: 'SYNTHETIC_APPLICANT_TELEHEALTH_REQUEST_CREATION',
+      policyVersion: 1,
+      authorizationPolicyVersion: 1,
+      requestCreationReady: true,
+      requestCreated: false,
+      requestId: null,
+      requestStatus: null,
+      requestVersion: null,
+      complaintCategory: 'migraine',
+      createdAt: null,
+      telehealthRequestCreated: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Confirm the boundary to create one Draft request.',
+      limitations: ['No queue, doctor search, appointment, encounter, consent, or care is created.'],
+    }
+    const createdRequest = {
+      ...readyRequest,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestCreationReady: false,
+      requestCreated: true,
+      requestId: '1e000000-0000-4000-8000-00000000001e',
+      requestStatus: 'Draft',
+      requestVersion: 1,
+      createdAt: '2026-08-28T16:00:00Z',
+      telehealthRequestCreated: true,
+      direction: 'The Draft request was created; no doctor search or queue exists.',
+    }
+    let creationCalls = 0
+    let requestCreated = false
+    const creationKeys: Array<string | undefined> = []
+    const creationBodies: Array<Record<string, unknown>> = []
+    await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      if (path.endsWith('/telehealth-request')) {
+        expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('g'.repeat(64))
+        if (request.method() === 'POST') {
+          creationCalls += 1
+          creationKeys.push(request.headers()['x-idempotency-key'])
+          creationBodies.push(request.postDataJSON() as Record<string, unknown>)
+          if (creationCalls === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Creation result unknown; retry unchanged.' }) })
+            return
+          }
+          requestCreated = true
+          await route.fulfill({ status: 201, json: createdRequest })
+          return
+        }
+        await route.fulfill({ json: requestCreated ? createdRequest : readyRequest })
+        return
+      }
+      await route.fulfill({ json: authorizedApplicant })
+    })
+
+    await page.goto('/telehealth/new')
+    const heading = page.getByRole('heading', { name: 'Create the authorized Draft request' })
+    await expect(heading).toBeVisible()
+    await expect(heading.locator('..')).toContainText('Doctor search or queueNot started')
+    await expect(heading.locator('..').locator('input[type="text"]')).toHaveCount(0)
+    await expect(heading.locator('..').locator('textarea')).toHaveCount(0)
+    await page.getByLabel(/create this one synthetic Draft/i).check()
+    await page.getByLabel(/does not start a doctor search/i).check()
+    await page.getByLabel(/urgent or worsening/i).check()
+    const create = page.getByRole('button', { name: 'Create Draft telehealth request' })
+    await create.click()
+    await expect(page.getByRole('alert')).toContainText('Creation result unknown; retry unchanged.')
+    await expect(page.getByLabel(/create this one synthetic Draft/i)).toBeChecked()
+    await create.click()
+
+    const result = page.getByRole('heading', { name: 'Draft telehealth request created' })
+    await expect(result).toBeVisible()
+    await expect(result.locator('..')).toContainText('Request statusDraft')
+    await expect(result.locator('..')).toContainText('Doctor search startedNo')
+    await expect(result.locator('..')).toContainText('Patient or clinician queue enteredNo')
+    await expect(result.locator('..')).toContainText('Queue position assignedNo')
+    expect(creationKeys).toHaveLength(2)
+    expect(creationKeys[0]).toBe(creationKeys[1])
+    expect(creationBodies[0]).toEqual({
+      expectedApplicantVersion: 25,
+      authorizationPolicyVersion: 1,
+      requestCreationConfirmed: true,
+      noQueueOrCareAcknowledged: true,
+      urgentOrWorseningSymptomsRequireImmediateActionAcknowledged: true,
+    })
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/requestId|complaintCategory|authorizationPolicyVersion|patientId/i)
+
+    await expectNoSeriousAccessibilityViolations(page)
+    await expectTelehealthReflow(page)
+  })
+
   test('promoted applicant completes bounded post-promotion confirmations through practice-review submission without implying acceptance, queueing, or care', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })

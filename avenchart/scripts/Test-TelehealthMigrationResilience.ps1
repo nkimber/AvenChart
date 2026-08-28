@@ -34,7 +34,7 @@ function Invoke-Scalar([string]$Sql) {
 try {
     if (-not $SkipBaseRehearsal) {
         & (Join-Path $PSScriptRoot 'Test-AvenChartMigrationResilience.ps1')
-        Add-Check 'Repository empty, populated, interruption, and recovery rehearsal includes V0282 through V0314' ($LASTEXITCODE -eq 0)
+        Add-Check 'Repository empty, populated, interruption, and recovery rehearsal includes V0282 through V0315' ($LASTEXITCODE -eq 0)
     }
     else {
         Add-Check 'Repository migration rehearsal supplied by the immediately preceding runtime-evidence step' $true
@@ -616,6 +616,49 @@ select count(*) from pg_trigger where not tgisinternal and tgname in (
 'trg_telehealth_practice_review_authorizations_append_only');
 "@) -eq 2 -and
         [int](Invoke-Scalar "select count(*) from pg_proc where proname='enforce_telehealth_practice_review_authorization';") -eq 1)
+    $applicantRequestCreationMigration = Join-Path $solutionRoot 'database/migrations/V0315__telehealth_applicant_request_creation.sql'
+    $applicantRequestCreationSource = Get-Content -Raw $applicantRequestCreationMigration
+    Add-Check 'V0315 adds one applicant-bound Draft request with immutable source provenance and no queue, care, financial, integration, or external consequence' (
+        $applicantRequestCreationSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
+        $applicantRequestCreationSource -match 'create\s+table\s+(?:if\s+not\s+exists\s+)?telehealth_applicant_request_creations' -and
+        $applicantRequestCreationSource -match "resulting_applicant_status='SyntheticRequestCreated'" -and
+        $applicantRequestCreationSource -match "request_status='Draft'" -and
+        $applicantRequestCreationSource -match 'source_practice_review_authorization_id' -and
+        $applicantRequestCreationSource -match 'telehealth_request_created and not patient_contacted' -and
+        $applicantRequestCreationSource -match 'not patient_care_queue_entered' -and
+        $applicantRequestCreationSource -match 'not clinician_queue_entered' -and
+        $applicantRequestCreationSource -match 'not doctor_search_started' -and
+        $applicantRequestCreationSource -match 'not queue_position_assigned' -and
+        $applicantRequestCreationSource -match 'not appointment_created' -and
+        $applicantRequestCreationSource -match 'not encounter_created' -and
+        $applicantRequestCreationSource -match 'not consent_created' -and
+        $applicantRequestCreationSource -match 'not care_authorized' -and
+        $applicantRequestCreationSource -match 'not billing_enabled' -and
+        $applicantRequestCreationSource -match 'not claim_created' -and
+        $applicantRequestCreationSource -match 'not integration_enabled' -and
+        $applicantRequestCreationSource -match 'not external_call_performed')
+    Add-Check 'V0315 is recorded in the live migration ledger' ((Invoke-Scalar "select count(*) from schema_migrations where migration_id='V0315__telehealth_applicant_request_creation';") -eq '1')
+    Add-Check 'Applicant request version, policy, acknowledgments, no-consequence, provenance, uniqueness, and append-only constraints are database-enforced' (
+        [int](Invoke-Scalar @"
+select count(*) from pg_constraint where conname in (
+'uq_telehealth_applicant_request_creation_idempotency',
+'chk_telehealth_applicant_request_creation_scope',
+'chk_telehealth_applicant_request_creation_version',
+'chk_telehealth_applicant_request_creation_request',
+'chk_telehealth_applicant_request_creation_acknowledgments',
+'chk_telehealth_applicant_request_creation_policy',
+'chk_telehealth_applicant_request_creation_idempotency',
+'chk_telehealth_applicant_request_creation_fingerprint',
+'chk_telehealth_applicant_request_creation_no_consequence',
+'chk_telehealth_request_applicant_provenance');
+"@) -eq 10 -and
+        [int](Invoke-Scalar @"
+select count(*) from pg_trigger where not tgisinternal and tgname in (
+'trg_telehealth_applicant_request_creation_guard',
+'trg_telehealth_applicant_request_creations_append_only',
+'trg_telehealth_request_applicant_provenance');
+"@) -eq 3 -and
+        [int](Invoke-Scalar "select count(*) from pg_proc where proname in ('enforce_telehealth_applicant_request_creation','protect_telehealth_request_applicant_provenance');") -eq 2)
     Add-Check 'All eight foundation tables exist' ([int](Invoke-Scalar @"
 select count(*) from information_schema.tables
 where table_schema='public' and table_name in (
@@ -676,7 +719,7 @@ select count(*) from information_schema.tables
 where table_schema='public' and table_name in (
 'telehealth_consultation_prescription_draft_versions','telehealth_consultation_prescription_draft_events');
 "@) -eq 2)
-    Add-Check 'All telehealth append-only evidence triggers exist' ([int](Invoke-Scalar "select count(*) from pg_trigger where not tgisinternal and tgname like 'trg_telehealth_%_append_only';") -eq 51)
+    Add-Check 'All telehealth append-only evidence triggers exist' ([int](Invoke-Scalar "select count(*) from pg_trigger where not tgisinternal and tgname like 'trg_telehealth_%_append_only';") -eq 52)
     Add-Check 'Pre-request readiness route, acknowledgment, no-consequence, provenance, replay, and append-only constraints are database-enforced' (
         [int](Invoke-Scalar @"
 select count(*) from pg_constraint where conname in (
@@ -1055,7 +1098,7 @@ catch {
     Add-Check 'Telehealth migration resilience execution' $false $_.Exception.Message
 }
 finally {
-    $result = [ordered]@{ status=$(if ($passed) { 'passed' } else { 'failed' }); generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O'); decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042'); checks=$checks }
+    $result = [ordered]@{ status=$(if ($passed) { 'passed' } else { 'failed' }); generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O'); decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043'); checks=$checks }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8
     $result | ConvertTo-Json -Depth 8
 }

@@ -1,6 +1,6 @@
 # AvenChart immediate telehealth master specification
 
-Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–39 scopes active under Decisions 0003 and 0005–0042  
+Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–40 scopes active under Decisions 0003 and 0005–0043
 Version: 0.1  
 Last reviewed: 2026-08-28  
 Initial jurisdictions: Georgia, California, and Florida  
@@ -206,6 +206,8 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Sprint 38 evidence packet](backlog/sprint-38-evidence.md) | Implementation and bounded automated evidence for the claimant-only operational packet; independent reviews and every broader product/production gate remain open |
 | [Sprint 39 synthetic practice-review authorization plan](backlog/sprint-39-synthetic-practice-review-authorization.md) | A positive-only current-claimant authorization for one separately gated future synthetic request-creation step, without creating the request or any downstream capability |
 | [Sprint 39 evidence packet](backlog/sprint-39-evidence.md) | Implementation and bounded automated evidence for the immutable claimant-bound authorization; independent reviews and every broader product/production gate remain open |
+| [Sprint 40 applicant-bound request-creation plan](backlog/sprint-40-applicant-bound-request-creation.md) | An access-key-owned, authorization-gated creation of exactly one source-linked `Draft` telehealth request without contact, doctor search, queueing, appointment, encounter, consent, care, financial, integration, or external consequence |
+| [Sprint 40 evidence packet](backlog/sprint-40-evidence.md) | Implementation and bounded automated evidence for applicant-owned Draft request creation; independent reviews and every broader product/production gate remain open |
 | [Engineering safeguards](backlog/engineering-safeguards.md) | Approved merge-gate design and activation conditions |
 | [Safeguard manifest](backlog/safeguards.json) | Machine-readable safeguard triggers, commands, required paths and evidence expectations |
 | [Planning validation](backlog/validation-report.md) | Structural evidence for requirement coverage, identifiers, dependencies, links and static wireframe integrity |

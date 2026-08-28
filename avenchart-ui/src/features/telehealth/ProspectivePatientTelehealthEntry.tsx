@@ -11,6 +11,7 @@ import {
   confirmApplicantClinicalInformationSummary,
   confirmApplicantRegistrationDetails,
   createProspectiveApplicant,
+  createApplicantTelehealthRequest,
   evaluateProspectiveSafetyTriage,
   getApplicantClinicalInformationInventory,
   getApplicantAllergyInformation,
@@ -18,6 +19,7 @@ import {
   getApplicantClinicalInformationSummary,
   getApplicantPreRequestReadiness,
   getApplicantPracticeReviewSubmission,
+  getApplicantTelehealthRequest,
   getApplicantMedicationInformation,
   getApplicantDevicePreparation,
   getApplicantTelehealthNotice,
@@ -82,6 +84,8 @@ import {
   type TelehealthApplicantPreRequestReadinessInput,
   type TelehealthApplicantPracticeReview,
   type TelehealthApplicantPracticeReviewInput,
+  type TelehealthApplicantRequestCreation,
+  type TelehealthApplicantRequestCreationInput,
   type TelehealthApplicantDevicePreparation,
   type TelehealthApplicantDevicePreparationInput,
 } from './api.ts'
@@ -131,6 +135,7 @@ type PendingHealthHistoryInformation = { content: string; idempotencyKey: string
 type PendingClinicalInformationSummary = { content: string; idempotencyKey: string }
 type PendingPreRequestReadiness = { content: string; idempotencyKey: string }
 type PendingPracticeReview = { content: string; idempotencyKey: string }
+type PendingRequestCreation = { content: string; idempotencyKey: string }
 type YesNoAnswer = '' | 'yes' | 'no'
 
 const initialSafetyAnswers = {
@@ -226,6 +231,12 @@ const initialPracticeReviewAcknowledgments = {
   practiceMayRequestInformationOrDecline: false,
   noTelehealthRequestOrCareQueue: false,
   worseningSymptomsRequireImmediateAction: false,
+}
+
+const initialRequestCreationAcknowledgments = {
+  createRequest: false,
+  noQueueOrCare: false,
+  urgentOrWorseningSymptomsRequireImmediateAction: false,
 }
 
 function clinicalInformationStatusLabel(status: TelehealthApplicantClinicalInformationCategoryStatus | null) {
@@ -348,6 +359,10 @@ export default function ProspectivePatientTelehealthEntry() {
   const [practiceReviewLoading, setPracticeReviewLoading] = useState(false)
   const [practiceReviewLoadAttempt, setPracticeReviewLoadAttempt] = useState(0)
   const [practiceReviewAcknowledgments, setPracticeReviewAcknowledgments] = useState(initialPracticeReviewAcknowledgments)
+  const [requestCreation, setRequestCreation] = useState<TelehealthApplicantRequestCreation | null>(null)
+  const [requestCreationLoading, setRequestCreationLoading] = useState(false)
+  const [requestCreationLoadAttempt, setRequestCreationLoadAttempt] = useState(0)
+  const [requestCreationAcknowledgments, setRequestCreationAcknowledgments] = useState(initialRequestCreationAcknowledgments)
   const [loading, setLoading] = useState(Boolean(applicantSession))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -373,6 +388,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const pendingClinicalInformationSummary = useRef<PendingClinicalInformationSummary | null>(null)
   const pendingPreRequestReadiness = useRef<PendingPreRequestReadiness | null>(null)
   const pendingPracticeReview = useRef<PendingPracticeReview | null>(null)
+  const pendingRequestCreation = useRef<PendingRequestCreation | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const safetyResultRef = useRef<HTMLDivElement>(null)
   const purposeResultRef = useRef<HTMLDivElement>(null)
@@ -393,6 +409,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const clinicalInformationSummaryResultRef = useRef<HTMLDivElement>(null)
   const preRequestReadinessResultRef = useRef<HTMLDivElement>(null)
   const practiceReviewResultRef = useRef<HTMLDivElement>(null)
+  const requestCreationResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -473,6 +490,10 @@ export default function ProspectivePatientTelehealthEntry() {
   useEffect(() => {
     if (practiceReview?.submitted) practiceReviewResultRef.current?.focus()
   }, [practiceReview])
+
+  useEffect(() => {
+    if (requestCreation?.requestCreated) requestCreationResultRef.current?.focus()
+  }, [requestCreation])
 
   useEffect(() => {
     if (!applicantSession) {
@@ -801,6 +822,29 @@ export default function ProspectivePatientTelehealthEntry() {
       })
     return () => controller.abort()
   }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, practiceReviewLoadAttempt])
+
+  useEffect(() => {
+    if (!applicantSession
+      || (applicant?.status !== 'SyntheticPracticeReviewAuthorized'
+        && applicant?.status !== 'SyntheticRequestCreated')) return
+    const controller = new AbortController()
+    setRequestCreationLoading(true)
+    setError(null)
+    getApplicantTelehealthRequest(
+      applicant.applicantId,
+      applicantSession.applicantAccessKey,
+      controller.signal,
+    )
+      .then(setRequestCreation)
+      .catch((caught: unknown) => {
+        if (isRequestCancellation(caught)) return
+        setError(caught instanceof Error ? caught.message : 'The synthetic request-creation state could not be loaded.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestCreationLoading(false)
+      })
+    return () => controller.abort()
+  }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestCreationLoadAttempt])
 
   function updateValue<Key extends keyof FormValues>(key: Key, value: FormValues[Key]) {
     pendingCreate.current = null
@@ -2042,6 +2086,64 @@ export default function ProspectivePatientTelehealthEntry() {
     }
   }
 
+  function updateRequestCreationAcknowledgment(
+    key: keyof typeof initialRequestCreationAcknowledgments,
+    checked: boolean,
+  ) {
+    pendingRequestCreation.current = null
+    setRequestCreationAcknowledgments((current) => ({ ...current, [key]: checked }))
+  }
+
+  async function createAuthorizedRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!applicant || !applicantSession || !requestCreation) return
+    if (!Object.values(requestCreationAcknowledgments).every(Boolean)) {
+      setError('Confirm every request-creation and safety boundary before continuing.')
+      return
+    }
+
+    setError(null)
+    const input = {
+      expectedApplicantVersion: applicant.version,
+      authorizationPolicyVersion: requestCreation.authorizationPolicyVersion,
+      requestCreationConfirmed: true,
+      noQueueOrCareAcknowledged: true,
+      urgentOrWorseningSymptomsRequireImmediateActionAcknowledged: true,
+    } satisfies TelehealthApplicantRequestCreationInput
+    const content = JSON.stringify(input)
+    if (!pendingRequestCreation.current || pendingRequestCreation.current.content !== content) {
+      pendingRequestCreation.current = { content, idempotencyKey: crypto.randomUUID() }
+    }
+
+    setSubmitting(true)
+    try {
+      const result = await createApplicantTelehealthRequest(
+        applicant.applicantId,
+        applicantSession.applicantAccessKey,
+        input,
+        pendingRequestCreation.current.idempotencyKey,
+      )
+      setRequestCreation(result)
+      setApplicant((current) => current ? {
+        ...current,
+        status: result.applicantStatus,
+        version: result.applicantVersion,
+        nextAction: result.direction,
+      } : current)
+      pendingRequestCreation.current = null
+      setRequestCreationAcknowledgments(initialRequestCreationAcknowledgments)
+    } catch (caught: unknown) {
+      if (caught instanceof ApiRequestError && caught.status && caught.status < 500) {
+        pendingRequestCreation.current = null
+      }
+      setError(caught instanceof Error
+        ? caught.message
+        : 'The synthetic telehealth request could not be created.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   function restart() {
     clearApplicantSession()
     pendingCreate.current = null
@@ -2065,6 +2167,7 @@ export default function ProspectivePatientTelehealthEntry() {
     pendingClinicalInformationSummary.current = null
     pendingPreRequestReadiness.current = null
     pendingPracticeReview.current = null
+    pendingRequestCreation.current = null
     setApplicantSession(null)
     setApplicant(null)
     setValues(initialValues)
@@ -2161,6 +2264,10 @@ export default function ProspectivePatientTelehealthEntry() {
     setPracticeReviewLoading(false)
     setPracticeReviewLoadAttempt(0)
     setPracticeReviewAcknowledgments(initialPracticeReviewAcknowledgments)
+    setRequestCreation(null)
+    setRequestCreationLoading(false)
+    setRequestCreationLoadAttempt(0)
+    setRequestCreationAcknowledgments(initialRequestCreationAcknowledgments)
     setError(null)
   }
 
@@ -3809,6 +3916,73 @@ export default function ProspectivePatientTelehealthEntry() {
                     <ul>{practiceReview.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                   </>
                 ) : <p>Loading the submitted synthetic practice review receipt…</p>}
+                <div className="telehealth-emergency-action">
+                  <strong>Emergency symptoms now?</strong>
+                  <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a>
+                </div>
+              </div>
+            ) : null}
+            {applicant.status === 'SyntheticPracticeReviewAuthorized' ? (
+              <div className="telehealth-coverage-result" aria-labelledby="authorized-request-creation-title">
+                <h3 id="authorized-request-creation-title">Create the authorized Draft request</h3>
+                <p>The practice authorized this one synthetic request-creation step. You must still confirm it. Creating the Draft does not start a doctor search or place you in any queue.</p>
+                {requestCreationLoading ? <p role="status">Loading the authorized request-creation step…</p> : null}
+                {!requestCreationLoading && !requestCreation ? (
+                  <button className="telehealth-button" type="button" onClick={() => setRequestCreationLoadAttempt((value) => value + 1)}>
+                    Retry request-creation load
+                  </button>
+                ) : null}
+                {requestCreation?.requestCreationReady ? (
+                  <form onSubmit={createAuthorizedRequest}>
+                    <dl className="telehealth-details">
+                      <div><dt>Visit category</dt><dd>{requestCreation.complaintCategory === 'migraine' ? 'Migraine or recurring headache' : 'Sleep difficulty'}</dd></div>
+                      <div><dt>Practice authorization policy</dt><dd>Version {requestCreation.authorizationPolicyVersion}</dd></div>
+                      <div><dt>Request status after creation</dt><dd>Draft</dd></div>
+                      <div><dt>Doctor search or queue</dt><dd>Not started</dd></div>
+                      <div><dt>Appointment, encounter, consent, or care</dt><dd>Not created or authorized</dd></div>
+                    </dl>
+                    <ul>{requestCreation.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                    <fieldset className="telehealth-fieldset">
+                      <legend>Required request-creation confirmations</legend>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestCreationAcknowledgments.createRequest} onChange={(event) => updateRequestCreationAcknowledgment('createRequest', event.target.checked)} /><span>I want to create this one synthetic Draft telehealth request now.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestCreationAcknowledgments.noQueueOrCare} onChange={(event) => updateRequestCreationAcknowledgment('noQueueOrCare', event.target.checked)} /><span>I understand this does not start a doctor search or create a queue entry, queue position, appointment, encounter, consent, or care.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestCreationAcknowledgments.urgentOrWorseningSymptomsRequireImmediateAction} onChange={(event) => updateRequestCreationAcknowledgment('urgentOrWorseningSymptomsRequireImmediateAction', event.target.checked)} /><span>I will seek appropriate immediate care instead of waiting if symptoms are urgent or worsening.</span></label>
+                    </fieldset>
+                    <button
+                      className="telehealth-button"
+                      type="submit"
+                      disabled={submitting || !Object.values(requestCreationAcknowledgments).every(Boolean)}
+                    >
+                      {submitting ? 'Creating Draft request…' : 'Create Draft telehealth request'}
+                    </button>
+                  </form>
+                ) : null}
+                <div className="telehealth-emergency-action">
+                  <strong>Emergency symptoms now?</strong>
+                  <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a>
+                </div>
+              </div>
+            ) : null}
+            {applicant.status === 'SyntheticRequestCreated' ? (
+              <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestCreationResultRef}>
+                <h3>Draft telehealth request created</h3>
+                {requestCreation?.requestCreated ? (
+                  <>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestCreation.requestId}</dd></div>
+                      <div><dt>Visit category</dt><dd>{requestCreation.complaintCategory === 'migraine' ? 'Migraine or recurring headache' : 'Sleep difficulty'}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestCreation.requestStatus}</dd></div>
+                      <div><dt>Doctor search started</dt><dd>{requestCreation.doctorSearchStarted ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Patient or clinician queue entered</dt><dd>{requestCreation.patientCareQueueEntered || requestCreation.clinicianQueueEntered ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Queue position assigned</dt><dd>{requestCreation.queuePositionAssigned ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Appointment, encounter, consent, or care created</dt><dd>No</dd></div>
+                      <div><dt>Created</dt><dd>{requestCreation.createdAt ? new Date(requestCreation.createdAt).toLocaleString() : 'Created'}</dd></div>
+                    </dl>
+                    <p>{requestCreation.direction}</p>
+                    <p><strong>The request is only a Draft. No doctor search, queue, queue position, appointment, encounter, consent, media, care, prescribing, billing, claim, integration, or external action exists.</strong></p>
+                    <ul>{requestCreation.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                  </>
+                ) : <p>Loading the synthetic Draft request receipt…</p>}
                 <div className="telehealth-emergency-action">
                   <strong>Emergency symptoms now?</strong>
                   <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a>
