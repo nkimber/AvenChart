@@ -327,6 +327,13 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             throw TelehealthProblem.NotFound();
         }
 
+        if (await IsApplicantOriginatedAsync(connection, transaction, requestId, cancellationToken))
+        {
+            throw TelehealthProblem.Conflict(
+                "telehealth_applicant_request_dedicated_authorization_required",
+                "Applicant-originated requests require the evidence-bound applicant queue-authorization route.");
+        }
+
         if (await IsReplayAsync(connection, transaction, requestId, idempotencyKey, fingerprint, cancellationToken))
         {
             await transaction.CommitAsync(cancellationToken);
@@ -1602,7 +1609,8 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select request_id, status, complaint_category, triage_outcome, version, created_at
+            select request_id, status, complaint_category, triage_outcome, version, created_at,
+                   source_applicant_id is not null
             from telehealth_requests
             where practice_id=@practice_id and facility_id=@facility_id and status=@status
             order by coalesce(ready_at, created_at), request_id;
@@ -1617,9 +1625,24 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             items.Add(new TelehealthOperationalReviewItem(
                 reader.GetGuid(0), reader.GetString(1), reader.GetString(2),
                 reader.GetString(3), checked((int)reader.GetInt64(4)),
-                reader.GetFieldValue<DateTimeOffset>(5)));
+                reader.GetFieldValue<DateTimeOffset>(5), reader.GetBoolean(6)));
         }
         return items;
+    }
+
+    private static async Task<bool> IsApplicantOriginatedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select source_applicant_id is not null from telehealth_requests where request_id=@request_id;
+            """;
+        command.Parameters.AddWithValue("request_id", requestId);
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
     }
 
     private static async Task<ShiftReplay?> FindShiftByIdempotencyAsync(

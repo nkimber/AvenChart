@@ -2362,7 +2362,61 @@ export type TelehealthReadiness = {
 export type TelehealthQueueItem = Pick<
   TelehealthRequest,
   'requestId' | 'status' | 'complaintCategory' | 'triageOutcome' | 'version' | 'createdAt'
->
+> & { applicantOriginated: boolean }
+
+export type TelehealthApplicantRequestQueueAuthorization = {
+  requestId: string
+  requestVersion: number
+  requestStatus: 'OperationalReview' | 'Queued'
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_AUTHORIZATION'
+  policyVersion: 1
+  sourceMode: 'NON_PRODUCTION'
+  compatibilityTarget: 'AVENCHART_SYNTHETIC_QUEUE_AUTHORIZATION_V1'
+  authorizationSnapshotFingerprint: string
+  resultValidThrough: string
+  practiceDisplayName: string
+  payerDisplayName: string
+  productDisplayName: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  purposeCategory: 'migraine' | 'sleep'
+  dateOfService: string
+  candidateDisplayName: string
+  maskedProviderReference: string
+  maskedBillingProviderReference: string
+  serviceCategory: 'ProfessionalTelehealthConsultation'
+  modality: 'RealTimeAudioVideo'
+  authorizationReady: boolean
+  authorizationCompleted: boolean
+  authorizedAt: string | null
+  businessOutcome: 'SyntheticRequestAuthorizedToQueue' | null
+  syntheticEvidenceReviewed: boolean
+  practiceAccepted: boolean
+  patientCareQueueEntered: boolean
+  clinicianQueueEntered: boolean
+  doctorSearchStarted: boolean
+  appointmentCreated: boolean
+  realStateAuthorityVerified: false
+  realCredentialingVerified: false
+  renderingPhysicianAssigned: false
+  renderingPhysicianNetworkChecked: false
+  exactNetworkConfirmed: false
+  canonicalCoverageCreated: false
+  coverageSelected: false
+  coverageVerified: false
+  financialRouteCreated: false
+  patientContacted: false
+  queuePositionAssigned: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  prescribingEnabled: false
+  billingEnabled: false
+  claimCreated: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
 
 export type TelehealthShift = {
   shiftId: string
@@ -4137,6 +4191,43 @@ export function authorizeRequest(requestId: string, expectedVersion: number) {
   return json<TelehealthRequest>(
     `/api/telehealth/v1/admin/requests/${encodeURIComponent(requestId)}/authorize`,
     commandInit({ expectedVersion }, 'clinician'),
+  )
+}
+
+export function getApplicantRequestQueueAuthorization(requestId: string, signal?: AbortSignal) {
+  return json<TelehealthApplicantRequestQueueAuthorization>(
+    `/api/telehealth/v1/admin/applicant-requests/${encodeURIComponent(requestId)}/queue-authorization`,
+    {
+      headers: clinicianHeaders(),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function authorizeApplicantRequestToQueue(
+  requestId: string,
+  input: {
+    expectedRequestVersion: number
+    authorizationSnapshotFingerprint: string
+    syntheticEvidenceReviewed: true
+    noCoverageGuaranteeAcknowledged: true
+    practiceAcceptsForQueueAcknowledged: true
+    queueNotCareAcknowledged: true
+  },
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestQueueAuthorization>(
+    `/api/telehealth/v1/admin/applicant-requests/${encodeURIComponent(requestId)}/queue-authorization`,
+    {
+      method: 'POST',
+      headers: clinicianHeaders({
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
   )
 }
 

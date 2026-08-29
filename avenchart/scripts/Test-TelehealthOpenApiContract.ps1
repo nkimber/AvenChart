@@ -27,7 +27,7 @@ try {
       '/api/telehealth/v1/admin/applicant-practice-review','/api/telehealth/v1/admin/applicant-practice-review/{practiceReviewCaseId}','/api/telehealth/v1/admin/applicant-practice-review/{practiceReviewCaseId}/claim','/api/telehealth/v1/admin/applicant-practice-review/{practiceReviewCaseId}/authorization','/api/telehealth/v1/admin/applicant-identity-review','/api/telehealth/v1/admin/applicants/{applicantId}/identity-review-decision',
       '/api/telehealth/v1/admin/applicant-promotion-authorization','/api/telehealth/v1/admin/applicants/{applicantId}/promotion-authorization-decision',
       '/api/telehealth/v1/admin/applicant-synthetic-promotion','/api/telehealth/v1/admin/applicants/{applicantId}/synthetic-promotion',
-      '/api/telehealth/v1/admin/operational-review','/api/telehealth/v1/admin/requests/{requestId}/authorize',
+      '/api/telehealth/v1/admin/operational-review','/api/telehealth/v1/admin/applicant-requests/{requestId}/queue-authorization','/api/telehealth/v1/admin/requests/{requestId}/authorize',
       '/api/telehealth/v1/clinician/queue','/api/telehealth/v1/clinician/shifts','/api/telehealth/v1/clinician/reservations/reserve-next',
       '/api/telehealth/v1/clinician/reservations/{reservationId}/connection-grants',
       '/api/telehealth/v1/clinician/reservations/{reservationId}/consultations/start',
@@ -1701,6 +1701,37 @@ try {
       @($requestOperationalReviewSubmissionInputProperties | Where-Object { $_ -match '^staff|^provider|^physician|^npi$|^tin$|^license$|^contract$|^payer$|^product$|^patient|^networkResult|^price|^financial|^operationalResult|^queue|^note|^freeText' }).Count -eq 0 -and
       @($requestOperationalReviewSubmissionResponseProperties | Where-Object { $_ -match 'submissionId|participationEvaluationId|candidateStaffId|canonicalPatientId|patientId|accessKey|commandFingerprint|^npi$|tin|licenseNumber|practitionerReference|stateAuthorityReference|billingOrganizationReference|^billingProviderReference$|practitionerRoleReference|organizationAffiliationReference|contractReference|price|estimate' }).Count -eq 0 -and
       @($requestOperationalReviewSubmissionResponseProperties | Where-Object { $_ -in @('syntheticAutomatedChecksComplete','operationalReviewCreated','realStateAuthorityVerified','realCredentialingVerified','renderingPhysicianAssigned','renderingPhysicianNetworkChecked','exactNetworkConfirmed','canonicalCoverageCreated','coverageSelected','coverageVerified','financialRouteCreated','practiceAccepted','patientContacted','patientCareQueueEntered','clinicianQueueEntered','doctorSearchStarted','queuePositionAssigned','appointmentCreated','encounterCreated','consentCreated','careAuthorized','integrationEnabled','externalCallPerformed') }).Count -eq 23)
+    $requestQueueAuthorizationPath = Get-Property (Get-Property $document 'paths') '/api/telehealth/v1/admin/applicant-requests/{requestId}/queue-authorization'
+    $requestQueueAuthorizationGet = Get-Operation $document '/api/telehealth/v1/admin/applicant-requests/{requestId}/queue-authorization' 'get'
+    $requestQueueAuthorizationPost = Get-Operation $document '/api/telehealth/v1/admin/applicant-requests/{requestId}/queue-authorization' 'post'
+    $requestQueueAuthorizationInputReference = Get-Property (Get-Property (Get-Property (Get-Property $requestQueueAuthorizationPost 'requestBody') 'content') 'application/json').schema '$ref'
+    $requestQueueAuthorizationInputSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') (($requestQueueAuthorizationInputReference -split '/')[-1])
+    $requestQueueAuthorizationInputProperties = @((Get-Property $requestQueueAuthorizationInputSchema 'properties').PSObject.Properties.Name)
+    $requestQueueAuthorizationResponseReference = Get-Property (Get-Property (Get-Property (Get-Property $requestQueueAuthorizationGet.responses '200') 'content') 'application/json').schema '$ref'
+    $requestQueueAuthorizationResponseSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') (($requestQueueAuthorizationResponseReference -split '/')[-1])
+    $requestQueueAuthorizationResponseProperties = @((Get-Property $requestQueueAuthorizationResponseSchema 'properties').PSObject.Properties.Name)
+    Add-Check 'Applicant queue authorization is staff-only, private, versioned, idempotent, and exposes bounded failures' (
+      @($requestQueueAuthorizationPath.PSObject.Properties.Name).Count -eq 2 -and
+      (Has-Security $requestQueueAuthorizationGet 'AvenChartLocalStaffSession') -and
+      (Has-Security $requestQueueAuthorizationPost 'AvenChartLocalStaffSession') -and
+      (Has-Security $requestQueueAuthorizationPost 'AvenChartOidcBearer') -and
+      -not (Has-Security $requestQueueAuthorizationPost 'AvenChartPatientPortalSession') -and
+      -not (Has-Security $requestQueueAuthorizationPost 'AvenChartTelehealthApplicantAccess') -and
+      (Has-Header $requestQueueAuthorizationGet 'X-AvenChart-Facility-Id') -and
+      (Has-Header $requestQueueAuthorizationGet 'X-AvenChart-Purpose-Of-Use') -and
+      -not (Has-Header $requestQueueAuthorizationGet 'X-Idempotency-Key') -and
+      (Has-Header $requestQueueAuthorizationPost 'X-Idempotency-Key') -and
+      $null-eq(Get-Property $requestQueueAuthorizationGet 'requestBody') -and
+      $null-ne(Get-Property $requestQueueAuthorizationPost 'requestBody') -and
+      $null-ne(Get-Property $requestQueueAuthorizationPost.responses '400') -and
+      $null-ne(Get-Property $requestQueueAuthorizationPost.responses '403') -and
+      $null-ne(Get-Property $requestQueueAuthorizationPost.responses '404') -and
+      $null-ne(Get-Property $requestQueueAuthorizationPost.responses '409'))
+    Add-Check 'Applicant queue-authorization command is acknowledgment-only and its response is minimized with explicit queue and still-false care consequences' (
+      @(Compare-Object @('authorizationSnapshotFingerprint','expectedRequestVersion','noCoverageGuaranteeAcknowledged','practiceAcceptsForQueueAcknowledged','queueNotCareAcknowledged','syntheticEvidenceReviewed') ($requestQueueAuthorizationInputProperties|Sort-Object)).Count -eq 0 -and
+      @($requestQueueAuthorizationInputProperties | Where-Object { $_ -match '^staff|^provider|^physician|^npi$|^tin$|^license$|^contract$|^payer$|^product$|^patient|^networkResult|^price|^financial|^priority|^appointment|^queuePosition|^note|^freeText' }).Count -eq 0 -and
+      @($requestQueueAuthorizationResponseProperties | Where-Object { $_ -match 'authorizationId|submissionId|applicantId|candidateStaffId|canonicalPatientId|patientId|accessKey|commandFingerprint|decidedBy|^npi$|tin|licenseNumber|practitionerReference|stateAuthorityReference|billingOrganizationReference|^billingProviderReference$|practitionerRoleReference|organizationAffiliationReference|contractReference|price|estimate' }).Count -eq 0 -and
+      @($requestQueueAuthorizationResponseProperties | Where-Object { $_ -in @('syntheticEvidenceReviewed','practiceAccepted','patientCareQueueEntered','clinicianQueueEntered','doctorSearchStarted','appointmentCreated','renderingPhysicianAssigned','coverageVerified','financialRouteCreated','patientContacted','queuePositionAssigned','encounterCreated','consentCreated','careAuthorized','prescribingEnabled','billingEnabled','claimCreated','integrationEnabled','externalCallPerformed') }).Count -eq 19)
     $identityReviewList = Get-Operation $document '/api/telehealth/v1/admin/applicant-identity-review' 'get'
     $identityReviewWrite = Get-Operation $document '/api/telehealth/v1/admin/applicants/{applicantId}/identity-review-decision' 'put'
     $identityReviewRequestReference = Get-Property (Get-Property (Get-Property (Get-Property $identityReviewWrite 'requestBody') 'content') 'application/json').schema '$ref'
@@ -2015,5 +2046,5 @@ try {
     Add-Check 'Public context has no protected security requirement and exposes only the public projection' ($null -eq $contextSecurity -or @($contextSecurity).Count -eq 0)
 }
 catch { Add-Check 'Telehealth OpenAPI contract execution' $false $_.Exception.Message }
-    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
+    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
 if(-not $passed){exit 1}

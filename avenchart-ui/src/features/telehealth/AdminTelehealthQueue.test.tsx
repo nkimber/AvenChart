@@ -5,10 +5,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminTelehealthQueue from './AdminTelehealthQueue.tsx'
 import {
+  authorizeApplicantRequestToQueue,
   authorizeApplicantPracticeReview,
   authorizeRequest,
   claimApplicantPracticeReview,
   executeApplicantSyntheticPromotion,
+  getApplicantRequestQueueAuthorization,
   getApplicantPracticeReviewPacket,
   listApplicantIdentityReview,
   listApplicantPracticeReviewInbox,
@@ -25,10 +27,12 @@ vi.mock('./api.ts', async (importOriginal) => {
   const original = await importOriginal<typeof import('./api.ts')>()
   return {
     ...original,
+    authorizeApplicantRequestToQueue: vi.fn(),
     authorizeApplicantPracticeReview: vi.fn(),
     authorizeRequest: vi.fn(),
     claimApplicantPracticeReview: vi.fn(),
     executeApplicantSyntheticPromotion: vi.fn(),
+    getApplicantRequestQueueAuthorization: vi.fn(),
     getApplicantPracticeReviewPacket: vi.fn(),
     listApplicantIdentityReview: vi.fn(),
     listApplicantPracticeReviewInbox: vi.fn(),
@@ -135,6 +139,7 @@ describe('AdminTelehealthQueue', () => {
         triageOutcome: 'TelehealthEligible',
         version: 3,
         createdAt: '2026-08-26T12:00:00Z',
+        applicantOriginated: false,
       }])
       .mockRejectedValueOnce(new Error('Queue unavailable'))
     vi.mocked(authorizeRequest).mockResolvedValue({} as never)
@@ -147,6 +152,78 @@ describe('AdminTelehealthQueue', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Queue unavailable')
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Authorize to clinician queue' })).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled()
+  })
+
+  it('uses the dedicated evidence-bound authorization for an applicant-originated request', async () => {
+    const item = {
+      requestId: '12000000-0000-4000-8000-000000000012',
+      status: 'OperationalReview' as const,
+      complaintCategory: 'migraine' as const,
+      triageOutcome: 'TelehealthEligible',
+      version: 12,
+      createdAt: '2026-08-29T12:00:00Z',
+      applicantOriginated: true,
+    }
+    const packet = {
+      requestId: item.requestId,
+      requestVersion: 12,
+      requestStatus: 'OperationalReview',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_AUTHORIZATION',
+      policyVersion: 1,
+      sourceMode: 'NON_PRODUCTION',
+      compatibilityTarget: 'AVENCHART_SYNTHETIC_QUEUE_AUTHORIZATION_V1',
+      authorizationSnapshotFingerprint: 'a'.repeat(64),
+      resultValidThrough: '2026-08-29T13:00:00Z',
+      practiceDisplayName: 'AvenChart Synthetic Practice',
+      payerDisplayName: 'Harbor Mutual',
+      productDisplayName: 'Synthetic Choice',
+      currentLocationStateCode: 'GA',
+      purposeCategory: 'migraine',
+      dateOfService: '2026-08-29',
+      candidateDisplayName: 'Dr. Synthetic',
+      maskedProviderReference: 'Synthetic provider ••••1234',
+      maskedBillingProviderReference: 'Synthetic billing provider ••••8800',
+      serviceCategory: 'ProfessionalTelehealthConsultation',
+      modality: 'RealTimeAudioVideo',
+      authorizationReady: true,
+      authorizationCompleted: false,
+      authorizedAt: null,
+      businessOutcome: null,
+      direction: 'Review the bounded evidence.',
+      limitations: ['No real coverage verification.'],
+    }
+    vi.mocked(listOperationalReview).mockResolvedValueOnce([item]).mockResolvedValue([])
+    vi.mocked(getApplicantRequestQueueAuthorization).mockResolvedValue(packet as never)
+    vi.mocked(authorizeApplicantRequestToQueue).mockResolvedValue({ ...packet, requestVersion: 13, requestStatus: 'Queued' } as never)
+
+    render(<AdminTelehealthQueue />)
+
+    expect(await screen.findByText('New-patient applicant request', { exact: false })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Authorize to clinician queue' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Review applicant queue authorization' }))
+    expect(await screen.findByRole('heading', { name: 'Applicant request queue authorization' })).toHaveFocus()
+    const acknowledgments = screen.getAllByRole('checkbox')
+    expect(acknowledgments).toHaveLength(4)
+    acknowledgments.forEach((acknowledgment) => expect(acknowledgment).not.toBeChecked())
+    const authorize = screen.getByRole('button', { name: 'Accept into synthetic clinician queue' })
+    expect(authorize).toBeDisabled()
+    acknowledgments.forEach((acknowledgment) => fireEvent.click(acknowledgment))
+    expect(authorize).toBeEnabled()
+    fireEvent.click(authorize)
+
+    await waitFor(() => expect(authorizeApplicantRequestToQueue).toHaveBeenCalledWith(
+      item.requestId,
+      {
+        expectedRequestVersion: 12,
+        authorizationSnapshotFingerprint: 'a'.repeat(64),
+        syntheticEvidenceReviewed: true,
+        noCoverageGuaranteeAcknowledged: true,
+        practiceAcceptsForQueueAcknowledged: true,
+        queueNotCareAcknowledged: true,
+      },
+      expect.any(String),
+    ))
+    expect(await screen.findByText('No requests are awaiting operational review.')).toBeInTheDocument()
   })
 
   it('renders a minimized pending practice-review item with only a bounded claim action', async () => {

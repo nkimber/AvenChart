@@ -3,10 +3,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  authorizeApplicantRequestToQueue,
   authorizeRequest,
   authorizeApplicantPracticeReview,
   claimApplicantPracticeReview,
   executeApplicantSyntheticPromotion,
+  getApplicantRequestQueueAuthorization,
   getApplicantPracticeReviewPacket,
   listApplicantPracticeReviewInbox,
   listApplicantIdentityReview,
@@ -18,6 +20,7 @@ import {
   type TelehealthApplicantIdentityReviewItem,
   type TelehealthApplicantPracticeReviewInboxItem,
   type TelehealthApplicantPracticeReviewPacket,
+  type TelehealthApplicantRequestQueueAuthorization,
   type TelehealthApplicantPromotionAuthorizationDecisionType,
   type TelehealthApplicantPromotionAuthorizationItem,
   type TelehealthApplicantSyntheticPromotionItem,
@@ -52,6 +55,13 @@ type PracticeReviewAuthorizationDraft = {
   noRequestOrQueueAcknowledged: boolean
   retryKey: string | null
 }
+type QueueAuthorizationDraft = {
+  syntheticEvidenceReviewed: boolean
+  noCoverageGuaranteeAcknowledged: boolean
+  practiceAcceptsForQueueAcknowledged: boolean
+  queueNotCareAcknowledged: boolean
+  retryKey: string | null
+}
 
 export default function AdminTelehealthQueue() {
   const [items, setItems] = useState<TelehealthQueueItem[]>([])
@@ -80,6 +90,10 @@ export default function AdminTelehealthQueue() {
   const [practiceReviewAuthorizationWorkingId, setPracticeReviewAuthorizationWorkingId] = useState<string | null>(null)
   const [practiceReviewAuthorizationError, setPracticeReviewAuthorizationError] = useState<string | null>(null)
   const [workingId, setWorkingId] = useState<string | null>(null)
+  const [queueAuthorizationLoadingId, setQueueAuthorizationLoadingId] = useState<string | null>(null)
+  const [queueAuthorizationWorkingId, setQueueAuthorizationWorkingId] = useState<string | null>(null)
+  const [queueAuthorizationPacket, setQueueAuthorizationPacket] = useState<TelehealthApplicantRequestQueueAuthorization | null>(null)
+  const [queueAuthorizationError, setQueueAuthorizationError] = useState<string | null>(null)
   const [identityWorkingId, setIdentityWorkingId] = useState<string | null>(null)
   const [promotionWorkingId, setPromotionWorkingId] = useState<string | null>(null)
   const [syntheticPromotionWorkingId, setSyntheticPromotionWorkingId] = useState<string | null>(null)
@@ -88,6 +102,7 @@ export default function AdminTelehealthQueue() {
   const [syntheticPromotionDrafts, setSyntheticPromotionDrafts] = useState<Record<string, SyntheticPromotionDraft>>({})
   const [practiceReviewClaimDrafts, setPracticeReviewClaimDrafts] = useState<Record<string, PracticeReviewClaimDraft>>({})
   const [practiceReviewAuthorizationDrafts, setPracticeReviewAuthorizationDrafts] = useState<Record<string, PracticeReviewAuthorizationDraft>>({})
+  const [queueAuthorizationDrafts, setQueueAuthorizationDrafts] = useState<Record<string, QueueAuthorizationDraft>>({})
   const generation = useRef(0)
   const identityGeneration = useRef(0)
   const promotionGeneration = useRef(0)
@@ -208,6 +223,18 @@ export default function AdminTelehealthQueue() {
     return () => { controller.abort(); window.clearInterval(timer) }
   }, [refresh, refreshIdentity, refreshPracticeReview, refreshPromotion, refreshSyntheticPromotion])
 
+  useEffect(() => {
+    if (queueAuthorizationPacket) {
+      document.getElementById(`queue-authorization-${queueAuthorizationPacket.requestId}`)?.focus()
+    }
+  }, [queueAuthorizationPacket])
+
+  useEffect(() => {
+    if (queueAuthorizationError && queueAuthorizationPacket && queueAuthorizationWorkingId === null) {
+      document.getElementById(`submit-queue-authorization-${queueAuthorizationPacket.requestId}`)?.focus()
+    }
+  }, [queueAuthorizationError, queueAuthorizationPacket, queueAuthorizationWorkingId])
+
   async function authorize(item: TelehealthQueueItem) {
     setWorkingId(item.requestId)
     setError(null)
@@ -219,6 +246,69 @@ export default function AdminTelehealthQueue() {
       setError(caught instanceof Error ? caught.message : 'Authorization failed. Refresh before retrying.')
     } finally {
       setWorkingId(null)
+    }
+  }
+
+  function updateQueueAuthorizationDraft(requestId: string, change: Partial<QueueAuthorizationDraft>) {
+    setQueueAuthorizationDrafts((current) => {
+      const existing = current[requestId] ?? {
+        syntheticEvidenceReviewed: false,
+        noCoverageGuaranteeAcknowledged: false,
+        practiceAcceptsForQueueAcknowledged: false,
+        queueNotCareAcknowledged: false,
+        retryKey: null,
+      }
+      return { ...current, [requestId]: { ...existing, ...change } }
+    })
+  }
+
+  async function openQueueAuthorization(item: TelehealthQueueItem) {
+    setQueueAuthorizationLoadingId(item.requestId)
+    setQueueAuthorizationError(null)
+    setQueueAuthorizationPacket(null)
+    try {
+      const packet = await getApplicantRequestQueueAuthorization(item.requestId)
+      setQueueAuthorizationPacket(packet)
+      updateQueueAuthorizationDraft(item.requestId, {
+        syntheticEvidenceReviewed: false,
+        noCoverageGuaranteeAcknowledged: false,
+        practiceAcceptsForQueueAcknowledged: false,
+        queueNotCareAcknowledged: false,
+        retryKey: null,
+      })
+    } catch (caught) {
+      setQueueAuthorizationError(caught instanceof Error ? caught.message : 'The applicant queue-authorization review could not be loaded.')
+      queueMicrotask(() => document.getElementById(`open-queue-authorization-${item.requestId}`)?.focus())
+    } finally {
+      setQueueAuthorizationLoadingId(null)
+    }
+  }
+
+  async function authorizeApplicantRequest(item: TelehealthQueueItem) {
+    const packet = queueAuthorizationPacket
+    const draft = queueAuthorizationDrafts[item.requestId]
+    if (!packet || packet.requestId !== item.requestId || !draft) return
+    const retryKey = draft.retryKey ?? crypto.randomUUID()
+    updateQueueAuthorizationDraft(item.requestId, { retryKey })
+    setQueueAuthorizationWorkingId(item.requestId)
+    setQueueAuthorizationError(null)
+    try {
+      await authorizeApplicantRequestToQueue(item.requestId, {
+        expectedRequestVersion: packet.requestVersion,
+        authorizationSnapshotFingerprint: packet.authorizationSnapshotFingerprint,
+        syntheticEvidenceReviewed: true,
+        noCoverageGuaranteeAcknowledged: true,
+        practiceAcceptsForQueueAcknowledged: true,
+        queueNotCareAcknowledged: true,
+      }, retryKey)
+      setQueueAuthorizationPacket(null)
+      updateQueueAuthorizationDraft(item.requestId, { retryKey: null })
+      await refresh()
+      queueMicrotask(() => document.getElementById('operational-review-title')?.focus())
+    } catch (caught) {
+      setQueueAuthorizationError(caught instanceof Error ? caught.message : 'Queue authorization failed. Retry the unchanged decision or reload the review.')
+    } finally {
+      setQueueAuthorizationWorkingId(null)
     }
   }
 
@@ -641,12 +731,53 @@ export default function AdminTelehealthQueue() {
       </section>
 
       <section className="telehealth-card" aria-busy={loading} aria-live="polite">
-        <h2>Eligible requests awaiting authorization</h2>
+        <h2 id="operational-review-title" tabIndex={-1}>Eligible requests awaiting authorization</h2>
         {error ? <div><p className="telehealth-error" role="alert">{error}</p><button className="telehealth-button" type="button" onClick={() => void refresh()}>Try again</button></div> : null}
         {loading ? <p>Refreshing queue…</p> : null}
         {!loading && items.length === 0 && !error ? <p>No requests are awaiting operational review.</p> : null}
         <ul className="telehealth-queue">
-          {items.map((item) => <li key={item.requestId}><div><strong>{item.complaintCategory}</strong><span>{item.triageOutcome}</span><small>Request {item.requestId.slice(0, 8)} · version {item.version}</small></div><button className="telehealth-button" type="button" disabled={workingId !== null} onClick={() => void authorize(item)}>{workingId === item.requestId ? 'Authorizing…' : 'Authorize to clinician queue'}</button></li>)}
+          {items.map((item) => {
+            const packet = queueAuthorizationPacket?.requestId === item.requestId ? queueAuthorizationPacket : null
+            const draft = queueAuthorizationDrafts[item.requestId] ?? {
+              syntheticEvidenceReviewed: false,
+              noCoverageGuaranteeAcknowledged: false,
+              practiceAcceptsForQueueAcknowledged: false,
+              queueNotCareAcknowledged: false,
+              retryKey: null,
+            }
+            const canAuthorizeApplicant = draft.syntheticEvidenceReviewed
+              && draft.noCoverageGuaranteeAcknowledged
+              && draft.practiceAcceptsForQueueAcknowledged
+              && draft.queueNotCareAcknowledged
+            return <li key={item.requestId}>
+              <div>
+                <strong>{item.complaintCategory}</strong>
+                <span>{item.triageOutcome}</span>
+                <small>{item.applicantOriginated ? 'New-patient applicant request' : 'Established-patient request'} · Request {item.requestId.slice(0, 8)} · version {item.version}</small>
+              </div>
+              {item.applicantOriginated
+                ? <button id={`open-queue-authorization-${item.requestId}`} className="telehealth-button" type="button" disabled={queueAuthorizationLoadingId !== null || queueAuthorizationWorkingId !== null} onClick={() => void openQueueAuthorization(item)}>{queueAuthorizationLoadingId === item.requestId ? 'Loading review…' : packet ? 'Reload applicant review' : 'Review applicant queue authorization'}</button>
+                : <button className="telehealth-button" type="button" disabled={workingId !== null} onClick={() => void authorize(item)}>{workingId === item.requestId ? 'Authorizing…' : 'Authorize to clinician queue'}</button>}
+              {item.applicantOriginated && queueAuthorizationError && (!packet || packet.requestId === item.requestId) ? <p className="telehealth-error" role="alert">{queueAuthorizationError}</p> : null}
+              {packet ? <section className="telehealth-review-form" aria-labelledby={`queue-authorization-${item.requestId}`}>
+                <h3 id={`queue-authorization-${item.requestId}`} tabIndex={-1}>Applicant request queue authorization</h3>
+                <p><strong>{packet.practiceDisplayName}</strong> · {packet.currentLocationStateCode} · {packet.purposeCategory} · service date {packet.dateOfService}</p>
+                <p>{packet.payerDisplayName} · {packet.productDisplayName}</p>
+                <p>{packet.candidateDisplayName} · {packet.maskedProviderReference} · {packet.maskedBillingProviderReference}</p>
+                <p>{packet.serviceCategory} · {packet.modality}</p>
+                <p>{packet.direction}</p>
+                <ul>{packet.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                <fieldset disabled={queueAuthorizationWorkingId !== null}>
+                  <legend>Required staff acknowledgments</legend>
+                  <label className="telehealth-check"><input type="checkbox" checked={draft.syntheticEvidenceReviewed} onChange={(event) => updateQueueAuthorizationDraft(item.requestId, { syntheticEvidenceReviewed: event.target.checked, retryKey: null })} /> I reviewed the bounded synthetic evidence and its provenance.</label>
+                  <label className="telehealth-check"><input type="checkbox" checked={draft.noCoverageGuaranteeAcknowledged} onChange={(event) => updateQueueAuthorizationDraft(item.requestId, { noCoverageGuaranteeAcknowledged: event.target.checked, retryKey: null })} /> I understand this does not verify real insurance, benefits, payment, or price.</label>
+                  <label className="telehealth-check"><input type="checkbox" checked={draft.practiceAcceptsForQueueAcknowledged} onChange={(event) => updateQueueAuthorizationDraft(item.requestId, { practiceAcceptsForQueueAcknowledged: event.target.checked, retryKey: null })} /> I accept this request into this practice's synthetic clinician work queue.</label>
+                  <label className="telehealth-check"><input type="checkbox" checked={draft.queueNotCareAcknowledged} onChange={(event) => updateQueueAuthorizationDraft(item.requestId, { queueNotCareAcknowledged: event.target.checked, retryKey: null })} /> I understand queue entry is not clinician assignment, consent, an encounter, or care authorization.</label>
+                  <button id={`submit-queue-authorization-${item.requestId}`} className="telehealth-button" type="button" disabled={!canAuthorizeApplicant || queueAuthorizationWorkingId !== null} onClick={() => void authorizeApplicantRequest(item)}>{queueAuthorizationWorkingId === item.requestId ? 'Authorizing…' : queueAuthorizationError ? 'Retry unchanged authorization' : 'Accept into synthetic clinician queue'}</button>
+                </fieldset>
+              </section> : null}
+            </li>
+          })}
         </ul>
       </section>
     </main>

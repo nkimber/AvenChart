@@ -707,6 +707,24 @@ public static class TelehealthEndpoints
             .WithName("ListTelehealthOperationalReview")
             .Produces<TelehealthOperationalReviewResponse>()
             .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "view"));
+        admin.MapGet("/applicant-requests/{requestId:guid}/queue-authorization", GetApplicantRequestQueueAuthorizationAsync)
+            .WithName("GetTelehealthApplicantRequestQueueAuthorization")
+            .WithDescription("Returns a private minimized no-edit staff packet for one applicant-originated request awaiting bounded non-production queue authorization. It exposes no member identifier, full provider identifier, price, clinical narrative, or care authority.")
+            .Produces<TelehealthApplicantRequestQueueAuthorizationResponse>()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "view"));
+        admin.MapPost("/applicant-requests/{requestId:guid}/queue-authorization", AuthorizeApplicantRequestToQueueAsync)
+            .WithName("AuthorizeTelehealthApplicantRequestToQueue")
+            .WithDescription("Records one evidence-bound configured-practice staff acceptance and atomically creates an unassigned synthetic appointment and ready clinician-queue entry. It does not verify real coverage, assign a clinician, create consent or an encounter, or authorize care.")
+            .Accepts<AuthorizeTelehealthApplicantRequestToQueue>("application/json")
+            .Produces<TelehealthApplicantRequestQueueAuthorizationResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
         admin.MapPost("/requests/{requestId:guid}/authorize", AuthorizeToQueueAsync)
             .WithName("AuthorizeTelehealthRequestToQueue")
             .Accepts<AuthorizeTelehealthRequest>("application/json")
@@ -2101,6 +2119,39 @@ public static class TelehealthEndpoints
             ReadIdempotencyKey(context),
             cancellationToken)));
 
+    private static async Task<IResult> GetApplicantRequestQueueAuthorizationAsync(
+        TelehealthApplicantRequestQueueAuthorizationService service,
+        AuthRepository authRepository,
+        HttpContext context,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        SetApplicantRequestQueueAuthorizationPrivateResponse(context, requestId);
+        return await ExecuteAsync(async () => Results.Ok(await service.GetAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context),
+            requestId,
+            cancellationToken)));
+    }
+
+    private static async Task<IResult> AuthorizeApplicantRequestToQueueAsync(
+        TelehealthApplicantRequestQueueAuthorizationService service,
+        AuthRepository authRepository,
+        HttpContext context,
+        Guid requestId,
+        AuthorizeTelehealthApplicantRequestToQueue request,
+        CancellationToken cancellationToken)
+    {
+        SetApplicantRequestQueueAuthorizationPrivateResponse(context, requestId);
+        return await ExecuteAsync(async () => Results.Ok(await service.AuthorizeAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context),
+            requestId,
+            request,
+            ReadIdempotencyKey(context),
+            cancellationToken)));
+    }
+
     private static async Task<IResult> ListClinicianQueueAsync(
         TelehealthService service,
         AuthRepository authRepository,
@@ -2402,6 +2453,14 @@ public static class TelehealthEndpoints
         context.Response.Headers.Pragma = "no-cache";
         context.Response.Headers.Expires = "0";
         PhiAuditResourceContext.Set(context, "TelehealthApplicantPracticeReviewAuthorization", caseId.ToString("D"));
+    }
+
+    private static void SetApplicantRequestQueueAuthorizationPrivateResponse(HttpContext context, Guid requestId)
+    {
+        context.Response.Headers.CacheControl = "no-store, private";
+        context.Response.Headers.Pragma = "no-cache";
+        context.Response.Headers.Expires = "0";
+        PhiAuditResourceContext.Set(context, "TelehealthApplicantRequestQueueAuthorization", requestId.ToString("D"));
     }
 
     private static void SetApplicantPromotionAuthorizationPrivateResponse(HttpContext context, string resourceId)

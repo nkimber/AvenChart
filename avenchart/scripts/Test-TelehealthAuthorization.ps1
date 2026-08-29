@@ -56,6 +56,7 @@ try {
   $requestParticipationContextBody=@{expectedRequestVersion=9;contextSnapshotFingerprint=('0'*64);syntheticDataConfirmed=$true;npiNotCredentialAcknowledged=$true;realAuthorityNotVerifiedAcknowledged=$true;exactParticipationStillRequiredAcknowledged=$true}
   $requestParticipationEvaluationBody=@{expectedRequestVersion=10;evaluationSnapshotFingerprint=('0'*64);syntheticDataConfirmed=$true;exactTupleScopeAcknowledged=$true;noCoverageGuaranteeAcknowledged=$true;realVerificationStillRequiredAcknowledged=$true}
   $requestOperationalReviewSubmissionBody=@{expectedRequestVersion=11;submissionSnapshotFingerprint=('0'*64);syntheticEvidenceAcknowledged=$true;noCoverageGuaranteeAcknowledged=$true;practiceReviewPendingAcknowledged=$true;noCareRelationshipAcknowledged=$true}
+  $requestQueueAuthorizationBody=@{expectedRequestVersion=12;authorizationSnapshotFingerprint=('0'*64);syntheticEvidenceReviewed=$true;noCoverageGuaranteeAcknowledged=$true;practiceAcceptsForQueueAcknowledged=$true;queueNotCareAcknowledged=$true}
   Add-Check 'Applicant request complaint-triage operations reject an absent applicant access key' (
     (Invoke-Status 'GET' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/complaint-triage') -eq 401 -and
     (Invoke-Status 'POST' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/complaint-triage' @{} $complaintTriageBody) -eq 401)
@@ -83,6 +84,9 @@ try {
   Add-Check 'Applicant request operational-review submission rejects an absent applicant access key' (
     (Invoke-Status 'GET' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/operational-review-submission') -eq 401 -and
     (Invoke-Status 'POST' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/operational-review-submission' @{} $requestOperationalReviewSubmissionBody) -eq 401)
+  Add-Check 'Applicant request queue authorization rejects an absent staff identity' (
+    (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization') -eq 401 -and
+    (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' @{} $requestQueueAuthorizationBody) -eq 401)
   Add-Check 'Applicant identity-review queue rejects an absent staff identity' ((Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-identity-review') -eq 401)
   Add-Check 'Applicant identity-review decision rejects an absent staff identity' ((Invoke-Status 'PUT' '/api/telehealth/v1/admin/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/identity-review-decision' @{} @{expectedVersion=2;decision='ApprovedForProspectiveIntake';reason='Synthetic authorization boundary.';syntheticDataConfirmed=$true}) -eq 401)
   Add-Check 'Applicant promotion-authorization queue rejects an absent staff identity' ((Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-promotion-authorization') -eq 401)
@@ -245,6 +249,9 @@ try {
   Add-Check 'Applicant request operational-review submission rejects portal-session substitution for the applicant access key' (
     (Invoke-Status 'GET' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/operational-review-submission' @{'X-AvenChart-Patient-Portal-Session'=$patient.sessionId}) -eq 401 -and
     (Invoke-Status 'POST' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/operational-review-submission' @{'X-AvenChart-Patient-Portal-Session'=$patient.sessionId} $requestOperationalReviewSubmissionBody) -eq 401)
+  Add-Check 'Applicant request queue authorization rejects portal-session substitution for staff identity' (
+    (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' @{'X-AvenChart-Patient-Portal-Session'=$patient.sessionId}) -eq 401 -and
+    (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' @{'X-AvenChart-Patient-Portal-Session'=$patient.sessionId} $requestQueueAuthorizationBody) -eq 401)
 
   $admin=Login-Staff 'admin'
   $adminFacilities = @($admin.accessContext.facilities | Where-Object { $_.facilityId -eq 10 })
@@ -268,6 +275,24 @@ try {
   $adminAuthorizationHeaders=$adminHeaders.Clone();$adminAuthorizationHeaders['X-Idempotency-Key']="th-auth-practice-review-$([Guid]::NewGuid().ToString('N'))"
   Add-Check 'Administrator practice-review authorization reaches an opaque nonexistent-or-unclaimed-case boundary' (
     (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-practice-review/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/authorization' $adminAuthorizationHeaders $authorizationBody) -eq 404)
+  $adminQueueAuthorizationHeaders=$adminHeaders.Clone();$adminQueueAuthorizationHeaders['X-Idempotency-Key']="th-auth-queue-authorization-$([Guid]::NewGuid().ToString('N'))"
+  Add-Check 'Configured administrator reaches only the opaque tenant-scoped applicant queue-authorization boundary' (
+    (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' $adminHeaders) -eq 404 -and
+    (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' $adminQueueAuthorizationHeaders $requestQueueAuthorizationBody) -eq 404)
+  $frontdesk=Login-Staff 'gold-frontdesk-01'
+  $frontdeskGrant = @($frontdesk.accessContext.facilities | Where-Object { $_.facilityId -eq 11 })
+  if ($frontdeskGrant.Count -ne 1 -or @($frontdesk.accessContext.purposes) -notcontains 'treatment' -or $null -eq $frontdesk.staffId) {
+    throw 'Synthetic front-desk user lacks the expected current foreign-facility staff grant.'
+  }
+  $frontdeskHeaders=@{
+    'X-AvenChart-Session'=$frontdesk.sessionId
+    'X-AvenChart-Facility-Id'='11'
+    'X-AvenChart-Purpose-Of-Use'='treatment'
+  }
+  $frontdeskQueueAuthorizationHeaders=$frontdeskHeaders.Clone();$frontdeskQueueAuthorizationHeaders['X-Idempotency-Key']="th-auth-queue-authorization-frontdesk-$([Guid]::NewGuid().ToString('N'))"
+  Add-Check 'Current front-desk staff outside the configured facility receives only an opaque denial' (
+    (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' $frontdeskHeaders) -eq 404 -and
+    (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' $frontdeskQueueAuthorizationHeaders $requestQueueAuthorizationBody) -eq 404)
   Add-Check 'Synthetic allergy-information rejects staff-session substitution for the applicant access key' (
     (Invoke-Status 'GET' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/allergy-information' $adminHeaders) -eq 401 -and
     (Invoke-Status 'POST' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/allergy-information' $adminHeaders @{expectedVersion=19;allergyInformationSnapshotFingerprint=('0'*64);allergyItems=@();additionalOrUnlistedItemsReported=$false;patientReportedMayBeIncompleteAcknowledged=$true;syntheticCatalogIncompleteAcknowledged=$true;noReactionOrCriticalityCapturedAcknowledged=$true;clinicianVerificationRequiredAcknowledged=$true}) -eq 401)
@@ -322,21 +347,27 @@ try {
   $missingPurpose=@{'X-AvenChart-Session'=$admin.sessionId;'X-AvenChart-Facility-Id'='10'}
   $missingPurposeClaim=$missingPurpose.Clone();$missingPurposeClaim['X-Idempotency-Key']="th-auth-claim-missing-purpose-$([Guid]::NewGuid().ToString('N'))"
   $missingPurposeAuthorization=$missingPurpose.Clone();$missingPurposeAuthorization['X-Idempotency-Key']="th-auth-authorization-missing-purpose-$([Guid]::NewGuid().ToString('N'))"
+  $missingPurposeQueueAuthorization=$missingPurpose.Clone();$missingPurposeQueueAuthorization['X-Idempotency-Key']="th-auth-queue-authorization-missing-purpose-$([Guid]::NewGuid().ToString('N'))"
   Add-Check 'Staff endpoints deny a missing purpose of use' (
     (Invoke-Status 'GET' '/api/telehealth/v1/admin/operational-review' $missingPurpose) -eq 403 -and
     (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-practice-review' $missingPurpose) -eq 403 -and
     (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-practice-review/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' $missingPurpose) -eq 403 -and
     (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-practice-review/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/claim' $missingPurposeClaim $claimBody) -eq 403 -and
-    (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-practice-review/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/authorization' $missingPurposeAuthorization $authorizationBody) -eq 403)
+    (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-practice-review/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/authorization' $missingPurposeAuthorization $authorizationBody) -eq 403 -and
+    (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' $missingPurpose) -eq 403 -and
+    (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' $missingPurposeQueueAuthorization $requestQueueAuthorizationBody) -eq 403)
   $crossFacility=@{'X-AvenChart-Session'=$admin.sessionId;'X-AvenChart-Facility-Id'='11';'X-AvenChart-Purpose-Of-Use'='healthcare-operations'}
   $crossFacilityClaim=$crossFacility.Clone();$crossFacilityClaim['X-Idempotency-Key']="th-auth-claim-cross-facility-$([Guid]::NewGuid().ToString('N'))"
   $crossFacilityAuthorization=$crossFacility.Clone();$crossFacilityAuthorization['X-Idempotency-Key']="th-auth-authorization-cross-facility-$([Guid]::NewGuid().ToString('N'))"
+  $crossFacilityQueueAuthorization=$crossFacility.Clone();$crossFacilityQueueAuthorization['X-Idempotency-Key']="th-auth-queue-authorization-cross-facility-$([Guid]::NewGuid().ToString('N'))"
   Add-Check 'Staff endpoints obscure or deny a different facility' (
     (Invoke-Status 'GET' '/api/telehealth/v1/admin/operational-review' $crossFacility) -in @(403,404) -and
     (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-practice-review' $crossFacility) -in @(403,404) -and
     (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-practice-review/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' $crossFacility) -in @(403,404) -and
     (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-practice-review/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/claim' $crossFacilityClaim $claimBody) -in @(403,404) -and
-    (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-practice-review/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/authorization' $crossFacilityAuthorization $authorizationBody) -in @(403,404))
+    (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-practice-review/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/authorization' $crossFacilityAuthorization $authorizationBody) -in @(403,404) -and
+    (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' $crossFacility) -in @(403,404) -and
+    (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' $crossFacilityQueueAuthorization $requestQueueAuthorizationBody) -in @(403,404))
 
   $provider=Login-Staff 'gold-provider-01'
   $providerGrant = @($provider.accessContext.facilities | Where-Object { $_.facilityId -eq 10 })
@@ -355,6 +386,9 @@ try {
   Add-Check 'Physician role cannot read a claimant-bound practice-review packet' ((Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-practice-review/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' $providerHeaders) -eq 403)
   $providerAuthorizationHeaders=$providerHeaders.Clone();$providerAuthorizationHeaders['X-Idempotency-Key']="th-auth-authorization-provider-$([Guid]::NewGuid().ToString('N'))"
   Add-Check 'Physician role cannot authorize an administrator practice-review case' ((Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-practice-review/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/authorization' $providerAuthorizationHeaders $authorizationBody) -eq 403)
+  Add-Check 'Physician role cannot read or authorize an applicant request queue decision' (
+    (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' $providerHeaders) -eq 403 -and
+    (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' $providerAuthorizationHeaders $requestQueueAuthorizationBody) -eq 403)
   Add-Check 'Physician role cannot read or decide prospective applicant identity review' (
     (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-identity-review' $providerHeaders) -eq 403 -and
     (Invoke-Status 'PUT' '/api/telehealth/v1/admin/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/identity-review-decision' $providerHeaders @{expectedVersion=2;decision='ApprovedForProspectiveIntake';reason='Synthetic authorization boundary.';syntheticDataConfirmed=$true}) -eq 403)
@@ -385,5 +419,5 @@ catch {
     stack = $_.ScriptStackTrace
   }
 }
-finally{$result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10}
+finally{$result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10}
 if(-not$passed){exit 1}

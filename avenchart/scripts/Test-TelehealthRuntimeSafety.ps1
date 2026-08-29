@@ -1078,6 +1078,34 @@ try {
         $requestOperationalReviewSubmissionMigrationSource -match 'reject_telehealth_evidence_mutation' -and
         $requestOperationalReviewSubmissionMigrationSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
         $endpointSource -match '/\{applicantId:guid\}/telehealth-request/operational-review-submission')
+    $requestQueueAuthorizationRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestQueueAuthorizationRepository.cs')
+    $requestQueueAuthorizationServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestQueueAuthorizationService.cs')
+    $requestQueueAuthorizationPolicySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestQueueAuthorizationPolicy.cs')
+    $requestQueueAuthorizationMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0327__telehealth_applicant_request_queue_authorization.sql')
+    $telehealthRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthRepository.cs')
+    Add-Check 'Applicant queue authorization is a dedicated staff-only atomic queue boundary with no real-coverage, assignment, care, or external path' (
+        $requestQueueAuthorizationRepositorySource -match 'insert into telehealth_applicant_request_queue_authorizations' -and
+        $requestQueueAuthorizationRepositorySource -match 'insert into appointments' -and
+        $requestQueueAuthorizationRepositorySource -match 'insert into telehealth_queue_entries' -and
+        $requestQueueAuthorizationRepositorySource -match "status='Queued',appointment_id=@appointmentId,version=13" -and
+        $requestQueueAuthorizationRepositorySource -notmatch '(?i)insert\s+into\s+(insurance_records|telehealth_coverage_selections|telehealth_coverage_verifications|telehealth_reservations|telehealth_video_sessions|telehealth_consultation_contexts|encounters|claims|billing|prescriptions|messages|integration_outbox)' -and
+        $requestQueueAuthorizationRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|WebRequest|SendAsync' -and
+        $requestQueueAuthorizationServiceSource -match 'PracticeAccepted: complete' -and
+        $requestQueueAuthorizationServiceSource -match 'RenderingPhysicianAssigned: false' -and
+        $requestQueueAuthorizationServiceSource -match 'CoverageVerified: false' -and
+        $requestQueueAuthorizationServiceSource -match 'QueuePositionAssigned: false' -and
+        $requestQueueAuthorizationServiceSource -match 'EncounterCreated: false' -and
+        $requestQueueAuthorizationServiceSource -match 'CareAuthorized: false' -and
+        $requestQueueAuthorizationServiceSource -match 'ExternalCallPerformed: false' -and
+        $requestQueueAuthorizationPolicySource -match 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_AUTHORIZATION' -and
+        $requestQueueAuthorizationPolicySource -match 'EntryRequestVersion = 12' -and
+        $requestQueueAuthorizationPolicySource -match 'ResultingRequestVersion = 13' -and
+        $requestQueueAuthorizationMigrationSource -match 'trg_th_app_request_queue_auth_guard' -and
+        $requestQueueAuthorizationMigrationSource -match 'chk_th_app_req_queue_auth_no_consequence' -and
+        $requestQueueAuthorizationMigrationSource -match 'reject_telehealth_evidence_mutation' -and
+        $telehealthRepositorySource -match 'telehealth_applicant_request_dedicated_authorization_required' -and
+        $telehealthRepositorySource -match 'source_applicant_id is not null' -and
+        $endpointSource -match '/applicant-requests/\{requestId:guid\}/queue-authorization')
     $videoProviderSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoProvider.cs')
     $videoServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoService.cs')
     $videoRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoRepository.cs')
@@ -1178,8 +1206,8 @@ try {
             $health.status -eq 'healthy' -and
             $telehealth.data.enabled -eq $true -and
             $telehealth.data.mode -eq 'Synthetic' -and
-            [int]$telehealth.data.requiredTableCount -eq 70 -and
-            [int]$telehealth.data.presentTableCount -eq 70) $telehealth
+            [int]$telehealth.data.requiredTableCount -eq 71 -and
+            [int]$telehealth.data.presentTableCount -eq 71) $telehealth
     }
 }
 catch {
@@ -1189,7 +1217,7 @@ finally {
     $result = [ordered]@{
         status=$(if ($passed) { 'passed' } else { 'failed' })
         generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O')
-        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054')
+        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055')
         checks=$checks
     }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8
