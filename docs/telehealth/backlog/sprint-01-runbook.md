@@ -1,17 +1,17 @@
 # Sprint 1 synthetic telehealth runbook
 
-Scope: local deterministic evidence only under Decisions 0003 and 0005–0050, most recently [Decision 0050](../decisions/0050-approved-sprint-47-applicant-request-practice-network-verification.md). Never use live data, credentials, destinations or a production-like host.
+Scope: local deterministic evidence only under Decisions 0003 and 0005–0051, most recently [Decision 0051](../decisions/0051-approved-sprint-48-applicant-request-rendering-candidate-selection.md). Never use live data, credentials, destinations or a production-like host.
 
 ## Preconditions
 
-- PostgreSQL contains the deterministic AvenChart gold dataset and migrations `V0282` through `V0321`.
+- PostgreSQL contains the deterministic AvenChart gold dataset and migrations `V0282` through `V0323`.
 - ASP.NET Core environment is `Development` or `Testing`.
 - `Telehealth:Enabled` is false in committed base and Development settings.
 - Only `127.0.0.1`, `localhost` and the configured `.example.test` branded host are used.
 
 ## Local activation
 
-Start an isolated API process/container with only `Telehealth__Enabled=true`. Do not edit committed configuration to enable the feature. Readiness must report `details.telehealth.data.enabled=true`, `mode=Synthetic`, and 65 present tables before tests begin.
+Start an isolated API process/container with only `Telehealth__Enabled=true`. Do not edit committed configuration to enable the feature. Readiness must report `details.telehealth.data.enabled=true`, `mode=Synthetic`, and 67 present tables before tests begin.
 
 Run, in order:
 
@@ -52,6 +52,8 @@ pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestComplaintTriage.p
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestIntake.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestInsuranceSource.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestEligibility.ps1
+pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestPracticeNetwork.ps1
+pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestRenderingCandidate.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthQueueConcurrency.ps1 -CallerCount 20
 ```
 
@@ -86,6 +88,8 @@ Run the two telehealth Playwright specifications on desktop and mobile Chromium 
 - Only the access-key owner of an unexpired `SyntheticRequestCreated` applicant whose request reached exact `Intake` version 4 through a passing unpublished synthetic complaint assessment may record the no-free-text request intake snapshot. One controlled duration and eight explicit current-source/limitations confirmations are required; the server derives the synthetic summary, appends one generic intake plus one protected receipt/event, and advances only the request to pending `Verification` version 5. The applicant and patient stay unchanged, and no consent, canonical coverage, current eligibility/network confirmation, operational review, acceptance, contact, doctor search, queue, appointment, encounter, care, prescription, financial, integration, external call, or production capability is created.
 - Only the access-key owner of an unexpired `SyntheticRequestCreated` applicant whose request reached pending `Verification` version 5 through the exact Sprint 44 intake may confirm the masked primary insurance source. Seven source, future-verification, limitation, and synthetic acknowledgments are required; prior eligibility and practice-network evidence remains historical and non-reusable, the protected payload is referenced without copy or decryption, and only the request advances to pending `Verification` version 6. No current eligibility/network result, rendering-physician check, canonical coverage, financial or operational route, contact, doctor search, queue, appointment, encounter, consent, care, integration, external call, or production capability is created.
 - Only the access-key owner of an unexpired `SyntheticRequestCreated` applicant whose request reached pending `Verification` version 6 through the exact Sprint 45 source confirmation may run one fresh request-time eligibility check. The protected synthetic payload is decrypted only in server memory, validated against the masked receipt, and never copied or returned; two acknowledgments are mandatory; the fixed in-process `NON_PRODUCTION` adapter returns separate transport, match, eligibility, benefit-information, and business outcomes; and only the request advances to pending `Verification` version 7. No X12 is serialized, no external destination is contacted, and exact network, canonical coverage/selection, financial or operational work, contact, doctor search, queue, appointment, encounter, consent, care, integration, or production capability is created.
+- Only the access-key owner of that request with exact current positive eligibility may run one fresh practice/facility/service network check. Three acknowledgments are mandatory; no member or patient value enters the fixed in-process Plan-Net-shaped adapter; only the request advances to pending `Verification` version 8; and rendering-physician participation, exact network, canonical coverage/selection, financial, operational, queue, care, integration, external, and production consequences remain unavailable.
+- Only the access-key owner of that request with exact current positive eligibility and practice-network results may bind the server-owned GA, CA, or FL synthetic rendering candidate for a future exact participation check. Four acknowledgments are mandatory; only a masked provider reference is returned; only the request advances to pending `Verification` version 9; and clinician assignment, availability, licensure, credentialing, rendering-network evaluation, exact network, canonical coverage/selection, financial, operational, queue, care, integration, external, and production consequences remain unavailable.
 - Connection grants remain opaque, participant/session/role scoped, hash-only at rest, and replay-stable only inside the active simulator process; media capture remains absent.
 - Operational authorization creates one scheduled unassigned appointment; reservation assigns the winning physician; patient waiting-room entry marks Arrived.
 - Only the reservation-owning physician with current request/location/coverage/reservation/session/grants and every affirmative start check can create one appointment-linked encounter/context and enter `InConsultation`.

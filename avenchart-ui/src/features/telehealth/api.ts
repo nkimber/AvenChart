@@ -1987,6 +1987,74 @@ export type TelehealthApplicantRequestPracticeNetwork = {
   limitations: string[]
 }
 
+export type TelehealthApplicantRequestRenderingCandidateInput = {
+  expectedRequestVersion: number
+  candidateSnapshotFingerprint: string
+  syntheticDataConfirmed: true
+  candidateOnlyScopeAcknowledged: true
+  noAssignmentAcknowledged: true
+  networkCheckStillRequiredAcknowledged: true
+}
+
+export type TelehealthApplicantRequestRenderingCandidate = {
+  applicantId: string
+  applicantVersion: 26
+  applicantStatus: 'SyntheticRequestCreated'
+  requestId: string
+  requestVersion: 8 | 9
+  requestStatus: 'Verification'
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_RENDERING_CANDIDATE_SELECTION'
+  policyVersion: 1
+  catalogKey: 'avenchart-synthetic-rendering-candidate-roster-2026-08'
+  catalogVersion: 1
+  candidateSnapshotFingerprint: string
+  contextExpiresAt: string
+  practiceDisplayName: string
+  payerDisplayName: string
+  productDisplayName: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  purposeCategory: 'migraine' | 'sleep'
+  eligibilityVerificationId: string
+  practiceNetworkVerificationId: string
+  practiceNetworkBusinessOutcome: 'PracticeInNetworkAcceptingNewPatients'
+  practiceNetworkCheckedAt: string
+  practiceNetworkExpiresAt: string
+  candidateDisplayName: string
+  maskedProviderReference: string
+  practitionerReference: string
+  stateAuthorityReference: string
+  serviceCategory: string
+  modality: 'RealTimeAudioVideo'
+  candidatePurpose: 'NETWORK_EVALUATION_ONLY'
+  selectionReady: boolean
+  selectionCompleted: boolean
+  selectionId: string | null
+  selectedAt: string | null
+  candidateSelectedForNetworkEvaluation: boolean
+  renderingPhysicianAssigned: false
+  renderingPhysicianNetworkChecked: false
+  exactNetworkConfirmed: false
+  canonicalCoverageCreated: false
+  coverageSelected: false
+  coverageVerified: false
+  financialRouteCreated: false
+  operationalReviewCreated: false
+  practiceAccepted: false
+  patientContacted: false
+  patientCareQueueEntered: false
+  clinicianQueueEntered: false
+  doctorSearchStarted: false
+  queuePositionAssigned: false
+  appointmentCreated: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -3418,6 +3486,41 @@ export function runApplicantTelehealthRequestPracticeNetwork(
 ) {
   return json<TelehealthApplicantRequestPracticeNetwork>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/practice-network`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequestRenderingCandidate(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestRenderingCandidate>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/rendering-candidate`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function selectApplicantTelehealthRequestRenderingCandidate(
+  applicantId: string,
+  applicantAccessKey: string,
+  input: TelehealthApplicantRequestRenderingCandidateInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestRenderingCandidate>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/rendering-candidate`,
     {
       method: 'POST',
       headers: applicantHeaders(applicantAccessKey, {

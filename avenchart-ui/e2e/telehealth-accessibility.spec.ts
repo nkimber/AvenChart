@@ -1981,7 +1981,7 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
-  test('eligible synthetic applicant confirms intake, source, fresh eligibility, and practice network with stable retries and no downstream implication', async ({ page }) => {
+  test('eligible synthetic applicant confirms intake, source, fresh eligibility, practice network, and rendering candidate with stable retries and no downstream implication', async ({ page }) => {
     await page.addInitScript((session) => {
       sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
     }, { applicantId: prospectiveApplicant.applicantId, applicantAccessKey: 'r'.repeat(64) })
@@ -2471,6 +2471,74 @@ test.describe('telehealth accessibility', () => {
       practiceNetworkVerificationCreated: true,
       direction: 'Practice-level fixture is in network; physician participation remains required.',
     }
+    const readyRenderingCandidate = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 8,
+      requestStatus: 'Verification',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_RENDERING_CANDIDATE_SELECTION',
+      policyVersion: 1,
+      catalogKey: 'avenchart-synthetic-rendering-candidate-roster-2026-08',
+      catalogVersion: 1,
+      candidateSnapshotFingerprint: '9'.repeat(64),
+      contextExpiresAt: '2026-08-28T17:28:00Z',
+      practiceDisplayName: 'AvenChart Synthetic Practice',
+      payerDisplayName: 'AvenChart Synthetic Health',
+      productDisplayName: 'Synthetic Silver Demo',
+      currentLocationStateCode: 'GA',
+      purposeCategory: 'sleep',
+      eligibilityVerificationId: completedRequestEligibility.verificationId,
+      practiceNetworkVerificationId: completedRequestPracticeNetwork.verificationId,
+      practiceNetworkBusinessOutcome: 'PracticeInNetworkAcceptingNewPatients',
+      practiceNetworkCheckedAt: completedRequestPracticeNetwork.checkedAt,
+      practiceNetworkExpiresAt: completedRequestPracticeNetwork.expiresAt,
+      candidateDisplayName: 'Georgia Synthetic Clinician',
+      maskedProviderReference: 'Synthetic provider ••••8101',
+      practitionerReference: 'syn-practitioner-ga-101',
+      stateAuthorityReference: 'syn-authority-ga-101',
+      serviceCategory: 'ProfessionalTelehealthConsultation',
+      modality: 'RealTimeAudioVideo',
+      candidatePurpose: 'NETWORK_EVALUATION_ONLY',
+      selectionReady: true,
+      selectionCompleted: false,
+      selectionId: null,
+      selectedAt: null,
+      candidateSelectedForNetworkEvaluation: false,
+      renderingPhysicianAssigned: false,
+      renderingPhysicianNetworkChecked: false,
+      exactNetworkConfirmed: false,
+      canonicalCoverageCreated: false,
+      coverageSelected: false,
+      coverageVerified: false,
+      financialRouteCreated: false,
+      operationalReviewCreated: false,
+      practiceAccepted: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Review the server-owned synthetic candidate.',
+      limitations: ['No clinician, payer, directory, or credentialing source was contacted.'],
+    }
+    const completedRenderingCandidate = {
+      ...readyRenderingCandidate,
+      requestVersion: 9,
+      selectionReady: false,
+      selectionCompleted: true,
+      selectionId: '48000000-0000-4000-8000-000000000001',
+      selectedAt: '2026-08-28T17:15:00Z',
+      candidateSelectedForNetworkEvaluation: true,
+      direction: 'The candidate is bound only for a future exact participation check.',
+    }
     let intakeLoadCalls = 0
     let intakeConfirmationCalls = 0
     const intakeKeys: Array<string | undefined> = []
@@ -2487,10 +2555,34 @@ test.describe('telehealth accessibility', () => {
     let requestPracticeNetworkRunCalls = 0
     const requestPracticeNetworkKeys: Array<string | undefined> = []
     const requestPracticeNetworkBodies: Array<Record<string, unknown>> = []
+    let renderingCandidateLoadCalls = 0
+    let renderingCandidateSelectionCalls = 0
+    const renderingCandidateKeys: Array<string | undefined> = []
+    const renderingCandidateBodies: Array<Record<string, unknown>> = []
     await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
       const request = route.request()
       const path = new URL(request.url()).pathname
       expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('r'.repeat(64))
+      if (path.endsWith('/telehealth-request/rendering-candidate')) {
+        if (request.method() === 'POST') {
+          renderingCandidateSelectionCalls += 1
+          renderingCandidateKeys.push(request.headers()['x-idempotency-key'])
+          renderingCandidateBodies.push(request.postDataJSON() as Record<string, unknown>)
+          if (renderingCandidateSelectionCalls === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Rendering-candidate result unknown; retry unchanged.' }) })
+            return
+          }
+          await route.fulfill({ json: completedRenderingCandidate })
+          return
+        }
+        renderingCandidateLoadCalls += 1
+        if (renderingCandidateLoadCalls === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Rendering-candidate projection temporarily unavailable.' }) })
+          return
+        }
+        await route.fulfill({ json: readyRenderingCandidate })
+        return
+      }
       if (path.endsWith('/telehealth-request/practice-network')) {
         if (request.method() === 'POST') {
           requestPracticeNetworkRunCalls += 1
@@ -2786,7 +2878,54 @@ test.describe('telehealth accessibility', () => {
       practiceOnlyScopeAcknowledged: true,
       noGuaranteeAcknowledged: true,
     })
-    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|networkSnapshotFingerprint|payerDisplayName|maskedMemberId|businessOutcome|requestId/i)
+
+    await expect(page.getByRole('alert')).toContainText('Rendering-candidate projection temporarily unavailable.')
+    await page.getByRole('button', { name: 'Retry rendering-candidate load' }).click()
+    const candidateHeading = page.getByRole('heading', { name: 'Review a candidate for network evaluation' })
+    await expect(candidateHeading).toBeVisible()
+    const candidateForm = candidateHeading.locator('..')
+    await expect(candidateForm).toContainText('Georgia Synthetic Clinician')
+    await expect(candidateForm).toContainText('Synthetic provider ••••8101')
+    await expect(candidateForm).not.toContainText('18888101')
+    await expect(candidateForm).toContainText('does not assign the clinician or establish network status')
+    await expect(candidateForm.locator('textarea')).toHaveCount(0)
+    await expect(candidateForm.locator('select')).toHaveCount(0)
+    await expect(candidateForm.locator('input:not([type="checkbox"])')).toHaveCount(0)
+    const candidateSubmit = candidateForm.getByRole('button', { name: 'Select candidate for network evaluation' })
+    await expect(candidateSubmit).toBeDisabled()
+    for (const label of [
+      'I confirm this is a fictional synthetic demonstration candidate.',
+      'I understand this selection identifies only the subject of a future network evaluation.',
+      'I understand this does not assign a clinician or promise availability, credentials, licensure, an appointment, or care.',
+      'I understand exact billing-entity and rendering-physician network participation is still unchecked.',
+    ]) {
+      await candidateForm.getByLabel(label).check()
+    }
+    await candidateSubmit.click()
+    const candidateRetryAlert = page.getByRole('alert').filter({ hasText: 'Rendering-candidate result unknown; retry unchanged.' })
+    await expect(candidateRetryAlert).toBeVisible()
+    await expect(candidateRetryAlert).toBeFocused()
+    await candidateSubmit.click()
+
+    const candidateResult = page.getByRole('heading', { name: 'Rendering candidate selected for network evaluation' })
+    await expect(candidateResult).toBeVisible()
+    await expect(candidateResult.locator('..')).toContainText('Request version9')
+    await expect(candidateResult.locator('..')).toContainText('Candidate selected for network evaluationYes')
+    await expect(candidateResult.locator('..')).toContainText('Clinician assignedNo')
+    await expect(candidateResult.locator('..')).toContainText('Physician network checkedNo — still required')
+    await expect(candidateResult.locator('..')).toContainText('Exact network confirmedNo')
+    await expect(candidateResult.locator('..')).toContainText('Doctor search or queueNot started')
+    expect(renderingCandidateKeys).toHaveLength(2)
+    expect(renderingCandidateKeys[0]).toBe(renderingCandidateKeys[1])
+    expect(renderingCandidateBodies[0]).toEqual({
+      expectedRequestVersion: 8,
+      candidateSnapshotFingerprint: '9'.repeat(64),
+      syntheticDataConfirmed: true,
+      candidateOnlyScopeAcknowledged: true,
+      noAssignmentAcknowledged: true,
+      networkCheckStillRequiredAcknowledged: true,
+    })
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|networkSnapshotFingerprint|candidateSnapshotFingerprint|payerDisplayName|maskedMemberId|businessOutcome|candidateDisplayName|providerReference|requestId/i)
 
     await expectNoSeriousAccessibilityViolations(page)
     await expectTelehealthReflow(page)

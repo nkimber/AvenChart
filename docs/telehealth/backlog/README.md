@@ -1,13 +1,13 @@
 # Telehealth implementation backlog
 
-Status: Exact disabled synthetic Sprints 1–47 active only within Decisions 0003 and 0005–0050
+Status: Exact disabled synthetic Sprints 1–48 active only within Decisions 0003 and 0005–0051
 Decision baseline: [Decision 0001](../decisions/0001-g0-development-baseline.md)  
 Machine-readable source: [backlog.json](backlog.json)  
 First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 47 applicant request practice-network verification](sprint-47-applicant-request-practice-network-verification.md); bounded automated implementation evidence is recorded in the [Sprint 47 evidence packet](sprint-47-evidence.md)
+Current increment: [Sprint 48 applicant request rendering-candidate selection](sprint-48-applicant-request-rendering-candidate-selection.md); bounded automated implementation evidence is recorded in the [Sprint 48 evidence packet](sprint-48-evidence.md)
 
 ## 1. Backlog contract
 
@@ -86,7 +86,7 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 - Telehealth G0 product baseline: **approved** by Decision 0001.
 - Backlog and wireframe preparation: **authorized**.
 - Planning-artifact validator and existing-CI invocation: **authorized and active under Decision 0002**.
-- Decisions 0003 and 0005–0050 authorize only their exact disabled synthetic Sprint 1–47 application/database/feature-test/runtime paths through 2026-10-31.
+- Decisions 0003 and 0005–0051 authorize only their exact disabled synthetic Sprint 1–48 application/database/feature-test/runtime paths through 2026-10-31.
 - All implementation outside those decisions remains **blocked by the existing Phase 2 exit gate** until explicit closure or another scoped override.
 - Real patient care: separately blocked until G4 regardless of implementation authorization.
 
@@ -96,4 +96,4 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 
 [Decisions 0005–0046](../decisions/0046-approved-sprint-43-applicant-request-complaint-triage.md) add only the bounded synthetic increments documented for Sprints 2–43. Decisions 0038–0042 govern practice-review submission, inbox, claimant, packet, and positive operational authorization. Decision 0043 permits the access-key owner to separately create exactly one source-linked `Draft` request after that authorization. Decision 0044 permits the same owner to bind the exact prior supported current-location state and masked callback route to that request and advance it only to `LocationConfirmed` version 2. Decision 0045 permits one request-time universal safety assessment using the immutable non-production four-answer fixture. Decision 0046 permits one fixed migraine or sleep coded complaint-triage assessment only after an exact universal pass. It records ordered rule evidence and maps the six bounded outcomes, but all content remains `UNAPPROVED_SYNTHETIC`; medical-director approval, approved clinical golden cases, and production publication remain explicitly false. No clinical-review work item, intake snapshot, contact, doctor search, patient/clinician care-queue entry, queue position, appointment, encounter, consent, care, prescribing, billing, claim, integration, or external action is created.
 
-[Decision 0047](../decisions/0047-approved-sprint-44-applicant-request-intake-snapshot-confirmation.md) permits one request-bound intake snapshot and pending `Verification` version 5 transition. [Decision 0048](../decisions/0048-approved-sprint-45-applicant-request-insurance-source-confirmation.md) permits one masked primary-source confirmation and pending version 6 transition without reusing historical results. [Decision 0049](../decisions/0049-approved-sprint-46-applicant-request-eligibility-verification.md) permits one fresh bounded non-production eligibility result and pending version 7 transition. [Decision 0050](../decisions/0050-approved-sprint-47-applicant-request-practice-network-verification.md) permits one fresh practice/facility/service network result and pending version 8 transition after current positive eligibility. Protected source data is decrypted only in server memory and is not copied; no X12 or FHIR resource is serialized, no external destination is contacted, and none of the rendering-physician participation, exact network, canonical coverage, financial, operational, consent, queue, or care gates are opened.
+[Decision 0047](../decisions/0047-approved-sprint-44-applicant-request-intake-snapshot-confirmation.md) permits one request-bound intake snapshot and pending `Verification` version 5 transition. [Decision 0048](../decisions/0048-approved-sprint-45-applicant-request-insurance-source-confirmation.md) permits one masked primary-source confirmation and pending version 6 transition without reusing historical results. [Decision 0049](../decisions/0049-approved-sprint-46-applicant-request-eligibility-verification.md) permits one fresh bounded non-production eligibility result and pending version 7 transition. [Decision 0050](../decisions/0050-approved-sprint-47-applicant-request-practice-network-verification.md) permits one fresh practice/facility/service network result and pending version 8 transition after current positive eligibility. [Decision 0051](../decisions/0051-approved-sprint-48-applicant-request-rendering-candidate-selection.md) permits one server-owned state-specific synthetic candidate binding and pending version 9 transition for a future exact participation check. Protected source data is decrypted only in server memory and is not copied; no X12 or FHIR resource is serialized, no external destination is contacted, and none of the clinician-assignment, rendering-physician participation, exact network, canonical coverage, financial, operational, consent, queue, or care gates are opened.

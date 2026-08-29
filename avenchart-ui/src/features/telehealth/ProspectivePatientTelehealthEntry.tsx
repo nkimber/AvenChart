@@ -29,6 +29,7 @@ import {
   getApplicantTelehealthRequestInsuranceSource,
   getApplicantTelehealthRequestEligibility,
   getApplicantTelehealthRequestPracticeNetwork,
+  getApplicantTelehealthRequestRenderingCandidate,
   getApplicantTelehealthRequestIntake,
   getApplicantTelehealthRequestLocation,
   getApplicantTelehealthRequestUniversalSafety,
@@ -54,6 +55,7 @@ import {
   recordApplicantDevicePreparation,
   runApplicantTelehealthRequestEligibility,
   runApplicantTelehealthRequestPracticeNetwork,
+  selectApplicantTelehealthRequestRenderingCandidate,
   submitApplicantPracticeReview,
   verifyProspectiveApplicantContact,
   type TelehealthProspectiveApplicant,
@@ -108,6 +110,8 @@ import {
   type TelehealthApplicantRequestEligibilityInput,
   type TelehealthApplicantRequestPracticeNetwork,
   type TelehealthApplicantRequestPracticeNetworkInput,
+  type TelehealthApplicantRequestRenderingCandidate,
+  type TelehealthApplicantRequestRenderingCandidateInput,
   type TelehealthApplicantRequestIntake,
   type TelehealthApplicantRequestIntakeInput,
   type TelehealthApplicantRequestLocation,
@@ -172,6 +176,7 @@ type PendingRequestIntake = { content: string; idempotencyKey: string }
 type PendingRequestInsuranceSource = { content: string; idempotencyKey: string }
 type PendingRequestEligibility = { content: string; idempotencyKey: string }
 type PendingRequestPracticeNetwork = { content: string; idempotencyKey: string }
+type PendingRequestRenderingCandidate = { content: string; idempotencyKey: string }
 type YesNoAnswer = '' | 'yes' | 'no'
 type ComplaintAnswer = '' | TelehealthSyntheticComplaintAnswer
 
@@ -354,6 +359,13 @@ const initialRequestPracticeNetworkAcknowledgments = {
   syntheticData: false,
   practiceOnly: false,
   noGuarantee: false,
+}
+
+const initialRequestRenderingCandidateAcknowledgments = {
+  syntheticData: false,
+  candidateOnly: false,
+  noAssignment: false,
+  networkCheckStillRequired: false,
 }
 
 function ComplaintAnswerField({
@@ -549,6 +561,10 @@ export default function ProspectivePatientTelehealthEntry() {
   const [requestPracticeNetworkLoading, setRequestPracticeNetworkLoading] = useState(false)
   const [requestPracticeNetworkLoadAttempt, setRequestPracticeNetworkLoadAttempt] = useState(0)
   const [requestPracticeNetworkAcknowledgments, setRequestPracticeNetworkAcknowledgments] = useState(initialRequestPracticeNetworkAcknowledgments)
+  const [requestRenderingCandidate, setRequestRenderingCandidate] = useState<TelehealthApplicantRequestRenderingCandidate | null>(null)
+  const [requestRenderingCandidateLoading, setRequestRenderingCandidateLoading] = useState(false)
+  const [requestRenderingCandidateLoadAttempt, setRequestRenderingCandidateLoadAttempt] = useState(0)
+  const [requestRenderingCandidateAcknowledgments, setRequestRenderingCandidateAcknowledgments] = useState(initialRequestRenderingCandidateAcknowledgments)
   const [loading, setLoading] = useState(Boolean(applicantSession))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -582,6 +598,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const pendingRequestInsuranceSource = useRef<PendingRequestInsuranceSource | null>(null)
   const pendingRequestEligibility = useRef<PendingRequestEligibility | null>(null)
   const pendingRequestPracticeNetwork = useRef<PendingRequestPracticeNetwork | null>(null)
+  const pendingRequestRenderingCandidate = useRef<PendingRequestRenderingCandidate | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const safetyResultRef = useRef<HTMLDivElement>(null)
   const purposeResultRef = useRef<HTMLDivElement>(null)
@@ -610,6 +627,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const requestInsuranceSourceResultRef = useRef<HTMLDivElement>(null)
   const requestEligibilityResultRef = useRef<HTMLDivElement>(null)
   const requestPracticeNetworkResultRef = useRef<HTMLDivElement>(null)
+  const requestRenderingCandidateResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -722,6 +740,10 @@ export default function ProspectivePatientTelehealthEntry() {
   useEffect(() => {
     if (requestPracticeNetwork?.verificationCompleted) requestPracticeNetworkResultRef.current?.focus()
   }, [requestPracticeNetwork])
+
+  useEffect(() => {
+    if (requestRenderingCandidate?.selectionCompleted) requestRenderingCandidateResultRef.current?.focus()
+  }, [requestRenderingCandidate])
 
   useEffect(() => {
     if (!applicantSession) {
@@ -1234,6 +1256,30 @@ export default function ProspectivePatientTelehealthEntry() {
       })
     return () => controller.abort()
   }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestEligibility?.verificationCompleted, requestEligibility?.businessOutcome, requestPracticeNetworkLoadAttempt])
+
+  useEffect(() => {
+    if (!applicantSession
+      || applicant?.status !== 'SyntheticRequestCreated'
+      || !requestPracticeNetwork?.verificationCompleted
+      || requestPracticeNetwork.businessOutcome !== 'PracticeInNetworkAcceptingNewPatients') return
+    const controller = new AbortController()
+    setRequestRenderingCandidateLoading(true)
+    setError(null)
+    getApplicantTelehealthRequestRenderingCandidate(
+      applicant.applicantId,
+      applicantSession.applicantAccessKey,
+      controller.signal,
+    )
+      .then(setRequestRenderingCandidate)
+      .catch((caught: unknown) => {
+        if (isRequestCancellation(caught)) return
+        setError(caught instanceof Error ? caught.message : 'The rendering candidate could not be loaded.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestRenderingCandidateLoading(false)
+      })
+    return () => controller.abort()
+  }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestPracticeNetwork?.verificationCompleted, requestPracticeNetwork?.businessOutcome, requestRenderingCandidateLoadAttempt])
 
   function updateValue<Key extends keyof FormValues>(key: Key, value: FormValues[Key]) {
     pendingCreate.current = null
@@ -2992,6 +3038,59 @@ export default function ProspectivePatientTelehealthEntry() {
     }
   }
 
+  function updateRequestRenderingCandidateAcknowledgment(
+    key: keyof typeof initialRequestRenderingCandidateAcknowledgments,
+    checked: boolean,
+  ) {
+    pendingRequestRenderingCandidate.current = null
+    setRequestRenderingCandidateAcknowledgments((current) => ({ ...current, [key]: checked }))
+  }
+
+  async function selectRequestRenderingCandidate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!applicant || !applicantSession || !requestRenderingCandidate) return
+    if (!Object.values(requestRenderingCandidateAcknowledgments).every(Boolean)) {
+      setError('Accept all four rendering-candidate acknowledgments before continuing.')
+      return
+    }
+    const input = {
+      expectedRequestVersion: requestRenderingCandidate.requestVersion,
+      candidateSnapshotFingerprint: requestRenderingCandidate.candidateSnapshotFingerprint,
+      syntheticDataConfirmed: true,
+      candidateOnlyScopeAcknowledged: true,
+      noAssignmentAcknowledged: true,
+      networkCheckStillRequiredAcknowledged: true,
+    } satisfies TelehealthApplicantRequestRenderingCandidateInput
+    const content = JSON.stringify(input)
+    if (!pendingRequestRenderingCandidate.current
+      || pendingRequestRenderingCandidate.current.content !== content) {
+      pendingRequestRenderingCandidate.current = { content, idempotencyKey: crypto.randomUUID() }
+    }
+
+    setError(null)
+    setSubmitting(true)
+    try {
+      const result = await selectApplicantTelehealthRequestRenderingCandidate(
+        applicant.applicantId,
+        applicantSession.applicantAccessKey,
+        input,
+        pendingRequestRenderingCandidate.current.idempotencyKey,
+      )
+      setRequestRenderingCandidate(result)
+      pendingRequestRenderingCandidate.current = null
+      setRequestRenderingCandidateAcknowledgments(initialRequestRenderingCandidateAcknowledgments)
+    } catch (caught: unknown) {
+      if (caught instanceof ApiRequestError && caught.status && caught.status < 500) {
+        pendingRequestRenderingCandidate.current = null
+      }
+      setError(caught instanceof Error
+        ? caught.message
+        : 'The rendering candidate could not be selected for network evaluation.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   function restart() {
     clearApplicantSession()
     pendingCreate.current = null
@@ -3023,6 +3122,7 @@ export default function ProspectivePatientTelehealthEntry() {
     pendingRequestInsuranceSource.current = null
     pendingRequestEligibility.current = null
     pendingRequestPracticeNetwork.current = null
+    pendingRequestRenderingCandidate.current = null
     setApplicantSession(null)
     setApplicant(null)
     setValues(initialValues)
@@ -3156,6 +3256,10 @@ export default function ProspectivePatientTelehealthEntry() {
     setRequestPracticeNetworkLoading(false)
     setRequestPracticeNetworkLoadAttempt(0)
     setRequestPracticeNetworkAcknowledgments(initialRequestPracticeNetworkAcknowledgments)
+    setRequestRenderingCandidate(null)
+    setRequestRenderingCandidateLoading(false)
+    setRequestRenderingCandidateLoadAttempt(0)
+    setRequestRenderingCandidateAcknowledgments(initialRequestRenderingCandidateAcknowledgments)
     setError(null)
   }
 
@@ -5441,6 +5545,79 @@ export default function ProspectivePatientTelehealthEntry() {
                     <p><strong>{requestPracticeNetwork.direction}</strong></p>
                     <p>No rendering physician, canonical coverage, financial route, operational review, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
                     <ul>{requestPracticeNetwork.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                  </div>
+                ) : null}
+                {requestPracticeNetwork?.verificationCompleted
+                  && requestPracticeNetwork.businessOutcome === 'PracticeInNetworkAcceptingNewPatients'
+                  && requestRenderingCandidateLoading ? (
+                    <p role="status">Loading a rendering candidate for network evaluation…</p>
+                  ) : null}
+                {requestPracticeNetwork?.verificationCompleted
+                  && requestPracticeNetwork.businessOutcome === 'PracticeInNetworkAcceptingNewPatients'
+                  && !requestRenderingCandidateLoading
+                  && !requestRenderingCandidate ? (
+                    <button
+                      className="telehealth-button"
+                      type="button"
+                      onClick={() => setRequestRenderingCandidateLoadAttempt((value) => value + 1)}
+                    >
+                      Retry rendering-candidate load
+                    </button>
+                  ) : null}
+                {requestRenderingCandidate?.selectionReady ? (
+                  <form className="telehealth-review-form" onSubmit={selectRequestRenderingCandidate}>
+                    <div className="telehealth-synthetic" role="note">
+                      NON_PRODUCTION synthetic roster candidate only. No clinician, payer, directory, or credentialing source will be contacted.
+                    </div>
+                    <h3>Review a candidate for network evaluation</h3>
+                    <p id="request-rendering-candidate-help">This binds one state-specific synthetic clinician only as the subject of a future exact participation check. It does not assign the clinician or establish network status, licensure, credentials, availability, or care.</p>
+                    <dl className="telehealth-details" aria-describedby="request-rendering-candidate-help">
+                      <div><dt>Candidate</dt><dd>{requestRenderingCandidate.candidateDisplayName}</dd></div>
+                      <div><dt>Masked provider reference</dt><dd>{requestRenderingCandidate.maskedProviderReference}</dd></div>
+                      <div><dt>Practice</dt><dd>{requestRenderingCandidate.practiceDisplayName}</dd></div>
+                      <div><dt>Payer and product</dt><dd>{requestRenderingCandidate.payerDisplayName} — {requestRenderingCandidate.productDisplayName}</dd></div>
+                      <div><dt>Current state</dt><dd>{requestRenderingCandidate.currentLocationStateCode}</dd></div>
+                      <div><dt>Service and modality</dt><dd>{requestRenderingCandidate.serviceCategory} — {requestRenderingCandidate.modality}</dd></div>
+                      <div><dt>Candidate purpose</dt><dd>{requestRenderingCandidate.candidatePurpose}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestRenderingCandidate.requestVersion}</dd></div>
+                      <div><dt>Select before</dt><dd>{new Date(requestRenderingCandidate.contextExpiresAt).toLocaleString()}</dd></div>
+                    </dl>
+                    <fieldset className="telehealth-fieldset">
+                      <legend>Four required acknowledgments</legend>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestRenderingCandidateAcknowledgments.syntheticData} onChange={(event) => updateRequestRenderingCandidateAcknowledgment('syntheticData', event.target.checked)} /><span>I confirm this is a fictional synthetic demonstration candidate.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestRenderingCandidateAcknowledgments.candidateOnly} onChange={(event) => updateRequestRenderingCandidateAcknowledgment('candidateOnly', event.target.checked)} /><span>I understand this selection identifies only the subject of a future network evaluation.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestRenderingCandidateAcknowledgments.noAssignment} onChange={(event) => updateRequestRenderingCandidateAcknowledgment('noAssignment', event.target.checked)} /><span>I understand this does not assign a clinician or promise availability, credentials, licensure, an appointment, or care.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestRenderingCandidateAcknowledgments.networkCheckStillRequired} onChange={(event) => updateRequestRenderingCandidateAcknowledgment('networkCheckStillRequired', event.target.checked)} /><span>I understand exact billing-entity and rendering-physician network participation is still unchecked.</span></label>
+                    </fieldset>
+                    <ul>{requestRenderingCandidate.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                    <button
+                      className="telehealth-button"
+                      type="submit"
+                      disabled={submitting || !Object.values(requestRenderingCandidateAcknowledgments).every(Boolean)}
+                    >
+                      {submitting ? 'Selecting candidate…' : 'Select candidate for network evaluation'}
+                    </button>
+                  </form>
+                ) : null}
+                {requestRenderingCandidate?.selectionCompleted ? (
+                  <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestRenderingCandidateResultRef}>
+                    <h3>Rendering candidate selected for network evaluation</h3>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestRenderingCandidate.requestId}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestRenderingCandidate.requestStatus}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestRenderingCandidate.requestVersion}</dd></div>
+                      <div><dt>Candidate</dt><dd>{requestRenderingCandidate.candidateDisplayName}</dd></div>
+                      <div><dt>Masked provider reference</dt><dd>{requestRenderingCandidate.maskedProviderReference}</dd></div>
+                      <div><dt>Candidate selected for network evaluation</dt><dd>{requestRenderingCandidate.candidateSelectedForNetworkEvaluation ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Clinician assigned</dt><dd>{requestRenderingCandidate.renderingPhysicianAssigned ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Physician network checked</dt><dd>{requestRenderingCandidate.renderingPhysicianNetworkChecked ? 'Yes' : 'No — still required'}</dd></div>
+                      <div><dt>Exact network confirmed</dt><dd>{requestRenderingCandidate.exactNetworkConfirmed ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Doctor search or queue</dt><dd>{requestRenderingCandidate.doctorSearchStarted || requestRenderingCandidate.patientCareQueueEntered || requestRenderingCandidate.clinicianQueueEntered ? 'Started' : 'Not started'}</dd></div>
+                      <div><dt>Selected</dt><dd>{requestRenderingCandidate.selectedAt ? new Date(requestRenderingCandidate.selectedAt).toLocaleString() : 'Recorded'}</dd></div>
+                    </dl>
+                    <p><strong>{requestRenderingCandidate.direction}</strong></p>
+                    <p>No clinician assignment, exact network result, canonical coverage, financial route, operational review, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
+                    <ul>{requestRenderingCandidate.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                   </div>
                 ) : null}
               </>
