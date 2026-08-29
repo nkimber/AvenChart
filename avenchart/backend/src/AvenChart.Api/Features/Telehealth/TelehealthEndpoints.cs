@@ -437,6 +437,24 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/insurance-source", GetApplicantTelehealthRequestInsuranceSourceAsync)
+            .WithName("GetTelehealthApplicantRequestInsuranceSource")
+            .WithDescription("Returns the applicant owner's private masked insurance source and historical-only synthetic evidence after intake. It never returns or decrypts the protected member payload and does not report current coverage or network status.")
+            .Produces<TelehealthApplicantRequestInsuranceSourceResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/insurance-source", ConfirmApplicantTelehealthRequestInsuranceSourceAsync)
+            .WithName("ConfirmTelehealthApplicantRequestInsuranceSource")
+            .WithDescription("Records the applicant's masked source confirmation and intent to request a future fresh verification. It advances only Verification version 5 to version 6 and performs no eligibility, network, payer, integration, or other external call.")
+            .Accepts<ConfirmTelehealthApplicantRequestInsuranceSource>("application/json")
+            .Produces<TelehealthApplicantRequestInsuranceSourceResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1467,6 +1485,39 @@ public static class TelehealthEndpoints
         HttpContext context,
         Guid applicantId,
         ConfirmTelehealthApplicantRequestIntake request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.ConfirmAsync(
+                context,
+                applicantId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestInsuranceSourceAsync(
+        TelehealthApplicantRequestInsuranceSourceService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> ConfirmApplicantTelehealthRequestInsuranceSourceAsync(
+        TelehealthApplicantRequestInsuranceSourceService service,
+        HttpContext context,
+        Guid applicantId,
+        ConfirmTelehealthApplicantRequestInsuranceSource request,
         CancellationToken cancellationToken) =>
         ExecuteAsync(async () =>
         {

@@ -1981,7 +1981,7 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
-  test('eligible synthetic applicant confirms a no-free-text intake snapshot with stable retry and no downstream care implication', async ({ page }) => {
+  test('eligible synthetic applicant confirms intake and a masked historical insurance source with stable retries and no downstream implication', async ({ page }) => {
     await page.addInitScript((session) => {
       sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
     }, { applicantId: prospectiveApplicant.applicantId, applicantAccessKey: 'r'.repeat(64) })
@@ -2218,14 +2218,105 @@ test.describe('telehealth accessibility', () => {
       capturedAt: '2026-08-28T17:10:00Z',
       direction: 'Verification and every later gate remain pending.',
     }
+    const readyInsuranceSource = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 5,
+      requestStatus: 'Verification',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_INSURANCE_SOURCE_CONFIRMATION',
+      policyVersion: 1,
+      insuranceSourceSnapshotFingerprint: '6'.repeat(64),
+      contextExpiresAt: '2026-08-28T17:30:00Z',
+      payerDisplayName: 'AvenChart Synthetic Health',
+      productDisplayName: 'Synthetic Silver Demo',
+      maskedMemberId: '••••4123',
+      maskedGroupNumber: '••••6789',
+      subscriberRelationship: 'Self',
+      coveragePriority: 'Primary',
+      previousEligibilityBusinessOutcome: 'EligibleBenefitsReported',
+      previousEligibilityCheckedAt: '2026-08-28T16:30:00Z',
+      previousEligibilityExpiresAt: '2026-08-28T17:00:00Z',
+      previousEligibilityEvidenceExpired: true,
+      previousPracticeNetworkBusinessOutcome: 'PracticeInNetworkAcceptingNewPatients',
+      previousPracticeNetworkCheckedAt: '2026-08-28T16:35:00Z',
+      previousPracticeNetworkExpiresAt: '2026-08-28T17:05:00Z',
+      previousPracticeNetworkEvidenceExpired: true,
+      previousRenderingPhysicianNetworkChecked: false,
+      previousResultReusable: false,
+      sourceReady: true,
+      sourceConfirmed: false,
+      confirmedAt: null,
+      protectedPayloadReferenced: true,
+      protectedPayloadCopied: false,
+      protectedPayloadDecrypted: false,
+      freshVerificationRequested: false,
+      canonicalCoverageCreated: false,
+      coverageSelected: false,
+      eligibilityVerificationCreated: false,
+      networkVerificationCreated: false,
+      renderingPhysicianNetworkChecked: false,
+      coverageVerified: false,
+      exactNetworkConfirmed: false,
+      financialRouteCreated: false,
+      operationalReviewCreated: false,
+      practiceAccepted: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Review the masked historical source and request a future fresh verification.',
+      limitations: ['Historical evidence only; no payer was contacted.'],
+    }
+    const completedInsuranceSource = {
+      ...readyInsuranceSource,
+      requestVersion: 6,
+      sourceReady: false,
+      sourceConfirmed: true,
+      confirmedAt: '2026-08-28T17:12:00Z',
+      freshVerificationRequested: true,
+      direction: 'Fresh verification remains pending and unavailable.',
+    }
     let intakeLoadCalls = 0
     let intakeConfirmationCalls = 0
     const intakeKeys: Array<string | undefined> = []
     const intakeBodies: Array<Record<string, unknown>> = []
+    let insuranceSourceLoadCalls = 0
+    let insuranceSourceConfirmationCalls = 0
+    const insuranceSourceKeys: Array<string | undefined> = []
+    const insuranceSourceBodies: Array<Record<string, unknown>> = []
     await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
       const request = route.request()
       const path = new URL(request.url()).pathname
       expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('r'.repeat(64))
+      if (path.endsWith('/telehealth-request/insurance-source')) {
+        if (request.method() === 'POST') {
+          insuranceSourceConfirmationCalls += 1
+          insuranceSourceKeys.push(request.headers()['x-idempotency-key'])
+          insuranceSourceBodies.push(request.postDataJSON() as Record<string, unknown>)
+          if (insuranceSourceConfirmationCalls === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Insurance-source result unknown; retry unchanged.' }) })
+            return
+          }
+          await route.fulfill({ json: completedInsuranceSource })
+          return
+        }
+        insuranceSourceLoadCalls += 1
+        if (insuranceSourceLoadCalls === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Insurance-source projection temporarily unavailable.' }) })
+          return
+        }
+        await route.fulfill({ json: readyInsuranceSource })
+        return
+      }
       if (path.endsWith('/telehealth-request/intake')) {
         if (request.method() === 'POST') {
           intakeConfirmationCalls += 1
@@ -2324,7 +2415,61 @@ test.describe('telehealth accessibility', () => {
       complaintResultAcknowledged: true,
       syntheticDataConfirmed: true,
     })
-    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|requestId/i)
+
+    await expect(page.getByRole('alert')).toContainText('Insurance-source projection temporarily unavailable.')
+    await page.getByRole('button', { name: 'Retry insurance-source load' }).click()
+    const insuranceHeading = page.getByRole('heading', { name: 'Confirm insurance source for this request' })
+    await expect(insuranceHeading).toBeVisible()
+    const insuranceForm = insuranceHeading.locator('..')
+    await expect(insuranceForm).toContainText('Historical source only')
+    await expect(insuranceForm).toContainText('AvenChart Synthetic Health')
+    await expect(insuranceForm).toContainText('••••4123')
+    await expect(insuranceForm).toContainText('Earlier eligibility result — historical only')
+    await expect(insuranceForm).toContainText('Earlier result reusableNo')
+    await expect(insuranceForm.locator('textarea')).toHaveCount(0)
+    await expect(insuranceForm.locator('select')).toHaveCount(0)
+    await expect(insuranceForm.locator('input:not([type="checkbox"])')).toHaveCount(0)
+    const insuranceSubmit = insuranceForm.getByRole('button', { name: 'Confirm synthetic insurance source' })
+    await expect(insuranceSubmit).toBeDisabled()
+    for (const label of [
+      'I confirm the displayed payer and product match the synthetic source I previously supplied.',
+      'I confirm the displayed masked member and optional group details match that source.',
+      'I confirm the displayed subscriber relationship.',
+      'I confirm this is the primary synthetic coverage source to carry into a future verification step.',
+      'I request a future fresh eligibility and network verification and understand this step performs none.',
+      'I understand every earlier eligibility and practice-network result is historical only and cannot be reused.',
+      'I confirm these are fictional synthetic demonstration details.',
+    ]) {
+      await insuranceForm.getByLabel(label).check()
+    }
+    await insuranceSubmit.click()
+    const insuranceRetryAlert = page.getByRole('alert').filter({ hasText: 'Insurance-source result unknown; retry unchanged.' })
+    await expect(insuranceRetryAlert).toBeVisible()
+    await expect(insuranceRetryAlert).toBeFocused()
+    await insuranceSubmit.click()
+
+    const insuranceResult = page.getByRole('heading', { name: 'Request insurance source confirmed' })
+    await expect(insuranceResult).toBeVisible()
+    await expect(insuranceResult.locator('..')).toContainText('Request statusVerification')
+    await expect(insuranceResult.locator('..')).toContainText('Request version6')
+    await expect(insuranceResult.locator('..')).toContainText('Intent recorded; not performed')
+    await expect(insuranceResult.locator('..')).toContainText('Current coverage verifiedNo')
+    await expect(insuranceResult.locator('..')).toContainText('Exact network confirmedNo')
+    await expect(insuranceResult.locator('..')).toContainText('Doctor search or queueNot started')
+    expect(insuranceSourceKeys).toHaveLength(2)
+    expect(insuranceSourceKeys[0]).toBe(insuranceSourceKeys[1])
+    expect(insuranceSourceBodies[0]).toEqual({
+      expectedRequestVersion: 5,
+      insuranceSourceSnapshotFingerprint: '6'.repeat(64),
+      payerProductConfirmed: true,
+      maskedMemberDetailsConfirmed: true,
+      subscriberRelationshipConfirmed: true,
+      primaryCoverageSourceConfirmed: true,
+      freshVerificationRequested: true,
+      evidenceLimitationsAcknowledged: true,
+      syntheticDataConfirmed: true,
+    })
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|insuranceSourceSnapshotFingerprint|payerDisplayName|maskedMemberId|requestId/i)
 
     await expectNoSeriousAccessibilityViolations(page)
     await expectTelehealthReflow(page)

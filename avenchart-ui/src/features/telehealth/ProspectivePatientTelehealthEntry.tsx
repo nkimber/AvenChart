@@ -9,6 +9,7 @@ import {
   acknowledgeApplicantTelehealthNotice,
   assessApplicantTelehealthRequestComplaintTriage,
   assessApplicantTelehealthRequestUniversalSafety,
+  confirmApplicantTelehealthRequestInsuranceSource,
   confirmApplicantTelehealthRequestIntake,
   confirmApplicantInsuranceHandoff,
   confirmApplicantClinicalInformationSummary,
@@ -25,6 +26,7 @@ import {
   getApplicantPracticeReviewSubmission,
   getApplicantTelehealthRequest,
   getApplicantTelehealthRequestComplaintTriage,
+  getApplicantTelehealthRequestInsuranceSource,
   getApplicantTelehealthRequestIntake,
   getApplicantTelehealthRequestLocation,
   getApplicantTelehealthRequestUniversalSafety,
@@ -96,6 +98,8 @@ import {
   type TelehealthApplicantRequestCreationInput,
   type TelehealthApplicantRequestComplaintTriage,
   type TelehealthApplicantRequestComplaintTriageInput,
+  type TelehealthApplicantRequestInsuranceSource,
+  type TelehealthApplicantRequestInsuranceSourceInput,
   type TelehealthApplicantRequestIntake,
   type TelehealthApplicantRequestIntakeInput,
   type TelehealthApplicantRequestLocation,
@@ -157,6 +161,7 @@ type PendingRequestLocation = { content: string; idempotencyKey: string }
 type PendingRequestSafety = { content: string; idempotencyKey: string }
 type PendingRequestComplaintTriage = { content: string; idempotencyKey: string }
 type PendingRequestIntake = { content: string; idempotencyKey: string }
+type PendingRequestInsuranceSource = { content: string; idempotencyKey: string }
 type YesNoAnswer = '' | 'yes' | 'no'
 type ComplaintAnswer = '' | TelehealthSyntheticComplaintAnswer
 
@@ -317,6 +322,16 @@ const initialRequestIntakeConfirmations = {
   pendingConsent: false,
   pendingVerification: false,
   complaintResult: false,
+  syntheticData: false,
+}
+
+const initialRequestInsuranceSourceConfirmations = {
+  payerProduct: false,
+  maskedMemberDetails: false,
+  subscriberRelationship: false,
+  primaryCoverageSource: false,
+  freshVerification: false,
+  evidenceLimitations: false,
   syntheticData: false,
 }
 
@@ -501,6 +516,10 @@ export default function ProspectivePatientTelehealthEntry() {
   const [requestIntakeLoadAttempt, setRequestIntakeLoadAttempt] = useState(0)
   const [requestIntakeSymptomDuration, setRequestIntakeSymptomDuration] = useState<'' | TelehealthApplicantRequestIntakeInput['symptomDuration']>('')
   const [requestIntakeConfirmations, setRequestIntakeConfirmations] = useState(initialRequestIntakeConfirmations)
+  const [requestInsuranceSource, setRequestInsuranceSource] = useState<TelehealthApplicantRequestInsuranceSource | null>(null)
+  const [requestInsuranceSourceLoading, setRequestInsuranceSourceLoading] = useState(false)
+  const [requestInsuranceSourceLoadAttempt, setRequestInsuranceSourceLoadAttempt] = useState(0)
+  const [requestInsuranceSourceConfirmations, setRequestInsuranceSourceConfirmations] = useState(initialRequestInsuranceSourceConfirmations)
   const [loading, setLoading] = useState(Boolean(applicantSession))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -531,6 +550,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const pendingRequestSafety = useRef<PendingRequestSafety | null>(null)
   const pendingRequestComplaintTriage = useRef<PendingRequestComplaintTriage | null>(null)
   const pendingRequestIntake = useRef<PendingRequestIntake | null>(null)
+  const pendingRequestInsuranceSource = useRef<PendingRequestInsuranceSource | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const safetyResultRef = useRef<HTMLDivElement>(null)
   const purposeResultRef = useRef<HTMLDivElement>(null)
@@ -556,6 +576,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const requestSafetyResultRef = useRef<HTMLDivElement>(null)
   const requestComplaintTriageResultRef = useRef<HTMLDivElement>(null)
   const requestIntakeResultRef = useRef<HTMLDivElement>(null)
+  const requestInsuranceSourceResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -656,6 +677,10 @@ export default function ProspectivePatientTelehealthEntry() {
   useEffect(() => {
     if (requestIntake?.snapshotCreated) requestIntakeResultRef.current?.focus()
   }, [requestIntake])
+
+  useEffect(() => {
+    if (requestInsuranceSource?.sourceConfirmed) requestInsuranceSourceResultRef.current?.focus()
+  }, [requestInsuranceSource])
 
   useEffect(() => {
     if (!applicantSession) {
@@ -1098,6 +1123,29 @@ export default function ProspectivePatientTelehealthEntry() {
       })
     return () => controller.abort()
   }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestComplaintTriage?.assessmentCreated, requestComplaintTriage?.syntheticVideoEvaluationCandidate, requestIntakeLoadAttempt])
+
+  useEffect(() => {
+    if (!applicantSession
+      || applicant?.status !== 'SyntheticRequestCreated'
+      || !requestIntake?.snapshotCreated) return
+    const controller = new AbortController()
+    setRequestInsuranceSourceLoading(true)
+    setError(null)
+    getApplicantTelehealthRequestInsuranceSource(
+      applicant.applicantId,
+      applicantSession.applicantAccessKey,
+      controller.signal,
+    )
+      .then(setRequestInsuranceSource)
+      .catch((caught: unknown) => {
+        if (isRequestCancellation(caught)) return
+        setError(caught instanceof Error ? caught.message : 'The request insurance source could not be loaded.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestInsuranceSourceLoading(false)
+      })
+    return () => controller.abort()
+  }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestIntake?.snapshotCreated, requestInsuranceSourceLoadAttempt])
 
   function updateValue<Key extends keyof FormValues>(key: Key, value: FormValues[Key]) {
     pendingCreate.current = null
@@ -2697,6 +2745,63 @@ export default function ProspectivePatientTelehealthEntry() {
     }
   }
 
+  function updateRequestInsuranceSourceConfirmation(
+    key: keyof typeof initialRequestInsuranceSourceConfirmations,
+    checked: boolean,
+  ) {
+    pendingRequestInsuranceSource.current = null
+    setRequestInsuranceSourceConfirmations((current) => ({ ...current, [key]: checked }))
+  }
+
+  async function confirmRequestInsuranceSource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!applicant || !applicantSession || !requestInsuranceSource) return
+    if (!Object.values(requestInsuranceSourceConfirmations).every(Boolean)) {
+      setError('Review and accept all seven insurance-source confirmations before continuing.')
+      return
+    }
+
+    const input = {
+      expectedRequestVersion: requestInsuranceSource.requestVersion,
+      insuranceSourceSnapshotFingerprint: requestInsuranceSource.insuranceSourceSnapshotFingerprint,
+      payerProductConfirmed: true,
+      maskedMemberDetailsConfirmed: true,
+      subscriberRelationshipConfirmed: true,
+      primaryCoverageSourceConfirmed: true,
+      freshVerificationRequested: true,
+      evidenceLimitationsAcknowledged: true,
+      syntheticDataConfirmed: true,
+    } satisfies TelehealthApplicantRequestInsuranceSourceInput
+    const content = JSON.stringify(input)
+    if (!pendingRequestInsuranceSource.current
+      || pendingRequestInsuranceSource.current.content !== content) {
+      pendingRequestInsuranceSource.current = { content, idempotencyKey: crypto.randomUUID() }
+    }
+
+    setError(null)
+    setSubmitting(true)
+    try {
+      const result = await confirmApplicantTelehealthRequestInsuranceSource(
+        applicant.applicantId,
+        applicantSession.applicantAccessKey,
+        input,
+        pendingRequestInsuranceSource.current.idempotencyKey,
+      )
+      setRequestInsuranceSource(result)
+      pendingRequestInsuranceSource.current = null
+      setRequestInsuranceSourceConfirmations(initialRequestInsuranceSourceConfirmations)
+    } catch (caught: unknown) {
+      if (caught instanceof ApiRequestError && caught.status && caught.status < 500) {
+        pendingRequestInsuranceSource.current = null
+      }
+      setError(caught instanceof Error
+        ? caught.message
+        : 'The request insurance source could not be confirmed.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   function restart() {
     clearApplicantSession()
     pendingCreate.current = null
@@ -2725,6 +2830,7 @@ export default function ProspectivePatientTelehealthEntry() {
     pendingRequestSafety.current = null
     pendingRequestComplaintTriage.current = null
     pendingRequestIntake.current = null
+    pendingRequestInsuranceSource.current = null
     setApplicantSession(null)
     setApplicant(null)
     setValues(initialValues)
@@ -2846,6 +2952,10 @@ export default function ProspectivePatientTelehealthEntry() {
     setRequestIntakeLoadAttempt(0)
     setRequestIntakeSymptomDuration('')
     setRequestIntakeConfirmations(initialRequestIntakeConfirmations)
+    setRequestInsuranceSource(null)
+    setRequestInsuranceSourceLoading(false)
+    setRequestInsuranceSourceLoadAttempt(0)
+    setRequestInsuranceSourceConfirmations(initialRequestInsuranceSourceConfirmations)
     setError(null)
   }
 
@@ -4912,6 +5022,84 @@ export default function ProspectivePatientTelehealthEntry() {
                     <p><strong>{requestIntake.direction}</strong></p>
                     <p>No patient or applicant record was changed. No coverage, consent, operational review, contact, queue, appointment, encounter, media, care, prescription, financial, integration, or external action was created.</p>
                     <ul>{requestIntake.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                  </div>
+                ) : null}
+                {requestIntake?.snapshotCreated && requestInsuranceSourceLoading ? (
+                  <p role="status">Loading the request insurance source…</p>
+                ) : null}
+                {requestIntake?.snapshotCreated
+                  && !requestInsuranceSourceLoading
+                  && !requestInsuranceSource ? (
+                    <button
+                      className="telehealth-button"
+                      type="button"
+                      onClick={() => setRequestInsuranceSourceLoadAttempt((value) => value + 1)}
+                    >
+                      Retry insurance-source load
+                    </button>
+                  ) : null}
+                {requestInsuranceSource?.sourceReady ? (
+                  <form className="telehealth-review-form" onSubmit={confirmRequestInsuranceSource}>
+                    <div className="telehealth-synthetic" role="note">
+                      Historical source only. These details do not show current eligibility, benefits, practice-network status, or participation by the eventual treating physician.
+                    </div>
+                    <h3>Confirm insurance source for this request</h3>
+                    <p id="request-insurance-source-help">Review only the masked, previously collected source. There are no member-ID, group-number, payer, or plan edit fields in this step.</p>
+                    <dl className="telehealth-details" aria-describedby="request-insurance-source-help">
+                      <div><dt>Payer</dt><dd>{requestInsuranceSource.payerDisplayName}</dd></div>
+                      <div><dt>Product</dt><dd>{requestInsuranceSource.productDisplayName}</dd></div>
+                      <div><dt>Member ID</dt><dd>{requestInsuranceSource.maskedMemberId}</dd></div>
+                      <div><dt>Group number</dt><dd>{requestInsuranceSource.maskedGroupNumber ?? 'Not supplied'}</dd></div>
+                      <div><dt>Subscriber relationship</dt><dd>{requestInsuranceSource.subscriberRelationship}</dd></div>
+                      <div><dt>Coverage source</dt><dd>{requestInsuranceSource.coveragePriority}</dd></div>
+                      <div><dt>Earlier eligibility result — historical only</dt><dd>{requestInsuranceSource.previousEligibilityBusinessOutcome}</dd></div>
+                      <div><dt>Earlier eligibility checked</dt><dd>{new Date(requestInsuranceSource.previousEligibilityCheckedAt).toLocaleString()}</dd></div>
+                      <div><dt>Earlier eligibility evidence expired</dt><dd>{requestInsuranceSource.previousEligibilityEvidenceExpired ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Earlier practice-network result — historical only</dt><dd>{requestInsuranceSource.previousPracticeNetworkBusinessOutcome}</dd></div>
+                      <div><dt>Earlier practice-network checked</dt><dd>{new Date(requestInsuranceSource.previousPracticeNetworkCheckedAt).toLocaleString()}</dd></div>
+                      <div><dt>Earlier practice-network evidence expired</dt><dd>{requestInsuranceSource.previousPracticeNetworkEvidenceExpired ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Earlier treating-physician network check</dt><dd>{requestInsuranceSource.previousRenderingPhysicianNetworkChecked ? 'Performed' : 'Not performed'}</dd></div>
+                      <div><dt>Earlier result reusable</dt><dd>{requestInsuranceSource.previousResultReusable ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Confirmation expires</dt><dd>{new Date(requestInsuranceSource.contextExpiresAt).toLocaleString()}</dd></div>
+                    </dl>
+                    <fieldset className="telehealth-fieldset">
+                      <legend>Seven required confirmations</legend>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestInsuranceSourceConfirmations.payerProduct} onChange={(event) => updateRequestInsuranceSourceConfirmation('payerProduct', event.target.checked)} /><span>I confirm the displayed payer and product match the synthetic source I previously supplied.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestInsuranceSourceConfirmations.maskedMemberDetails} onChange={(event) => updateRequestInsuranceSourceConfirmation('maskedMemberDetails', event.target.checked)} /><span>I confirm the displayed masked member and optional group details match that source.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestInsuranceSourceConfirmations.subscriberRelationship} onChange={(event) => updateRequestInsuranceSourceConfirmation('subscriberRelationship', event.target.checked)} /><span>I confirm the displayed subscriber relationship.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestInsuranceSourceConfirmations.primaryCoverageSource} onChange={(event) => updateRequestInsuranceSourceConfirmation('primaryCoverageSource', event.target.checked)} /><span>I confirm this is the primary synthetic coverage source to carry into a future verification step.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestInsuranceSourceConfirmations.freshVerification} onChange={(event) => updateRequestInsuranceSourceConfirmation('freshVerification', event.target.checked)} /><span>I request a future fresh eligibility and network verification and understand this step performs none.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestInsuranceSourceConfirmations.evidenceLimitations} onChange={(event) => updateRequestInsuranceSourceConfirmation('evidenceLimitations', event.target.checked)} /><span>I understand every earlier eligibility and practice-network result is historical only and cannot be reused.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestInsuranceSourceConfirmations.syntheticData} onChange={(event) => updateRequestInsuranceSourceConfirmation('syntheticData', event.target.checked)} /><span>I confirm these are fictional synthetic demonstration details.</span></label>
+                    </fieldset>
+                    <ul>{requestInsuranceSource.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                    <button
+                      className="telehealth-button"
+                      type="submit"
+                      disabled={submitting || !Object.values(requestInsuranceSourceConfirmations).every(Boolean)}
+                    >
+                      {submitting ? 'Confirming insurance source…' : 'Confirm synthetic insurance source'}
+                    </button>
+                  </form>
+                ) : null}
+                {requestInsuranceSource?.sourceConfirmed ? (
+                  <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestInsuranceSourceResultRef}>
+                    <h3>Request insurance source confirmed</h3>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestInsuranceSource.requestId}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestInsuranceSource.requestStatus}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestInsuranceSource.requestVersion}</dd></div>
+                      <div><dt>Source</dt><dd>{requestInsuranceSource.payerDisplayName} — {requestInsuranceSource.productDisplayName}</dd></div>
+                      <div><dt>Member ID</dt><dd>{requestInsuranceSource.maskedMemberId}</dd></div>
+                      <div><dt>Fresh verification requested</dt><dd>{requestInsuranceSource.freshVerificationRequested ? 'Intent recorded; not performed' : 'No'}</dd></div>
+                      <div><dt>Current coverage verified</dt><dd>{requestInsuranceSource.coverageVerified ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Exact network confirmed</dt><dd>{requestInsuranceSource.exactNetworkConfirmed ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Doctor search or queue</dt><dd>{requestInsuranceSource.doctorSearchStarted || requestInsuranceSource.patientCareQueueEntered || requestInsuranceSource.clinicianQueueEntered ? 'Started' : 'Not started'}</dd></div>
+                      <div><dt>Confirmed</dt><dd>{requestInsuranceSource.confirmedAt ? new Date(requestInsuranceSource.confirmedAt).toLocaleString() : 'Recorded'}</dd></div>
+                    </dl>
+                    <p><strong>{requestInsuranceSource.direction}</strong></p>
+                    <p>The protected member payload was referenced but was not copied or decrypted. No canonical coverage, selection, verification, financial route, operational review, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
+                    <ul>{requestInsuranceSource.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                   </div>
                 ) : null}
               </>

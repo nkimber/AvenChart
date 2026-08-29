@@ -1,17 +1,17 @@
 # Sprint 1 synthetic telehealth runbook
 
-Scope: local deterministic evidence only under Decisions 0003 and 0005–0047, most recently [Decision 0047](../decisions/0047-approved-sprint-44-applicant-request-intake-snapshot-confirmation.md). Never use live data, credentials, destinations or a production-like host.
+Scope: local deterministic evidence only under Decisions 0003 and 0005–0048, most recently [Decision 0048](../decisions/0048-approved-sprint-45-applicant-request-insurance-source-confirmation.md). Never use live data, credentials, destinations or a production-like host.
 
 ## Preconditions
 
-- PostgreSQL contains the deterministic AvenChart gold dataset and migrations `V0282` through `V0319`.
+- PostgreSQL contains the deterministic AvenChart gold dataset and migrations `V0282` through `V0320`.
 - ASP.NET Core environment is `Development` or `Testing`.
 - `Telehealth:Enabled` is false in committed base and Development settings.
 - Only `127.0.0.1`, `localhost` and the configured `.example.test` branded host are used.
 
 ## Local activation
 
-Start an isolated API process/container with only `Telehealth__Enabled=true`. Do not edit committed configuration to enable the feature. Readiness must report `details.telehealth.data.enabled=true`, `mode=Synthetic`, and 63 present tables before tests begin.
+Start an isolated API process/container with only `Telehealth__Enabled=true`. Do not edit committed configuration to enable the feature. Readiness must report `details.telehealth.data.enabled=true`, `mode=Synthetic`, and 64 present tables before tests begin.
 
 Run, in order:
 
@@ -50,6 +50,7 @@ pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestLocation.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestUniversalSafety.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestComplaintTriage.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestIntake.ps1
+pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestInsuranceSource.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthQueueConcurrency.ps1 -CallerCount 20
 ```
 
@@ -82,6 +83,7 @@ Run the two telehealth Playwright specifications on desktop and mobile Chromium 
 - Only the access-key owner of an unexpired applicant whose coarse clinical inventory has been recorded can record one bounded synthetic medication-information receipt. The exact fixed local catalog is incomplete and unmapped; selected ingredients use only `Taking`, `NotTaking`, or `Unsure`, an additional-or-unlisted signal is separate, and four incompleteness/no-detail/reconciliation acknowledgments are mandatory. No dose, directions, route, frequency, indication, prescriber, pharmacy, date, note, attachment, free text, canonical medication resource, reconciliation, interaction check, clinician task, patient mutation, intake, eligibility, request, queue, prescribing, external call, or care capability is created.
 - Only the administrator or bound front-desk staff member who owns the current unexpired short claim may record the positive-only practice-review authorization. The exact minimized packet provenance and packet policy version are revalidated under locks; all three limitation acknowledgments are mandatory; the applicant advances once to `SyntheticPracticeReviewAuthorized`; the submitted case and claim history remain unchanged; and only a separately gated future synthetic request-creation step is authorized. No acceptance, contact, clinical review, request, queue, appointment, encounter, consent, care, prescribing, financial, integration, external call, or production capability is created.
 - Only the access-key owner of an unexpired `SyntheticRequestCreated` applicant whose request reached exact `Intake` version 4 through a passing unpublished synthetic complaint assessment may record the no-free-text request intake snapshot. One controlled duration and eight explicit current-source/limitations confirmations are required; the server derives the synthetic summary, appends one generic intake plus one protected receipt/event, and advances only the request to pending `Verification` version 5. The applicant and patient stay unchanged, and no consent, canonical coverage, current eligibility/network confirmation, operational review, acceptance, contact, doctor search, queue, appointment, encounter, care, prescription, financial, integration, external call, or production capability is created.
+- Only the access-key owner of an unexpired `SyntheticRequestCreated` applicant whose request reached pending `Verification` version 5 through the exact Sprint 44 intake may confirm the masked primary insurance source. Seven source, future-verification, limitation, and synthetic acknowledgments are required; prior eligibility and practice-network evidence remains historical and non-reusable, the protected payload is referenced without copy or decryption, and only the request advances to pending `Verification` version 6. No current eligibility/network result, rendering-physician check, canonical coverage, financial or operational route, contact, doctor search, queue, appointment, encounter, consent, care, integration, external call, or production capability is created.
 - Connection grants remain opaque, participant/session/role scoped, hash-only at rest, and replay-stable only inside the active simulator process; media capture remains absent.
 - Operational authorization creates one scheduled unassigned appointment; reservation assigns the winning physician; patient waiting-room entry marks Arrived.
 - Only the reservation-owning physician with current request/location/coverage/reservation/session/grants and every affirmative start check can create one appointment-linked encounter/context and enter `InConsultation`.

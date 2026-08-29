@@ -45,7 +45,9 @@ test('failed administrator refresh clears stale telehealth authorization actions
   await expect(page.getByRole('button', { name: 'Authorize to clinician queue' })).toBeVisible()
   failQueue = true
   await page.getByRole('button', { name: 'Refresh all' }).click()
-  await expect(page.getByRole('alert')).toContainText('Synthetic queue unavailable.')
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Synthetic queue unavailable.' }),
+  ).toBeVisible()
   await expect(page.getByRole('button', { name: 'Authorize to clinician queue' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Try again' })).toBeEnabled()
 })

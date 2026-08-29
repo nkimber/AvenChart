@@ -1,13 +1,13 @@
 # Telehealth implementation backlog
 
-Status: Exact disabled synthetic Sprints 1–44 active only within Decisions 0003 and 0005–0047
+Status: Exact disabled synthetic Sprints 1–45 active only within Decisions 0003 and 0005–0048
 Decision baseline: [Decision 0001](../decisions/0001-g0-development-baseline.md)  
 Machine-readable source: [backlog.json](backlog.json)  
 First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 44 applicant request intake snapshot confirmation](sprint-44-applicant-request-intake-snapshot-confirmation.md); bounded automated implementation evidence is recorded in the [Sprint 44 evidence packet](sprint-44-evidence.md)
+Current increment: [Sprint 45 applicant request insurance-source confirmation](sprint-45-applicant-request-insurance-source-confirmation.md); bounded automated implementation evidence is recorded in the [Sprint 45 evidence packet](sprint-45-evidence.md)
 
 ## 1. Backlog contract
 
@@ -86,7 +86,7 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 - Telehealth G0 product baseline: **approved** by Decision 0001.
 - Backlog and wireframe preparation: **authorized**.
 - Planning-artifact validator and existing-CI invocation: **authorized and active under Decision 0002**.
-- Decisions 0003 and 0005–0046 authorize only their exact disabled synthetic Sprint 1–43 application/database/feature-test/runtime paths through 2026-10-31.
+- Decisions 0003 and 0005–0048 authorize only their exact disabled synthetic Sprint 1–45 application/database/feature-test/runtime paths through 2026-10-31.
 - All implementation outside those decisions remains **blocked by the existing Phase 2 exit gate** until explicit closure or another scoped override.
 - Real patient care: separately blocked until G4 regardless of implementation authorization.
 

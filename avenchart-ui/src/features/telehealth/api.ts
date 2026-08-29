@@ -1766,6 +1766,77 @@ export type TelehealthApplicantRequestIntake = {
   limitations: string[]
 }
 
+export type TelehealthApplicantRequestInsuranceSourceInput = {
+  expectedRequestVersion: number
+  insuranceSourceSnapshotFingerprint: string
+  payerProductConfirmed: true
+  maskedMemberDetailsConfirmed: true
+  subscriberRelationshipConfirmed: true
+  primaryCoverageSourceConfirmed: true
+  freshVerificationRequested: true
+  evidenceLimitationsAcknowledged: true
+  syntheticDataConfirmed: true
+}
+
+export type TelehealthApplicantRequestInsuranceSource = {
+  applicantId: string
+  applicantVersion: 26
+  applicantStatus: 'SyntheticRequestCreated'
+  requestId: string
+  requestVersion: 5 | 6
+  requestStatus: 'Verification'
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_INSURANCE_SOURCE_CONFIRMATION'
+  policyVersion: 1
+  insuranceSourceSnapshotFingerprint: string
+  contextExpiresAt: string
+  payerDisplayName: string
+  productDisplayName: string
+  maskedMemberId: string
+  maskedGroupNumber: string | null
+  subscriberRelationship: 'Self' | 'Spouse' | 'Parent' | 'Other'
+  coveragePriority: 'Primary'
+  previousEligibilityBusinessOutcome: string
+  previousEligibilityCheckedAt: string
+  previousEligibilityExpiresAt: string
+  previousEligibilityEvidenceExpired: boolean
+  previousPracticeNetworkBusinessOutcome: string
+  previousPracticeNetworkCheckedAt: string
+  previousPracticeNetworkExpiresAt: string
+  previousPracticeNetworkEvidenceExpired: boolean
+  previousRenderingPhysicianNetworkChecked: false
+  previousResultReusable: false
+  sourceReady: boolean
+  sourceConfirmed: boolean
+  confirmedAt: string | null
+  protectedPayloadReferenced: true
+  protectedPayloadCopied: false
+  protectedPayloadDecrypted: false
+  freshVerificationRequested: boolean
+  canonicalCoverageCreated: false
+  coverageSelected: false
+  eligibilityVerificationCreated: false
+  networkVerificationCreated: false
+  renderingPhysicianNetworkChecked: false
+  coverageVerified: false
+  exactNetworkConfirmed: false
+  financialRouteCreated: false
+  operationalReviewCreated: false
+  practiceAccepted: false
+  patientContacted: false
+  patientCareQueueEntered: false
+  clinicianQueueEntered: false
+  doctorSearchStarted: false
+  queuePositionAssigned: false
+  appointmentCreated: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -3092,6 +3163,41 @@ export function confirmApplicantTelehealthRequestIntake(
 ) {
   return json<TelehealthApplicantRequestIntake>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/intake`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequestInsuranceSource(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestInsuranceSource>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/insurance-source`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function confirmApplicantTelehealthRequestInsuranceSource(
+  applicantId: string,
+  applicantAccessKey: string,
+  input: TelehealthApplicantRequestInsuranceSourceInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestInsuranceSource>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/insurance-source`,
     {
       method: 'POST',
       headers: applicantHeaders(applicantAccessKey, {
