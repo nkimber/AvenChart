@@ -7,6 +7,50 @@ namespace AvenChart.Api.Features.Telehealth;
 
 public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
 {
+    private const string ApplicantReservationCandidatePredicate = """
+        (
+          r.source_applicant_id is null
+          or exists (
+            select 1
+            from telehealth_applicant_request_queue_authorizations queue_authorization
+            join staff candidate on candidate.id=queue_authorization.candidate_staff_id
+            where queue_authorization.request_id=r.request_id
+              and queue_authorization.applicant_id=r.source_applicant_id
+              and queue_authorization.practice_id=r.practice_id
+              and queue_authorization.facility_id=r.facility_id
+              and queue_authorization.canonical_patient_id=r.patient_id
+              and queue_authorization.candidate_staff_id=@clinician
+              and queue_authorization.resulting_request_status='Queued'
+              and queue_authorization.resulting_request_version=13
+              and queue_authorization.policy_key='SYNTHETIC_APPLICANT_REQUEST_QUEUE_AUTHORIZATION'
+              and queue_authorization.policy_version=1
+              and queue_authorization.evidence_type='APPLICANT_REQUEST_QUEUE_AUTHORIZATION'
+              and queue_authorization.source_mode='NON_PRODUCTION'
+              and queue_authorization.compatibility_target='AVENCHART_SYNTHETIC_QUEUE_AUTHORIZATION_V1'
+              and queue_authorization.business_outcome='SyntheticRequestAuthorizedToQueue'
+              and queue_authorization.practice_accepted
+              and queue_authorization.patient_care_queue_entered
+              and queue_authorization.clinician_queue_entered
+              and queue_authorization.doctor_search_started
+              and queue_authorization.appointment_created
+              and not queue_authorization.rendering_physician_assigned
+              and not queue_authorization.coverage_verified
+              and not queue_authorization.financial_route_created
+              and not queue_authorization.queue_position_assigned
+              and not queue_authorization.encounter_created
+              and not queue_authorization.consent_created
+              and not queue_authorization.care_authorized
+              and not queue_authorization.integration_enabled
+              and not queue_authorization.external_call_performed
+              and queue_authorization.authorized_at < queue_authorization.result_valid_through
+              and now() < queue_authorization.result_valid_through
+              and candidate.active
+              and candidate.role in ('physician','provider')
+              and candidate.facility_id=r.facility_id
+          )
+        )
+        """;
+
     public async Task<TelehealthRequestResponse> CreateAsync(
         string practiceId,
         int facilityId,
@@ -530,23 +574,35 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         await using (var next = connection.CreateCommand())
         {
             next.Transaction = transaction;
-            next.CommandText = """
-                select q.queue_entry_id, q.request_id, r.version
+            next.CommandText = $"""
+                select q.queue_entry_id, q.request_id, r.version,
+                       r.source_applicant_id is not null
                 from telehealth_queue_entries q
                 join telehealth_requests r on r.request_id=q.request_id
+                join appointments appointment
+                  on appointment.id=r.appointment_id
+                 and appointment.patient_id=r.patient_id
+                 and appointment.facility_id=r.facility_id
                 where q.practice_id=@practice_id and q.facility_id=@facility_id
                   and q.status='Ready' and r.status='Queued'
-                  and r.appointment_id is not null
                   and r.triage_outcome='TelehealthEligible'
+                  and appointment.provider_id is null
+                  and coalesce(appointment.status,'-')='-'
+                  and {ApplicantReservationCandidatePredicate}
                 order by q.ready_at, q.queue_entry_id
-                for update of q, r skip locked
+                for update of q, r, appointment skip locked
                 limit 1;
                 """;
             next.Parameters.AddWithValue("practice_id", practiceId);
             next.Parameters.AddWithValue("facility_id", facilityId);
+            next.Parameters.AddWithValue("clinician", clinicianStaffId);
             await using var reader = await next.ExecuteReaderAsync(cancellationToken);
             candidate = await reader.ReadAsync(cancellationToken)
-                ? new QueueCandidate(reader.GetGuid(0), reader.GetGuid(1), checked((int)reader.GetInt64(2)))
+                ? new QueueCandidate(
+                    reader.GetGuid(0),
+                    reader.GetGuid(1),
+                    checked((int)reader.GetInt64(2)),
+                    reader.GetBoolean(3))
                 : null;
         }
 
@@ -597,7 +653,7 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             {
                 throw TelehealthProblem.Conflict("telehealth_reservation_failed", "The next request could not be reserved.");
             }
-            response = ReadReservation(reader, newRequestVersion);
+            response = ReadReservation(reader, newRequestVersion, candidate.ApplicantOriginated);
         }
 
         await InsertEventAsync(
@@ -679,16 +735,27 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         int facilityId,
         CancellationToken cancellationToken)
     {
-        var items = await ListQueueProjectionAsync(practiceId, facilityId, "OperationalReview", cancellationToken);
+        var items = await ListQueueProjectionAsync(
+            practiceId,
+            facilityId,
+            "OperationalReview",
+            clinicianStaffId: null,
+            cancellationToken);
         return new TelehealthOperationalReviewResponse(items);
     }
 
     public async Task<TelehealthQueueResponse> ListClinicianQueueAsync(
         string practiceId,
         int facilityId,
+        int clinicianStaffId,
         CancellationToken cancellationToken)
     {
-        var items = await ListQueueProjectionAsync(practiceId, facilityId, "Queued", cancellationToken);
+        var items = await ListQueueProjectionAsync(
+            practiceId,
+            facilityId,
+            "Queued",
+            clinicianStaffId,
+            cancellationToken);
         return new TelehealthQueueResponse(items);
     }
 
@@ -1604,20 +1671,24 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         string practiceId,
         int facilityId,
         string status,
+        int? clinicianStaffId,
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             select request_id, status, complaint_category, triage_outcome, version, created_at,
                    source_applicant_id is not null
-            from telehealth_requests
+            from telehealth_requests r
             where practice_id=@practice_id and facility_id=@facility_id and status=@status
+              and (@clinician_filter_disabled or {ApplicantReservationCandidatePredicate})
             order by coalesce(ready_at, created_at), request_id;
             """;
         command.Parameters.AddWithValue("practice_id", practiceId);
         command.Parameters.AddWithValue("facility_id", facilityId);
         command.Parameters.AddWithValue("status", status);
+        command.Parameters.AddWithValue("clinician_filter_disabled", clinicianStaffId is null);
+        command.Parameters.AddWithValue("clinician", clinicianStaffId ?? 0);
         var items = new List<TelehealthOperationalReviewItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -1711,6 +1782,7 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             select reservation.reservation_id, reservation.request_id, reservation.queue_entry_id,
                    reservation.shift_id, reservation.clinician_staff_id, reservation.reserved_at,
                    reservation.lease_expires_at, reservation.status, request.version,
+                   request.source_applicant_id is not null,
                    reservation.command_fingerprint
             from telehealth_reservations reservation
             join telehealth_requests request on request.request_id=reservation.request_id
@@ -1721,13 +1793,19 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("key", idempotencyKey);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
-            ? new ReservationReplay(ReadReservation(reader, checked((int)reader.GetInt64(8))), reader.GetString(9))
+            ? new ReservationReplay(
+                ReadReservation(reader, checked((int)reader.GetInt64(8)), reader.GetBoolean(9)),
+                reader.GetString(10))
             : null;
     }
 
-    private static TelehealthReservationResponse ReadReservation(NpgsqlDataReader reader, int requestVersion) => new(
+    private static TelehealthReservationResponse ReadReservation(
+        NpgsqlDataReader reader,
+        int requestVersion,
+        bool applicantOriginated) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetInt32(4),
-        reader.GetFieldValue<DateTimeOffset>(5), reader.GetFieldValue<DateTimeOffset>(6), reader.GetString(7), requestVersion);
+        reader.GetFieldValue<DateTimeOffset>(5), reader.GetFieldValue<DateTimeOffset>(6), reader.GetString(7),
+        requestVersion, applicantOriginated);
 
     private static async Task<bool> HasActiveReservationAsync(
         NpgsqlConnection connection,
@@ -1843,7 +1921,11 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         bool HistoryAvailable,
         string ClinicalSummaryFingerprint,
         IReadOnlyList<CoverageSnapshot> CoverageOptions);
-    private sealed record QueueCandidate(Guid QueueEntryId, Guid RequestId, int RequestVersion);
+    private sealed record QueueCandidate(
+        Guid QueueEntryId,
+        Guid RequestId,
+        int RequestVersion,
+        bool ApplicantOriginated);
     private sealed record ShiftReplay(TelehealthShiftResponse Response, string Fingerprint);
     private sealed record ReservationReplay(TelehealthReservationResponse Response, string Fingerprint);
 }

@@ -6001,7 +6001,7 @@ test.describe('telehealth accessibility', () => {
     const prescriptionPreparationBodies: Array<Record<string, unknown>> = []
     const safetyDispositionCommandKeys: Array<string | undefined> = []
     const safetyDispositionBodies: Array<Record<string, unknown>> = []
-    await page.route('**/api/telehealth/v1/clinician/queue', (route) => route.fulfill({ json: { requests: [{ ...queueRequest, status: 'Queued' }] } }))
+    await page.route('**/api/telehealth/v1/clinician/queue', (route) => route.fulfill({ json: { requests: [{ ...queueRequest, status: 'Queued', applicantOriginated: true }] } }))
     await page.route('**/api/telehealth/v1/clinician/shifts', (route) => route.fulfill({
       json: {
         shiftId: '30000000-0000-4000-8000-000000000003',
@@ -6022,6 +6022,7 @@ test.describe('telehealth accessibility', () => {
       leaseExpiresAt: '2026-08-27T04:31:00Z',
       status: 'Active',
       requestVersion: 9,
+      applicantOriginated: true,
     } }))
     await page.route('**/api/telehealth/v1/clinician/reservations/*/connection-grants', (route) => route.fulfill({ json: { ...connectionGrant, participantRole: 'physician' } }))
     await page.route('**/api/telehealth/v1/clinician/reservations/*/consultations/start', async (route) => {
@@ -6151,6 +6152,7 @@ test.describe('telehealth accessibility', () => {
 
     await expect(page.getByRole('heading', { name: 'Telehealth clinician queue' })).toBeVisible()
     await expect(page.getByRole('note')).toContainText(/No real consultation.*prescribing.*patient care is enabled/i)
+    await expect(page.getByText(/New-patient applicant · exact synthetic candidate match/i)).toBeVisible()
     const startButton = page.getByRole('button', { name: 'Start telehealth shift' })
     await startButton.focus()
     await expect(startButton).toBeFocused()
@@ -6159,6 +6161,8 @@ test.describe('telehealth accessibility', () => {
     await expect(page.getByText('Active at facility 10')).toBeVisible()
     await page.getByRole('button', { name: 'Reserve next request' }).click()
     await expect(page.getByRole('heading', { name: 'Reserved synthetic request' })).toBeVisible()
+    await expect(page.getByText(/matched the exact current synthetic rendering-candidate evidence/i)).toBeVisible()
+    await expect(page.getByText(/not real credentialing, network confirmation, consent, or care authorization/i)).toBeVisible()
     await page.getByRole('button', { name: 'Check camera and microphone' }).click()
     await expect(page.getByRole('status')).toContainText('Device check passed')
     await page.getByRole('button', { name: 'Enter physician waiting room' }).click()

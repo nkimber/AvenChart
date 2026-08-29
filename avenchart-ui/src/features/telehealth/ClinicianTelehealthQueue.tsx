@@ -269,6 +269,7 @@ export default function ClinicianTelehealthQueue() {
         <section className="telehealth-card" aria-labelledby="reserved-title">
           <h2 id="reserved-title">Reserved synthetic request</h2>
           <p>Request {reservation.requestId.slice(0, 8)}</p>
+          {reservation.applicantOriginated ? <p><strong>New-patient applicant request.</strong> This reservation matched the exact current synthetic rendering-candidate evidence. It is not real credentialing, network confirmation, consent, or care authorization.</p> : null}
           <p>Lease expires {new Date(reservation.leaseExpiresAt).toLocaleTimeString()}.</p>
           <p>The connection room is provider-neutral and transports no media. After the start handoff, only an audited, bounded chart projection and unsigned SOAP draft are available; general chart navigation and all other clinical actions remain unavailable.</p>
           <section className="telehealth-connection-room" aria-labelledby="physician-device-check-title">
@@ -366,7 +367,7 @@ export default function ClinicianTelehealthQueue() {
           ) : null}
         </section>
       ) : null}
-      <section className="telehealth-card" aria-busy={loading}><h2>Ready queue</h2>{loading ? <p aria-live="polite">Refreshing queue…</p> : null}{!loading && items.length === 0 ? <p>No eligible requests are ready.</p> : null}<ol className="telehealth-queue">{items.map((item, index) => <li key={item.requestId}><div><strong>Position {index + 1}: {item.complaintCategory}</strong><span>{item.status}</span><small>Request {item.requestId.slice(0, 8)}</small></div></li>)}</ol></section>
+      <section className="telehealth-card" aria-busy={loading}><h2>Ready queue</h2>{loading ? <p aria-live="polite">Refreshing queue…</p> : null}{!loading && items.length === 0 ? <p>No eligible requests are ready.</p> : null}<ol className="telehealth-queue">{items.map((item, index) => <li key={item.requestId}><div><strong>Position {index + 1}: {item.complaintCategory}</strong><span>{item.status}</span><small>{item.applicantOriginated ? 'New-patient applicant · exact synthetic candidate match' : 'Established patient'} · Request {item.requestId.slice(0, 8)}</small></div></li>)}</ol></section>
     </main>
   )
 }

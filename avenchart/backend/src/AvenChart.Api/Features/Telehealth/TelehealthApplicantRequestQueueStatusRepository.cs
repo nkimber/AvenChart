@@ -32,6 +32,8 @@ internal sealed record TelehealthApplicantRequestQueueStatusSource(
     int QueueCount,
     string? QueueStatus,
     bool AppointmentCreated,
+    int ActiveReservationCount,
+    bool ReservationValid,
     int? ApproximateRequestsAhead);
 
 public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSource dataSource)
@@ -106,6 +108,40 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                    exists(select 1 from appointments appointment
                            where appointment.id=r.appointment_id and appointment.patient_id=r.patient_id
                              and appointment.facility_id=r.facility_id),
+                   (select count(*)::int from telehealth_reservations reservation
+                     where reservation.request_id=r.request_id and reservation.status='Active'),
+                   exists(
+                     select 1
+                       from telehealth_reservations reservation
+                       join telehealth_clinician_shifts shift on shift.shift_id=reservation.shift_id
+                       join telehealth_applicant_request_queue_authorizations queue_authorization
+                         on queue_authorization.request_id=reservation.request_id
+                        and queue_authorization.applicant_id=a.applicant_id
+                       join appointments appointment on appointment.id=r.appointment_id
+                      where reservation.request_id=r.request_id
+                        and reservation.queue_entry_id=current_queue.queue_entry_id
+                        and reservation.status='Active'
+                        and reservation.lease_expires_at>now()
+                        and reservation.clinician_staff_id=queue_authorization.candidate_staff_id
+                        and reservation.reserved_at>=queue_authorization.authorized_at
+                        and reservation.reserved_at<queue_authorization.result_valid_through
+                        and shift.practice_id=r.practice_id and shift.facility_id=r.facility_id
+                        and shift.clinician_staff_id=reservation.clinician_staff_id
+                        and shift.status='Active'
+                        and queue_authorization.practice_id=r.practice_id
+                        and queue_authorization.facility_id=r.facility_id
+                        and queue_authorization.canonical_patient_id=r.patient_id
+                        and queue_authorization.resulting_request_status='Queued'
+                        and queue_authorization.resulting_request_version=13
+                        and queue_authorization.policy_key='SYNTHETIC_APPLICANT_REQUEST_QUEUE_AUTHORIZATION'
+                        and queue_authorization.policy_version=1
+                        and queue_authorization.evidence_type='APPLICANT_REQUEST_QUEUE_AUTHORIZATION'
+                        and queue_authorization.source_mode='NON_PRODUCTION'
+                        and queue_authorization.business_outcome='SyntheticRequestAuthorizedToQueue'
+                        and now()<queue_authorization.result_valid_through
+                        and appointment.patient_id=r.patient_id
+                        and appointment.facility_id=r.facility_id
+                        and appointment.provider_id=reservation.clinician_staff_id),
                    case
                      when r.status='Queued' and current_queue.status='Ready' then (
                        select count(*)
@@ -152,7 +188,8 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
             reader.GetFieldValue<DateTimeOffset>(9), reader.GetBoolean(10), reader.GetInt32(11),
             reader.GetBoolean(12), reader.GetInt32(13), reader.GetBoolean(14),
             reader.GetInt32(15), reader.IsDBNull(16) ? null : reader.GetString(16),
-            reader.GetBoolean(17), reader.IsDBNull(18) ? null : checked((int?)reader.GetInt64(18)));
+            reader.GetBoolean(17), reader.GetInt32(18), reader.GetBoolean(19),
+            reader.IsDBNull(20) ? null : checked((int?)reader.GetInt64(20)));
         RequireAccess(source, accessKeyHash);
         RequireApplicant(source);
         RequireVisibleState(source);
@@ -205,10 +242,17 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
             && source.RequestVersion == 12
             && source.AuthorizationCount == 0
             && source.QueueCount == 0
+            && source.ActiveReservationCount == 0
             && !source.AppointmentCreated;
         var queueStateValid = source.RequestStatus switch
         {
-            TelehealthRequestStatus.Queued => source.RequestVersion >= 13 && source.QueueStatus == "Ready",
+            TelehealthRequestStatus.Queued => source.RequestVersion >= 13
+                && source.QueueStatus == "Ready"
+                && source.ActiveReservationCount == 0,
+            TelehealthRequestStatus.Reserved => source.RequestVersion >= 14
+                && source.QueueStatus == "Reserved"
+                && source.ActiveReservationCount == 1
+                && source.ReservationValid,
             _ => false
         };
         var downstreamValid = source.AuthorizationCount == 1

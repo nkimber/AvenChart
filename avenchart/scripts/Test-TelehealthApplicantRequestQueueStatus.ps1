@@ -70,6 +70,7 @@ try {
             -not$_.Status.waitEstimateAvailable -and -not$_.Status.realtimeAvailable -and
             $_.Status.practiceAccepted -and $_.Status.doctorSearchStarted -and
             -not$_.Status.renderingPhysicianAssigned -and -not$_.Status.renderingPhysicianIdentityDisclosed -and
+            -not$_.Status.syntheticRenderingCandidateMatched -and -not$_.Status.realRenderingPhysicianNetworkConfirmed -and
             -not$_.Status.coverageVerified -and -not$_.Status.consentCreated -and
             -not$_.Status.careAuthorized -and -not$_.Status.integrationEnabled -and
             -not$_.Status.externalCallPerformed -and @($_.Status.safetyActions).Count-eq 2

@@ -133,6 +133,7 @@ try {
                 $null-eq$_.approximateRequestsAhead -and -not$_.positionIsApproximate -and
                 -not$_.exactQueuePositionAssigned -and -not$_.waitEstimateAvailable -and
                 -not$_.renderingPhysicianAssigned -and -not$_.renderingPhysicianIdentityDisclosed -and
+                -not$_.syntheticRenderingCandidateMatched -and -not$_.realRenderingPhysicianNetworkConfirmed -and
                 -not$_.coverageVerified -and -not$_.consentCreated -and -not$_.careAuthorized -and
                 -not$_.integrationEnabled -and -not$_.externalCallPerformed
             }).Count-eq 3)
@@ -205,9 +206,11 @@ try {
 
     $operationalAfter=Invoke-RestMethod "$ApiBaseUrl/api/telehealth/v1/admin/operational-review" -Headers $adminHeaders -TimeoutSec 20
     $clinicianQueue=Invoke-RestMethod "$ApiBaseUrl/api/telehealth/v1/clinician/queue" -Headers $providerHeaders -TimeoutSec 20
-    Add-QueueAuthorizationCheck 'Authorized requests leave operational review and enter only the configured clinician queue' (
+    $expectedProviderRequestCount=[int](Invoke-Scalar "select count(*) from telehealth_applicant_request_queue_authorizations authorization_record join auth_accounts account on account.staff_id=authorization_record.candidate_staff_id where authorization_record.request_id in ($requestIdsSql) and account.username='gold-provider-01';")
+    Add-QueueAuthorizationCheck 'Authorized requests leave operational review and enter only the exact synthetic candidate clinician queue' (
         @($operationalAfter.requests|Where-Object{$_.requestId-in@($queueAuthorizationApplicants|ForEach-Object{$_.SubmissionReady.requestId})}).Count-eq 0 -and
-        @($clinicianQueue.requests|Where-Object{$_.requestId-in@($queueAuthorizationApplicants|ForEach-Object{$_.SubmissionReady.requestId}) -and $_.applicantOriginated}).Count-eq 3)
+        $expectedProviderRequestCount-gt 0 -and
+        @($clinicianQueue.requests|Where-Object{$_.requestId-in@($queueAuthorizationApplicants|ForEach-Object{$_.SubmissionReady.requestId}) -and $_.applicantOriginated}).Count-eq$expectedProviderRequestCount)
 }
 finally {
     New-Item -ItemType Directory -Force -Path $artifactsRoot | Out-Null

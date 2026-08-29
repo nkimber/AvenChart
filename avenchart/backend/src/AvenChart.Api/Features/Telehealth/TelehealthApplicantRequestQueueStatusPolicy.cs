@@ -13,7 +13,8 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
 
     public static bool IsVisibleStatus(TelehealthRequestStatus status) => status is
         TelehealthRequestStatus.OperationalReview
-        or TelehealthRequestStatus.Queued;
+        or TelehealthRequestStatus.Queued
+        or TelehealthRequestStatus.Reserved;
 
     public static TelehealthApplicantRequestQueueStatusResponse Create(
         TelehealthApplicantRequestQueueStatusRecord record)
@@ -26,6 +27,7 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
             record.SnapshotAt,
             record.ApproximateRequestsAhead);
         var accepted = record.RequestStatus != TelehealthRequestStatus.OperationalReview;
+        var assigned = record.RequestStatus == TelehealthRequestStatus.Reserved;
 
         return new(
             RequestId: projected.RequestId,
@@ -48,8 +50,10 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
             RealtimeAvailable: false,
             PracticeAccepted: accepted,
             DoctorSearchStarted: accepted,
-            RenderingPhysicianAssigned: false,
+            RenderingPhysicianAssigned: assigned,
             RenderingPhysicianIdentityDisclosed: false,
+            SyntheticRenderingCandidateMatched: assigned,
+            RealRenderingPhysicianNetworkConfirmed: false,
             CoverageVerified: false,
             ConsentCreated: false,
             CareAuthorized: false,
@@ -59,7 +63,8 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
             Limitations: [
                 "NON_PRODUCTION synthetic status only. Authoritative HTTP polling is used; realtime delivery is not enabled.",
                 "Any requests-ahead count is an approximate same-practice snapshot, not an assigned position or wait-time promise.",
-                "This slice does not expose or authorize clinician assignment, connection, consultation, or completion states.",
+                "A physician-preparing state means only that the exact synthetic rendering candidate owns an active lease; physician identity and real network confirmation are not disclosed.",
+                "This slice does not authorize connection, consultation, consent, encounter, care, or completion states.",
                 "No consent, care authorization, prescription, claim, integration, or external action is created by reading this status."
             ]);
     }

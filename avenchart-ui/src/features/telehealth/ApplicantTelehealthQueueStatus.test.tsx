@@ -35,6 +35,8 @@ const queuedStatus: TelehealthApplicantRequestQueueStatus = {
   doctorSearchStarted: true,
   renderingPhysicianAssigned: false,
   renderingPhysicianIdentityDisclosed: false,
+  syntheticRenderingCandidateMatched: false,
+  realRenderingPhysicianNetworkConfirmed: false,
   coverageVerified: false,
   consentCreated: false,
   careAuthorized: false,
@@ -55,6 +57,19 @@ const reviewingStatus: TelehealthApplicantRequestQueueStatus = {
   positionIsApproximate: false,
   practiceAccepted: false,
   doctorSearchStarted: false,
+}
+
+const reservedStatus: TelehealthApplicantRequestQueueStatus = {
+  ...queuedStatus,
+  requestStatus: 'Reserved',
+  requestVersion: 14,
+  phase: 'PhysicianPreparing',
+  headline: 'A physician is getting ready',
+  detail: 'Keep this page open. You can run the synthetic device check when the connection-room action appears.',
+  approximateRequestsAhead: null,
+  positionIsApproximate: false,
+  renderingPhysicianAssigned: true,
+  syntheticRenderingCandidateMatched: true,
 }
 
 describe('ApplicantTelehealthQueueStatus', () => {
@@ -110,6 +125,18 @@ describe('ApplicantTelehealthQueueStatus', () => {
     fireEvent.click(retry)
 
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+  })
+
+  it('shows physician preparation without disclosing identity or claiming real network confirmation', async () => {
+    vi.mocked(getApplicantTelehealthRequestQueueStatus).mockResolvedValue(reservedStatus)
+
+    render(<ApplicantTelehealthQueueStatus applicantId="applicant-53" applicantAccessKey="secret-key" enabled />)
+
+    expect(await screen.findByRole('heading', { name: 'A physician is getting ready' })).toBeVisible()
+    expect(screen.getByText(/Physician assigned/).parentElement).toHaveTextContent('Yes — identity not disclosed here')
+    expect(screen.getByText(/Exact synthetic candidate matched/).parentElement).toHaveTextContent('Yes')
+    expect(screen.getByText(/Real physician network confirmed/).parentElement).toHaveTextContent('No')
+    expect(screen.queryByText(/provider|NPI/i)).not.toBeInTheDocument()
   })
 
   it('stays silent while the owned request has not reached operational review', async () => {

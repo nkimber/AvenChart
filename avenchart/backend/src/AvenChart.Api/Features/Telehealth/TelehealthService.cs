@@ -320,7 +320,11 @@ public sealed class TelehealthService(
     {
         RequirePhysician(session);
         RequireConfiguredFacility(accessContext);
-        return await repository.ListClinicianQueueAsync(_options.PracticeId, accessContext.FacilityId, cancellationToken);
+        return await repository.ListClinicianQueueAsync(
+            _options.PracticeId,
+            accessContext.FacilityId,
+            RequireStaffId(session),
+            cancellationToken);
     }
 
     public async Task<TelehealthReservationResponse?> ReserveNextAsync(

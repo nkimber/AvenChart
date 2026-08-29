@@ -136,6 +136,8 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
             <div><dt>Practice accepted for synthetic queue</dt><dd>{status.practiceAccepted ? 'Yes' : 'Not yet'}</dd></div>
             <div><dt>Doctor search started</dt><dd>{status.doctorSearchStarted ? 'Yes' : 'No'}</dd></div>
             <div><dt>Physician assigned</dt><dd>{status.renderingPhysicianAssigned ? 'Yes — identity not disclosed here' : 'No'}</dd></div>
+            <div><dt>Exact synthetic candidate matched</dt><dd>{status.syntheticRenderingCandidateMatched ? 'Yes' : 'Not yet'}</dd></div>
+            <div><dt>Real physician network confirmed</dt><dd>No</dd></div>
             <div><dt>Exact queue position assigned</dt><dd>No</dd></div>
             <div><dt>Wait estimate available</dt><dd>No</dd></div>
           </dl>

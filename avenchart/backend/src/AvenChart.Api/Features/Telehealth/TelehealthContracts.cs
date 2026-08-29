@@ -778,6 +778,8 @@ public sealed record TelehealthApplicantRequestQueueStatusResponse(
     bool DoctorSearchStarted,
     bool RenderingPhysicianAssigned,
     bool RenderingPhysicianIdentityDisclosed,
+    bool SyntheticRenderingCandidateMatched,
+    bool RealRenderingPhysicianNetworkConfirmed,
     bool CoverageVerified,
     bool ConsentCreated,
     bool CareAuthorized,
@@ -814,7 +816,8 @@ public sealed record TelehealthReservationResponse(
     DateTimeOffset ReservedAt,
     DateTimeOffset LeaseExpiresAt,
     string Status,
-    int RequestVersion);
+    int RequestVersion,
+    bool ApplicantOriginated);
 
 public sealed record TelehealthQueueResponse(IReadOnlyList<TelehealthOperationalReviewItem> Requests);
 

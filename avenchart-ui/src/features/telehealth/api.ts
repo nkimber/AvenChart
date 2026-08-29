@@ -2276,12 +2276,12 @@ export type TelehealthApplicantRequestOperationalReviewSubmission = {
 
 export type TelehealthApplicantRequestQueueStatus = {
   requestId: string
-  requestStatus: 'OperationalReview' | 'Queued'
+  requestStatus: 'OperationalReview' | 'Queued' | 'Reserved'
   requestVersion: number
   policyKey: 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_STATUS'
   policyVersion: 1
   sourceMode: 'NON_PRODUCTION'
-  phase: 'Reviewing' | 'InQueue'
+  phase: 'Reviewing' | 'InQueue' | 'PhysicianPreparing'
   headline: string
   detail: string
   approximateRequestsAhead: number | null
@@ -2297,6 +2297,8 @@ export type TelehealthApplicantRequestQueueStatus = {
   doctorSearchStarted: boolean
   renderingPhysicianAssigned: boolean
   renderingPhysicianIdentityDisclosed: false
+  syntheticRenderingCandidateMatched: boolean
+  realRenderingPhysicianNetworkConfirmed: false
   coverageVerified: false
   consentCreated: false
   careAuthorized: false
@@ -2469,6 +2471,7 @@ export type TelehealthReservation = {
   leaseExpiresAt: string
   status: string
   requestVersion: number
+  applicantOriginated: boolean
 }
 
 export type TelehealthDevicePreflight = {

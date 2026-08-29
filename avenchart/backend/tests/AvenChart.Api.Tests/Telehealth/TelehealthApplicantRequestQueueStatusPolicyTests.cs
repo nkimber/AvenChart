@@ -12,7 +12,7 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
     [Theory]
     [InlineData(TelehealthRequestStatus.OperationalReview, true)]
     [InlineData(TelehealthRequestStatus.Queued, true)]
-    [InlineData(TelehealthRequestStatus.Reserved, false)]
+    [InlineData(TelehealthRequestStatus.Reserved, true)]
     [InlineData(TelehealthRequestStatus.InConsultation, false)]
     [InlineData(TelehealthRequestStatus.Verification, false)]
     [InlineData(TelehealthRequestStatus.Redirected, false)]
@@ -30,6 +30,8 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
         Assert.False(result.PracticeAccepted);
         Assert.False(result.DoctorSearchStarted);
         Assert.False(result.RenderingPhysicianAssigned);
+        Assert.False(result.SyntheticRenderingCandidateMatched);
+        Assert.False(result.RealRenderingPhysicianNetworkConfirmed);
         Assert.Null(result.ApproximateRequestsAhead);
         Assert.False(result.PositionIsApproximate);
         AssertClosedConsequences(result);
@@ -52,6 +54,24 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
         Assert.False(result.WaitEstimateAvailable);
         Assert.False(result.RealtimeAvailable);
         Assert.False(result.RenderingPhysicianAssigned);
+        Assert.False(result.SyntheticRenderingCandidateMatched);
+        AssertClosedConsequences(result);
+    }
+
+    [Fact]
+    public void ReservedDisclosesOnlySyntheticAssignmentWithoutPhysicianIdentityOrCareAuthority()
+    {
+        var result = Create(TelehealthRequestStatus.Reserved, 14, null);
+
+        Assert.Equal("PhysicianPreparing", result.Phase);
+        Assert.True(result.PracticeAccepted);
+        Assert.True(result.DoctorSearchStarted);
+        Assert.True(result.RenderingPhysicianAssigned);
+        Assert.True(result.SyntheticRenderingCandidateMatched);
+        Assert.False(result.RenderingPhysicianIdentityDisclosed);
+        Assert.False(result.RealRenderingPhysicianNetworkConfirmed);
+        Assert.Null(result.ApproximateRequestsAhead);
+        Assert.False(result.PositionIsApproximate);
         AssertClosedConsequences(result);
     }
 
@@ -73,6 +93,7 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
         Assert.Equal(1, result.PolicyVersion);
         Assert.Equal("NON_PRODUCTION", result.SourceMode);
         Assert.False(result.RenderingPhysicianIdentityDisclosed);
+        Assert.False(result.RealRenderingPhysicianNetworkConfirmed);
         Assert.False(result.CoverageVerified);
         Assert.False(result.ConsentCreated);
         Assert.False(result.CareAuthorized);
