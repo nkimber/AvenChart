@@ -1,8 +1,8 @@
 # AvenChart immediate telehealth master specification
 
-Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–45 scopes active under Decisions 0003 and 0005–0048
-Version: 0.1  
-Last reviewed: 2026-08-28  
+Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–46 scopes active under Decisions 0003 and 0005–0049
+Version: 0.1
+Last reviewed: 2026-08-29
 Initial jurisdictions: Georgia, California, and Florida  
 Initial delivery channel: a specific medical practice's branded site
 
@@ -130,6 +130,7 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Decision 0046](decisions/0046-approved-sprint-43-applicant-request-complaint-triage.md) | Approved, time-bounded exception for one applicant-owned migraine or sleep coded complaint-triage assessment after an exact universal pass; deterministic ordered rule evidence and six bounded outcomes are recorded, while the fixture remains `UNAPPROVED_SYNTHETIC`, medical-director and clinical-golden-case approval remain absent, production publication is prohibited, and no clinical-review work item, intake snapshot, queue, care, integration, or external consequence is created |
 | [Decision 0047](decisions/0047-approved-sprint-44-applicant-request-intake-snapshot-confirmation.md) | Approved, time-bounded exception for one applicant-owned no-free-text intake snapshot after an exact synthetic complaint pass; the request alone advances from `Intake` version 4 to pending `Verification` version 5, while publication, consent, canonical coverage, current eligibility/network confirmation, operational review, acceptance, contact, queue, appointment, encounter, care, financial, integration, and external consequences remain unavailable |
 | [Decision 0048](decisions/0048-approved-sprint-45-applicant-request-insurance-source-confirmation.md) | Approved, time-bounded exception for one applicant-owned masked request insurance-source confirmation; only the request advances from pending `Verification` version 5 to version 6, prior eligibility/network evidence remains historical and non-reusable, and no protected-source copy/decryption, current verification, canonical coverage, financial, operational, contact, queue, care, integration, or external consequence is authorized |
+| [Decision 0049](decisions/0049-approved-sprint-46-applicant-request-eligibility-verification.md) | Approved, time-bounded exception for one applicant-owned fresh request-time eligibility check against the bounded in-process non-production adapter; the protected source is decrypted only in server memory, only the request advances from pending `Verification` version 6 to version 7, and no raw-payload copy/return, X12 serialization, external call, exact network, canonical coverage/selection, financial, operational, queue, care, integration, or production consequence is authorized |
 | [Implementation backlog](backlog/README.md) | Delivery model for 20 epics and 60 stories, with every one of the 329 requirements assigned exactly once as a primary responsibility |
 | [Machine-readable backlog](backlog/backlog.json) | Structured epic, story, dependency, priority, gate and requirement-range source for planning and future traceability automation |
 | [Sprint 1 foundation plan](backlog/sprint-01-foundation.md) | Recommended synthetic vertical slice from branded entry through safety/triage, administrator authorization, queueing and atomic clinician reservation |
@@ -224,6 +225,8 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Sprint 44 evidence packet](backlog/sprint-44-evidence.md) | Implementation and bounded automated evidence for the request intake snapshot; clinical publication, consent, coverage/network, operational review, independent review, and every broader product/production gate remain open |
 | [Sprint 45 applicant request insurance-source plan](backlog/sprint-45-applicant-request-insurance-source-confirmation.md) | Applicant-owned masked source confirmation after the Sprint 44 intake, with seven explicit confirmations, historical-only evidence, protected-payload reference without copy/decryption, and a request-only pending `Verification` version advance |
 | [Sprint 45 evidence packet](backlog/sprint-45-evidence.md) | Implementation and bounded automated evidence for the masked insurance-source receipt; fresh verification execution, canonical coverage, exact network, financial and operational work, independent review, and every broader product/production gate remain open |
+| [Sprint 46 applicant request eligibility-verification plan](backlog/sprint-46-applicant-request-eligibility-verification.md) | Applicant-owned fresh synthetic eligibility evaluation after the Sprint 45 source receipt, with protected-source use only in server memory, two explicit acknowledgments, normalized outcome dimensions, and a request-only pending `Verification` version advance |
+| [Sprint 46 evidence packet](backlog/sprint-46-evidence.md) | Implementation and bounded automated evidence for the current eligibility result; real X12/connectivity, exact network, canonical coverage/selection, financial and operational work, independent review, and every broader product/production gate remain open |
 | [Engineering safeguards](backlog/engineering-safeguards.md) | Approved merge-gate design and activation conditions |
 | [Safeguard manifest](backlog/safeguards.json) | Machine-readable safeguard triggers, commands, required paths and evidence expectations |
 | [Planning validation](backlog/validation-report.md) | Structural evidence for requirement coverage, identifiers, dependencies, links and static wireframe integrity |

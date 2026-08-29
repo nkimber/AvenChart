@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProspectivePatientTelehealthEntry from './ProspectivePatientTelehealthEntry.tsx'
-import { acknowledgeApplicantPreRequestReadiness, acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, confirmApplicantClinicalInformationSummary, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestInsuranceSource, confirmApplicantTelehealthRequestIntake, confirmApplicantTelehealthRequestLocation, createApplicantTelehealthRequest, createProspectiveApplicant, evaluateProspectiveSafetyTriage, getApplicantAllergyInformation, getApplicantClinicalInformationInventory, getApplicantClinicalInformationSummary, getApplicantCommunicationAccessReadiness, getApplicantDevicePreparation, getApplicantHealthHistoryInformation, getApplicantInsuranceHandoff, getApplicantMedicationInformation, getApplicantPracticeReviewSubmission, getApplicantPreRequestReadiness, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestInsuranceSource, getApplicantTelehealthRequestIntake, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestUniversalSafety, getProspectiveApplicant, getProspectivePracticeNetworkOptions, recordApplicantAllergyInformation, recordApplicantClinicalInformationInventory, recordApplicantCommunicationAccessReadiness, recordApplicantDevicePreparation, recordApplicantHealthHistoryInformation, recordApplicantMedicationInformation, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, submitApplicantPracticeReview, verifyProspectiveApplicantContact, type TelehealthApplicantAllergyInformation, type TelehealthApplicantClinicalInformationInventory, type TelehealthApplicantClinicalInformationSummary, type TelehealthApplicantCommunicationAccessReadiness, type TelehealthApplicantDevicePreparation, type TelehealthApplicantHealthHistoryInformation, type TelehealthApplicantInsuranceHandoff, type TelehealthApplicantMedicationInformation, type TelehealthApplicantNotice, type TelehealthApplicantPracticeReview, type TelehealthApplicantPreRequestReadiness, type TelehealthApplicantRegistrationDetails, type TelehealthApplicantRequestComplaintTriage, type TelehealthApplicantRequestCreation, type TelehealthApplicantRequestInsuranceSource, type TelehealthApplicantRequestIntake, type TelehealthApplicantRequestLocation, type TelehealthApplicantRequestUniversalSafety } from './api.ts'
+import { acknowledgeApplicantPreRequestReadiness, acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, confirmApplicantClinicalInformationSummary, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestInsuranceSource, confirmApplicantTelehealthRequestIntake, confirmApplicantTelehealthRequestLocation, createApplicantTelehealthRequest, createProspectiveApplicant, evaluateProspectiveSafetyTriage, getApplicantAllergyInformation, getApplicantClinicalInformationInventory, getApplicantClinicalInformationSummary, getApplicantCommunicationAccessReadiness, getApplicantDevicePreparation, getApplicantHealthHistoryInformation, getApplicantInsuranceHandoff, getApplicantMedicationInformation, getApplicantPracticeReviewSubmission, getApplicantPreRequestReadiness, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestEligibility, getApplicantTelehealthRequestInsuranceSource, getApplicantTelehealthRequestIntake, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestUniversalSafety, getProspectiveApplicant, getProspectivePracticeNetworkOptions, recordApplicantAllergyInformation, recordApplicantClinicalInformationInventory, recordApplicantCommunicationAccessReadiness, recordApplicantDevicePreparation, recordApplicantHealthHistoryInformation, recordApplicantMedicationInformation, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, runApplicantTelehealthRequestEligibility, submitApplicantPracticeReview, verifyProspectiveApplicantContact, type TelehealthApplicantAllergyInformation, type TelehealthApplicantClinicalInformationInventory, type TelehealthApplicantClinicalInformationSummary, type TelehealthApplicantCommunicationAccessReadiness, type TelehealthApplicantDevicePreparation, type TelehealthApplicantHealthHistoryInformation, type TelehealthApplicantInsuranceHandoff, type TelehealthApplicantMedicationInformation, type TelehealthApplicantNotice, type TelehealthApplicantPracticeReview, type TelehealthApplicantPreRequestReadiness, type TelehealthApplicantRegistrationDetails, type TelehealthApplicantRequestComplaintTriage, type TelehealthApplicantRequestCreation, type TelehealthApplicantRequestEligibility, type TelehealthApplicantRequestInsuranceSource, type TelehealthApplicantRequestIntake, type TelehealthApplicantRequestLocation, type TelehealthApplicantRequestUniversalSafety } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 
 vi.mock('./api.ts', async (importOriginal) => {
@@ -39,6 +39,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     getApplicantTelehealthNotice: vi.fn(),
     getApplicantTelehealthRequest: vi.fn(),
     getApplicantTelehealthRequestComplaintTriage: vi.fn(),
+    getApplicantTelehealthRequestEligibility: vi.fn(),
     getApplicantTelehealthRequestInsuranceSource: vi.fn(),
     getApplicantTelehealthRequestIntake: vi.fn(),
     getApplicantTelehealthRequestLocation: vi.fn(),
@@ -57,6 +58,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     recordProspectivePracticeNetwork: vi.fn(),
     recordProspectivePracticeNetworkPrecheck: vi.fn(),
     recordProspectiveVisitPurpose: vi.fn(),
+    runApplicantTelehealthRequestEligibility: vi.fn(),
     submitApplicantPracticeReview: vi.fn(),
     verifyProspectiveApplicantContact: vi.fn(),
   }
@@ -784,6 +786,74 @@ const requestInsuranceSourceFixture = {
   limitations: ['Historical evidence only; no payer was contacted.'],
 } satisfies TelehealthApplicantRequestInsuranceSource
 
+const requestEligibilityFixture = {
+  applicantId: approvedApplicant.applicantId,
+  applicantVersion: 26,
+  applicantStatus: 'SyntheticRequestCreated',
+  requestId: requestLocationFixture.requestId,
+  requestVersion: 6,
+  requestStatus: 'Verification',
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_ELIGIBILITY_VERIFICATION',
+  policyVersion: 1,
+  eligibilitySnapshotFingerprint: '7'.repeat(64),
+  contextExpiresAt: '2026-08-28T17:30:00Z',
+  payerDisplayName: 'AvenChart Synthetic Health',
+  productDisplayName: 'Synthetic Silver Demo',
+  maskedMemberId: '••••4123',
+  maskedGroupNumber: '••••6789',
+  subscriberRelationship: 'Self',
+  coveragePriority: 'Primary',
+  currentLocationStateCode: 'GA',
+  purposeCategory: 'migraine',
+  verificationReady: true,
+  verificationCompleted: false,
+  verificationId: null,
+  dateOfService: null,
+  serviceCategory: null,
+  adapterMode: null,
+  compatibilityTarget: null,
+  datasetKey: null,
+  datasetVersion: null,
+  transportOutcome: null,
+  memberMatchStatus: null,
+  eligibilityStatus: null,
+  benefitInformationStatus: null,
+  businessOutcome: null,
+  memberMatched: false,
+  memberEligibilityChecked: false,
+  memberBenefitsChecked: false,
+  checkedAt: null,
+  expiresAt: null,
+  protectedPayloadReferenced: true,
+  protectedPayloadCopied: false,
+  protectedPayloadDecryptedInServerMemory: false,
+  priorEligibilityResultReused: false,
+  currentEligibilityEvidenceCreated: false,
+  rawTransactionCreated: false,
+  canonicalCoverageCreated: false,
+  coverageSelected: false,
+  networkVerificationCreated: false,
+  renderingPhysicianNetworkChecked: false,
+  coverageVerified: false,
+  exactNetworkConfirmed: false,
+  financialRouteCreated: false,
+  operationalReviewCreated: false,
+  practiceAccepted: false,
+  patientContacted: false,
+  patientCareQueueEntered: false,
+  clinicianQueueEntered: false,
+  doctorSearchStarted: false,
+  queuePositionAssigned: false,
+  appointmentCreated: false,
+  encounterCreated: false,
+  consentCreated: false,
+  careAuthorized: false,
+  integrationEnabled: false,
+  externalCallPerformed: false,
+  direction: 'Run one fresh synthetic eligibility check.',
+  limitations: ['No payer or clearinghouse will be contacted.'],
+} satisfies TelehealthApplicantRequestEligibility
+
 describe('ProspectivePatientTelehealthEntry safety triage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -809,6 +879,7 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
     vi.mocked(getApplicantTelehealthRequestComplaintTriage).mockResolvedValue(requestComplaintTriageFixture)
     vi.mocked(getApplicantTelehealthRequestIntake).mockResolvedValue(requestIntakeFixture)
     vi.mocked(getApplicantTelehealthRequestInsuranceSource).mockResolvedValue(requestInsuranceSourceFixture)
+    vi.mocked(getApplicantTelehealthRequestEligibility).mockResolvedValue(requestEligibilityFixture)
     vi.mocked(runTelehealthDevicePreflight).mockResolvedValue({
       status: 'failed',
       message: 'This browser cannot run the secure telehealth device check.',
@@ -3317,7 +3388,7 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
     expect(stored).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot/i)
   })
 
-  it('recovers and confirms only the masked historical insurance source with one retry identity', async () => {
+  it('recovers the masked source and fresh request eligibility with stable retry identities', async () => {
     const requestCreatedApplicant = {
       ...approvedApplicant,
       status: 'SyntheticRequestCreated',
@@ -3406,6 +3477,32 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
       freshVerificationRequested: true,
       direction: 'Fresh verification remains pending and unavailable.',
     } satisfies TelehealthApplicantRequestInsuranceSource
+    const completedEligibility = {
+      ...requestEligibilityFixture,
+      requestVersion: 7,
+      verificationReady: false,
+      verificationCompleted: true,
+      verificationId: '46000000-0000-4000-8000-000000000001',
+      dateOfService: '2026-08-28',
+      serviceCategory: 'ProfessionalTelehealthConsultation',
+      adapterMode: 'NON_PRODUCTION',
+      compatibilityTarget: 'ASC_X12N_270_271_005010X279A1',
+      datasetKey: 'avenchart-synthetic-prospective-eligibility-2026-08',
+      datasetVersion: 1,
+      transportOutcome: 'SimulatedAccepted',
+      memberMatchStatus: 'Matched',
+      eligibilityStatus: 'Active',
+      benefitInformationStatus: 'Reported',
+      businessOutcome: 'EligibleBenefitsReported',
+      memberMatched: true,
+      memberEligibilityChecked: true,
+      memberBenefitsChecked: true,
+      checkedAt: '2026-08-28T17:13:00Z',
+      expiresAt: '2026-08-28T17:28:00Z',
+      protectedPayloadDecryptedInServerMemory: true,
+      currentEligibilityEvidenceCreated: true,
+      direction: 'Fresh eligibility is active; exact network remains required.',
+    } satisfies TelehealthApplicantRequestEligibility
     vi.mocked(getProspectiveApplicant).mockResolvedValue(requestCreatedApplicant)
     vi.mocked(getApplicantTelehealthRequest).mockResolvedValue(requestCreationReceipt)
     vi.mocked(getApplicantTelehealthRequestLocation).mockResolvedValue(confirmedLocation)
@@ -3418,6 +3515,12 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
     vi.mocked(confirmApplicantTelehealthRequestInsuranceSource)
       .mockRejectedValueOnce(new Error('Insurance-source result unknown; retry unchanged.'))
       .mockResolvedValue(completedSource)
+    vi.mocked(getApplicantTelehealthRequestEligibility)
+      .mockRejectedValueOnce(new Error('Eligibility projection temporarily unavailable.'))
+      .mockResolvedValue(requestEligibilityFixture)
+    vi.mocked(runApplicantTelehealthRequestEligibility)
+      .mockRejectedValueOnce(new Error('Eligibility result unknown; retry unchanged.'))
+      .mockResolvedValue(completedEligibility)
 
     render(<MemoryRouter><ProspectivePatientTelehealthEntry /></MemoryRouter>)
 
@@ -3477,7 +3580,45 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
     expect(result.parentElement).toHaveTextContent('was not copied or decrypted')
     await waitFor(() => expect(result.parentElement).toHaveFocus())
 
+    expect(await screen.findByRole('alert')).toHaveTextContent('Eligibility projection temporarily unavailable.')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry eligibility load' }))
+    const eligibilityHeading = await screen.findByRole('heading', { name: 'Run fresh request eligibility' })
+    const eligibilityForm = eligibilityHeading.closest('form')
+    expect(eligibilityForm).not.toBeNull()
+    expect(eligibilityForm?.querySelector('textarea')).toBeNull()
+    expect(eligibilityForm?.querySelector('select')).toBeNull()
+    expect(eligibilityForm?.querySelector('input:not([type="checkbox"])')).toBeNull()
+    expect(eligibilityForm).toHaveTextContent('AvenChart Synthetic Health')
+    expect(eligibilityForm).toHaveTextContent('••••4123')
+    expect(eligibilityForm).toHaveTextContent('does not verify whether the practice or eventual treating physician is in network')
+    fireEvent.click(within(eligibilityForm!).getByLabelText('I confirm this check uses only fictional synthetic demonstration data.'))
+    fireEvent.click(within(eligibilityForm!).getByLabelText('I understand eligibility or benefit information is not a guarantee of coverage, payment, cost, or network participation.'))
+    fireEvent.click(within(eligibilityForm!).getByRole('button', { name: 'Run synthetic eligibility check' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Eligibility result unknown; retry unchanged.')
+    fireEvent.click(within(eligibilityForm!).getByRole('button', { name: 'Run synthetic eligibility check' }))
+    await waitFor(() => expect(runApplicantTelehealthRequestEligibility).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(runApplicantTelehealthRequestEligibility).mock.calls[0][3]).toBe(
+      vi.mocked(runApplicantTelehealthRequestEligibility).mock.calls[1][3],
+    )
+    expect(vi.mocked(runApplicantTelehealthRequestEligibility).mock.calls[0][2]).toEqual({
+      expectedRequestVersion: 6,
+      eligibilitySnapshotFingerprint: '7'.repeat(64),
+      syntheticDataConfirmed: true,
+      noGuaranteeAcknowledged: true,
+    })
+
+    const eligibilityResult = await screen.findByRole('heading', { name: 'Fresh request eligibility recorded' })
+    expect(eligibilityResult.parentElement).toHaveTextContent('Request version7')
+    expect(eligibilityResult.parentElement).toHaveTextContent('EligibilityActive')
+    expect(eligibilityResult.parentElement).toHaveTextContent('Benefit informationReported')
+    expect(eligibilityResult.parentElement).toHaveTextContent('Exact network confirmedNo — still pending')
+    expect(eligibilityResult.parentElement).toHaveTextContent('Coverage verifiedNo')
+    expect(eligibilityResult.parentElement).toHaveTextContent('Doctor search or queueNot started')
+    expect(eligibilityResult.parentElement).toHaveTextContent('decrypted only in server memory and was not copied')
+    await waitFor(() => expect(eligibilityResult.parentElement).toHaveFocus())
+
     const stored = `${sessionStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}${localStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}`
-    expect(stored).not.toMatch(/insuranceSourceSnapshotFingerprint|payerDisplayName|maskedMemberId|eligibilityBusinessOutcome|networkBusinessOutcome/i)
+    expect(stored).not.toMatch(/insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|payerDisplayName|maskedMemberId|eligibilityBusinessOutcome|networkBusinessOutcome|businessOutcome/i)
   })
 })

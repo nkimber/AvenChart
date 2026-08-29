@@ -1837,6 +1837,81 @@ export type TelehealthApplicantRequestInsuranceSource = {
   limitations: string[]
 }
 
+export type TelehealthApplicantRequestEligibilityInput = {
+  expectedRequestVersion: number
+  eligibilitySnapshotFingerprint: string
+  syntheticDataConfirmed: true
+  noGuaranteeAcknowledged: true
+}
+
+export type TelehealthApplicantRequestEligibility = {
+  applicantId: string
+  applicantVersion: 26
+  applicantStatus: 'SyntheticRequestCreated'
+  requestId: string
+  requestVersion: 6 | 7
+  requestStatus: 'Verification'
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_ELIGIBILITY_VERIFICATION'
+  policyVersion: 1
+  eligibilitySnapshotFingerprint: string
+  contextExpiresAt: string
+  payerDisplayName: string
+  productDisplayName: string
+  maskedMemberId: string
+  maskedGroupNumber: string | null
+  subscriberRelationship: 'Self' | 'Spouse' | 'Parent' | 'Other'
+  coveragePriority: 'Primary'
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  purposeCategory: 'migraine' | 'sleep'
+  verificationReady: boolean
+  verificationCompleted: boolean
+  verificationId: string | null
+  dateOfService: string | null
+  serviceCategory: string | null
+  adapterMode: 'NON_PRODUCTION' | null
+  compatibilityTarget: string | null
+  datasetKey: string | null
+  datasetVersion: number | null
+  transportOutcome: string | null
+  memberMatchStatus: string | null
+  eligibilityStatus: 'Active' | 'Inactive' | 'Unknown' | null
+  benefitInformationStatus: 'Reported' | 'NotReported' | 'Unknown' | null
+  businessOutcome: 'EligibleBenefitsReported' | 'CoverageInactive' | 'SubscriberNotFound' | 'UnableToDetermine' | null
+  memberMatched: boolean
+  memberEligibilityChecked: boolean
+  memberBenefitsChecked: boolean
+  checkedAt: string | null
+  expiresAt: string | null
+  protectedPayloadReferenced: true
+  protectedPayloadCopied: false
+  protectedPayloadDecryptedInServerMemory: boolean
+  priorEligibilityResultReused: false
+  currentEligibilityEvidenceCreated: boolean
+  rawTransactionCreated: false
+  canonicalCoverageCreated: false
+  coverageSelected: false
+  networkVerificationCreated: false
+  renderingPhysicianNetworkChecked: false
+  coverageVerified: false
+  exactNetworkConfirmed: false
+  financialRouteCreated: false
+  operationalReviewCreated: false
+  practiceAccepted: false
+  patientContacted: false
+  patientCareQueueEntered: false
+  clinicianQueueEntered: false
+  doctorSearchStarted: false
+  queuePositionAssigned: false
+  appointmentCreated: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -3198,6 +3273,41 @@ export function confirmApplicantTelehealthRequestInsuranceSource(
 ) {
   return json<TelehealthApplicantRequestInsuranceSource>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/insurance-source`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequestEligibility(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestEligibility>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/eligibility`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function runApplicantTelehealthRequestEligibility(
+  applicantId: string,
+  applicantAccessKey: string,
+  input: TelehealthApplicantRequestEligibilityInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestEligibility>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/eligibility`,
     {
       method: 'POST',
       headers: applicantHeaders(applicantAccessKey, {

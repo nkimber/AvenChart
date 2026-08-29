@@ -1981,7 +1981,7 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
-  test('eligible synthetic applicant confirms intake and a masked historical insurance source with stable retries and no downstream implication', async ({ page }) => {
+  test('eligible synthetic applicant confirms intake, source, and fresh eligibility with stable retries and no downstream implication', async ({ page }) => {
     await page.addInitScript((session) => {
       sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
     }, { applicantId: prospectiveApplicant.applicantId, applicantAccessKey: 'r'.repeat(64) })
@@ -2285,6 +2285,99 @@ test.describe('telehealth accessibility', () => {
       freshVerificationRequested: true,
       direction: 'Fresh verification remains pending and unavailable.',
     }
+    const readyRequestEligibility = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 6,
+      requestStatus: 'Verification',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_ELIGIBILITY_VERIFICATION',
+      policyVersion: 1,
+      eligibilitySnapshotFingerprint: '7'.repeat(64),
+      contextExpiresAt: '2026-08-28T17:30:00Z',
+      payerDisplayName: 'AvenChart Synthetic Health',
+      productDisplayName: 'Synthetic Silver Demo',
+      maskedMemberId: '••••4123',
+      maskedGroupNumber: '••••6789',
+      subscriberRelationship: 'Self',
+      coveragePriority: 'Primary',
+      currentLocationStateCode: 'GA',
+      purposeCategory: 'sleep',
+      verificationReady: true,
+      verificationCompleted: false,
+      verificationId: null,
+      dateOfService: null,
+      serviceCategory: null,
+      adapterMode: null,
+      compatibilityTarget: null,
+      datasetKey: null,
+      datasetVersion: null,
+      transportOutcome: null,
+      memberMatchStatus: null,
+      eligibilityStatus: null,
+      benefitInformationStatus: null,
+      businessOutcome: null,
+      memberMatched: false,
+      memberEligibilityChecked: false,
+      memberBenefitsChecked: false,
+      checkedAt: null,
+      expiresAt: null,
+      protectedPayloadReferenced: true,
+      protectedPayloadCopied: false,
+      protectedPayloadDecryptedInServerMemory: false,
+      priorEligibilityResultReused: false,
+      currentEligibilityEvidenceCreated: false,
+      rawTransactionCreated: false,
+      canonicalCoverageCreated: false,
+      coverageSelected: false,
+      networkVerificationCreated: false,
+      renderingPhysicianNetworkChecked: false,
+      coverageVerified: false,
+      exactNetworkConfirmed: false,
+      financialRouteCreated: false,
+      operationalReviewCreated: false,
+      practiceAccepted: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Run one fresh synthetic eligibility check.',
+      limitations: ['No payer or clearinghouse will be contacted.'],
+    }
+    const completedRequestEligibility = {
+      ...readyRequestEligibility,
+      requestVersion: 7,
+      verificationReady: false,
+      verificationCompleted: true,
+      verificationId: '46000000-0000-4000-8000-000000000001',
+      dateOfService: '2026-08-28',
+      serviceCategory: 'ProfessionalTelehealthConsultation',
+      adapterMode: 'NON_PRODUCTION',
+      compatibilityTarget: 'ASC_X12N_270_271_005010X279A1',
+      datasetKey: 'avenchart-synthetic-prospective-eligibility-2026-08',
+      datasetVersion: 1,
+      transportOutcome: 'SimulatedAccepted',
+      memberMatchStatus: 'Matched',
+      eligibilityStatus: 'Active',
+      benefitInformationStatus: 'Reported',
+      businessOutcome: 'EligibleBenefitsReported',
+      memberMatched: true,
+      memberEligibilityChecked: true,
+      memberBenefitsChecked: true,
+      checkedAt: '2026-08-28T17:13:00Z',
+      expiresAt: '2026-08-28T17:28:00Z',
+      protectedPayloadDecryptedInServerMemory: true,
+      currentEligibilityEvidenceCreated: true,
+      direction: 'Fresh eligibility is active; exact network remains required.',
+    }
     let intakeLoadCalls = 0
     let intakeConfirmationCalls = 0
     const intakeKeys: Array<string | undefined> = []
@@ -2293,10 +2386,34 @@ test.describe('telehealth accessibility', () => {
     let insuranceSourceConfirmationCalls = 0
     const insuranceSourceKeys: Array<string | undefined> = []
     const insuranceSourceBodies: Array<Record<string, unknown>> = []
+    let requestEligibilityLoadCalls = 0
+    let requestEligibilityRunCalls = 0
+    const requestEligibilityKeys: Array<string | undefined> = []
+    const requestEligibilityBodies: Array<Record<string, unknown>> = []
     await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
       const request = route.request()
       const path = new URL(request.url()).pathname
       expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('r'.repeat(64))
+      if (path.endsWith('/telehealth-request/eligibility')) {
+        if (request.method() === 'POST') {
+          requestEligibilityRunCalls += 1
+          requestEligibilityKeys.push(request.headers()['x-idempotency-key'])
+          requestEligibilityBodies.push(request.postDataJSON() as Record<string, unknown>)
+          if (requestEligibilityRunCalls === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Eligibility result unknown; retry unchanged.' }) })
+            return
+          }
+          await route.fulfill({ json: completedRequestEligibility })
+          return
+        }
+        requestEligibilityLoadCalls += 1
+        if (requestEligibilityLoadCalls === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Eligibility projection temporarily unavailable.' }) })
+          return
+        }
+        await route.fulfill({ json: readyRequestEligibility })
+        return
+      }
       if (path.endsWith('/telehealth-request/insurance-source')) {
         if (request.method() === 'POST') {
           insuranceSourceConfirmationCalls += 1
@@ -2469,7 +2586,46 @@ test.describe('telehealth accessibility', () => {
       evidenceLimitationsAcknowledged: true,
       syntheticDataConfirmed: true,
     })
-    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|insuranceSourceSnapshotFingerprint|payerDisplayName|maskedMemberId|requestId/i)
+
+    await expect(page.getByRole('alert')).toContainText('Eligibility projection temporarily unavailable.')
+    await page.getByRole('button', { name: 'Retry eligibility load' }).click()
+    const eligibilityHeading = page.getByRole('heading', { name: 'Run fresh request eligibility' })
+    await expect(eligibilityHeading).toBeVisible()
+    const eligibilityForm = eligibilityHeading.locator('..')
+    await expect(eligibilityForm).toContainText('NON_PRODUCTION eligibility fixture only')
+    await expect(eligibilityForm).toContainText('AvenChart Synthetic Health')
+    await expect(eligibilityForm).toContainText('••••4123')
+    await expect(eligibilityForm).toContainText('does not verify whether the practice or eventual treating physician is in network')
+    await expect(eligibilityForm.locator('textarea')).toHaveCount(0)
+    await expect(eligibilityForm.locator('select')).toHaveCount(0)
+    await expect(eligibilityForm.locator('input:not([type="checkbox"])')).toHaveCount(0)
+    const eligibilitySubmit = eligibilityForm.getByRole('button', { name: 'Run synthetic eligibility check' })
+    await expect(eligibilitySubmit).toBeDisabled()
+    await eligibilityForm.getByLabel('I confirm this check uses only fictional synthetic demonstration data.').check()
+    await eligibilityForm.getByLabel('I understand eligibility or benefit information is not a guarantee of coverage, payment, cost, or network participation.').check()
+    await eligibilitySubmit.click()
+    const eligibilityRetryAlert = page.getByRole('alert').filter({ hasText: 'Eligibility result unknown; retry unchanged.' })
+    await expect(eligibilityRetryAlert).toBeVisible()
+    await expect(eligibilityRetryAlert).toBeFocused()
+    await eligibilitySubmit.click()
+
+    const eligibilityResult = page.getByRole('heading', { name: 'Fresh request eligibility recorded' })
+    await expect(eligibilityResult).toBeVisible()
+    await expect(eligibilityResult.locator('..')).toContainText('Request version7')
+    await expect(eligibilityResult.locator('..')).toContainText('EligibilityActive')
+    await expect(eligibilityResult.locator('..')).toContainText('Benefit informationReported')
+    await expect(eligibilityResult.locator('..')).toContainText('Exact network confirmedNo — still pending')
+    await expect(eligibilityResult.locator('..')).toContainText('Coverage verifiedNo')
+    await expect(eligibilityResult.locator('..')).toContainText('Doctor search or queueNot started')
+    expect(requestEligibilityKeys).toHaveLength(2)
+    expect(requestEligibilityKeys[0]).toBe(requestEligibilityKeys[1])
+    expect(requestEligibilityBodies[0]).toEqual({
+      expectedRequestVersion: 6,
+      eligibilitySnapshotFingerprint: '7'.repeat(64),
+      syntheticDataConfirmed: true,
+      noGuaranteeAcknowledged: true,
+    })
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|payerDisplayName|maskedMemberId|businessOutcome|requestId/i)
 
     await expectNoSeriousAccessibilityViolations(page)
     await expectTelehealthReflow(page)

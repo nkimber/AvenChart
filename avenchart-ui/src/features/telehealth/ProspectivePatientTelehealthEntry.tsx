@@ -27,6 +27,7 @@ import {
   getApplicantTelehealthRequest,
   getApplicantTelehealthRequestComplaintTriage,
   getApplicantTelehealthRequestInsuranceSource,
+  getApplicantTelehealthRequestEligibility,
   getApplicantTelehealthRequestIntake,
   getApplicantTelehealthRequestLocation,
   getApplicantTelehealthRequestUniversalSafety,
@@ -50,6 +51,7 @@ import {
   recordApplicantHealthHistoryInformation,
   recordApplicantMedicationInformation,
   recordApplicantDevicePreparation,
+  runApplicantTelehealthRequestEligibility,
   submitApplicantPracticeReview,
   verifyProspectiveApplicantContact,
   type TelehealthProspectiveApplicant,
@@ -100,6 +102,8 @@ import {
   type TelehealthApplicantRequestComplaintTriageInput,
   type TelehealthApplicantRequestInsuranceSource,
   type TelehealthApplicantRequestInsuranceSourceInput,
+  type TelehealthApplicantRequestEligibility,
+  type TelehealthApplicantRequestEligibilityInput,
   type TelehealthApplicantRequestIntake,
   type TelehealthApplicantRequestIntakeInput,
   type TelehealthApplicantRequestLocation,
@@ -162,6 +166,7 @@ type PendingRequestSafety = { content: string; idempotencyKey: string }
 type PendingRequestComplaintTriage = { content: string; idempotencyKey: string }
 type PendingRequestIntake = { content: string; idempotencyKey: string }
 type PendingRequestInsuranceSource = { content: string; idempotencyKey: string }
+type PendingRequestEligibility = { content: string; idempotencyKey: string }
 type YesNoAnswer = '' | 'yes' | 'no'
 type ComplaintAnswer = '' | TelehealthSyntheticComplaintAnswer
 
@@ -333,6 +338,11 @@ const initialRequestInsuranceSourceConfirmations = {
   freshVerification: false,
   evidenceLimitations: false,
   syntheticData: false,
+}
+
+const initialRequestEligibilityAcknowledgments = {
+  syntheticData: false,
+  noGuarantee: false,
 }
 
 function ComplaintAnswerField({
@@ -520,6 +530,10 @@ export default function ProspectivePatientTelehealthEntry() {
   const [requestInsuranceSourceLoading, setRequestInsuranceSourceLoading] = useState(false)
   const [requestInsuranceSourceLoadAttempt, setRequestInsuranceSourceLoadAttempt] = useState(0)
   const [requestInsuranceSourceConfirmations, setRequestInsuranceSourceConfirmations] = useState(initialRequestInsuranceSourceConfirmations)
+  const [requestEligibility, setRequestEligibility] = useState<TelehealthApplicantRequestEligibility | null>(null)
+  const [requestEligibilityLoading, setRequestEligibilityLoading] = useState(false)
+  const [requestEligibilityLoadAttempt, setRequestEligibilityLoadAttempt] = useState(0)
+  const [requestEligibilityAcknowledgments, setRequestEligibilityAcknowledgments] = useState(initialRequestEligibilityAcknowledgments)
   const [loading, setLoading] = useState(Boolean(applicantSession))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -551,6 +565,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const pendingRequestComplaintTriage = useRef<PendingRequestComplaintTriage | null>(null)
   const pendingRequestIntake = useRef<PendingRequestIntake | null>(null)
   const pendingRequestInsuranceSource = useRef<PendingRequestInsuranceSource | null>(null)
+  const pendingRequestEligibility = useRef<PendingRequestEligibility | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const safetyResultRef = useRef<HTMLDivElement>(null)
   const purposeResultRef = useRef<HTMLDivElement>(null)
@@ -577,6 +592,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const requestComplaintTriageResultRef = useRef<HTMLDivElement>(null)
   const requestIntakeResultRef = useRef<HTMLDivElement>(null)
   const requestInsuranceSourceResultRef = useRef<HTMLDivElement>(null)
+  const requestEligibilityResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -681,6 +697,10 @@ export default function ProspectivePatientTelehealthEntry() {
   useEffect(() => {
     if (requestInsuranceSource?.sourceConfirmed) requestInsuranceSourceResultRef.current?.focus()
   }, [requestInsuranceSource])
+
+  useEffect(() => {
+    if (requestEligibility?.verificationCompleted) requestEligibilityResultRef.current?.focus()
+  }, [requestEligibility])
 
   useEffect(() => {
     if (!applicantSession) {
@@ -1146,6 +1166,29 @@ export default function ProspectivePatientTelehealthEntry() {
       })
     return () => controller.abort()
   }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestIntake?.snapshotCreated, requestInsuranceSourceLoadAttempt])
+
+  useEffect(() => {
+    if (!applicantSession
+      || applicant?.status !== 'SyntheticRequestCreated'
+      || !requestInsuranceSource?.sourceConfirmed) return
+    const controller = new AbortController()
+    setRequestEligibilityLoading(true)
+    setError(null)
+    getApplicantTelehealthRequestEligibility(
+      applicant.applicantId,
+      applicantSession.applicantAccessKey,
+      controller.signal,
+    )
+      .then(setRequestEligibility)
+      .catch((caught: unknown) => {
+        if (isRequestCancellation(caught)) return
+        setError(caught instanceof Error ? caught.message : 'Fresh request eligibility could not be loaded.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestEligibilityLoading(false)
+      })
+    return () => controller.abort()
+  }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestInsuranceSource?.sourceConfirmed, requestEligibilityLoadAttempt])
 
   function updateValue<Key extends keyof FormValues>(key: Key, value: FormValues[Key]) {
     pendingCreate.current = null
@@ -2802,6 +2845,56 @@ export default function ProspectivePatientTelehealthEntry() {
     }
   }
 
+  function updateRequestEligibilityAcknowledgment(
+    key: keyof typeof initialRequestEligibilityAcknowledgments,
+    checked: boolean,
+  ) {
+    pendingRequestEligibility.current = null
+    setRequestEligibilityAcknowledgments((current) => ({ ...current, [key]: checked }))
+  }
+
+  async function runRequestEligibility(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!applicant || !applicantSession || !requestEligibility) return
+    if (!Object.values(requestEligibilityAcknowledgments).every(Boolean)) {
+      setError('Accept both synthetic eligibility acknowledgments before continuing.')
+      return
+    }
+    const input = {
+      expectedRequestVersion: requestEligibility.requestVersion,
+      eligibilitySnapshotFingerprint: requestEligibility.eligibilitySnapshotFingerprint,
+      syntheticDataConfirmed: true,
+      noGuaranteeAcknowledged: true,
+    } satisfies TelehealthApplicantRequestEligibilityInput
+    const content = JSON.stringify(input)
+    if (!pendingRequestEligibility.current || pendingRequestEligibility.current.content !== content) {
+      pendingRequestEligibility.current = { content, idempotencyKey: crypto.randomUUID() }
+    }
+
+    setError(null)
+    setSubmitting(true)
+    try {
+      const result = await runApplicantTelehealthRequestEligibility(
+        applicant.applicantId,
+        applicantSession.applicantAccessKey,
+        input,
+        pendingRequestEligibility.current.idempotencyKey,
+      )
+      setRequestEligibility(result)
+      pendingRequestEligibility.current = null
+      setRequestEligibilityAcknowledgments(initialRequestEligibilityAcknowledgments)
+    } catch (caught: unknown) {
+      if (caught instanceof ApiRequestError && caught.status && caught.status < 500) {
+        pendingRequestEligibility.current = null
+      }
+      setError(caught instanceof Error
+        ? caught.message
+        : 'Fresh request eligibility could not be completed.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   function restart() {
     clearApplicantSession()
     pendingCreate.current = null
@@ -2831,6 +2924,7 @@ export default function ProspectivePatientTelehealthEntry() {
     pendingRequestComplaintTriage.current = null
     pendingRequestIntake.current = null
     pendingRequestInsuranceSource.current = null
+    pendingRequestEligibility.current = null
     setApplicantSession(null)
     setApplicant(null)
     setValues(initialValues)
@@ -2956,6 +3050,10 @@ export default function ProspectivePatientTelehealthEntry() {
     setRequestInsuranceSourceLoading(false)
     setRequestInsuranceSourceLoadAttempt(0)
     setRequestInsuranceSourceConfirmations(initialRequestInsuranceSourceConfirmations)
+    setRequestEligibility(null)
+    setRequestEligibilityLoading(false)
+    setRequestEligibilityLoadAttempt(0)
+    setRequestEligibilityAcknowledgments(initialRequestEligibilityAcknowledgments)
     setError(null)
   }
 
@@ -5100,6 +5198,75 @@ export default function ProspectivePatientTelehealthEntry() {
                     <p><strong>{requestInsuranceSource.direction}</strong></p>
                     <p>The protected member payload was referenced but was not copied or decrypted. No canonical coverage, selection, verification, financial route, operational review, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
                     <ul>{requestInsuranceSource.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                  </div>
+                ) : null}
+                {requestInsuranceSource?.sourceConfirmed && requestEligibilityLoading ? (
+                  <p role="status">Loading fresh request eligibility…</p>
+                ) : null}
+                {requestInsuranceSource?.sourceConfirmed
+                  && !requestEligibilityLoading
+                  && !requestEligibility ? (
+                    <button
+                      className="telehealth-button"
+                      type="button"
+                      onClick={() => setRequestEligibilityLoadAttempt((value) => value + 1)}
+                    >
+                      Retry eligibility load
+                    </button>
+                  ) : null}
+                {requestEligibility?.verificationReady ? (
+                  <form className="telehealth-review-form" onSubmit={runRequestEligibility}>
+                    <div className="telehealth-synthetic" role="note">
+                      NON_PRODUCTION eligibility fixture only. No payer or clearinghouse will be contacted.
+                    </div>
+                    <h3>Run fresh request eligibility</h3>
+                    <p id="request-eligibility-help">This check validates the protected synthetic source in server memory. It does not verify whether the practice or eventual treating physician is in network.</p>
+                    <dl className="telehealth-details" aria-describedby="request-eligibility-help">
+                      <div><dt>Payer and product</dt><dd>{requestEligibility.payerDisplayName} — {requestEligibility.productDisplayName}</dd></div>
+                      <div><dt>Member ID</dt><dd>{requestEligibility.maskedMemberId}</dd></div>
+                      <div><dt>Group number</dt><dd>{requestEligibility.maskedGroupNumber ?? 'Not supplied'}</dd></div>
+                      <div><dt>Subscriber relationship</dt><dd>{requestEligibility.subscriberRelationship}</dd></div>
+                      <div><dt>Current state</dt><dd>{requestEligibility.currentLocationStateCode}</dd></div>
+                      <div><dt>Visit purpose</dt><dd>{requestEligibility.purposeCategory}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestEligibility.requestVersion}</dd></div>
+                      <div><dt>Run before</dt><dd>{new Date(requestEligibility.contextExpiresAt).toLocaleString()}</dd></div>
+                    </dl>
+                    <fieldset className="telehealth-fieldset">
+                      <legend>Two required acknowledgments</legend>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestEligibilityAcknowledgments.syntheticData} onChange={(event) => updateRequestEligibilityAcknowledgment('syntheticData', event.target.checked)} /><span>I confirm this check uses only fictional synthetic demonstration data.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestEligibilityAcknowledgments.noGuarantee} onChange={(event) => updateRequestEligibilityAcknowledgment('noGuarantee', event.target.checked)} /><span>I understand eligibility or benefit information is not a guarantee of coverage, payment, cost, or network participation.</span></label>
+                    </fieldset>
+                    <ul>{requestEligibility.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                    <button
+                      className="telehealth-button"
+                      type="submit"
+                      disabled={submitting || !Object.values(requestEligibilityAcknowledgments).every(Boolean)}
+                    >
+                      {submitting ? 'Running fresh eligibility…' : 'Run synthetic eligibility check'}
+                    </button>
+                  </form>
+                ) : null}
+                {requestEligibility?.verificationCompleted ? (
+                  <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestEligibilityResultRef}>
+                    <h3>Fresh request eligibility recorded</h3>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestEligibility.requestId}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestEligibility.requestStatus}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestEligibility.requestVersion}</dd></div>
+                      <div><dt>Adapter</dt><dd>{requestEligibility.adapterMode}</dd></div>
+                      <div><dt>Eligibility</dt><dd>{requestEligibility.eligibilityStatus}</dd></div>
+                      <div><dt>Benefit information</dt><dd>{requestEligibility.benefitInformationStatus}</dd></div>
+                      <div><dt>Member match</dt><dd>{requestEligibility.memberMatchStatus}</dd></div>
+                      <div><dt>Business result</dt><dd>{requestEligibility.businessOutcome}</dd></div>
+                      <div><dt>Date of service</dt><dd>{requestEligibility.dateOfService}</dd></div>
+                      <div><dt>Evidence expires</dt><dd>{requestEligibility.expiresAt ? new Date(requestEligibility.expiresAt).toLocaleString() : 'Unavailable'}</dd></div>
+                      <div><dt>Exact network confirmed</dt><dd>{requestEligibility.exactNetworkConfirmed ? 'Yes' : 'No — still pending'}</dd></div>
+                      <div><dt>Coverage verified</dt><dd>{requestEligibility.coverageVerified ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Doctor search or queue</dt><dd>{requestEligibility.doctorSearchStarted || requestEligibility.patientCareQueueEntered || requestEligibility.clinicianQueueEntered ? 'Started' : 'Not started'}</dd></div>
+                    </dl>
+                    <p><strong>{requestEligibility.direction}</strong></p>
+                    <p>The protected payload was decrypted only in server memory and was not copied. No raw transaction, network determination, canonical coverage, financial route, operational review, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
+                    <ul>{requestEligibility.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                   </div>
                 ) : null}
               </>

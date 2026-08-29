@@ -455,6 +455,24 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/eligibility", GetApplicantTelehealthRequestEligibilityAsync)
+            .WithName("GetTelehealthApplicantRequestEligibility")
+            .WithDescription("Returns the applicant owner's private masked request-time eligibility state. It returns no subscriber identity, full member or group identifier, protected payload, raw transaction, or exact-network result.")
+            .Produces<TelehealthApplicantRequestEligibilityResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/eligibility", RunApplicantTelehealthRequestEligibilityAsync)
+            .WithName("RunTelehealthApplicantRequestEligibility")
+            .WithDescription("Runs one fresh request-bound NON_PRODUCTION ASC X12 270/271-shaped eligibility fixture after validating the protected source in server memory. It advances only Verification version 6 to 7 and creates no exact-network, coverage, financial, operational, queue, care, integration, or external consequence.")
+            .Accepts<RunTelehealthApplicantRequestEligibilityVerification>("application/json")
+            .Produces<TelehealthApplicantRequestEligibilityResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1523,6 +1541,39 @@ public static class TelehealthEndpoints
         {
             SetProspectiveApplicantPrivateResponse(context);
             return Results.Ok(await service.ConfirmAsync(
+                context,
+                applicantId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestEligibilityAsync(
+        TelehealthApplicantRequestEligibilityService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> RunApplicantTelehealthRequestEligibilityAsync(
+        TelehealthApplicantRequestEligibilityService service,
+        HttpContext context,
+        Guid applicantId,
+        RunTelehealthApplicantRequestEligibilityVerification request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.RunAsync(
                 context,
                 applicantId,
                 request,
