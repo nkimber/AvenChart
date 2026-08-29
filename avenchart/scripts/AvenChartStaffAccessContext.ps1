@@ -20,12 +20,14 @@ function New-AvenChartStaffAccessContextHeaders {
     }
 
     $facilities = @($accessContext.facilities)
-    $facility = if ($FacilityId -gt 0) {
-        @($facilities | Where-Object { $_.facilityId -eq $FacilityId } | Select-Object -First 1)
+    # Wrap the whole conditional so Windows PowerShell 5.1 cannot unwrap the
+    # selected facility to a scalar while emitting the branch result.
+    $facility = @(if ($FacilityId -gt 0) {
+        $facilities | Where-Object { $_.facilityId -eq $FacilityId } | Select-Object -First 1
     }
     else {
-        @($facilities | Where-Object { $_.isDefault -eq $true } | Select-Object -First 1)
-    }
+        $facilities | Where-Object { $_.isDefault -eq $true } | Select-Object -First 1
+    })
     if ($facility.Count -eq 0) {
         if ($FacilityId -gt 0) {
             throw "The login response does not grant access to facility '$FacilityId'."

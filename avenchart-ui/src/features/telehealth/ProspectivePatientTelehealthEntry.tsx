@@ -9,6 +9,7 @@ import {
   acknowledgeApplicantTelehealthNotice,
   assessApplicantTelehealthRequestComplaintTriage,
   assessApplicantTelehealthRequestUniversalSafety,
+  confirmApplicantTelehealthRequestIntake,
   confirmApplicantInsuranceHandoff,
   confirmApplicantClinicalInformationSummary,
   confirmApplicantRegistrationDetails,
@@ -24,6 +25,7 @@ import {
   getApplicantPracticeReviewSubmission,
   getApplicantTelehealthRequest,
   getApplicantTelehealthRequestComplaintTriage,
+  getApplicantTelehealthRequestIntake,
   getApplicantTelehealthRequestLocation,
   getApplicantTelehealthRequestUniversalSafety,
   getApplicantMedicationInformation,
@@ -94,6 +96,8 @@ import {
   type TelehealthApplicantRequestCreationInput,
   type TelehealthApplicantRequestComplaintTriage,
   type TelehealthApplicantRequestComplaintTriageInput,
+  type TelehealthApplicantRequestIntake,
+  type TelehealthApplicantRequestIntakeInput,
   type TelehealthApplicantRequestLocation,
   type TelehealthApplicantRequestLocationInput,
   type TelehealthApplicantRequestUniversalSafety,
@@ -152,6 +156,7 @@ type PendingRequestCreation = { content: string; idempotencyKey: string }
 type PendingRequestLocation = { content: string; idempotencyKey: string }
 type PendingRequestSafety = { content: string; idempotencyKey: string }
 type PendingRequestComplaintTriage = { content: string; idempotencyKey: string }
+type PendingRequestIntake = { content: string; idempotencyKey: string }
 type YesNoAnswer = '' | 'yes' | 'no'
 type ComplaintAnswer = '' | TelehealthSyntheticComplaintAnswer
 
@@ -301,6 +306,17 @@ const initialSleepComplaintAnswers = {
 const initialRequestComplaintTriageConfirmations = {
   currentLocation: false,
   callbackNumber: false,
+  syntheticData: false,
+}
+
+const initialRequestIntakeConfirmations = {
+  currentLocation: false,
+  callbackNumber: false,
+  priorInformation: false,
+  insuranceLimitations: false,
+  pendingConsent: false,
+  pendingVerification: false,
+  complaintResult: false,
   syntheticData: false,
 }
 
@@ -480,6 +496,11 @@ export default function ProspectivePatientTelehealthEntry() {
   const [migraineComplaintAnswers, setMigraineComplaintAnswers] = useState(initialMigraineComplaintAnswers)
   const [sleepComplaintAnswers, setSleepComplaintAnswers] = useState(initialSleepComplaintAnswers)
   const [requestComplaintTriageConfirmations, setRequestComplaintTriageConfirmations] = useState(initialRequestComplaintTriageConfirmations)
+  const [requestIntake, setRequestIntake] = useState<TelehealthApplicantRequestIntake | null>(null)
+  const [requestIntakeLoading, setRequestIntakeLoading] = useState(false)
+  const [requestIntakeLoadAttempt, setRequestIntakeLoadAttempt] = useState(0)
+  const [requestIntakeSymptomDuration, setRequestIntakeSymptomDuration] = useState<'' | TelehealthApplicantRequestIntakeInput['symptomDuration']>('')
+  const [requestIntakeConfirmations, setRequestIntakeConfirmations] = useState(initialRequestIntakeConfirmations)
   const [loading, setLoading] = useState(Boolean(applicantSession))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -509,6 +530,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const pendingRequestLocation = useRef<PendingRequestLocation | null>(null)
   const pendingRequestSafety = useRef<PendingRequestSafety | null>(null)
   const pendingRequestComplaintTriage = useRef<PendingRequestComplaintTriage | null>(null)
+  const pendingRequestIntake = useRef<PendingRequestIntake | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const safetyResultRef = useRef<HTMLDivElement>(null)
   const purposeResultRef = useRef<HTMLDivElement>(null)
@@ -533,6 +555,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const requestLocationResultRef = useRef<HTMLDivElement>(null)
   const requestSafetyResultRef = useRef<HTMLDivElement>(null)
   const requestComplaintTriageResultRef = useRef<HTMLDivElement>(null)
+  const requestIntakeResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -629,6 +652,10 @@ export default function ProspectivePatientTelehealthEntry() {
   useEffect(() => {
     if (requestComplaintTriage?.assessmentCreated) requestComplaintTriageResultRef.current?.focus()
   }, [requestComplaintTriage])
+
+  useEffect(() => {
+    if (requestIntake?.snapshotCreated) requestIntakeResultRef.current?.focus()
+  }, [requestIntake])
 
   useEffect(() => {
     if (!applicantSession) {
@@ -1047,6 +1074,30 @@ export default function ProspectivePatientTelehealthEntry() {
       })
     return () => controller.abort()
   }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestSafety?.complaintSpecificTriageRequired, requestComplaintTriageLoadAttempt])
+
+  useEffect(() => {
+    if (!applicantSession
+      || applicant?.status !== 'SyntheticRequestCreated'
+      || !requestComplaintTriage?.assessmentCreated
+      || !requestComplaintTriage.syntheticVideoEvaluationCandidate) return
+    const controller = new AbortController()
+    setRequestIntakeLoading(true)
+    setError(null)
+    getApplicantTelehealthRequestIntake(
+      applicant.applicantId,
+      applicantSession.applicantAccessKey,
+      controller.signal,
+    )
+      .then(setRequestIntake)
+      .catch((caught: unknown) => {
+        if (isRequestCancellation(caught)) return
+        setError(caught instanceof Error ? caught.message : 'The request intake confirmation could not be loaded.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestIntakeLoading(false)
+      })
+    return () => controller.abort()
+  }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestComplaintTriage?.assessmentCreated, requestComplaintTriage?.syntheticVideoEvaluationCandidate, requestIntakeLoadAttempt])
 
   function updateValue<Key extends keyof FormValues>(key: Key, value: FormValues[Key]) {
     pendingCreate.current = null
@@ -2575,6 +2626,77 @@ export default function ProspectivePatientTelehealthEntry() {
     }
   }
 
+  function updateRequestIntakeDuration(
+    duration: '' | TelehealthApplicantRequestIntakeInput['symptomDuration'],
+  ) {
+    pendingRequestIntake.current = null
+    setRequestIntakeSymptomDuration(duration)
+  }
+
+  function updateRequestIntakeConfirmation(
+    key: keyof typeof initialRequestIntakeConfirmations,
+    checked: boolean,
+  ) {
+    pendingRequestIntake.current = null
+    setRequestIntakeConfirmations((current) => ({ ...current, [key]: checked }))
+  }
+
+  async function confirmRequestIntake(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!applicant || !applicantSession || !requestIntake) return
+    if (!requestIntakeSymptomDuration) {
+      setError('Choose one symptom-duration range before continuing.')
+      return
+    }
+    if (!Object.values(requestIntakeConfirmations).every(Boolean)) {
+      setError('Review and accept all eight intake confirmations before continuing.')
+      return
+    }
+
+    const input = {
+      expectedRequestVersion: requestIntake.requestVersion,
+      contextSnapshotFingerprint: requestIntake.contextSnapshotFingerprint,
+      currentLocationStateCode: requestIntake.currentLocationStateCode,
+      symptomDuration: requestIntakeSymptomDuration,
+      currentLocationConfirmed: true,
+      callbackNumberConfirmed: true,
+      priorInformationReviewed: true,
+      insuranceLimitationsAcknowledged: true,
+      pendingConsentAcknowledged: true,
+      pendingVerificationAcknowledged: true,
+      complaintResultAcknowledged: true,
+      syntheticDataConfirmed: true,
+    } satisfies TelehealthApplicantRequestIntakeInput
+    const content = JSON.stringify(input)
+    if (!pendingRequestIntake.current || pendingRequestIntake.current.content !== content) {
+      pendingRequestIntake.current = { content, idempotencyKey: crypto.randomUUID() }
+    }
+
+    setError(null)
+    setSubmitting(true)
+    try {
+      const result = await confirmApplicantTelehealthRequestIntake(
+        applicant.applicantId,
+        applicantSession.applicantAccessKey,
+        input,
+        pendingRequestIntake.current.idempotencyKey,
+      )
+      setRequestIntake(result)
+      pendingRequestIntake.current = null
+      setRequestIntakeSymptomDuration('')
+      setRequestIntakeConfirmations(initialRequestIntakeConfirmations)
+    } catch (caught: unknown) {
+      if (caught instanceof ApiRequestError && caught.status && caught.status < 500) {
+        pendingRequestIntake.current = null
+      }
+      setError(caught instanceof Error
+        ? caught.message
+        : 'The request intake snapshot could not be confirmed.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   function restart() {
     clearApplicantSession()
     pendingCreate.current = null
@@ -2602,6 +2724,7 @@ export default function ProspectivePatientTelehealthEntry() {
     pendingRequestLocation.current = null
     pendingRequestSafety.current = null
     pendingRequestComplaintTriage.current = null
+    pendingRequestIntake.current = null
     setApplicantSession(null)
     setApplicant(null)
     setValues(initialValues)
@@ -2718,6 +2841,11 @@ export default function ProspectivePatientTelehealthEntry() {
     setMigraineComplaintAnswers(initialMigraineComplaintAnswers)
     setSleepComplaintAnswers(initialSleepComplaintAnswers)
     setRequestComplaintTriageConfirmations(initialRequestComplaintTriageConfirmations)
+    setRequestIntake(null)
+    setRequestIntakeLoading(false)
+    setRequestIntakeLoadAttempt(0)
+    setRequestIntakeSymptomDuration('')
+    setRequestIntakeConfirmations(initialRequestIntakeConfirmations)
     setError(null)
   }
 
@@ -4679,6 +4807,111 @@ export default function ProspectivePatientTelehealthEntry() {
                     {requestComplaintTriage.complaintCategory === 'sleep' && requestComplaintTriage.outcome === 'Emergency' ? <a className="telehealth-button telehealth-button-secondary" href="tel:988">Call 988</a> : null}
                     <p>No submitted answer, answer fingerprint, fired rule, or reason code is returned. No clinical-review work item, intake snapshot, contact, doctor search, queue, appointment, encounter, consent, care, prescribing, financial, integration, or external action was created.</p>
                     <ul>{requestComplaintTriage.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                  </div>
+                ) : null}
+                {requestComplaintTriage?.assessmentCreated
+                  && requestComplaintTriage.syntheticVideoEvaluationCandidate
+                  && requestIntakeLoading ? (
+                    <p role="status">Loading the request intake confirmation…</p>
+                  ) : null}
+                {requestComplaintTriage?.assessmentCreated
+                  && requestComplaintTriage.syntheticVideoEvaluationCandidate
+                  && !requestIntakeLoading
+                  && !requestIntake ? (
+                    <button
+                      className="telehealth-button"
+                      type="button"
+                      onClick={() => setRequestIntakeLoadAttempt((value) => value + 1)}
+                    >
+                      Retry request intake load
+                    </button>
+                  ) : null}
+                {requestIntake?.snapshotReady ? (
+                  <form className="telehealth-review-form" onSubmit={confirmRequestIntake}>
+                    <div className="telehealth-emergency" role="note">
+                      <h3>Changed or worsening symptoms need action</h3>
+                      <p>Call 911 now for an emergency. Do not use this synthetic intake step when the location, callback route, or prior information has changed; restart or contact the practice.</p>
+                      <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a>
+                    </div>
+                    <h3>Confirm request intake snapshot</h3>
+                    <p id="request-intake-help">Choose one controlled duration range. This form has no complaint narrative or free-text field, and it cannot change the server-owned category or triage result.</p>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestIntake.requestId}</dd></div>
+                      <div><dt>Server-owned purpose</dt><dd>{requestIntake.complaintDisplayLabel}</dd></div>
+                      <div><dt>Current location state</dt><dd>{requestIntake.currentLocationStateCode}</dd></div>
+                      <div><dt>Callback number</dt><dd>{requestIntake.maskedCallbackPhone}</dd></div>
+                      <div><dt>Clinical content status</dt><dd>{requestIntake.clinicalContentStatus}</dd></div>
+                      <div><dt>Context expires</dt><dd>{new Date(requestIntake.contextExpiresAt).toLocaleString()}</dd></div>
+                    </dl>
+                    <h4>Previously collected source states</h4>
+                    <dl className="telehealth-details">
+                      {requestIntake.sections.map((section) => (
+                        <div key={section.sectionKey}>
+                          <dt>{section.sectionKey}</dt>
+                          <dd>{section.receiptState}. {section.outstandingRoute}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <label>How long has the fictional concern been present?
+                      <select
+                        required
+                        aria-describedby="request-intake-help"
+                        value={requestIntakeSymptomDuration}
+                        onChange={(event) => updateRequestIntakeDuration(event.target.value as '' | TelehealthApplicantRequestIntakeInput['symptomDuration'])}
+                      >
+                        <option value="">Choose a duration</option>
+                        {requestIntake.supportedSymptomDurations.map((duration) => (
+                          <option key={duration} value={duration}>
+                            {duration === 'less-than-day' ? 'Less than one day'
+                              : duration === '1-3-days' ? '1–3 days'
+                                : duration === '4-14-days' ? '4–14 days'
+                                  : 'More than 14 days'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <fieldset className="telehealth-fieldset">
+                      <legend>Eight required confirmations</legend>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestIntakeConfirmations.currentLocation} onChange={(event) => updateRequestIntakeConfirmation('currentLocation', event.target.checked)} /><span>I confirm the displayed state remains the current physical location.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestIntakeConfirmations.callbackNumber} onChange={(event) => updateRequestIntakeConfirmation('callbackNumber', event.target.checked)} /><span>I confirm the displayed masked callback route remains correct.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestIntakeConfirmations.priorInformation} onChange={(event) => updateRequestIntakeConfirmation('priorInformation', event.target.checked)} /><span>I reviewed the displayed prior-information receipt states and will stop if a correction is needed.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestIntakeConfirmations.insuranceLimitations} onChange={(event) => updateRequestIntakeConfirmation('insuranceLimitations', event.target.checked)} /><span>I understand no canonical coverage, current eligibility, benefits, or exact network result exists.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestIntakeConfirmations.pendingConsent} onChange={(event) => updateRequestIntakeConfirmation('pendingConsent', event.target.checked)} /><span>I understand legal and clinician consent remain pending and unavailable here.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestIntakeConfirmations.pendingVerification} onChange={(event) => updateRequestIntakeConfirmation('pendingVerification', event.target.checked)} /><span>I understand advancing to Verification only records a pending workflow state.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestIntakeConfirmations.complaintResult} onChange={(event) => updateRequestIntakeConfirmation('complaintResult', event.target.checked)} /><span>I understand the synthetic candidate result is not diagnosis, treatment, acceptance, or guaranteed care.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestIntakeConfirmations.syntheticData} onChange={(event) => updateRequestIntakeConfirmation('syntheticData', event.target.checked)} /><span>I confirm the duration is fictional synthetic demonstration data.</span></label>
+                    </fieldset>
+                    <ul>{requestIntake.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                    <button
+                      className="telehealth-button"
+                      type="submit"
+                      disabled={submitting
+                        || !requestIntakeSymptomDuration
+                        || !Object.values(requestIntakeConfirmations).every(Boolean)}
+                    >
+                      {submitting ? 'Recording request intake…' : 'Record synthetic intake snapshot'}
+                    </button>
+                  </form>
+                ) : null}
+                {requestIntake?.snapshotCreated ? (
+                  <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestIntakeResultRef}>
+                    <h3>Request intake snapshot recorded</h3>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestIntake.requestId}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestIntake.requestStatus}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestIntake.requestVersion}</dd></div>
+                      <div><dt>Purpose</dt><dd>{requestIntake.complaintDisplayLabel}</dd></div>
+                      <div><dt>Duration</dt><dd>{requestIntake.symptomDuration}</dd></div>
+                      <div><dt>Verification pending</dt><dd>{requestIntake.verificationPending ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Consent pending</dt><dd>{requestIntake.consentPending ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Coverage or exact network confirmed</dt><dd>{requestIntake.coverageVerified || requestIntake.exactNetworkConfirmed ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Operational review or practice acceptance</dt><dd>{requestIntake.operationalReviewCreated || requestIntake.practiceAccepted ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Doctor search or queue</dt><dd>{requestIntake.doctorSearchStarted || requestIntake.patientCareQueueEntered || requestIntake.clinicianQueueEntered ? 'Started' : 'Not started'}</dd></div>
+                      <div><dt>Captured</dt><dd>{requestIntake.capturedAt ? new Date(requestIntake.capturedAt).toLocaleString() : 'Recorded'}</dd></div>
+                    </dl>
+                    <p><strong>{requestIntake.direction}</strong></p>
+                    <p>No patient or applicant record was changed. No coverage, consent, operational review, contact, queue, appointment, encounter, media, care, prescription, financial, integration, or external action was created.</p>
+                    <ul>{requestIntake.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                   </div>
                 ) : null}
               </>

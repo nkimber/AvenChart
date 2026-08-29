@@ -20,7 +20,7 @@ try {
     $document = Invoke-RestMethod "$ApiBaseUrl/openapi/v1.json" -TimeoutSec 20
     $expected = @(
       '/api/telehealth/v1/context','/api/telehealth/v1/applicants','/api/telehealth/v1/applicants/{applicantId}',
-      '/api/telehealth/v1/applicants/{applicantId}/contact-verification','/api/telehealth/v1/applicants/{applicantId}/safety-triage','/api/telehealth/v1/applicants/{applicantId}/visit-purpose','/api/telehealth/v1/applicants/{applicantId}/practice-network-precheck/options','/api/telehealth/v1/applicants/{applicantId}/practice-network-precheck','/api/telehealth/v1/applicants/{applicantId}/member-insurance-details','/api/telehealth/v1/applicants/{applicantId}/eligibility','/api/telehealth/v1/applicants/{applicantId}/practice-network-determination','/api/telehealth/v1/applicants/{applicantId}/identity-proofing','/api/telehealth/v1/applicants/{applicantId}/telehealth-notice','/api/telehealth/v1/applicants/{applicantId}/telehealth-notice/acknowledgment','/api/telehealth/v1/applicants/{applicantId}/registration-details','/api/telehealth/v1/applicants/{applicantId}/registration-details/confirmation','/api/telehealth/v1/applicants/{applicantId}/insurance-handoff','/api/telehealth/v1/applicants/{applicantId}/insurance-handoff/confirmation','/api/telehealth/v1/applicants/{applicantId}/communication-access-readiness','/api/telehealth/v1/applicants/{applicantId}/device-preparation','/api/telehealth/v1/applicants/{applicantId}/clinical-information-inventory','/api/telehealth/v1/applicants/{applicantId}/medication-information','/api/telehealth/v1/applicants/{applicantId}/allergy-information','/api/telehealth/v1/applicants/{applicantId}/health-history-information','/api/telehealth/v1/applicants/{applicantId}/clinical-information-summary','/api/telehealth/v1/applicants/{applicantId}/pre-request-readiness','/api/telehealth/v1/applicants/{applicantId}/practice-review-submission','/api/telehealth/v1/applicants/{applicantId}/telehealth-request','/api/telehealth/v1/applicants/{applicantId}/telehealth-request/location','/api/telehealth/v1/applicants/{applicantId}/telehealth-request/safety','/api/telehealth/v1/applicants/{applicantId}/telehealth-request/complaint-triage','/api/telehealth/v1/patient/requests',
+      '/api/telehealth/v1/applicants/{applicantId}/contact-verification','/api/telehealth/v1/applicants/{applicantId}/safety-triage','/api/telehealth/v1/applicants/{applicantId}/visit-purpose','/api/telehealth/v1/applicants/{applicantId}/practice-network-precheck/options','/api/telehealth/v1/applicants/{applicantId}/practice-network-precheck','/api/telehealth/v1/applicants/{applicantId}/member-insurance-details','/api/telehealth/v1/applicants/{applicantId}/eligibility','/api/telehealth/v1/applicants/{applicantId}/practice-network-determination','/api/telehealth/v1/applicants/{applicantId}/identity-proofing','/api/telehealth/v1/applicants/{applicantId}/telehealth-notice','/api/telehealth/v1/applicants/{applicantId}/telehealth-notice/acknowledgment','/api/telehealth/v1/applicants/{applicantId}/registration-details','/api/telehealth/v1/applicants/{applicantId}/registration-details/confirmation','/api/telehealth/v1/applicants/{applicantId}/insurance-handoff','/api/telehealth/v1/applicants/{applicantId}/insurance-handoff/confirmation','/api/telehealth/v1/applicants/{applicantId}/communication-access-readiness','/api/telehealth/v1/applicants/{applicantId}/device-preparation','/api/telehealth/v1/applicants/{applicantId}/clinical-information-inventory','/api/telehealth/v1/applicants/{applicantId}/medication-information','/api/telehealth/v1/applicants/{applicantId}/allergy-information','/api/telehealth/v1/applicants/{applicantId}/health-history-information','/api/telehealth/v1/applicants/{applicantId}/clinical-information-summary','/api/telehealth/v1/applicants/{applicantId}/pre-request-readiness','/api/telehealth/v1/applicants/{applicantId}/practice-review-submission','/api/telehealth/v1/applicants/{applicantId}/telehealth-request','/api/telehealth/v1/applicants/{applicantId}/telehealth-request/location','/api/telehealth/v1/applicants/{applicantId}/telehealth-request/safety','/api/telehealth/v1/applicants/{applicantId}/telehealth-request/complaint-triage','/api/telehealth/v1/applicants/{applicantId}/telehealth-request/intake','/api/telehealth/v1/patient/requests',
       '/api/telehealth/v1/patient/requests/{requestId}/location','/api/telehealth/v1/patient/requests/{requestId}/triage',
       '/api/telehealth/v1/patient/requests/{requestId}/status','/api/telehealth/v1/patient/requests/{requestId}/readiness','/api/telehealth/v1/patient/requests/{requestId}/coverage/verify',
       '/api/telehealth/v1/patient/requests/{requestId}/connection-grants',
@@ -1367,6 +1367,49 @@ try {
       @($complaintTriageInputProperties | Where-Object { $_ -match 'patientId|callbackPhone|address|postal|latitude|longitude|note|freeText|diagnosis|medication' }).Count -eq 0 -and
       @($complaintTriageResponseProperties | Where-Object { $_ -match 'answer|answersFingerprint|protocolContentHash|firedRule|reasonCode|patientId|accessKey|^callbackPhone$|address|postal|latitude|longitude|memberId|payer|diagnosis|note|freeText|doctorId' }).Count -eq 0 -and
       @($complaintTriageResponseProperties | Where-Object { $_ -in @('medicalDirectorApprovalRequired','medicalDirectorApprovalRecorded','clinicalGoldenCasePackApproved','productionPublicationAllowed') }).Count -eq 4)
+    $requestIntakePath = Get-Property (Get-Property $document 'paths') '/api/telehealth/v1/applicants/{applicantId}/telehealth-request/intake'
+    $requestIntakeGet = Get-Operation $document '/api/telehealth/v1/applicants/{applicantId}/telehealth-request/intake' 'get'
+    $requestIntakePost = Get-Operation $document '/api/telehealth/v1/applicants/{applicantId}/telehealth-request/intake' 'post'
+    $requestIntakeInputReference = Get-Property (Get-Property (Get-Property (Get-Property $requestIntakePost 'requestBody') 'content') 'application/json').schema '$ref'
+    $requestIntakeInputSchemaName = ($requestIntakeInputReference -split '/')[-1]
+    $requestIntakeInputSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') $requestIntakeInputSchemaName
+    $requestIntakeInputProperties = @((Get-Property $requestIntakeInputSchema 'properties').PSObject.Properties.Name)
+    $requestIntakeResponseReference = Get-Property (Get-Property (Get-Property (Get-Property $requestIntakeGet.responses '200') 'content') 'application/json').schema '$ref'
+    $requestIntakeResponseSchemaName = ($requestIntakeResponseReference -split '/')[-1]
+    $requestIntakeResponseSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') $requestIntakeResponseSchemaName
+    $requestIntakeResponseProperties = @((Get-Property $requestIntakeResponseSchema 'properties').PSObject.Properties.Name)
+    $requestIntakeExpectedResponseProperties = @(
+      'applicantId','applicantVersion','applicantStatus','requestId','requestVersion','requestStatus',
+      'complaintCategory','complaintDisplayLabel','policyKey','policyVersion','clinicalContentStatus',
+      'medicalDirectorApprovalRequired','medicalDirectorApprovalRecorded','clinicalGoldenCasePackApproved',
+      'productionPublicationAllowed','contextSnapshotFingerprint','contextExpiresAt','currentLocationStateCode',
+      'maskedCallbackPhone','supportedSymptomDurations','sections','snapshotReady','snapshotCreated',
+      'symptomDuration','capturedAt','verificationPending','consentPending','coverageRecordCreated',
+      'coverageVerified','exactNetworkConfirmed','operationalReviewCreated','practiceAccepted','patientContacted',
+      'patientCareQueueEntered','clinicianQueueEntered','doctorSearchStarted','queuePositionAssigned',
+      'appointmentCreated','encounterCreated','consentCreated','careAuthorized','prescribingEnabled',
+      'billingEnabled','claimCreated','integrationEnabled','externalCallPerformed','direction','limitations')
+    Add-Check 'Applicant request intake projection and command are access-key-only, private, versioned, and idempotent' (
+      @($requestIntakePath.PSObject.Properties.Name).Count -eq 2 -and
+      @($requestIntakePath.PSObject.Properties.Name) -contains 'get' -and
+      @($requestIntakePath.PSObject.Properties.Name) -contains 'post' -and
+      (Has-Security $requestIntakeGet 'AvenChartTelehealthApplicantAccess') -and
+      (Has-Security $requestIntakePost 'AvenChartTelehealthApplicantAccess') -and
+      -not (Has-Security $requestIntakePost 'AvenChartPatientPortalSession') -and
+      -not (Has-Security $requestIntakePost 'AvenChartLocalStaffSession') -and
+      -not (Has-Header $requestIntakeGet 'X-Idempotency-Key') -and
+      (Has-Header $requestIntakePost 'X-Idempotency-Key') -and
+      $null-eq(Get-Property $requestIntakeGet 'requestBody') -and
+      $null-ne(Get-Property $requestIntakePost 'requestBody') -and
+      $null-ne(Get-Property $requestIntakePost.responses '200') -and
+      $null-ne(Get-Property $requestIntakePost.responses '400') -and
+      $null-ne(Get-Property $requestIntakePost.responses '409'))
+    Add-Check 'Applicant request intake contract is exact, controlled, no-free-text, publication-blocked, and minimized' (
+      @(Compare-Object @('callbackNumberConfirmed','complaintResultAcknowledged','contextSnapshotFingerprint','currentLocationConfirmed','currentLocationStateCode','expectedRequestVersion','insuranceLimitationsAcknowledged','pendingConsentAcknowledged','pendingVerificationAcknowledged','priorInformationReviewed','symptomDuration','syntheticDataConfirmed') ($requestIntakeInputProperties|Sort-Object)).Count -eq 0 -and
+      @(Compare-Object ($requestIntakeExpectedResponseProperties|Sort-Object) ($requestIntakeResponseProperties|Sort-Object)).Count -eq 0 -and
+      @($requestIntakeInputProperties | Where-Object { $_ -match 'patientId|callbackPhone|address|postal|latitude|longitude|complaintCategory|complaintSummary|narrative|note|freeText|diagnosis|treatment|outcome|rule|reason|priority|coverageResult|networkResult|consentCreated' }).Count -eq 0 -and
+      @($requestIntakeResponseProperties | Where-Object { $_ -match 'sourceComplaint|commandFingerprint|protocolContentHash|answer|firedRule|reasonCode|patientId|accessKey|^callbackPhone$|address|postal|latitude|longitude|memberId|payer|diagnosis|note|freeText|doctorId' }).Count -eq 0 -and
+      @($requestIntakeResponseProperties | Where-Object { $_ -in @('verificationPending','consentPending','coverageRecordCreated','coverageVerified','exactNetworkConfirmed','operationalReviewCreated','practiceAccepted') }).Count -eq 7)
     $identityReviewList = Get-Operation $document '/api/telehealth/v1/admin/applicant-identity-review' 'get'
     $identityReviewWrite = Get-Operation $document '/api/telehealth/v1/admin/applicants/{applicantId}/identity-review-decision' 'put'
     $identityReviewRequestReference = Get-Property (Get-Property (Get-Property (Get-Property $identityReviewWrite 'requestBody') 'content') 'application/json').schema '$ref'
@@ -1681,5 +1724,5 @@ try {
     Add-Check 'Public context has no protected security requirement and exposes only the public projection' ($null -eq $contextSecurity -or @($contextSecurity).Count -eq 0)
 }
 catch { Add-Check 'Telehealth OpenAPI contract execution' $false $_.Exception.Message }
-    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
+    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
 if(-not $passed){exit 1}

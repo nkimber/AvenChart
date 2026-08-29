@@ -1981,6 +1981,355 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
+  test('eligible synthetic applicant confirms a no-free-text intake snapshot with stable retry and no downstream care implication', async ({ page }) => {
+    await page.addInitScript((session) => {
+      sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
+    }, { applicantId: prospectiveApplicant.applicantId, applicantAccessKey: 'r'.repeat(64) })
+    const requestCreatedApplicant = {
+      ...prospectiveApplicant,
+      status: 'SyntheticRequestCreated',
+      version: 26,
+      contactVerified: true,
+      identityAssurance: 'ContactControlOnly',
+      duplicateDisposition: 'NoCandidate',
+      canonicalPatientCreated: true,
+      verificationAttemptsRemaining: 0,
+      demonstrationVerificationCode: null,
+      nextAction: 'Confirm the bounded synthetic request intake snapshot.',
+    }
+    const requestReceipt = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      policyKey: 'SYNTHETIC_APPLICANT_TELEHEALTH_REQUEST_CREATION',
+      policyVersion: 1,
+      authorizationPolicyVersion: 1,
+      requestCreationReady: false,
+      requestCreated: true,
+      requestId: '44000000-0000-4000-8000-000000000044',
+      requestStatus: 'Intake',
+      requestVersion: 4,
+      complaintCategory: 'sleep',
+      createdAt: '2026-08-28T16:00:00Z',
+      telehealthRequestCreated: true,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'The bounded intake snapshot remains pending.',
+      limitations: ['No queue or care exists.'],
+    }
+    const confirmedLocation = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 2,
+      requestStatus: 'LocationConfirmed',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_LOCATION_CONFIRMATION',
+      policyVersion: 1,
+      contextSnapshotFingerprint: '2'.repeat(64),
+      currentLocationStateCode: 'GA',
+      maskedCallbackPhone: '***-***-0199',
+      confirmationReady: false,
+      locationConfirmed: true,
+      confirmedAt: '2026-08-28T17:00:00Z',
+      triageAssessmentCreated: false,
+      clinicalReviewCreated: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Location and callback are confirmed.',
+      limitations: ['No triage, queue, appointment, encounter, consent, or care is created.'],
+    }
+    const universalPass = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 3,
+      requestStatus: 'SafetyScreening',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_UNIVERSAL_SAFETY_ASSESSMENT',
+      policyVersion: 1,
+      protocolKey: 'synthetic-universal-safety',
+      protocolVersion: 1,
+      contextSnapshotFingerprint: '3'.repeat(64),
+      contextExpiresAt: '2026-08-28T17:30:00Z',
+      currentLocationStateCode: 'GA',
+      maskedCallbackPhone: '***-***-0199',
+      assessmentReady: false,
+      assessmentCreated: true,
+      outcome: 'TelehealthEligible',
+      publicDisposition: 'UniversalSafetyPassed',
+      evaluatedAt: '2026-08-28T17:05:00Z',
+      universalSafetyPassed: true,
+      complaintSpecificTriageRequired: true,
+      complaintSpecificTriageCreated: false,
+      clinicalReviewRequired: false,
+      clinicalReviewCreated: false,
+      terminalForTelehealth: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Complaint-specific triage is still required.',
+      limitations: ['The universal result is not complete eligibility.'],
+    }
+    const complaintPass = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 4,
+      requestStatus: 'Intake',
+      complaintCategory: 'sleep',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_COMPLAINT_TRIAGE',
+      policyVersion: 1,
+      protocolKey: 'synthetic-sleep-complaint-triage',
+      protocolVersion: 1,
+      engineVersion: 'synthetic-complaint-triage-engine-v1',
+      clinicalContentStatus: 'UNAPPROVED_SYNTHETIC',
+      medicalDirectorApprovalRequired: true,
+      medicalDirectorApprovalRecorded: false,
+      clinicalGoldenCasePackApproved: false,
+      productionPublicationAllowed: false,
+      contextSnapshotFingerprint: '4'.repeat(64),
+      contextExpiresAt: '2026-08-28T17:30:00Z',
+      currentLocationStateCode: 'GA',
+      maskedCallbackPhone: '***-***-0199',
+      assessmentReady: false,
+      assessmentCreated: true,
+      outcome: 'TelehealthEligible',
+      publicDisposition: 'SyntheticVideoEvaluationCandidate',
+      evaluatedAt: '2026-08-28T17:08:00Z',
+      syntheticVideoEvaluationCandidate: true,
+      clinicalReviewRequired: false,
+      clinicalReviewCreated: false,
+      terminalForTelehealth: false,
+      intakeSnapshotCreated: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Synthetic intake progression can be demonstrated.',
+      limitations: ['Medical-director approval and production publication remain closed.'],
+    }
+    const readyIntake = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 4,
+      requestStatus: 'Intake',
+      complaintCategory: 'sleep',
+      complaintDisplayLabel: 'Sleep difficulty',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_INTAKE_SNAPSHOT_CONFIRMATION',
+      policyVersion: 1,
+      clinicalContentStatus: 'UNAPPROVED_SYNTHETIC',
+      medicalDirectorApprovalRequired: true,
+      medicalDirectorApprovalRecorded: false,
+      clinicalGoldenCasePackApproved: false,
+      productionPublicationAllowed: false,
+      contextSnapshotFingerprint: '5'.repeat(64),
+      contextExpiresAt: '2026-08-28T17:30:00Z',
+      currentLocationStateCode: 'GA',
+      maskedCallbackPhone: '***-***-0199',
+      supportedSymptomDurations: ['less-than-day', '1-3-days', '4-14-days', 'more-than-14-days'],
+      sections: [
+        { sectionKey: 'registration', receiptState: 'Confirmed', outstandingRoute: 'No patient-record mutation' },
+        { sectionKey: 'insurance', receiptState: 'Applicant handoff confirmed', outstandingRoute: 'Canonical coverage pending' },
+      ],
+      snapshotReady: true,
+      snapshotCreated: false,
+      symptomDuration: null,
+      capturedAt: null,
+      verificationPending: true,
+      consentPending: true,
+      coverageRecordCreated: false,
+      coverageVerified: false,
+      exactNetworkConfirmed: false,
+      operationalReviewCreated: false,
+      practiceAccepted: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Choose one duration and review eight confirmations.',
+      limitations: ['NON_PRODUCTION no-free-text synthetic intake.'],
+    }
+    const completedIntake = {
+      ...readyIntake,
+      requestVersion: 5,
+      requestStatus: 'Verification',
+      snapshotReady: false,
+      snapshotCreated: true,
+      symptomDuration: '1-3-days',
+      capturedAt: '2026-08-28T17:10:00Z',
+      direction: 'Verification and every later gate remain pending.',
+    }
+    let intakeLoadCalls = 0
+    let intakeConfirmationCalls = 0
+    const intakeKeys: Array<string | undefined> = []
+    const intakeBodies: Array<Record<string, unknown>> = []
+    await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('r'.repeat(64))
+      if (path.endsWith('/telehealth-request/intake')) {
+        if (request.method() === 'POST') {
+          intakeConfirmationCalls += 1
+          intakeKeys.push(request.headers()['x-idempotency-key'])
+          intakeBodies.push(request.postDataJSON() as Record<string, unknown>)
+          if (intakeConfirmationCalls === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Intake result unknown; retry unchanged.' }) })
+            return
+          }
+          await route.fulfill({ json: completedIntake })
+          return
+        }
+        intakeLoadCalls += 1
+        if (intakeLoadCalls === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Intake projection temporarily unavailable.' }) })
+          return
+        }
+        await route.fulfill({ json: readyIntake })
+        return
+      }
+      if (path.endsWith('/telehealth-request/complaint-triage')) {
+        await route.fulfill({ json: complaintPass })
+        return
+      }
+      if (path.endsWith('/telehealth-request/safety')) {
+        await route.fulfill({ json: universalPass })
+        return
+      }
+      if (path.endsWith('/telehealth-request/location')) {
+        await route.fulfill({ json: confirmedLocation })
+        return
+      }
+      if (path.endsWith('/telehealth-request')) {
+        await route.fulfill({ json: requestReceipt })
+        return
+      }
+      await route.fulfill({ json: requestCreatedApplicant })
+    })
+
+    await page.goto('/telehealth/new')
+    await expect(page.getByRole('alert')).toContainText('Intake projection temporarily unavailable.')
+    await page.getByRole('button', { name: 'Retry request intake load' }).click()
+    const heading = page.getByRole('heading', { name: 'Confirm request intake snapshot' })
+    await expect(heading).toBeVisible()
+    const form = heading.locator('..')
+    await expect(form).toContainText('Server-owned purposeSleep difficulty')
+    await expect(form).toContainText('UNAPPROVED_SYNTHETIC')
+    await expect(form).toContainText('Canonical coverage pending')
+    await expect(form.locator('input[type="text"]')).toHaveCount(0)
+    await expect(form.locator('textarea')).toHaveCount(0)
+    const duration = form.getByLabel('How long has the fictional concern been present?')
+    await expect(duration).toHaveValue('')
+    const submit = form.getByRole('button', { name: 'Record synthetic intake snapshot' })
+    await expect(submit).toBeDisabled()
+    await duration.selectOption('1-3-days')
+    for (const label of [
+      'I confirm the displayed state remains the current physical location.',
+      'I confirm the displayed masked callback route remains correct.',
+      'I reviewed the displayed prior-information receipt states and will stop if a correction is needed.',
+      'I understand no canonical coverage, current eligibility, benefits, or exact network result exists.',
+      'I understand legal and clinician consent remain pending and unavailable here.',
+      'I understand advancing to Verification only records a pending workflow state.',
+      'I understand the synthetic candidate result is not diagnosis, treatment, acceptance, or guaranteed care.',
+      'I confirm the duration is fictional synthetic demonstration data.',
+    ]) {
+      await form.getByLabel(label).check()
+    }
+    await submit.click()
+    const retryAlert = page.getByRole('alert').filter({ hasText: 'Intake result unknown; retry unchanged.' })
+    await expect(retryAlert).toBeVisible()
+    await expect(retryAlert).toBeFocused()
+    await expect(duration).toHaveValue('1-3-days')
+    await submit.click()
+
+    const result = page.getByRole('heading', { name: 'Request intake snapshot recorded' })
+    await expect(result).toBeVisible()
+    await expect(result.locator('..')).toContainText('Request statusVerification')
+    await expect(result.locator('..')).toContainText('Verification pendingYes')
+    await expect(result.locator('..')).toContainText('Consent pendingYes')
+    await expect(result.locator('..')).toContainText('Coverage or exact network confirmedNo')
+    await expect(result.locator('..')).toContainText('Operational review or practice acceptanceNo')
+    await expect(result.locator('..')).toContainText('Doctor search or queueNot started')
+    expect(intakeKeys).toHaveLength(2)
+    expect(intakeKeys[0]).toBe(intakeKeys[1])
+    expect(intakeBodies[0]).toEqual({
+      expectedRequestVersion: 4,
+      contextSnapshotFingerprint: '5'.repeat(64),
+      currentLocationStateCode: 'GA',
+      symptomDuration: '1-3-days',
+      currentLocationConfirmed: true,
+      callbackNumberConfirmed: true,
+      priorInformationReviewed: true,
+      insuranceLimitationsAcknowledged: true,
+      pendingConsentAcknowledged: true,
+      pendingVerificationAcknowledged: true,
+      complaintResultAcknowledged: true,
+      syntheticDataConfirmed: true,
+    })
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|requestId/i)
+
+    await expectNoSeriousAccessibilityViolations(page)
+    await expectTelehealthReflow(page)
+  })
+
   test('promoted applicant completes bounded post-promotion confirmations through practice-review submission without implying acceptance, queueing, or care', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })

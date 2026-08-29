@@ -34,7 +34,7 @@ function Invoke-Scalar([string]$Sql) {
 try {
     if (-not $SkipBaseRehearsal) {
         & (Join-Path $PSScriptRoot 'Test-AvenChartMigrationResilience.ps1')
-        Add-Check 'Repository empty, populated, interruption, and recovery rehearsal includes V0282 through V0318' ($LASTEXITCODE -eq 0)
+        Add-Check 'Repository empty, populated, interruption, and recovery rehearsal includes V0282 through V0319' ($LASTEXITCODE -eq 0)
     }
     else {
         Add-Check 'Repository migration rehearsal supplied by the immediately preceding runtime-evidence step' $true
@@ -783,6 +783,45 @@ select count(*) from pg_trigger where not tgisinternal and tgname in (
 "@) -eq 2 -and
         [int](Invoke-Scalar "select count(*) from pg_proc where proname='enforce_th_app_request_complaint_triage';") -eq 1)
     Add-Check 'The applicant request complaint-triage assessment table exists' ([int](Invoke-Scalar "select count(*) from information_schema.tables where table_schema='public' and table_name='telehealth_applicant_request_complaint_triage_assessments';") -eq 1)
+    $applicantRequestIntakeMigration = Join-Path $solutionRoot 'database/migrations/V0319__telehealth_applicant_request_intake_snapshot.sql'
+    $applicantRequestIntakeSource = Get-Content -Raw $applicantRequestIntakeMigration
+    Add-Check 'V0319 adds one no-free-text applicant intake receipt with exact version, eight-confirmation, publication, and no-consequence gates' (
+        $applicantRequestIntakeSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
+        $applicantRequestIntakeSource -notmatch 'create\s+unique\s+index[^;]+telehealth_intake_snapshots\s*\(\s*request_id\s*\)' -and
+        $applicantRequestIntakeSource -match 'create\s+table\s+(?:if\s+not\s+exists\s+)?telehealth_applicant_request_intake_snapshots' -and
+        $applicantRequestIntakeSource -match 'source_request_version=4' -and
+        $applicantRequestIntakeSource -match 'resulting_request_version=5' -and
+        $applicantRequestIntakeSource -match "resulting_request_status='Verification'" -and
+        $applicantRequestIntakeSource -match "complaint_summary='Synthetic migraine intake demonstration'" -and
+        $applicantRequestIntakeSource -match "complaint_summary='Synthetic sleep intake demonstration'" -and
+        $applicantRequestIntakeSource -match 'prior_information_reviewed and insurance_limitations_acknowledged' -and
+        $applicantRequestIntakeSource -match 'pending_consent_acknowledged and pending_verification_acknowledged' -and
+        $applicantRequestIntakeSource -match 'complaint_result_acknowledged and synthetic_data_confirmed' -and
+        $applicantRequestIntakeSource -match "clinical_content_status='UNAPPROVED_SYNTHETIC'" -and
+        $applicantRequestIntakeSource -match 'not coverage_record_created and not coverage_verified' -and
+        $applicantRequestIntakeSource -match 'not operational_review_created' -and
+        $applicantRequestIntakeSource -match 'not patient_care_queue_entered' -and
+        $applicantRequestIntakeSource -match 'not care_authorized' -and
+        $applicantRequestIntakeSource -match 'not integration_enabled' -and
+        $applicantRequestIntakeSource -match 'not external_call_performed')
+    Add-Check 'V0319 is recorded in the live migration ledger' ((Invoke-Scalar "select count(*) from schema_migrations where migration_id='V0319__telehealth_applicant_request_intake_snapshot';") -eq '1')
+    Add-Check 'Applicant intake versions, fixed summary, duration, eight confirmations, publication, replay, no-consequence, provenance, and append-only constraints are database-enforced' (
+        [int](Invoke-Scalar @"
+select count(*) from pg_constraint where conname in (
+'uq_th_app_req_intake_idempotency','chk_th_app_req_intake_scope',
+'chk_th_app_req_intake_versions','chk_th_app_req_intake_complaint',
+'chk_th_app_req_intake_duration','chk_th_app_req_intake_context',
+'chk_th_app_req_intake_freshness','chk_th_app_req_intake_publication_gate',
+'chk_th_app_req_intake_policy','chk_th_app_req_intake_hashes',
+'chk_th_app_req_intake_idem','chk_th_app_req_intake_no_consequence');
+"@) -eq 12 -and
+        [int](Invoke-Scalar @"
+select count(*) from pg_trigger where not tgisinternal and tgname in (
+'trg_th_app_request_intake_snapshot_guard',
+'trg_th_app_request_intake_snapshot_append');
+"@) -eq 2 -and
+        [int](Invoke-Scalar "select count(*) from pg_proc where proname='enforce_th_app_request_intake_snapshot';") -eq 1)
+    Add-Check 'The applicant request intake snapshot table exists' ([int](Invoke-Scalar "select count(*) from information_schema.tables where table_schema='public' and table_name='telehealth_applicant_request_intake_snapshots';") -eq 1)
     Add-Check 'All eight foundation tables exist' ([int](Invoke-Scalar @"
 select count(*) from information_schema.tables
 where table_schema='public' and table_name in (
@@ -1222,7 +1261,7 @@ catch {
     Add-Check 'Telehealth migration resilience execution' $false $_.Exception.Message
 }
 finally {
-    $result = [ordered]@{ status=$(if ($passed) { 'passed' } else { 'failed' }); generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O'); decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046'); checks=$checks }
+    $result = [ordered]@{ status=$(if ($passed) { 'passed' } else { 'failed' }); generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O'); decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047'); checks=$checks }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8
     $result | ConvertTo-Json -Depth 8
 }

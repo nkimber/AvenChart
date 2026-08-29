@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProspectivePatientTelehealthEntry from './ProspectivePatientTelehealthEntry.tsx'
-import { acknowledgeApplicantPreRequestReadiness, acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, confirmApplicantClinicalInformationSummary, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestLocation, createApplicantTelehealthRequest, createProspectiveApplicant, evaluateProspectiveSafetyTriage, getApplicantAllergyInformation, getApplicantClinicalInformationInventory, getApplicantClinicalInformationSummary, getApplicantCommunicationAccessReadiness, getApplicantDevicePreparation, getApplicantHealthHistoryInformation, getApplicantInsuranceHandoff, getApplicantMedicationInformation, getApplicantPracticeReviewSubmission, getApplicantPreRequestReadiness, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestUniversalSafety, getProspectiveApplicant, getProspectivePracticeNetworkOptions, recordApplicantAllergyInformation, recordApplicantClinicalInformationInventory, recordApplicantCommunicationAccessReadiness, recordApplicantDevicePreparation, recordApplicantHealthHistoryInformation, recordApplicantMedicationInformation, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, submitApplicantPracticeReview, verifyProspectiveApplicantContact, type TelehealthApplicantAllergyInformation, type TelehealthApplicantClinicalInformationInventory, type TelehealthApplicantClinicalInformationSummary, type TelehealthApplicantCommunicationAccessReadiness, type TelehealthApplicantDevicePreparation, type TelehealthApplicantHealthHistoryInformation, type TelehealthApplicantInsuranceHandoff, type TelehealthApplicantMedicationInformation, type TelehealthApplicantNotice, type TelehealthApplicantPracticeReview, type TelehealthApplicantPreRequestReadiness, type TelehealthApplicantRegistrationDetails, type TelehealthApplicantRequestComplaintTriage, type TelehealthApplicantRequestCreation, type TelehealthApplicantRequestLocation, type TelehealthApplicantRequestUniversalSafety } from './api.ts'
+import { acknowledgeApplicantPreRequestReadiness, acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, confirmApplicantClinicalInformationSummary, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestIntake, confirmApplicantTelehealthRequestLocation, createApplicantTelehealthRequest, createProspectiveApplicant, evaluateProspectiveSafetyTriage, getApplicantAllergyInformation, getApplicantClinicalInformationInventory, getApplicantClinicalInformationSummary, getApplicantCommunicationAccessReadiness, getApplicantDevicePreparation, getApplicantHealthHistoryInformation, getApplicantInsuranceHandoff, getApplicantMedicationInformation, getApplicantPracticeReviewSubmission, getApplicantPreRequestReadiness, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestIntake, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestUniversalSafety, getProspectiveApplicant, getProspectivePracticeNetworkOptions, recordApplicantAllergyInformation, recordApplicantClinicalInformationInventory, recordApplicantCommunicationAccessReadiness, recordApplicantDevicePreparation, recordApplicantHealthHistoryInformation, recordApplicantMedicationInformation, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, submitApplicantPracticeReview, verifyProspectiveApplicantContact, type TelehealthApplicantAllergyInformation, type TelehealthApplicantClinicalInformationInventory, type TelehealthApplicantClinicalInformationSummary, type TelehealthApplicantCommunicationAccessReadiness, type TelehealthApplicantDevicePreparation, type TelehealthApplicantHealthHistoryInformation, type TelehealthApplicantInsuranceHandoff, type TelehealthApplicantMedicationInformation, type TelehealthApplicantNotice, type TelehealthApplicantPracticeReview, type TelehealthApplicantPreRequestReadiness, type TelehealthApplicantRegistrationDetails, type TelehealthApplicantRequestComplaintTriage, type TelehealthApplicantRequestCreation, type TelehealthApplicantRequestIntake, type TelehealthApplicantRequestLocation, type TelehealthApplicantRequestUniversalSafety } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 
 vi.mock('./api.ts', async (importOriginal) => {
@@ -19,6 +19,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     confirmApplicantClinicalInformationSummary: vi.fn(),
     confirmApplicantInsuranceHandoff: vi.fn(),
     confirmApplicantRegistrationDetails: vi.fn(),
+    confirmApplicantTelehealthRequestIntake: vi.fn(),
     confirmApplicantTelehealthRequestLocation: vi.fn(),
     createProspectiveApplicant: vi.fn(),
     createApplicantTelehealthRequest: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     getApplicantTelehealthNotice: vi.fn(),
     getApplicantTelehealthRequest: vi.fn(),
     getApplicantTelehealthRequestComplaintTriage: vi.fn(),
+    getApplicantTelehealthRequestIntake: vi.fn(),
     getApplicantTelehealthRequestLocation: vi.fn(),
     getApplicantTelehealthRequestUniversalSafety: vi.fn(),
     getProspectiveApplicant: vi.fn(),
@@ -667,6 +669,60 @@ const requestComplaintTriageFixture = {
   limitations: ['NON_PRODUCTION unapproved synthetic clinical content.'],
 } satisfies TelehealthApplicantRequestComplaintTriage
 
+const requestIntakeFixture = {
+  applicantId: approvedApplicant.applicantId,
+  applicantVersion: 26,
+  applicantStatus: 'SyntheticRequestCreated',
+  requestId: requestLocationFixture.requestId,
+  requestVersion: 4,
+  requestStatus: 'Intake',
+  complaintCategory: 'sleep',
+  complaintDisplayLabel: 'Sleep difficulty',
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_INTAKE_SNAPSHOT_CONFIRMATION',
+  policyVersion: 1,
+  clinicalContentStatus: 'UNAPPROVED_SYNTHETIC',
+  medicalDirectorApprovalRequired: true,
+  medicalDirectorApprovalRecorded: false,
+  clinicalGoldenCasePackApproved: false,
+  productionPublicationAllowed: false,
+  contextSnapshotFingerprint: '5'.repeat(64),
+  contextExpiresAt: '2026-08-28T17:30:00Z',
+  currentLocationStateCode: 'GA',
+  maskedCallbackPhone: '***-***-0199',
+  supportedSymptomDurations: ['less-than-day', '1-3-days', '4-14-days', 'more-than-14-days'],
+  sections: [
+    { sectionKey: 'registration', receiptState: 'Confirmed', outstandingRoute: 'No patient-record mutation' },
+    { sectionKey: 'insurance', receiptState: 'Applicant handoff confirmed', outstandingRoute: 'Canonical coverage pending' },
+  ],
+  snapshotReady: true,
+  snapshotCreated: false,
+  symptomDuration: null,
+  capturedAt: null,
+  verificationPending: true,
+  consentPending: true,
+  coverageRecordCreated: false,
+  coverageVerified: false,
+  exactNetworkConfirmed: false,
+  operationalReviewCreated: false,
+  practiceAccepted: false,
+  patientContacted: false,
+  patientCareQueueEntered: false,
+  clinicianQueueEntered: false,
+  doctorSearchStarted: false,
+  queuePositionAssigned: false,
+  appointmentCreated: false,
+  encounterCreated: false,
+  consentCreated: false,
+  careAuthorized: false,
+  prescribingEnabled: false,
+  billingEnabled: false,
+  claimCreated: false,
+  integrationEnabled: false,
+  externalCallPerformed: false,
+  direction: 'Choose one duration and review eight confirmations.',
+  limitations: ['NON_PRODUCTION no-free-text synthetic intake.'],
+} satisfies TelehealthApplicantRequestIntake
+
 describe('ProspectivePatientTelehealthEntry safety triage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -690,6 +746,7 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
     vi.mocked(getApplicantTelehealthRequestLocation).mockResolvedValue(requestLocationFixture)
     vi.mocked(getApplicantTelehealthRequestUniversalSafety).mockResolvedValue(requestSafetyFixture)
     vi.mocked(getApplicantTelehealthRequestComplaintTriage).mockResolvedValue(requestComplaintTriageFixture)
+    vi.mocked(getApplicantTelehealthRequestIntake).mockResolvedValue(requestIntakeFixture)
     vi.mocked(runTelehealthDevicePreflight).mockResolvedValue({
       status: 'failed',
       message: 'This browser cannot run the secure telehealth device check.',
@@ -3036,5 +3093,165 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
 
     const stored = `${sessionStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}${localStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}`
     expect(stored).not.toMatch(/contextSnapshotFingerprint|selfHarmThoughts|NotSure|answerFingerprint|firedRule|reasonCode/i)
+  })
+
+  it('recovers and confirms a no-free-text request intake with one duration and eight explicit acknowledgments', async () => {
+    const requestCreatedApplicant = {
+      ...approvedApplicant,
+      status: 'SyntheticRequestCreated',
+      version: 26,
+      canonicalPatientCreated: true,
+      nextAction: 'Confirm the request intake snapshot.',
+    } as const
+    const requestCreationReceipt = {
+      applicantId: approvedApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      policyKey: 'SYNTHETIC_APPLICANT_TELEHEALTH_REQUEST_CREATION',
+      policyVersion: 1,
+      authorizationPolicyVersion: 1,
+      requestCreationReady: false,
+      requestCreated: true,
+      requestId: requestLocationFixture.requestId,
+      requestStatus: 'Draft',
+      requestVersion: 1,
+      complaintCategory: 'sleep',
+      createdAt: '2026-08-28T16:00:00Z',
+      telehealthRequestCreated: true,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'The Draft request was created.',
+      limitations: ['No queue or care exists.'],
+    } satisfies TelehealthApplicantRequestCreation
+    const confirmedLocation = {
+      ...requestLocationFixture,
+      requestVersion: 2,
+      requestStatus: 'LocationConfirmed',
+      confirmationReady: false,
+      locationConfirmed: true,
+      confirmedAt: '2026-08-28T17:00:00Z',
+    } satisfies TelehealthApplicantRequestLocation
+    const universalPass = {
+      ...requestSafetyFixture,
+      requestVersion: 3,
+      requestStatus: 'SafetyScreening',
+      assessmentReady: false,
+      assessmentCreated: true,
+      outcome: 'TelehealthEligible',
+      publicDisposition: 'UniversalSafetyPassed',
+      evaluatedAt: '2026-08-28T17:05:00Z',
+      universalSafetyPassed: true,
+      complaintSpecificTriageRequired: true,
+    } satisfies TelehealthApplicantRequestUniversalSafety
+    const complaintPass = {
+      ...requestComplaintTriageFixture,
+      requestVersion: 4,
+      requestStatus: 'Intake',
+      assessmentReady: false,
+      assessmentCreated: true,
+      outcome: 'TelehealthEligible',
+      publicDisposition: 'SyntheticVideoEvaluationCandidate',
+      evaluatedAt: '2026-08-28T17:08:00Z',
+      syntheticVideoEvaluationCandidate: true,
+      direction: 'Synthetic intake progression can be demonstrated.',
+    } satisfies TelehealthApplicantRequestComplaintTriage
+    const completedIntake = {
+      ...requestIntakeFixture,
+      requestVersion: 5,
+      requestStatus: 'Verification',
+      snapshotReady: false,
+      snapshotCreated: true,
+      symptomDuration: '1-3-days',
+      capturedAt: '2026-08-28T17:10:00Z',
+      direction: 'Verification and every later gate remain pending.',
+    } satisfies TelehealthApplicantRequestIntake
+    vi.mocked(getProspectiveApplicant).mockResolvedValue(requestCreatedApplicant)
+    vi.mocked(getApplicantTelehealthRequest).mockResolvedValue(requestCreationReceipt)
+    vi.mocked(getApplicantTelehealthRequestLocation).mockResolvedValue(confirmedLocation)
+    vi.mocked(getApplicantTelehealthRequestUniversalSafety).mockResolvedValue(universalPass)
+    vi.mocked(getApplicantTelehealthRequestComplaintTriage).mockResolvedValue(complaintPass)
+    vi.mocked(getApplicantTelehealthRequestIntake)
+      .mockRejectedValueOnce(new Error('Intake projection temporarily unavailable.'))
+      .mockResolvedValue(requestIntakeFixture)
+    vi.mocked(confirmApplicantTelehealthRequestIntake)
+      .mockRejectedValueOnce(new Error('Intake result unknown; retry unchanged.'))
+      .mockResolvedValue(completedIntake)
+
+    render(<MemoryRouter><ProspectivePatientTelehealthEntry /></MemoryRouter>)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Intake projection temporarily unavailable.')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry request intake load' }))
+    const heading = await screen.findByRole('heading', { name: 'Confirm request intake snapshot' })
+    const form = heading.closest('form')
+    expect(form).not.toBeNull()
+    expect(form?.querySelector('textarea')).toBeNull()
+    expect(form?.querySelector('input[type="text"]')).toBeNull()
+    expect(form).toHaveTextContent('Server-owned purposeSleep difficulty')
+    expect(form).toHaveTextContent('UNAPPROVED_SYNTHETIC')
+    expect(form).toHaveTextContent('Canonical coverage pending')
+
+    fireEvent.change(within(form!).getByLabelText('How long has the fictional concern been present?'), {
+      target: { value: '1-3-days' },
+    })
+    for (const label of [
+      'I confirm the displayed state remains the current physical location.',
+      'I confirm the displayed masked callback route remains correct.',
+      'I reviewed the displayed prior-information receipt states and will stop if a correction is needed.',
+      'I understand no canonical coverage, current eligibility, benefits, or exact network result exists.',
+      'I understand legal and clinician consent remain pending and unavailable here.',
+      'I understand advancing to Verification only records a pending workflow state.',
+      'I understand the synthetic candidate result is not diagnosis, treatment, acceptance, or guaranteed care.',
+      'I confirm the duration is fictional synthetic demonstration data.',
+    ]) {
+      fireEvent.click(within(form!).getByLabelText(label))
+    }
+    fireEvent.click(within(form!).getByRole('button', { name: 'Record synthetic intake snapshot' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Intake result unknown; retry unchanged.')
+    expect(within(form!).getByLabelText('How long has the fictional concern been present?')).toHaveValue('1-3-days')
+    fireEvent.click(within(form!).getByRole('button', { name: 'Record synthetic intake snapshot' }))
+
+    await waitFor(() => expect(confirmApplicantTelehealthRequestIntake).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(confirmApplicantTelehealthRequestIntake).mock.calls[0][3]).toBe(
+      vi.mocked(confirmApplicantTelehealthRequestIntake).mock.calls[1][3],
+    )
+    expect(vi.mocked(confirmApplicantTelehealthRequestIntake).mock.calls[0][2]).toEqual({
+      expectedRequestVersion: 4,
+      contextSnapshotFingerprint: '5'.repeat(64),
+      currentLocationStateCode: 'GA',
+      symptomDuration: '1-3-days',
+      currentLocationConfirmed: true,
+      callbackNumberConfirmed: true,
+      priorInformationReviewed: true,
+      insuranceLimitationsAcknowledged: true,
+      pendingConsentAcknowledged: true,
+      pendingVerificationAcknowledged: true,
+      complaintResultAcknowledged: true,
+      syntheticDataConfirmed: true,
+    })
+
+    const result = await screen.findByRole('heading', { name: 'Request intake snapshot recorded' })
+    expect(result.parentElement).toHaveTextContent('Request statusVerification')
+    expect(result.parentElement).toHaveTextContent('Verification pendingYes')
+    expect(result.parentElement).toHaveTextContent('Consent pendingYes')
+    expect(result.parentElement).toHaveTextContent('Coverage or exact network confirmedNo')
+    expect(result.parentElement).toHaveTextContent('Operational review or practice acceptanceNo')
+    expect(result.parentElement).toHaveTextContent('Doctor search or queueNot started')
+    await waitFor(() => expect(result.parentElement).toHaveFocus())
+
+    const stored = `${sessionStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}${localStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}`
+    expect(stored).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot/i)
   })
 })

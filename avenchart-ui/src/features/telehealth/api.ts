@@ -1694,6 +1694,78 @@ export type TelehealthApplicantRequestComplaintTriage = {
   limitations: string[]
 }
 
+export type TelehealthApplicantRequestIntakeInput = {
+  expectedRequestVersion: number
+  contextSnapshotFingerprint: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  symptomDuration: 'less-than-day' | '1-3-days' | '4-14-days' | 'more-than-14-days'
+  currentLocationConfirmed: true
+  callbackNumberConfirmed: true
+  priorInformationReviewed: true
+  insuranceLimitationsAcknowledged: true
+  pendingConsentAcknowledged: true
+  pendingVerificationAcknowledged: true
+  complaintResultAcknowledged: true
+  syntheticDataConfirmed: true
+}
+
+export type TelehealthApplicantRequestIntakeSection = {
+  sectionKey: string
+  receiptState: string
+  outstandingRoute: string
+}
+
+export type TelehealthApplicantRequestIntake = {
+  applicantId: string
+  applicantVersion: 26
+  applicantStatus: 'SyntheticRequestCreated'
+  requestId: string
+  requestVersion: 4 | 5
+  requestStatus: 'Intake' | 'Verification'
+  complaintCategory: 'migraine' | 'sleep'
+  complaintDisplayLabel: string
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_INTAKE_SNAPSHOT_CONFIRMATION'
+  policyVersion: 1
+  clinicalContentStatus: 'UNAPPROVED_SYNTHETIC'
+  medicalDirectorApprovalRequired: true
+  medicalDirectorApprovalRecorded: false
+  clinicalGoldenCasePackApproved: false
+  productionPublicationAllowed: false
+  contextSnapshotFingerprint: string
+  contextExpiresAt: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  maskedCallbackPhone: string
+  supportedSymptomDurations: TelehealthApplicantRequestIntakeInput['symptomDuration'][]
+  sections: TelehealthApplicantRequestIntakeSection[]
+  snapshotReady: boolean
+  snapshotCreated: boolean
+  symptomDuration: TelehealthApplicantRequestIntakeInput['symptomDuration'] | null
+  capturedAt: string | null
+  verificationPending: true
+  consentPending: true
+  coverageRecordCreated: false
+  coverageVerified: false
+  exactNetworkConfirmed: false
+  operationalReviewCreated: false
+  practiceAccepted: false
+  patientContacted: false
+  patientCareQueueEntered: false
+  clinicianQueueEntered: false
+  doctorSearchStarted: false
+  queuePositionAssigned: false
+  appointmentCreated: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  prescribingEnabled: false
+  billingEnabled: false
+  claimCreated: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -2985,6 +3057,41 @@ export function assessApplicantTelehealthRequestComplaintTriage(
 ) {
   return json<TelehealthApplicantRequestComplaintTriage>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/complaint-triage`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequestIntake(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestIntake>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/intake`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function confirmApplicantTelehealthRequestIntake(
+  applicantId: string,
+  applicantAccessKey: string,
+  input: TelehealthApplicantRequestIntakeInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestIntake>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/intake`,
     {
       method: 'POST',
       headers: applicantHeaders(applicantAccessKey, {

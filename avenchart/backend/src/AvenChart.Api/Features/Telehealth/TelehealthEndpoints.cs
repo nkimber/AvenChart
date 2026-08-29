@@ -419,6 +419,24 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/intake", GetApplicantTelehealthRequestIntakeAsync)
+            .WithName("GetTelehealthApplicantRequestIntake")
+            .WithDescription("Returns the applicant owner's private minimized request-intake confirmation state after an exact synthetic candidate result. It returns no source fingerprints, clinical answers, rules, reasons, insurance identifiers, or patient record details.")
+            .Produces<TelehealthApplicantRequestIntakeResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/intake", ConfirmApplicantTelehealthRequestIntakeAsync)
+            .WithName("ConfirmTelehealthApplicantRequestIntake")
+            .WithDescription("Records one no-free-text synthetic intake snapshot and advances only the request from Intake version 4 to Verification version 5. Verification, consent, coverage, network, operational review, contact, queueing, appointments, encounters, and care remain pending and unavailable.")
+            .Accepts<ConfirmTelehealthApplicantRequestIntake>("application/json")
+            .Produces<TelehealthApplicantRequestIntakeResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1421,6 +1439,39 @@ public static class TelehealthEndpoints
         {
             SetProspectiveApplicantPrivateResponse(context);
             return Results.Ok(await service.AssessAsync(
+                context,
+                applicantId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestIntakeAsync(
+        TelehealthApplicantRequestIntakeService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> ConfirmApplicantTelehealthRequestIntakeAsync(
+        TelehealthApplicantRequestIntakeService service,
+        HttpContext context,
+        Guid applicantId,
+        ConfirmTelehealthApplicantRequestIntake request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.ConfirmAsync(
                 context,
                 applicantId,
                 request,

@@ -135,6 +135,8 @@ public static class TelehealthServiceRegistration
         services.AddScoped<TelehealthApplicantRequestUniversalSafetyService>();
         services.AddScoped<TelehealthApplicantRequestComplaintTriageRepository>();
         services.AddScoped<TelehealthApplicantRequestComplaintTriageService>();
+        services.AddScoped<TelehealthApplicantRequestIntakeRepository>();
+        services.AddScoped<TelehealthApplicantRequestIntakeService>();
         services.AddScoped<TelehealthVideoRepository>();
         services.AddScoped<TelehealthVideoService>();
         services.AddScoped<TelehealthConsultationRepository>();
