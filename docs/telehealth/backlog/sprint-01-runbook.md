@@ -1,6 +1,6 @@
 # Sprint 1 synthetic telehealth runbook
 
-Scope: local deterministic evidence only under Decisions 0003 and 0005–0049, most recently [Decision 0049](../decisions/0049-approved-sprint-46-applicant-request-eligibility-verification.md). Never use live data, credentials, destinations or a production-like host.
+Scope: local deterministic evidence only under Decisions 0003 and 0005–0050, most recently [Decision 0050](../decisions/0050-approved-sprint-47-applicant-request-practice-network-verification.md). Never use live data, credentials, destinations or a production-like host.
 
 ## Preconditions
 

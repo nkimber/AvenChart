@@ -1981,7 +1981,7 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
-  test('eligible synthetic applicant confirms intake, source, and fresh eligibility with stable retries and no downstream implication', async ({ page }) => {
+  test('eligible synthetic applicant confirms intake, source, fresh eligibility, and practice network with stable retries and no downstream implication', async ({ page }) => {
     await page.addInitScript((session) => {
       sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
     }, { applicantId: prospectiveApplicant.applicantId, applicantAccessKey: 'r'.repeat(64) })
@@ -2378,6 +2378,99 @@ test.describe('telehealth accessibility', () => {
       currentEligibilityEvidenceCreated: true,
       direction: 'Fresh eligibility is active; exact network remains required.',
     }
+    const readyRequestPracticeNetwork = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 7,
+      requestStatus: 'Verification',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_PRACTICE_NETWORK_VERIFICATION',
+      policyVersion: 1,
+      networkSnapshotFingerprint: '8'.repeat(64),
+      contextExpiresAt: '2026-08-28T17:28:00Z',
+      practiceDisplayName: 'AvenChart Synthetic Practice',
+      payerDisplayName: 'AvenChart Synthetic Health',
+      productDisplayName: 'Synthetic Silver Demo',
+      currentLocationStateCode: 'GA',
+      purposeCategory: 'sleep',
+      eligibilityVerificationId: completedRequestEligibility.verificationId,
+      eligibilityBusinessOutcome: 'EligibleBenefitsReported',
+      eligibilityCheckedAt: completedRequestEligibility.checkedAt,
+      eligibilityExpiresAt: completedRequestEligibility.expiresAt,
+      verificationReady: true,
+      verificationCompleted: false,
+      verificationId: null,
+      dateOfService: null,
+      serviceCategory: null,
+      adapterMode: null,
+      compatibilityTarget: null,
+      datasetKey: null,
+      datasetVersion: null,
+      transportOutcome: null,
+      planNetworkMatchStatus: null,
+      practiceAffiliationStatus: null,
+      serviceAvailabilityStatus: null,
+      newPatientAcceptanceStatus: null,
+      businessOutcome: null,
+      practiceNetworkChecked: false,
+      practiceInNetwork: false,
+      newPatientsAccepted: false,
+      checkedAt: null,
+      expiresAt: null,
+      evidenceExpiresAt: null,
+      currentEligibilityEvidenceReusedAsContext: true,
+      practiceNetworkVerificationCreated: false,
+      renderingPhysicianSelected: false,
+      renderingPhysicianNetworkChecked: false,
+      exactNetworkConfirmed: false,
+      canonicalCoverageCreated: false,
+      coverageSelected: false,
+      coverageVerified: false,
+      financialRouteCreated: false,
+      operationalReviewCreated: false,
+      practiceAccepted: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Run the fresh practice-level network fixture.',
+      limitations: ['No external provider directory or payer will be contacted.'],
+    }
+    const completedRequestPracticeNetwork = {
+      ...readyRequestPracticeNetwork,
+      requestVersion: 8,
+      verificationReady: false,
+      verificationCompleted: true,
+      verificationId: '47000000-0000-4000-8000-000000000001',
+      dateOfService: '2026-08-28',
+      serviceCategory: 'ProfessionalTelehealthConsultation',
+      adapterMode: 'NON_PRODUCTION',
+      compatibilityTarget: 'HL7_FHIR_R4_DAVINCI_PDEX_PLAN_NET_1_2_0',
+      datasetKey: 'avenchart-synthetic-practice-network-directory-2026-08',
+      datasetVersion: 1,
+      transportOutcome: 'SimulatedAvailable',
+      planNetworkMatchStatus: 'Matched',
+      practiceAffiliationStatus: 'InNetwork',
+      serviceAvailabilityStatus: 'Included',
+      newPatientAcceptanceStatus: 'Accepting',
+      businessOutcome: 'PracticeInNetworkAcceptingNewPatients',
+      practiceNetworkChecked: true,
+      practiceInNetwork: true,
+      newPatientsAccepted: true,
+      checkedAt: '2026-08-28T17:14:00Z',
+      expiresAt: '2026-08-28T17:29:00Z',
+      evidenceExpiresAt: '2026-08-28T17:28:00Z',
+      practiceNetworkVerificationCreated: true,
+      direction: 'Practice-level fixture is in network; physician participation remains required.',
+    }
     let intakeLoadCalls = 0
     let intakeConfirmationCalls = 0
     const intakeKeys: Array<string | undefined> = []
@@ -2390,10 +2483,34 @@ test.describe('telehealth accessibility', () => {
     let requestEligibilityRunCalls = 0
     const requestEligibilityKeys: Array<string | undefined> = []
     const requestEligibilityBodies: Array<Record<string, unknown>> = []
+    let requestPracticeNetworkLoadCalls = 0
+    let requestPracticeNetworkRunCalls = 0
+    const requestPracticeNetworkKeys: Array<string | undefined> = []
+    const requestPracticeNetworkBodies: Array<Record<string, unknown>> = []
     await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
       const request = route.request()
       const path = new URL(request.url()).pathname
       expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('r'.repeat(64))
+      if (path.endsWith('/telehealth-request/practice-network')) {
+        if (request.method() === 'POST') {
+          requestPracticeNetworkRunCalls += 1
+          requestPracticeNetworkKeys.push(request.headers()['x-idempotency-key'])
+          requestPracticeNetworkBodies.push(request.postDataJSON() as Record<string, unknown>)
+          if (requestPracticeNetworkRunCalls === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Practice-network result unknown; retry unchanged.' }) })
+            return
+          }
+          await route.fulfill({ json: completedRequestPracticeNetwork })
+          return
+        }
+        requestPracticeNetworkLoadCalls += 1
+        if (requestPracticeNetworkLoadCalls === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Practice-network projection temporarily unavailable.' }) })
+          return
+        }
+        await route.fulfill({ json: readyRequestPracticeNetwork })
+        return
+      }
       if (path.endsWith('/telehealth-request/eligibility')) {
         if (request.method() === 'POST') {
           requestEligibilityRunCalls += 1
@@ -2625,7 +2742,51 @@ test.describe('telehealth accessibility', () => {
       syntheticDataConfirmed: true,
       noGuaranteeAcknowledged: true,
     })
-    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|payerDisplayName|maskedMemberId|businessOutcome|requestId/i)
+
+    await expect(page.getByRole('alert')).toContainText('Practice-network projection temporarily unavailable.')
+    await page.getByRole('button', { name: 'Retry practice-network load' }).click()
+    const practiceNetworkHeading = page.getByRole('heading', { name: 'Verify the practice-level network fixture' })
+    await expect(practiceNetworkHeading).toBeVisible()
+    const practiceNetworkForm = practiceNetworkHeading.locator('..')
+    await expect(practiceNetworkForm).toContainText('AvenChart Synthetic Practice')
+    await expect(practiceNetworkForm).toContainText('EligibleBenefitsReported')
+    await expect(practiceNetworkForm).toContainText('cannot establish exact network status because no rendering physician has been selected')
+    await expect(practiceNetworkForm.locator('textarea')).toHaveCount(0)
+    await expect(practiceNetworkForm.locator('select')).toHaveCount(0)
+    await expect(practiceNetworkForm.locator('input:not([type="checkbox"])')).toHaveCount(0)
+    const practiceNetworkSubmit = practiceNetworkForm.getByRole('button', { name: 'Run synthetic practice-network check' })
+    await expect(practiceNetworkSubmit).toBeDisabled()
+    for (const label of [
+      'I confirm this check uses only fictional synthetic demonstration data.',
+      'I understand this result covers only the configured practice/facility/service fixture and does not select or check a rendering physician.',
+      'I understand practice-level network evidence is not a guarantee of coverage, payment, cost, physician participation, or an appointment.',
+    ]) {
+      await practiceNetworkForm.getByLabel(label).check()
+    }
+    await practiceNetworkSubmit.click()
+    const practiceNetworkRetryAlert = page.getByRole('alert').filter({ hasText: 'Practice-network result unknown; retry unchanged.' })
+    await expect(practiceNetworkRetryAlert).toBeVisible()
+    await expect(practiceNetworkRetryAlert).toBeFocused()
+    await practiceNetworkSubmit.click()
+
+    const practiceNetworkResult = page.getByRole('heading', { name: 'Fresh practice-network result recorded' })
+    await expect(practiceNetworkResult).toBeVisible()
+    await expect(practiceNetworkResult.locator('..')).toContainText('Request version8')
+    await expect(practiceNetworkResult.locator('..')).toContainText('Practice affiliationInNetwork')
+    await expect(practiceNetworkResult.locator('..')).toContainText('Accepting new patientsAccepting')
+    await expect(practiceNetworkResult.locator('..')).toContainText('Rendering physician selectedNo')
+    await expect(practiceNetworkResult.locator('..')).toContainText('Exact network confirmedNo — physician check still required')
+    await expect(practiceNetworkResult.locator('..')).toContainText('Doctor search or queueNot started')
+    expect(requestPracticeNetworkKeys).toHaveLength(2)
+    expect(requestPracticeNetworkKeys[0]).toBe(requestPracticeNetworkKeys[1])
+    expect(requestPracticeNetworkBodies[0]).toEqual({
+      expectedRequestVersion: 7,
+      networkSnapshotFingerprint: '8'.repeat(64),
+      syntheticDataConfirmed: true,
+      practiceOnlyScopeAcknowledged: true,
+      noGuaranteeAcknowledged: true,
+    })
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|networkSnapshotFingerprint|payerDisplayName|maskedMemberId|businessOutcome|requestId/i)
 
     await expectNoSeriousAccessibilityViolations(page)
     await expectTelehealthReflow(page)

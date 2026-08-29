@@ -1912,6 +1912,81 @@ export type TelehealthApplicantRequestEligibility = {
   limitations: string[]
 }
 
+export type TelehealthApplicantRequestPracticeNetworkInput = {
+  expectedRequestVersion: number
+  networkSnapshotFingerprint: string
+  syntheticDataConfirmed: true
+  practiceOnlyScopeAcknowledged: true
+  noGuaranteeAcknowledged: true
+}
+
+export type TelehealthApplicantRequestPracticeNetwork = {
+  applicantId: string
+  applicantVersion: 26
+  applicantStatus: 'SyntheticRequestCreated'
+  requestId: string
+  requestVersion: 7 | 8
+  requestStatus: 'Verification'
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_PRACTICE_NETWORK_VERIFICATION'
+  policyVersion: 1
+  networkSnapshotFingerprint: string
+  contextExpiresAt: string
+  practiceDisplayName: string
+  payerDisplayName: string
+  productDisplayName: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  purposeCategory: 'migraine' | 'sleep'
+  eligibilityVerificationId: string
+  eligibilityBusinessOutcome: 'EligibleBenefitsReported'
+  eligibilityCheckedAt: string
+  eligibilityExpiresAt: string
+  verificationReady: boolean
+  verificationCompleted: boolean
+  verificationId: string | null
+  dateOfService: string | null
+  serviceCategory: string | null
+  adapterMode: 'NON_PRODUCTION' | null
+  compatibilityTarget: string | null
+  datasetKey: string | null
+  datasetVersion: number | null
+  transportOutcome: 'SimulatedAvailable' | 'SimulatedUnavailable' | null
+  planNetworkMatchStatus: 'Matched' | 'Unknown' | null
+  practiceAffiliationStatus: 'InNetwork' | 'OutOfNetwork' | 'Unknown' | null
+  serviceAvailabilityStatus: 'Included' | 'Excluded' | 'Unknown' | null
+  newPatientAcceptanceStatus: 'Accepting' | 'Unknown' | null
+  businessOutcome: 'PracticeInNetworkAcceptingNewPatients' | 'PracticeOutOfNetwork' | 'UnableToDetermine' | null
+  practiceNetworkChecked: boolean
+  practiceInNetwork: boolean
+  newPatientsAccepted: boolean
+  checkedAt: string | null
+  expiresAt: string | null
+  evidenceExpiresAt: string | null
+  currentEligibilityEvidenceReusedAsContext: true
+  practiceNetworkVerificationCreated: boolean
+  renderingPhysicianSelected: false
+  renderingPhysicianNetworkChecked: false
+  exactNetworkConfirmed: false
+  canonicalCoverageCreated: false
+  coverageSelected: false
+  coverageVerified: false
+  financialRouteCreated: false
+  operationalReviewCreated: false
+  practiceAccepted: false
+  patientContacted: false
+  patientCareQueueEntered: false
+  clinicianQueueEntered: false
+  doctorSearchStarted: false
+  queuePositionAssigned: false
+  appointmentCreated: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -3308,6 +3383,41 @@ export function runApplicantTelehealthRequestEligibility(
 ) {
   return json<TelehealthApplicantRequestEligibility>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/eligibility`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequestPracticeNetwork(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestPracticeNetwork>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/practice-network`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function runApplicantTelehealthRequestPracticeNetwork(
+  applicantId: string,
+  applicantAccessKey: string,
+  input: TelehealthApplicantRequestPracticeNetworkInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestPracticeNetwork>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/practice-network`,
     {
       method: 'POST',
       headers: applicantHeaders(applicantAccessKey, {

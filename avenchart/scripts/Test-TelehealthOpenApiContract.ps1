@@ -1501,6 +1501,53 @@ try {
       @($requestEligibilityInputProperties | Where-Object { $_ -match '^memberId$|^groupNumber$|subscriber|payer|product|patientId|canonicalPatient|protectedPayload|rawTransaction|inquiryTrace|responseTrace|network|benefit|price|financial|operational|queue|note|freeText' }).Count -eq 0 -and
       @($requestEligibilityResponseProperties | Where-Object { $_ -match '^memberId$|^groupNumber$|canonicalPatientId|patientId|accessKey|commandFingerprint|protectedPayload$|inquiryTrace|responseTrace|npi|doctorId|price|estimate' }).Count -eq 0 -and
       @($requestEligibilityResponseProperties | Where-Object { $_ -in @('protectedPayloadCopied','priorEligibilityResultReused','rawTransactionCreated','canonicalCoverageCreated','coverageSelected','networkVerificationCreated','renderingPhysicianNetworkChecked','coverageVerified','exactNetworkConfirmed','financialRouteCreated','operationalReviewCreated','practiceAccepted','patientCareQueueEntered','clinicianQueueEntered','appointmentCreated','encounterCreated','consentCreated','careAuthorized','integrationEnabled','externalCallPerformed') }).Count -eq 20)
+    $requestPracticeNetworkPath = Get-Property (Get-Property $document 'paths') '/api/telehealth/v1/applicants/{applicantId}/telehealth-request/practice-network'
+    $requestPracticeNetworkGet = Get-Operation $document '/api/telehealth/v1/applicants/{applicantId}/telehealth-request/practice-network' 'get'
+    $requestPracticeNetworkPost = Get-Operation $document '/api/telehealth/v1/applicants/{applicantId}/telehealth-request/practice-network' 'post'
+    $requestPracticeNetworkInputReference = Get-Property (Get-Property (Get-Property (Get-Property $requestPracticeNetworkPost 'requestBody') 'content') 'application/json').schema '$ref'
+    $requestPracticeNetworkInputSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') (($requestPracticeNetworkInputReference -split '/')[-1])
+    $requestPracticeNetworkInputProperties = @((Get-Property $requestPracticeNetworkInputSchema 'properties').PSObject.Properties.Name)
+    $requestPracticeNetworkResponseReference = Get-Property (Get-Property (Get-Property (Get-Property $requestPracticeNetworkGet.responses '200') 'content') 'application/json').schema '$ref'
+    $requestPracticeNetworkResponseSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') (($requestPracticeNetworkResponseReference -split '/')[-1])
+    $requestPracticeNetworkResponseProperties = @((Get-Property $requestPracticeNetworkResponseSchema 'properties').PSObject.Properties.Name)
+    $requestPracticeNetworkExpectedResponseProperties = @(
+      'applicantId','applicantVersion','applicantStatus','requestId','requestVersion','requestStatus',
+      'policyKey','policyVersion','networkSnapshotFingerprint','contextExpiresAt','practiceDisplayName',
+      'payerDisplayName','productDisplayName','currentLocationStateCode','purposeCategory',
+      'eligibilityVerificationId','eligibilityBusinessOutcome','eligibilityCheckedAt',
+      'eligibilityExpiresAt','verificationReady','verificationCompleted','verificationId',
+      'dateOfService','serviceCategory','adapterMode','compatibilityTarget','datasetKey','datasetVersion',
+      'transportOutcome','planNetworkMatchStatus','practiceAffiliationStatus','serviceAvailabilityStatus',
+      'newPatientAcceptanceStatus','businessOutcome','practiceNetworkChecked','practiceInNetwork',
+      'newPatientsAccepted','checkedAt','expiresAt','evidenceExpiresAt',
+      'currentEligibilityEvidenceReusedAsContext','practiceNetworkVerificationCreated',
+      'renderingPhysicianSelected','renderingPhysicianNetworkChecked','exactNetworkConfirmed',
+      'canonicalCoverageCreated','coverageSelected','coverageVerified','financialRouteCreated',
+      'operationalReviewCreated','practiceAccepted','patientContacted','patientCareQueueEntered',
+      'clinicianQueueEntered','doctorSearchStarted','queuePositionAssigned','appointmentCreated',
+      'encounterCreated','consentCreated','careAuthorized','integrationEnabled','externalCallPerformed',
+      'direction','limitations')
+    Add-Check 'Applicant request practice-network projection and command are access-key-only, private, versioned, and idempotent' (
+      @($requestPracticeNetworkPath.PSObject.Properties.Name).Count -eq 2 -and
+      @($requestPracticeNetworkPath.PSObject.Properties.Name) -contains 'get' -and
+      @($requestPracticeNetworkPath.PSObject.Properties.Name) -contains 'post' -and
+      (Has-Security $requestPracticeNetworkGet 'AvenChartTelehealthApplicantAccess') -and
+      (Has-Security $requestPracticeNetworkPost 'AvenChartTelehealthApplicantAccess') -and
+      -not (Has-Security $requestPracticeNetworkPost 'AvenChartPatientPortalSession') -and
+      -not (Has-Security $requestPracticeNetworkPost 'AvenChartLocalStaffSession') -and
+      -not (Has-Header $requestPracticeNetworkGet 'X-Idempotency-Key') -and
+      (Has-Header $requestPracticeNetworkPost 'X-Idempotency-Key') -and
+      $null-eq(Get-Property $requestPracticeNetworkGet 'requestBody') -and
+      $null-ne(Get-Property $requestPracticeNetworkPost 'requestBody') -and
+      $null-ne(Get-Property $requestPracticeNetworkPost.responses '200') -and
+      $null-ne(Get-Property $requestPracticeNetworkPost.responses '400') -and
+      $null-ne(Get-Property $requestPracticeNetworkPost.responses '409'))
+    Add-Check 'Applicant request practice-network contract is exact, standards-shaped, practice-only, and exact-network/downstream-pending' (
+      @(Compare-Object @('expectedRequestVersion','networkSnapshotFingerprint','noGuaranteeAcknowledged','practiceOnlyScopeAcknowledged','syntheticDataConfirmed') ($requestPracticeNetworkInputProperties|Sort-Object)).Count -eq 0 -and
+      @(Compare-Object ($requestPracticeNetworkExpectedResponseProperties|Sort-Object) ($requestPracticeNetworkResponseProperties|Sort-Object)).Count -eq 0 -and
+      @($requestPracticeNetworkInputProperties | Where-Object { $_ -match 'member|group|subscriber|payer|product|patientId|canonicalPatient|physician|npi|tin|networkResult|price|financial|operational|queue|note|freeText' }).Count -eq 0 -and
+      @($requestPracticeNetworkResponseProperties | Where-Object { $_ -match '^memberId$|^groupNumber$|canonicalPatientId|patientId|accessKey|commandFingerprint|networkReference|organizationReference|locationReference|serviceReference|npi|tin|doctorId|price|estimate' }).Count -eq 0 -and
+      @($requestPracticeNetworkResponseProperties | Where-Object { $_ -in @('renderingPhysicianSelected','renderingPhysicianNetworkChecked','exactNetworkConfirmed','canonicalCoverageCreated','coverageSelected','coverageVerified','financialRouteCreated','operationalReviewCreated','practiceAccepted','patientCareQueueEntered','clinicianQueueEntered','appointmentCreated','encounterCreated','consentCreated','careAuthorized','integrationEnabled','externalCallPerformed') }).Count -eq 17)
     $identityReviewList = Get-Operation $document '/api/telehealth/v1/admin/applicant-identity-review' 'get'
     $identityReviewWrite = Get-Operation $document '/api/telehealth/v1/admin/applicants/{applicantId}/identity-review-decision' 'put'
     $identityReviewRequestReference = Get-Property (Get-Property (Get-Property (Get-Property $identityReviewWrite 'requestBody') 'content') 'application/json').schema '$ref'
@@ -1815,5 +1862,5 @@ try {
     Add-Check 'Public context has no protected security requirement and exposes only the public projection' ($null -eq $contextSecurity -or @($contextSecurity).Count -eq 0)
 }
 catch { Add-Check 'Telehealth OpenAPI contract execution' $false $_.Exception.Message }
-    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
+    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
 if(-not $passed){exit 1}

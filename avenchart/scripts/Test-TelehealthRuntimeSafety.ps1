@@ -939,6 +939,34 @@ try {
         $requestEligibilityMigrationSource -match 'reject_telehealth_evidence_mutation' -and
         $requestEligibilityMigrationSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
         $endpointSource -match '/\{applicantId:guid\}/telehealth-request/eligibility')
+    $requestPracticeNetworkRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestPracticeNetworkRepository.cs')
+    $requestPracticeNetworkServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestPracticeNetworkService.cs')
+    $requestPracticeNetworkPolicySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestPracticeNetworkPolicy.cs')
+    $requestPracticeNetworkMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0322__telehealth_applicant_request_practice_network_verification.sql')
+    Add-Check 'Applicant request practice-network verification is fresh, practice-only, in-process, and creates no exact-network or downstream path' (
+        $requestPracticeNetworkRepositorySource -match 'insert into telehealth_applicant_request_practice_network_verifications' -and
+        $requestPracticeNetworkRepositorySource -notmatch '(?i)insert\s+into\s+(patients|insurance_records|telehealth_coverage_selections|telehealth_coverage_verifications|telehealth_queue_entries|telehealth_reservations|telehealth_video_sessions|telehealth_consultation_contexts|appointments|encounters|claims|billing|prescriptions|messages|integration_outbox)' -and
+        $requestPracticeNetworkRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|WebRequest|SendAsync' -and
+        $requestPracticeNetworkServiceSource -match 'ITelehealthProspectivePracticeNetworkGateway' -and
+        $requestPracticeNetworkServiceSource -match 'RenderingPhysicianSelected: false' -and
+        $requestPracticeNetworkServiceSource -match 'RenderingPhysicianNetworkChecked: false' -and
+        $requestPracticeNetworkServiceSource -match 'ExactNetworkConfirmed: false' -and
+        $requestPracticeNetworkServiceSource -match 'CoverageVerified: false' -and
+        $requestPracticeNetworkServiceSource -match 'FinancialRouteCreated: false' -and
+        $requestPracticeNetworkServiceSource -match 'OperationalReviewCreated: false' -and
+        $requestPracticeNetworkServiceSource -match 'PatientCareQueueEntered: false' -and
+        $requestPracticeNetworkServiceSource -match 'CareAuthorized: false' -and
+        $requestPracticeNetworkServiceSource -match 'ExternalCallPerformed: false' -and
+        $requestPracticeNetworkPolicySource -match 'SYNTHETIC_APPLICANT_REQUEST_PRACTICE_NETWORK_VERIFICATION' -and
+        $requestPracticeNetworkPolicySource -match 'EntryRequestVersion = 7' -and
+        $requestPracticeNetworkPolicySource -match 'ResultingRequestVersion = 8' -and
+        $requestPracticeNetworkMigrationSource -match 'enforce_th_app_request_practice_network' -and
+        $requestPracticeNetworkMigrationSource -match 'not rendering_physician_selected' -and
+        $requestPracticeNetworkMigrationSource -match 'not exact_network_confirmed' -and
+        $requestPracticeNetworkMigrationSource -match 'chk_th_app_req_practice_network_no_consequence' -and
+        $requestPracticeNetworkMigrationSource -match 'reject_telehealth_evidence_mutation' -and
+        $requestPracticeNetworkMigrationSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
+        $endpointSource -match '/\{applicantId:guid\}/telehealth-request/practice-network')
     $videoProviderSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoProvider.cs')
     $videoServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoService.cs')
     $videoRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoRepository.cs')
@@ -1039,8 +1067,8 @@ try {
             $health.status -eq 'healthy' -and
             $telehealth.data.enabled -eq $true -and
             $telehealth.data.mode -eq 'Synthetic' -and
-            [int]$telehealth.data.requiredTableCount -eq 65 -and
-            [int]$telehealth.data.presentTableCount -eq 65) $telehealth
+            [int]$telehealth.data.requiredTableCount -eq 66 -and
+            [int]$telehealth.data.presentTableCount -eq 66) $telehealth
     }
 }
 catch {
@@ -1050,7 +1078,7 @@ finally {
     $result = [ordered]@{
         status=$(if ($passed) { 'passed' } else { 'failed' })
         generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O')
-        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049')
+        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050')
         checks=$checks
     }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8

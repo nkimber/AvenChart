@@ -473,6 +473,24 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/practice-network", GetApplicantTelehealthRequestPracticeNetworkAsync)
+            .WithName("GetTelehealthApplicantRequestPracticeNetwork")
+            .WithDescription("Returns the applicant owner's private request-time practice/facility/service network state. It does not select or check a rendering physician and is not exact-network confirmation.")
+            .Produces<TelehealthApplicantRequestPracticeNetworkResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/practice-network", RunApplicantTelehealthRequestPracticeNetworkAsync)
+            .WithName("RunTelehealthApplicantRequestPracticeNetwork")
+            .WithDescription("Runs one fresh request-bound NON_PRODUCTION Plan-Net-shaped practice/facility/service fixture after current positive eligibility. It advances only Verification version 7 to 8; rendering-physician, exact-network, coverage, financial, operational, queue, care, integration, and external gates remain closed.")
+            .Accepts<RunTelehealthApplicantRequestPracticeNetworkVerification>("application/json")
+            .Produces<TelehealthApplicantRequestPracticeNetworkResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1569,6 +1587,39 @@ public static class TelehealthEndpoints
         HttpContext context,
         Guid applicantId,
         RunTelehealthApplicantRequestEligibilityVerification request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.RunAsync(
+                context,
+                applicantId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestPracticeNetworkAsync(
+        TelehealthApplicantRequestPracticeNetworkService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> RunApplicantTelehealthRequestPracticeNetworkAsync(
+        TelehealthApplicantRequestPracticeNetworkService service,
+        HttpContext context,
+        Guid applicantId,
+        RunTelehealthApplicantRequestPracticeNetworkVerification request,
         CancellationToken cancellationToken) =>
         ExecuteAsync(async () =>
         {

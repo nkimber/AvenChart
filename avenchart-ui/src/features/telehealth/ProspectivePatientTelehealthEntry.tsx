@@ -28,6 +28,7 @@ import {
   getApplicantTelehealthRequestComplaintTriage,
   getApplicantTelehealthRequestInsuranceSource,
   getApplicantTelehealthRequestEligibility,
+  getApplicantTelehealthRequestPracticeNetwork,
   getApplicantTelehealthRequestIntake,
   getApplicantTelehealthRequestLocation,
   getApplicantTelehealthRequestUniversalSafety,
@@ -52,6 +53,7 @@ import {
   recordApplicantMedicationInformation,
   recordApplicantDevicePreparation,
   runApplicantTelehealthRequestEligibility,
+  runApplicantTelehealthRequestPracticeNetwork,
   submitApplicantPracticeReview,
   verifyProspectiveApplicantContact,
   type TelehealthProspectiveApplicant,
@@ -104,6 +106,8 @@ import {
   type TelehealthApplicantRequestInsuranceSourceInput,
   type TelehealthApplicantRequestEligibility,
   type TelehealthApplicantRequestEligibilityInput,
+  type TelehealthApplicantRequestPracticeNetwork,
+  type TelehealthApplicantRequestPracticeNetworkInput,
   type TelehealthApplicantRequestIntake,
   type TelehealthApplicantRequestIntakeInput,
   type TelehealthApplicantRequestLocation,
@@ -167,6 +171,7 @@ type PendingRequestComplaintTriage = { content: string; idempotencyKey: string }
 type PendingRequestIntake = { content: string; idempotencyKey: string }
 type PendingRequestInsuranceSource = { content: string; idempotencyKey: string }
 type PendingRequestEligibility = { content: string; idempotencyKey: string }
+type PendingRequestPracticeNetwork = { content: string; idempotencyKey: string }
 type YesNoAnswer = '' | 'yes' | 'no'
 type ComplaintAnswer = '' | TelehealthSyntheticComplaintAnswer
 
@@ -342,6 +347,12 @@ const initialRequestInsuranceSourceConfirmations = {
 
 const initialRequestEligibilityAcknowledgments = {
   syntheticData: false,
+  noGuarantee: false,
+}
+
+const initialRequestPracticeNetworkAcknowledgments = {
+  syntheticData: false,
+  practiceOnly: false,
   noGuarantee: false,
 }
 
@@ -534,6 +545,10 @@ export default function ProspectivePatientTelehealthEntry() {
   const [requestEligibilityLoading, setRequestEligibilityLoading] = useState(false)
   const [requestEligibilityLoadAttempt, setRequestEligibilityLoadAttempt] = useState(0)
   const [requestEligibilityAcknowledgments, setRequestEligibilityAcknowledgments] = useState(initialRequestEligibilityAcknowledgments)
+  const [requestPracticeNetwork, setRequestPracticeNetwork] = useState<TelehealthApplicantRequestPracticeNetwork | null>(null)
+  const [requestPracticeNetworkLoading, setRequestPracticeNetworkLoading] = useState(false)
+  const [requestPracticeNetworkLoadAttempt, setRequestPracticeNetworkLoadAttempt] = useState(0)
+  const [requestPracticeNetworkAcknowledgments, setRequestPracticeNetworkAcknowledgments] = useState(initialRequestPracticeNetworkAcknowledgments)
   const [loading, setLoading] = useState(Boolean(applicantSession))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -566,6 +581,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const pendingRequestIntake = useRef<PendingRequestIntake | null>(null)
   const pendingRequestInsuranceSource = useRef<PendingRequestInsuranceSource | null>(null)
   const pendingRequestEligibility = useRef<PendingRequestEligibility | null>(null)
+  const pendingRequestPracticeNetwork = useRef<PendingRequestPracticeNetwork | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const safetyResultRef = useRef<HTMLDivElement>(null)
   const purposeResultRef = useRef<HTMLDivElement>(null)
@@ -593,6 +609,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const requestIntakeResultRef = useRef<HTMLDivElement>(null)
   const requestInsuranceSourceResultRef = useRef<HTMLDivElement>(null)
   const requestEligibilityResultRef = useRef<HTMLDivElement>(null)
+  const requestPracticeNetworkResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -701,6 +718,10 @@ export default function ProspectivePatientTelehealthEntry() {
   useEffect(() => {
     if (requestEligibility?.verificationCompleted) requestEligibilityResultRef.current?.focus()
   }, [requestEligibility])
+
+  useEffect(() => {
+    if (requestPracticeNetwork?.verificationCompleted) requestPracticeNetworkResultRef.current?.focus()
+  }, [requestPracticeNetwork])
 
   useEffect(() => {
     if (!applicantSession) {
@@ -1189,6 +1210,30 @@ export default function ProspectivePatientTelehealthEntry() {
       })
     return () => controller.abort()
   }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestInsuranceSource?.sourceConfirmed, requestEligibilityLoadAttempt])
+
+  useEffect(() => {
+    if (!applicantSession
+      || applicant?.status !== 'SyntheticRequestCreated'
+      || !requestEligibility?.verificationCompleted
+      || requestEligibility.businessOutcome !== 'EligibleBenefitsReported') return
+    const controller = new AbortController()
+    setRequestPracticeNetworkLoading(true)
+    setError(null)
+    getApplicantTelehealthRequestPracticeNetwork(
+      applicant.applicantId,
+      applicantSession.applicantAccessKey,
+      controller.signal,
+    )
+      .then(setRequestPracticeNetwork)
+      .catch((caught: unknown) => {
+        if (isRequestCancellation(caught)) return
+        setError(caught instanceof Error ? caught.message : 'Fresh practice-network verification could not be loaded.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestPracticeNetworkLoading(false)
+      })
+    return () => controller.abort()
+  }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestEligibility?.verificationCompleted, requestEligibility?.businessOutcome, requestPracticeNetworkLoadAttempt])
 
   function updateValue<Key extends keyof FormValues>(key: Key, value: FormValues[Key]) {
     pendingCreate.current = null
@@ -2895,6 +2940,58 @@ export default function ProspectivePatientTelehealthEntry() {
     }
   }
 
+  function updateRequestPracticeNetworkAcknowledgment(
+    key: keyof typeof initialRequestPracticeNetworkAcknowledgments,
+    checked: boolean,
+  ) {
+    pendingRequestPracticeNetwork.current = null
+    setRequestPracticeNetworkAcknowledgments((current) => ({ ...current, [key]: checked }))
+  }
+
+  async function runRequestPracticeNetwork(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!applicant || !applicantSession || !requestPracticeNetwork) return
+    if (!Object.values(requestPracticeNetworkAcknowledgments).every(Boolean)) {
+      setError('Accept all three synthetic practice-network acknowledgments before continuing.')
+      return
+    }
+    const input = {
+      expectedRequestVersion: requestPracticeNetwork.requestVersion,
+      networkSnapshotFingerprint: requestPracticeNetwork.networkSnapshotFingerprint,
+      syntheticDataConfirmed: true,
+      practiceOnlyScopeAcknowledged: true,
+      noGuaranteeAcknowledged: true,
+    } satisfies TelehealthApplicantRequestPracticeNetworkInput
+    const content = JSON.stringify(input)
+    if (!pendingRequestPracticeNetwork.current
+      || pendingRequestPracticeNetwork.current.content !== content) {
+      pendingRequestPracticeNetwork.current = { content, idempotencyKey: crypto.randomUUID() }
+    }
+
+    setError(null)
+    setSubmitting(true)
+    try {
+      const result = await runApplicantTelehealthRequestPracticeNetwork(
+        applicant.applicantId,
+        applicantSession.applicantAccessKey,
+        input,
+        pendingRequestPracticeNetwork.current.idempotencyKey,
+      )
+      setRequestPracticeNetwork(result)
+      pendingRequestPracticeNetwork.current = null
+      setRequestPracticeNetworkAcknowledgments(initialRequestPracticeNetworkAcknowledgments)
+    } catch (caught: unknown) {
+      if (caught instanceof ApiRequestError && caught.status && caught.status < 500) {
+        pendingRequestPracticeNetwork.current = null
+      }
+      setError(caught instanceof Error
+        ? caught.message
+        : 'Fresh request practice-network verification could not be completed.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   function restart() {
     clearApplicantSession()
     pendingCreate.current = null
@@ -2925,6 +3022,7 @@ export default function ProspectivePatientTelehealthEntry() {
     pendingRequestIntake.current = null
     pendingRequestInsuranceSource.current = null
     pendingRequestEligibility.current = null
+    pendingRequestPracticeNetwork.current = null
     setApplicantSession(null)
     setApplicant(null)
     setValues(initialValues)
@@ -3054,6 +3152,10 @@ export default function ProspectivePatientTelehealthEntry() {
     setRequestEligibilityLoading(false)
     setRequestEligibilityLoadAttempt(0)
     setRequestEligibilityAcknowledgments(initialRequestEligibilityAcknowledgments)
+    setRequestPracticeNetwork(null)
+    setRequestPracticeNetworkLoading(false)
+    setRequestPracticeNetworkLoadAttempt(0)
+    setRequestPracticeNetworkAcknowledgments(initialRequestPracticeNetworkAcknowledgments)
     setError(null)
   }
 
@@ -5267,6 +5369,78 @@ export default function ProspectivePatientTelehealthEntry() {
                     <p><strong>{requestEligibility.direction}</strong></p>
                     <p>The protected payload was decrypted only in server memory and was not copied. No raw transaction, network determination, canonical coverage, financial route, operational review, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
                     <ul>{requestEligibility.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                  </div>
+                ) : null}
+                {requestEligibility?.verificationCompleted
+                  && requestEligibility.businessOutcome === 'EligibleBenefitsReported'
+                  && requestPracticeNetworkLoading ? (
+                    <p role="status">Loading fresh practice-network verification…</p>
+                  ) : null}
+                {requestEligibility?.verificationCompleted
+                  && requestEligibility.businessOutcome === 'EligibleBenefitsReported'
+                  && !requestPracticeNetworkLoading
+                  && !requestPracticeNetwork ? (
+                    <button
+                      className="telehealth-button"
+                      type="button"
+                      onClick={() => setRequestPracticeNetworkLoadAttempt((value) => value + 1)}
+                    >
+                      Retry practice-network load
+                    </button>
+                  ) : null}
+                {requestPracticeNetwork?.verificationReady ? (
+                  <form className="telehealth-review-form" onSubmit={runRequestPracticeNetwork}>
+                    <div className="telehealth-synthetic" role="note">
+                      NON_PRODUCTION practice/facility/service fixture only. No external directory or payer will be contacted.
+                    </div>
+                    <h3>Verify the practice-level network fixture</h3>
+                    <p id="request-practice-network-help">This checks the configured practice, facility, service, state, date, and synthetic plan. It cannot establish exact network status because no rendering physician has been selected.</p>
+                    <dl className="telehealth-details" aria-describedby="request-practice-network-help">
+                      <div><dt>Practice</dt><dd>{requestPracticeNetwork.practiceDisplayName}</dd></div>
+                      <div><dt>Payer and product</dt><dd>{requestPracticeNetwork.payerDisplayName} — {requestPracticeNetwork.productDisplayName}</dd></div>
+                      <div><dt>Current state</dt><dd>{requestPracticeNetwork.currentLocationStateCode}</dd></div>
+                      <div><dt>Visit purpose</dt><dd>{requestPracticeNetwork.purposeCategory}</dd></div>
+                      <div><dt>Eligibility context</dt><dd>{requestPracticeNetwork.eligibilityBusinessOutcome}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestPracticeNetwork.requestVersion}</dd></div>
+                      <div><dt>Run before</dt><dd>{new Date(requestPracticeNetwork.contextExpiresAt).toLocaleString()}</dd></div>
+                    </dl>
+                    <fieldset className="telehealth-fieldset">
+                      <legend>Three required acknowledgments</legend>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestPracticeNetworkAcknowledgments.syntheticData} onChange={(event) => updateRequestPracticeNetworkAcknowledgment('syntheticData', event.target.checked)} /><span>I confirm this check uses only fictional synthetic demonstration data.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestPracticeNetworkAcknowledgments.practiceOnly} onChange={(event) => updateRequestPracticeNetworkAcknowledgment('practiceOnly', event.target.checked)} /><span>I understand this result covers only the configured practice/facility/service fixture and does not select or check a rendering physician.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestPracticeNetworkAcknowledgments.noGuarantee} onChange={(event) => updateRequestPracticeNetworkAcknowledgment('noGuarantee', event.target.checked)} /><span>I understand practice-level network evidence is not a guarantee of coverage, payment, cost, physician participation, or an appointment.</span></label>
+                    </fieldset>
+                    <ul>{requestPracticeNetwork.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                    <button
+                      className="telehealth-button"
+                      type="submit"
+                      disabled={submitting || !Object.values(requestPracticeNetworkAcknowledgments).every(Boolean)}
+                    >
+                      {submitting ? 'Running practice-network verification…' : 'Run synthetic practice-network check'}
+                    </button>
+                  </form>
+                ) : null}
+                {requestPracticeNetwork?.verificationCompleted ? (
+                  <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestPracticeNetworkResultRef}>
+                    <h3>Fresh practice-network result recorded</h3>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestPracticeNetwork.requestId}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestPracticeNetwork.requestStatus}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestPracticeNetwork.requestVersion}</dd></div>
+                      <div><dt>Practice</dt><dd>{requestPracticeNetwork.practiceDisplayName}</dd></div>
+                      <div><dt>Plan-network match</dt><dd>{requestPracticeNetwork.planNetworkMatchStatus}</dd></div>
+                      <div><dt>Practice affiliation</dt><dd>{requestPracticeNetwork.practiceAffiliationStatus}</dd></div>
+                      <div><dt>Telehealth service</dt><dd>{requestPracticeNetwork.serviceAvailabilityStatus}</dd></div>
+                      <div><dt>Accepting new patients</dt><dd>{requestPracticeNetwork.newPatientAcceptanceStatus}</dd></div>
+                      <div><dt>Business result</dt><dd>{requestPracticeNetwork.businessOutcome}</dd></div>
+                      <div><dt>Composite evidence expires</dt><dd>{requestPracticeNetwork.evidenceExpiresAt ? new Date(requestPracticeNetwork.evidenceExpiresAt).toLocaleString() : 'Unavailable'}</dd></div>
+                      <div><dt>Rendering physician selected</dt><dd>{requestPracticeNetwork.renderingPhysicianSelected ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Exact network confirmed</dt><dd>{requestPracticeNetwork.exactNetworkConfirmed ? 'Yes' : 'No — physician check still required'}</dd></div>
+                      <div><dt>Doctor search or queue</dt><dd>{requestPracticeNetwork.doctorSearchStarted || requestPracticeNetwork.patientCareQueueEntered || requestPracticeNetwork.clinicianQueueEntered ? 'Started' : 'Not started'}</dd></div>
+                    </dl>
+                    <p><strong>{requestPracticeNetwork.direction}</strong></p>
+                    <p>No rendering physician, canonical coverage, financial route, operational review, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
+                    <ul>{requestPracticeNetwork.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                   </div>
                 ) : null}
               </>
