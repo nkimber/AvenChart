@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
 
 const practiceContext = {
   available: true,
@@ -10,6 +10,14 @@ const practiceContext = {
   supportedStates: ['GA', 'CA', 'FL'],
   syntheticOnly: true,
   entryMessage: 'Synthetic demonstration only. This service is not available for patient care.',
+}
+
+async function fulfillQueueStatusUnavailable(route: Route) {
+  await route.fulfill({
+    status: 409,
+    contentType: 'application/problem+json',
+    body: JSON.stringify({ code: 'telehealth_applicant_request_queue_status_state_conflict' }),
+  })
 }
 
 const prospectiveApplicant = {
@@ -1233,6 +1241,10 @@ test.describe('telehealth accessibility', () => {
     await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
       const request = route.request()
       const path = new URL(request.url()).pathname
+      if (path.endsWith('/telehealth-request/queue-status')) {
+        await fulfillQueueStatusUnavailable(route)
+        return
+      }
       if (path.endsWith('/telehealth-request')) {
         expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('g'.repeat(64))
         if (request.method() === 'POST') {
@@ -1388,6 +1400,10 @@ test.describe('telehealth accessibility', () => {
       const request = route.request()
       const path = new URL(request.url()).pathname
       expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('h'.repeat(64))
+      if (path.endsWith('/telehealth-request/queue-status')) {
+        await fulfillQueueStatusUnavailable(route)
+        return
+      }
       if (path.endsWith('/telehealth-request/location')) {
         if (request.method() === 'POST') {
           confirmationCalls += 1
@@ -1605,6 +1621,10 @@ test.describe('telehealth accessibility', () => {
       const request = route.request()
       const path = new URL(request.url()).pathname
       expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('i'.repeat(64))
+      if (path.endsWith('/telehealth-request/queue-status')) {
+        await fulfillQueueStatusUnavailable(route)
+        return
+      }
       if (path.endsWith('/telehealth-request/safety')) {
         if (request.method() === 'POST') {
           assessmentCalls += 1
@@ -1881,6 +1901,10 @@ test.describe('telehealth accessibility', () => {
       const request = route.request()
       const path = new URL(request.url()).pathname
       expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('q'.repeat(64))
+      if (path.endsWith('/telehealth-request/queue-status')) {
+        await fulfillQueueStatusUnavailable(route)
+        return
+      }
       if (path.endsWith('/telehealth-request/complaint-triage')) {
         if (request.method() === 'POST') {
           assessmentCalls += 1
@@ -2803,6 +2827,10 @@ test.describe('telehealth accessibility', () => {
       const request = route.request()
       const path = new URL(request.url()).pathname
       expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('r'.repeat(64))
+      if (path.endsWith('/telehealth-request/queue-status')) {
+        await fulfillQueueStatusUnavailable(route)
+        return
+      }
       if (path.endsWith('/telehealth-request/operational-review-submission')) {
         if (request.method() === 'POST') {
           operationalReviewSubmissionCalls += 1
@@ -3940,6 +3968,10 @@ test.describe('telehealth accessibility', () => {
     await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
       const request = route.request()
       const path = new URL(request.url()).pathname
+      if (path.endsWith('/telehealth-request/queue-status')) {
+        await fulfillQueueStatusUnavailable(route)
+        return
+      }
       if (path.endsWith('/practice-review-submission')) {
         if (request.method() === 'GET') {
           practiceReviewGetCalls += 1
@@ -5008,7 +5040,12 @@ test.describe('telehealth accessibility', () => {
     const identityProofingBodies: Array<Record<string, unknown>> = []
     await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
       const request = route.request()
-      if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/safety-triage')) {
+      const path = new URL(request.url()).pathname
+      if (path.endsWith('/telehealth-request/queue-status')) {
+        await fulfillQueueStatusUnavailable(route)
+        return
+      }
+      if (request.method() === 'POST' && path.endsWith('/safety-triage')) {
         safetyCalls += 1
         safetyKeys.push(request.headers()['x-idempotency-key'])
         safetyBodies.push(request.postDataJSON() as Record<string, unknown>)
@@ -5019,7 +5056,7 @@ test.describe('telehealth accessibility', () => {
         await route.fulfill({ json: prospectiveSafetyPassed })
         return
       }
-      if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/visit-purpose')) {
+      if (request.method() === 'POST' && path.endsWith('/visit-purpose')) {
         purposeCalls += 1
         purposeKeys.push(request.headers()['x-idempotency-key'])
         purposeBodies.push(request.postDataJSON() as Record<string, unknown>)

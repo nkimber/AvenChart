@@ -663,6 +663,9 @@ test.describe("accessibility gate", () => {
     const apiBaseUrl =
       process.env.MODERN_UI_API_BASE_URL ?? "http://127.0.0.1:5001";
     const marker = `TMP-CLIN-AUTH-AXE-${testInfo.project.name}-${Date.now()}`;
+    const requestedAt = new Date();
+    const dueAt = new Date(requestedAt);
+    dueAt.setUTCDate(dueAt.getUTCDate() + 4);
     const fixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/patients/${clinicianFixture.patientId}/authorizations`,
       {
@@ -670,18 +673,17 @@ test.describe("accessibility gate", () => {
         data: {
           payer: marker,
           service: `${marker} service`,
-          // Keep the fixture internally valid regardless of the day CI runs.
-          // The API otherwise defaults requestedAt to "today", which eventually
-          // made the once-static responsibility date invalid.
-          requestedAt: "2026-08-01",
+          // Keep both dates valid regardless of the day CI runs.
+          requestedAt: requestedAt.toISOString().slice(0, 10),
           assignedTo: "admin",
-          dueAt: "2026-08-05",
+          dueAt: dueAt.toISOString().slice(0, 10),
           reason: `${marker} dynamic-state accessibility fixture`,
         },
       },
     );
-    expect(fixtureResponse.status()).toBe(201);
-    const fixtureId = ((await fixtureResponse.json()) as { id: string }).id;
+    const fixtureResponseBody = await fixtureResponse.text();
+    expect(fixtureResponse.status(), fixtureResponseBody).toBe(201);
+    const fixtureId = (JSON.parse(fixtureResponseBody) as { id: string }).id;
 
     try {
       await navigateWithinApplication(

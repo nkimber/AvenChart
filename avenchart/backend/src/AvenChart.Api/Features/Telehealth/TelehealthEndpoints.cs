@@ -563,6 +563,14 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/queue-status", GetApplicantTelehealthRequestQueueStatusAsync)
+            .WithName("GetTelehealthApplicantRequestQueueStatus")
+            .WithDescription("Returns the access-key owner's authoritative synthetic request phase and, only while queued, an approximate same-practice/facility requests-ahead snapshot. It assigns no exact position, promises no wait time, and exposes no clinician identity, coverage, consent, or care authority.")
+            .Produces<TelehealthApplicantRequestQueueStatusResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1852,6 +1860,21 @@ public static class TelehealthEndpoints
                 request,
                 ReadApplicantAccessKey(context),
                 ReadIdempotencyKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestQueueStatusAsync(
+        TelehealthApplicantRequestQueueStatusService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
                 cancellationToken));
         });
 

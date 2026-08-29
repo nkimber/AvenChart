@@ -160,3 +160,123 @@ test('applicant queue authorization preserves an unchanged retry and accessible 
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('a'.repeat(64))
   expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toContain('a'.repeat(64))
 })
+
+test('applicant queue status preserves the last confirmed state and recovers without disclosing an exact position', async ({ page }) => {
+  const applicantId = '53000000-0000-4000-8000-000000000053'
+  const applicantKey = 'q'.repeat(64)
+  const requestId = '53000000-0000-4000-8000-000000000054'
+  await page.addInitScript((session) => {
+    sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
+  }, { applicantId, applicantAccessKey: applicantKey })
+  await page.route('**/api/telehealth/v1/context', (route) => route.fulfill({ json: {
+    available: true,
+    practiceDisplayName: 'AvenChart Synthetic Practice',
+    supportedStates: ['GA', 'CA', 'FL'],
+    syntheticOnly: true,
+    entryMessage: 'Synthetic demonstration only. This service is not available for patient care.',
+  } }))
+
+  let queueStatusMode: 'reviewing' | 'fail' | 'queued' = 'reviewing'
+  await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe(applicantKey)
+    if (path.endsWith('/telehealth-request/queue-status')) {
+      if (queueStatusMode === 'fail') {
+        queueStatusMode = 'queued'
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/problem+json',
+          body: JSON.stringify({ detail: 'Synthetic queue status temporarily unavailable.' }),
+        })
+        return
+      }
+      const queued = queueStatusMode === 'queued'
+      await route.fulfill({ json: {
+        requestId,
+        requestStatus: queued ? 'Queued' : 'OperationalReview',
+        requestVersion: queued ? 13 : 12,
+        policyKey: 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_STATUS',
+        policyVersion: 1,
+        sourceMode: 'NON_PRODUCTION',
+        phase: queued ? 'InQueue' : 'Reviewing',
+        headline: queued ? "You're in line" : 'Reviewing your request',
+        detail: queued
+          ? 'Approximately 2 requests are ahead. This can change for safety or operational reasons.'
+          : 'Your practice has not placed this request in the physician queue yet.',
+        approximateRequestsAhead: queued ? 2 : null,
+        positionIsApproximate: queued,
+        exactQueuePositionAssigned: false,
+        waitEstimateAvailable: false,
+        waitEstimateMessage: 'A wait-time estimate is not available in this synthetic demonstration.',
+        requestUpdatedAt: '2026-08-29T14:00:00Z',
+        snapshotAt: '2026-08-29T14:00:01Z',
+        refreshAfterSeconds: 5,
+        realtimeAvailable: false,
+        practiceAccepted: queued,
+        doctorSearchStarted: queued,
+        renderingPhysicianAssigned: false,
+        renderingPhysicianIdentityDisclosed: false,
+        coverageVerified: false,
+        consentCreated: false,
+        careAuthorized: false,
+        integrationEnabled: false,
+        externalCallPerformed: false,
+        safetyActions: ['If symptoms worsen or you are unsure it is safe to wait, seek in-person care.', 'Call 911 now for an emergency.'],
+        limitations: ['Approximate synthetic status only; no clinician is assigned.'],
+      } })
+      return
+    }
+    if (path.endsWith(`/applicants/${applicantId}`)) {
+      await route.fulfill({ json: {
+        applicantId,
+        status: 'SyntheticRequestCreated',
+        version: 26,
+        practiceDisplayName: 'AvenChart Synthetic Practice',
+        residenceStateCode: 'GA',
+        maskedEmail: 'q•••@example.test',
+        maskedPhone: '(***) ***-0153',
+        contactVerified: true,
+        identityAssurance: 'ContactControlOnly',
+        duplicateDisposition: 'NoCandidate',
+        canonicalPatientCreated: true,
+        verificationAttemptsRemaining: 0,
+        expiresAt: '2026-10-31T23:59:59Z',
+        demonstrationVerificationCode: null,
+        nextAction: 'Wait for the synthetic practice queue status.',
+        limitations: ['Synthetic demonstration only.'],
+      } })
+      return
+    }
+    await route.fulfill({
+      status: 409,
+      contentType: 'application/problem+json',
+      body: JSON.stringify({ detail: 'This completed prerequisite is not reloaded in the queue-status journey.' }),
+    })
+  })
+
+  await page.goto('/telehealth/new')
+  await expect(page.getByRole('heading', { name: 'Reviewing your request' })).toBeVisible()
+  await expect(page.getByText(/Practice accepted for synthetic queue/).locator('..')).toContainText('Not yet')
+  const refresh = page.getByRole('button', { name: 'Refresh queue status now' })
+  queueStatusMode = 'fail'
+  await refresh.focus()
+  await refresh.press('Enter')
+  await expect(page.getByRole('alert').filter({ hasText: 'last confirmed status remains shown' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Reviewing your request' })).toBeVisible()
+  await expect(refresh).toBeFocused()
+  const retry = page.getByRole('button', { name: 'Retry queue status' })
+  await retry.focus()
+  await retry.press('Enter')
+  await expect(page.getByRole('heading', { name: "You're in line" })).toBeVisible()
+  await expect(page.getByText(/Approximate requests ahead:/).locator('..')).toContainText('2')
+  await expect(page.getByText(/Exact queue position assigned/).locator('..')).toContainText('No')
+  await expect(page.getByText(/Wait estimate available/).locator('..')).toContainText('No')
+  await expect(page.getByText(/Physician assigned/).locator('..')).toContainText('No')
+  const accessibility = await new AxeBuilder({ page }).analyze()
+  expect(accessibility.violations.filter((violation) => violation.impact === 'serious' || violation.impact === 'critical')).toEqual([])
+  await page.setViewportSize({ width: 320, height: 720 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true)
+  const stored = await page.evaluate(() => JSON.stringify({ session: sessionStorage, local: localStorage }))
+  expect(stored).not.toMatch(/requestId|queueStatus|approximateRequestsAhead|OperationalReview|Queued|physician/i)
+})

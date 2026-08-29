@@ -7,7 +7,7 @@ First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 52 applicant request queue authorization](sprint-52-applicant-request-queue-authorization.md); bounded automated implementation evidence is recorded in the [Sprint 52 evidence packet](sprint-52-evidence.md)
+Current increment: [Sprint 53 applicant request queue status](sprint-53-applicant-request-queue-status.md); bounded automated implementation evidence is being recorded in the [Sprint 53 evidence packet](sprint-53-evidence.md)
 
 ## 1. Backlog contract
 

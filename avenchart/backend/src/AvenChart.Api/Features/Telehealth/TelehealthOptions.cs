@@ -153,6 +153,8 @@ public static class TelehealthServiceRegistration
         services.AddScoped<TelehealthApplicantRequestOperationalReviewSubmissionService>();
         services.AddScoped<TelehealthApplicantRequestQueueAuthorizationRepository>();
         services.AddScoped<TelehealthApplicantRequestQueueAuthorizationService>();
+        services.AddScoped<TelehealthApplicantRequestQueueStatusRepository>();
+        services.AddScoped<TelehealthApplicantRequestQueueStatusService>();
         services.AddScoped<TelehealthVideoRepository>();
         services.AddScoped<TelehealthVideoService>();
         services.AddScoped<TelehealthConsultationRepository>();

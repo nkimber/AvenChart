@@ -84,6 +84,8 @@ try {
   Add-Check 'Applicant request operational-review submission rejects an absent applicant access key' (
     (Invoke-Status 'GET' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/operational-review-submission') -eq 401 -and
     (Invoke-Status 'POST' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/operational-review-submission' @{} $requestOperationalReviewSubmissionBody) -eq 401)
+  Add-Check 'Applicant request queue status rejects an absent applicant access key' (
+    (Invoke-Status 'GET' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/queue-status') -eq 401)
   Add-Check 'Applicant request queue authorization rejects an absent staff identity' (
     (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization') -eq 401 -and
     (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' @{} $requestQueueAuthorizationBody) -eq 401)
@@ -249,6 +251,8 @@ try {
   Add-Check 'Applicant request operational-review submission rejects portal-session substitution for the applicant access key' (
     (Invoke-Status 'GET' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/operational-review-submission' @{'X-AvenChart-Patient-Portal-Session'=$patient.sessionId}) -eq 401 -and
     (Invoke-Status 'POST' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/operational-review-submission' @{'X-AvenChart-Patient-Portal-Session'=$patient.sessionId} $requestOperationalReviewSubmissionBody) -eq 401)
+  Add-Check 'Applicant request queue status rejects portal-session substitution for the applicant access key' (
+    (Invoke-Status 'GET' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/queue-status' @{'X-AvenChart-Patient-Portal-Session'=$patient.sessionId}) -eq 401)
   Add-Check 'Applicant request queue authorization rejects portal-session substitution for staff identity' (
     (Invoke-Status 'GET' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' @{'X-AvenChart-Patient-Portal-Session'=$patient.sessionId}) -eq 401 -and
     (Invoke-Status 'POST' '/api/telehealth/v1/admin/applicant-requests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/queue-authorization' @{'X-AvenChart-Patient-Portal-Session'=$patient.sessionId} $requestQueueAuthorizationBody) -eq 401)
@@ -344,6 +348,8 @@ try {
   Add-Check 'Applicant request operational-review submission rejects staff-session substitution for the applicant access key' (
     (Invoke-Status 'GET' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/operational-review-submission' $adminHeaders) -eq 401 -and
     (Invoke-Status 'POST' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/operational-review-submission' $adminHeaders $requestOperationalReviewSubmissionBody) -eq 401)
+  Add-Check 'Applicant request queue status rejects staff-session substitution for the applicant access key' (
+    (Invoke-Status 'GET' '/api/telehealth/v1/applicants/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/telehealth-request/queue-status' $adminHeaders) -eq 401)
   $missingPurpose=@{'X-AvenChart-Session'=$admin.sessionId;'X-AvenChart-Facility-Id'='10'}
   $missingPurposeClaim=$missingPurpose.Clone();$missingPurposeClaim['X-Idempotency-Key']="th-auth-claim-missing-purpose-$([Guid]::NewGuid().ToString('N'))"
   $missingPurposeAuthorization=$missingPurpose.Clone();$missingPurposeAuthorization['X-Idempotency-Key']="th-auth-authorization-missing-purpose-$([Guid]::NewGuid().ToString('N'))"
@@ -419,5 +425,5 @@ catch {
     stack = $_.ScriptStackTrace
   }
 }
-finally{$result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10}
+finally{$result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10}
 if(-not$passed){exit 1}

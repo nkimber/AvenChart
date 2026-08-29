@@ -2274,6 +2274,38 @@ export type TelehealthApplicantRequestOperationalReviewSubmission = {
   limitations: string[]
 }
 
+export type TelehealthApplicantRequestQueueStatus = {
+  requestId: string
+  requestStatus: 'OperationalReview' | 'Queued'
+  requestVersion: number
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_STATUS'
+  policyVersion: 1
+  sourceMode: 'NON_PRODUCTION'
+  phase: 'Reviewing' | 'InQueue'
+  headline: string
+  detail: string
+  approximateRequestsAhead: number | null
+  positionIsApproximate: boolean
+  exactQueuePositionAssigned: false
+  waitEstimateAvailable: false
+  waitEstimateMessage: string
+  requestUpdatedAt: string
+  snapshotAt: string
+  refreshAfterSeconds: number
+  realtimeAvailable: false
+  practiceAccepted: boolean
+  doctorSearchStarted: boolean
+  renderingPhysicianAssigned: boolean
+  renderingPhysicianIdentityDisclosed: false
+  coverageVerified: false
+  consentCreated: false
+  careAuthorized: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  safetyActions: string[]
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -3907,6 +3939,21 @@ export function submitApplicantTelehealthRequestForOperationalReview(
       }),
       cache: 'no-store',
       body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequestQueueStatus(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestQueueStatus>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/queue-status`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
     },
   )
 }

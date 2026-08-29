@@ -755,6 +755,37 @@ public sealed record TelehealthPatientQueueStatusResponse(
     bool RealtimeAvailable,
     IReadOnlyList<string> SafetyActions);
 
+public sealed record TelehealthApplicantRequestQueueStatusResponse(
+    Guid RequestId,
+    string RequestStatus,
+    int RequestVersion,
+    string PolicyKey,
+    int PolicyVersion,
+    string SourceMode,
+    string Phase,
+    string Headline,
+    string Detail,
+    int? ApproximateRequestsAhead,
+    bool PositionIsApproximate,
+    bool ExactQueuePositionAssigned,
+    bool WaitEstimateAvailable,
+    string WaitEstimateMessage,
+    DateTimeOffset RequestUpdatedAt,
+    DateTimeOffset SnapshotAt,
+    int RefreshAfterSeconds,
+    bool RealtimeAvailable,
+    bool PracticeAccepted,
+    bool DoctorSearchStarted,
+    bool RenderingPhysicianAssigned,
+    bool RenderingPhysicianIdentityDisclosed,
+    bool CoverageVerified,
+    bool ConsentCreated,
+    bool CareAuthorized,
+    bool IntegrationEnabled,
+    bool ExternalCallPerformed,
+    IReadOnlyList<string> SafetyActions,
+    IReadOnlyList<string> Limitations);
+
 public sealed record TelehealthOperationalReviewItem(
     Guid RequestId,
     string Status,

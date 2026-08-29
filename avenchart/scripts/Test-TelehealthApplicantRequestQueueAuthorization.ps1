@@ -5,7 +5,8 @@
 param(
     [string]$ApiBaseUrl = 'http://127.0.0.1:5001',
     [ValidatePattern('^[a-z][a-z0-9_]{2,62}$')]
-    [string]$DatabaseName = 'avenchart'
+    [string]$DatabaseName = 'avenchart',
+    [switch]$VerifyApplicantQueueStatus
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,6 +29,13 @@ function Add-QueueAuthorizationCheck([string]$Name,[bool]$Result,[object]$Detail
 }
 function Queue-Authorization-Path([string]$RequestId) {
     "/api/telehealth/v1/admin/applicant-requests/$RequestId/queue-authorization"
+}
+function Applicant-Queue-Status-Path([string]$ApplicantId) {
+    "/api/telehealth/v1/applicants/$ApplicantId/telehealth-request/queue-status"
+}
+function Get-Applicant-Queue-Status([object]$Applicant) {
+    Invoke-RestMethod "$ApiBaseUrl$(Applicant-Queue-Status-Path $Applicant.Id)" `
+        -Headers @{'X-AvenChart-Telehealth-Applicant-Key'=$Applicant.Secret} -TimeoutSec 30
 }
 function New-Queue-Authorization-Body([object]$Ready) {
     [ordered]@{
@@ -115,6 +123,20 @@ try {
             $null-eq$ready.PSObject.Properties['candidateStaffId'] -and
             $null-eq$ready.PSObject.Properties['canonicalPatientId']
         }).Count-eq 3)
+    if($VerifyApplicantQueueStatus) {
+        $reviewingStatuses=@($queueAuthorizationApplicants|ForEach-Object{Get-Applicant-Queue-Status $_})
+        Add-QueueAuthorizationCheck 'Applicant-owned status remains reviewing before the practice authorizes queue entry' (
+            @($reviewingStatuses|Where-Object{
+                $_.requestStatus-eq'OperationalReview' -and $_.requestVersion-eq 12 -and
+                $_.phase-eq'Reviewing' -and $_.headline-eq'Reviewing your request' -and
+                -not$_.practiceAccepted -and -not$_.doctorSearchStarted -and
+                $null-eq$_.approximateRequestsAhead -and -not$_.positionIsApproximate -and
+                -not$_.exactQueuePositionAssigned -and -not$_.waitEstimateAvailable -and
+                -not$_.renderingPhysicianAssigned -and -not$_.renderingPhysicianIdentityDisclosed -and
+                -not$_.coverageVerified -and -not$_.consentCreated -and -not$_.careAuthorized -and
+                -not$_.integrationEnabled -and -not$_.externalCallPerformed
+            }).Count-eq 3)
+    }
 
     $spare=$queueAuthorizationApplicants[2]
     $validSpare=New-Queue-Authorization-Body $spare.QueueAuthorizationReady

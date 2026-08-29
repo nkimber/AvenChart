@@ -1106,6 +1106,25 @@ try {
         $telehealthRepositorySource -match 'telehealth_applicant_request_dedicated_authorization_required' -and
         $telehealthRepositorySource -match 'source_applicant_id is not null' -and
         $endpointSource -match '/applicant-requests/\{requestId:guid\}/queue-authorization')
+    $applicantQueueStatusRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestQueueStatusRepository.cs')
+    $applicantQueueStatusServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestQueueStatusService.cs')
+    $applicantQueueStatusPolicySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestQueueStatusPolicy.cs')
+    Add-Check 'Applicant queue status is a read-only access-key projection with approximate-only position and no care or external consequence' (
+        $applicantQueueStatusRepositorySource -match 'telehealth_applicant_request_queue_authorizations' -and
+        $applicantQueueStatusRepositorySource -match 'source_applicant_id=a.applicant_id' -and
+        $applicantQueueStatusRepositorySource -match "candidate.status='Ready'" -and
+        $applicantQueueStatusRepositorySource -notmatch '(?i)\b(insert\s+into|update\s+|delete\s+from|truncate\s+)\b' -and
+        $applicantQueueStatusRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|WebRequest|SendAsync' -and
+        $applicantQueueStatusServiceSource -match 'RequireAccessKey' -and
+        $applicantQueueStatusPolicySource -match 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_STATUS' -and
+        $applicantQueueStatusPolicySource -match 'ExactQueuePositionAssigned: false' -and
+        $applicantQueueStatusPolicySource -match 'WaitEstimateAvailable: false' -and
+        $applicantQueueStatusPolicySource -match 'RenderingPhysicianIdentityDisclosed: false' -and
+        $applicantQueueStatusPolicySource -match 'CoverageVerified: false' -and
+        $applicantQueueStatusPolicySource -match 'ConsentCreated: false' -and
+        $applicantQueueStatusPolicySource -match 'CareAuthorized: false' -and
+        $applicantQueueStatusPolicySource -match 'ExternalCallPerformed: false' -and
+        $endpointSource -match '/\{applicantId:guid\}/telehealth-request/queue-status')
     $videoProviderSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoProvider.cs')
     $videoServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoService.cs')
     $videoRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoRepository.cs')
@@ -1217,7 +1236,7 @@ finally {
     $result = [ordered]@{
         status=$(if ($passed) { 'passed' } else { 'failed' })
         generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O')
-        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055')
+        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056')
         checks=$checks
     }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8

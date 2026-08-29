@@ -142,6 +142,7 @@ import {
   type TelehealthApplicantSession,
 } from './applicantSession.ts'
 import { runTelehealthDevicePreflight, type TelehealthPreflightResult } from './devicePreflight.ts'
+import ApplicantTelehealthQueueStatus from './ApplicantTelehealthQueueStatus.tsx'
 import './telehealth.css'
 
 type FormValues = Omit<TelehealthProspectiveApplicantInput, 'syntheticDataConfirmed'> & {
@@ -6151,6 +6152,13 @@ export default function ProspectivePatientTelehealthEntry() {
                     <p>No staff decision, practice acceptance, coverage, financial route, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
                     <ul>{requestOperationalReviewSubmission.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                   </div>
+                ) : null}
+                {applicantSession ? (
+                  <ApplicantTelehealthQueueStatus
+                    applicantId={applicant.applicantId}
+                    applicantAccessKey={applicantSession.applicantAccessKey}
+                    enabled={applicant.version === 26}
+                  />
                 ) : null}
               </>
             ) : null}
