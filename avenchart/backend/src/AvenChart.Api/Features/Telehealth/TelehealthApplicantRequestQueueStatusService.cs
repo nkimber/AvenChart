@@ -19,11 +19,13 @@ public sealed class TelehealthApplicantRequestQueueStatusService(
     {
         RequireConfiguredHost(httpContext.Request.Host);
         var key = TelehealthProspectiveApplicantPolicy.RequireAccessKey(applicantAccessKey);
+        var accessKeyHash = TelehealthProspectiveApplicantPolicy.Hash(key);
         var record = await repository.GetAsync(
             _options.PracticeId,
             _options.FacilityId,
             applicantId,
-            TelehealthProspectiveApplicantPolicy.Hash(key),
+            accessKeyHash,
+            TelehealthApplicantConnectionPolicy.CreateParticipantSubjectHash(applicantId, accessKeyHash),
             cancellationToken);
         return TelehealthApplicantRequestQueueStatusPolicy.Create(record);
     }

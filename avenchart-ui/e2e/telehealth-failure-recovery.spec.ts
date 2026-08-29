@@ -217,6 +217,12 @@ test('applicant queue status preserves the last confirmed state and recovers wit
         doctorSearchStarted: queued,
         renderingPhysicianAssigned: false,
         renderingPhysicianIdentityDisclosed: false,
+        syntheticRenderingCandidateMatched: false,
+        realRenderingPhysicianNetworkConfirmed: false,
+        connectionRoomCreated: false,
+        patientWaitingRoomEntered: false,
+        mediaSessionCreated: false,
+        communicationStarted: false,
         coverageVerified: false,
         consentCreated: false,
         careAuthorized: false,
@@ -279,4 +285,171 @@ test('applicant queue status preserves the last confirmed state and recovers wit
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true)
   const stored = await page.evaluate(() => JSON.stringify({ session: sessionStorage, local: localStorage }))
   expect(stored).not.toMatch(/requestId|queueStatus|approximateRequestsAhead|OperationalReview|Queued|physician/i)
+})
+
+test('applicant waiting-room entry stops local tracks and retries the unchanged bounded command', async ({ page }) => {
+  const applicantId = '55000000-0000-4000-8000-000000000055'
+  const applicantKey = 'w'.repeat(64)
+  const requestId = '55000000-0000-4000-8000-000000000056'
+  const secretCredential = 'synthetic-secret-that-must-never-be-rendered-or-stored'
+  await page.addInitScript((session) => {
+    sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
+    Object.defineProperty(window, 'RTCPeerConnection', { configurable: true, value: function SyntheticPeerConnection() {} })
+    Object.defineProperty(navigator, 'connection', { configurable: true, value: { effectiveType: '4g' } })
+    ;(window as typeof window & { __telehealthStoppedTracks?: number }).__telehealthStoppedTracks = 0
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: async () => ({
+          getTracks: () => [
+            { kind: 'audio', stop: () => { (window as typeof window & { __telehealthStoppedTracks: number }).__telehealthStoppedTracks += 1 } },
+            { kind: 'video', stop: () => { (window as typeof window & { __telehealthStoppedTracks: number }).__telehealthStoppedTracks += 1 } },
+          ],
+        }),
+      },
+    })
+  }, { applicantId, applicantAccessKey: applicantKey })
+  await page.route('**/api/telehealth/v1/context', (route) => route.fulfill({ json: {
+    available: true,
+    practiceDisplayName: 'AvenChart Synthetic Practice',
+    supportedStates: ['GA', 'CA', 'FL'],
+    syntheticOnly: true,
+    entryMessage: 'Synthetic demonstration only. This service is not available for patient care.',
+  } }))
+
+  let connecting = false
+  const connectionCommands: Array<{ body: Record<string, unknown>, idempotency: string | undefined }> = []
+  await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe(applicantKey)
+    if (path.endsWith(`/telehealth-request/${requestId}/connection-grants`)) {
+      connectionCommands.push({
+        body: request.postDataJSON() as Record<string, unknown>,
+        idempotency: request.headers()['x-idempotency-key'],
+      })
+      if (connectionCommands.length === 1) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/problem+json',
+          body: JSON.stringify({ detail: 'Waiting-room result unknown; retry unchanged.' }),
+        })
+        return
+      }
+      connecting = true
+      await route.fulfill({ json: {
+        requestId,
+        appointmentId: 550056,
+        sessionId: '55000000-0000-4000-8000-000000000057',
+        participantRole: 'patient',
+        providerKind: 'SyntheticNonProduction',
+        joinCredential: secretCredential,
+        expiresAt: '2026-08-29T15:15:00Z',
+        requestStatus: 'Connecting',
+        requestVersion: 15,
+        waitingRoomMessage: 'Your private synthetic waiting room is ready.',
+        limitations: ['No media transport or communication has started.'],
+      } })
+      return
+    }
+    if (path.endsWith('/telehealth-request/queue-status')) {
+      await route.fulfill({ json: {
+        requestId,
+        requestStatus: connecting ? 'Connecting' : 'Reserved',
+        requestVersion: connecting ? 15 : 14,
+        policyKey: 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_STATUS',
+        policyVersion: 1,
+        sourceMode: 'NON_PRODUCTION',
+        phase: connecting ? 'ConnectionRoom' : 'PhysicianPreparing',
+        headline: connecting ? 'Your private waiting room is ready' : 'A physician is preparing',
+        detail: connecting ? 'You entered the bounded synthetic waiting room.' : 'The exact synthetic candidate reserved this request.',
+        approximateRequestsAhead: null,
+        positionIsApproximate: false,
+        exactQueuePositionAssigned: false,
+        waitEstimateAvailable: false,
+        waitEstimateMessage: 'A wait-time estimate is not available in this synthetic demonstration.',
+        requestUpdatedAt: '2026-08-29T15:00:00Z',
+        snapshotAt: '2026-08-29T15:00:01Z',
+        refreshAfterSeconds: 5,
+        realtimeAvailable: false,
+        practiceAccepted: true,
+        doctorSearchStarted: true,
+        renderingPhysicianAssigned: true,
+        renderingPhysicianIdentityDisclosed: false,
+        syntheticRenderingCandidateMatched: true,
+        realRenderingPhysicianNetworkConfirmed: false,
+        connectionRoomCreated: connecting,
+        patientWaitingRoomEntered: connecting,
+        mediaSessionCreated: false,
+        communicationStarted: false,
+        coverageVerified: false,
+        consentCreated: false,
+        careAuthorized: false,
+        integrationEnabled: false,
+        externalCallPerformed: false,
+        safetyActions: ['Call 911 now for an emergency.'],
+        limitations: ['No media transport, communication, consultation, consent, encounter, or care authority exists.'],
+      } })
+      return
+    }
+    if (path.endsWith(`/applicants/${applicantId}`)) {
+      await route.fulfill({ json: {
+        applicantId,
+        status: 'SyntheticRequestCreated',
+        version: 26,
+        practiceDisplayName: 'AvenChart Synthetic Practice',
+        residenceStateCode: 'GA',
+        maskedEmail: 'w•••@example.test',
+        maskedPhone: '(***) ***-0155',
+        contactVerified: true,
+        identityAssurance: 'ContactControlOnly',
+        duplicateDisposition: 'NoCandidate',
+        canonicalPatientCreated: true,
+        verificationAttemptsRemaining: 0,
+        expiresAt: '2026-10-31T23:59:59Z',
+        demonstrationVerificationCode: null,
+        nextAction: 'Wait for the synthetic practice queue status.',
+        limitations: ['Synthetic demonstration only.'],
+      } })
+      return
+    }
+    await route.fulfill({ status: 409, json: { detail: 'Completed prerequisite not reloaded.' } })
+  })
+
+  await page.goto('/telehealth/new')
+  await expect(page.getByRole('heading', { name: 'A physician is preparing' })).toBeVisible()
+  await page.getByRole('button', { name: 'Check this device' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Device check passed' })).toBeVisible()
+  expect(await page.evaluate(() => (window as typeof window & { __telehealthStoppedTracks: number }).__telehealthStoppedTracks)).toBe(2)
+
+  const enter = page.getByRole('button', { name: 'Enter private synthetic waiting room' })
+  await enter.click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Waiting-room result unknown' })).toBeVisible()
+  await enter.click()
+  await expect(page.getByRole('heading', { name: 'Waiting room ready' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Your private waiting room is ready' })).toBeVisible()
+  await expect(page.getByText(/Private synthetic waiting room entered/).locator('..')).toContainText('Yes')
+  await expect(page.getByText(/Media session created/).locator('..')).toContainText('No')
+  await expect(page.getByText(/Communication started/).locator('..')).toContainText('No')
+
+  expect(connectionCommands).toHaveLength(2)
+  expect(connectionCommands[0].body).toEqual({
+    expectedVersion: 14,
+    browserSupported: true,
+    cameraAvailable: true,
+    microphoneAvailable: true,
+    speakerAvailable: true,
+    networkQuality: 'good',
+    syntheticDataConfirmed: true,
+  })
+  expect(connectionCommands[1].body).toEqual(connectionCommands[0].body)
+  expect(connectionCommands[0].idempotency).toBeTruthy()
+  expect(connectionCommands[1].idempotency).toBe(connectionCommands[0].idempotency)
+  const browserSurface = await page.evaluate(() => JSON.stringify({ document: document.body.innerText, session: sessionStorage, local: localStorage }))
+  expect(browserSurface).not.toContain(secretCredential)
+  const accessibility = await new AxeBuilder({ page }).analyze()
+  expect(accessibility.violations.filter((violation) => violation.impact === 'serious' || violation.impact === 'critical')).toEqual([])
+  await page.setViewportSize({ width: 320, height: 720 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true)
 })

@@ -2276,12 +2276,12 @@ export type TelehealthApplicantRequestOperationalReviewSubmission = {
 
 export type TelehealthApplicantRequestQueueStatus = {
   requestId: string
-  requestStatus: 'OperationalReview' | 'Queued' | 'Reserved'
+  requestStatus: 'OperationalReview' | 'Queued' | 'Reserved' | 'Connecting'
   requestVersion: number
   policyKey: 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_STATUS'
   policyVersion: 1
   sourceMode: 'NON_PRODUCTION'
-  phase: 'Reviewing' | 'InQueue' | 'PhysicianPreparing'
+  phase: 'Reviewing' | 'InQueue' | 'PhysicianPreparing' | 'ConnectionRoom'
   headline: string
   detail: string
   approximateRequestsAhead: number | null
@@ -2299,6 +2299,10 @@ export type TelehealthApplicantRequestQueueStatus = {
   renderingPhysicianIdentityDisclosed: false
   syntheticRenderingCandidateMatched: boolean
   realRenderingPhysicianNetworkConfirmed: false
+  connectionRoomCreated: boolean
+  patientWaitingRoomEntered: boolean
+  mediaSessionCreated: false
+  communicationStarted: false
   coverageVerified: false
   consentCreated: false
   careAuthorized: false
@@ -4324,6 +4328,28 @@ export function preparePatientConnection(
   return json<TelehealthConnectionGrant>(
     `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/connection-grants`,
     connectionCommandInit(preflight, expectedVersion, idempotencyKey, 'portal'),
+  )
+}
+
+export function prepareApplicantConnection(
+  applicantId: string,
+  applicantAccessKey: string,
+  requestId: string,
+  expectedVersion: number,
+  preflight: TelehealthDevicePreflight,
+  idempotencyKey: string,
+) {
+  return json<TelehealthConnectionGrant>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/${encodeURIComponent(requestId)}/connection-grants`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify({ expectedVersion, ...preflight }),
+    },
   )
 }
 

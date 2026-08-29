@@ -34,6 +34,10 @@ internal sealed record TelehealthApplicantRequestQueueStatusSource(
     bool AppointmentCreated,
     int ActiveReservationCount,
     bool ReservationValid,
+    string? AppointmentStatus,
+    int ConnectionSessionCount,
+    int ActiveApplicantGrantCount,
+    bool ConnectionValid,
     int? ApproximateRequestsAhead);
 
 public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSource dataSource)
@@ -43,6 +47,7 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
         int facilityId,
         Guid applicantId,
         string accessKeyHash,
+        string participantSubjectHash,
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -142,6 +147,79 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                         and appointment.patient_id=r.patient_id
                         and appointment.facility_id=r.facility_id
                         and appointment.provider_id=reservation.clinician_staff_id),
+                   (select appointment.status from appointments appointment where appointment.id=r.appointment_id),
+                   (select count(*)::int from telehealth_video_sessions session where session.request_id=r.request_id),
+                   (select count(*)::int
+                      from telehealth_video_sessions session
+                      join telehealth_video_participant_grants grant_record
+                        on grant_record.session_id=session.session_id
+                     where session.request_id=r.request_id
+                       and grant_record.participant_role='patient'
+                       and grant_record.participant_subject_hash=@participantSubjectHash
+                       and grant_record.status='Issued'
+                       and grant_record.expires_at>now()),
+                   exists(
+                     select 1
+                       from telehealth_video_sessions session
+                       join telehealth_reservations reservation
+                         on reservation.reservation_id=session.reservation_id
+                        and reservation.request_id=session.request_id
+                       join telehealth_video_participant_grants grant_record
+                         on grant_record.session_id=session.session_id
+                       join telehealth_video_preflights preflight
+                         on preflight.preflight_id=grant_record.preflight_id
+                        and preflight.session_id=session.session_id
+                        and preflight.participant_role=grant_record.participant_role
+                        and preflight.participant_subject_hash=grant_record.participant_subject_hash
+                       join appointments appointment on appointment.id=r.appointment_id
+                      where session.request_id=r.request_id
+                        and session.practice_id=r.practice_id
+                        and session.facility_id=r.facility_id
+                        and session.adapter_mode='NON_PRODUCTION'
+                        and session.status='WaitingRoom'
+                        and session.expires_at>now()
+                        and not session.recording_enabled
+                        and not session.transcription_enabled
+                        and not session.media_transport_enabled
+                        and reservation.status='Active'
+                        and reservation.lease_expires_at>now()
+                        and grant_record.participant_role='patient'
+                        and grant_record.participant_subject_hash=@participantSubjectHash
+                        and grant_record.status='Issued'
+                        and grant_record.expires_at>now()
+                        and grant_record.expires_at<=session.expires_at
+                        and grant_record.credential_hash~'^[0-9a-f]{64}$'
+                        and grant_record.command_fingerprint=preflight.command_fingerprint
+                        and grant_record.idempotency_key=preflight.idempotency_key
+                        and preflight.browser_supported
+                        and preflight.camera_available
+                        and preflight.microphone_available
+                        and preflight.speaker_available
+                        and preflight.synthetic_data_confirmed
+                        and preflight.network_quality in ('unknown','limited','good')
+                        and appointment.patient_id=r.patient_id
+                        and appointment.facility_id=r.facility_id
+                        and appointment.provider_id=reservation.clinician_staff_id
+                        and appointment.status='@'
+                        and exists(
+                          select 1 from telehealth_request_events request_event
+                           where request_event.request_id=r.request_id
+                             and request_event.aggregate_version=r.version
+                             and request_event.action='connection-room-entered'
+                             and request_event.from_status='Reserved'
+                             and request_event.to_status='Connecting'
+                             and request_event.actor_type='patient'
+                             and request_event.actor_id=@participantSubjectHash
+                             and request_event.idempotency_key=grant_record.idempotency_key
+                             and request_event.command_fingerprint=grant_record.command_fingerprint)
+                        and exists(
+                          select 1 from telehealth_video_events video_event
+                           where video_event.session_id=session.session_id
+                             and video_event.action='participant-grant-issued'
+                             and video_event.actor_type='patient'
+                             and video_event.actor_subject_hash=@participantSubjectHash
+                             and video_event.idempotency_key=grant_record.idempotency_key
+                             and video_event.command_fingerprint=grant_record.command_fingerprint)),
                    case
                      when r.status='Queued' and current_queue.status='Ready' then (
                        select count(*)
@@ -174,6 +252,7 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
         command.Parameters.AddWithValue("applicantId", applicantId);
         command.Parameters.AddWithValue("practiceId", practiceId);
         command.Parameters.AddWithValue("facilityId", facilityId);
+        command.Parameters.AddWithValue("participantSubjectHash", participantSubjectHash);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -189,7 +268,9 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
             reader.GetBoolean(12), reader.GetInt32(13), reader.GetBoolean(14),
             reader.GetInt32(15), reader.IsDBNull(16) ? null : reader.GetString(16),
             reader.GetBoolean(17), reader.GetInt32(18), reader.GetBoolean(19),
-            reader.IsDBNull(20) ? null : checked((int?)reader.GetInt64(20)));
+            reader.IsDBNull(20) ? null : reader.GetString(20), reader.GetInt32(21),
+            reader.GetInt32(22), reader.GetBoolean(23),
+            reader.IsDBNull(24) ? null : checked((int?)reader.GetInt64(24)));
         RequireAccess(source, accessKeyHash);
         RequireApplicant(source);
         RequireVisibleState(source);
@@ -243,16 +324,31 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
             && source.AuthorizationCount == 0
             && source.QueueCount == 0
             && source.ActiveReservationCount == 0
+            && source.ConnectionSessionCount == 0
+            && source.ActiveApplicantGrantCount == 0
             && !source.AppointmentCreated;
         var queueStateValid = source.RequestStatus switch
         {
             TelehealthRequestStatus.Queued => source.RequestVersion >= 13
                 && source.QueueStatus == "Ready"
-                && source.ActiveReservationCount == 0,
+                && source.ActiveReservationCount == 0
+                && source.ConnectionSessionCount == 0
+                && source.ActiveApplicantGrantCount == 0,
             TelehealthRequestStatus.Reserved => source.RequestVersion >= 14
                 && source.QueueStatus == "Reserved"
                 && source.ActiveReservationCount == 1
-                && source.ReservationValid,
+                && source.ReservationValid
+                && source.AppointmentStatus is null or "-"
+                && source.ConnectionSessionCount == 0
+                && source.ActiveApplicantGrantCount == 0,
+            TelehealthRequestStatus.Connecting => source.RequestVersion >= 15
+                && source.QueueStatus == "Reserved"
+                && source.ActiveReservationCount == 1
+                && source.ReservationValid
+                && source.AppointmentStatus == "@"
+                && source.ConnectionSessionCount == 1
+                && source.ActiveApplicantGrantCount == 1
+                && source.ConnectionValid,
             _ => false
         };
         var downstreamValid = source.AuthorizationCount == 1

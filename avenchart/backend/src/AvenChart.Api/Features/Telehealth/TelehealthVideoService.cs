@@ -46,6 +46,39 @@ public sealed class TelehealthVideoService(
         return await IssueAsync(context, normalized, "patient", subjectHash, key, cancellationToken);
     }
 
+    public async Task<TelehealthConnectionGrantResponse> PrepareApplicantAsync(
+        HttpContext httpContext,
+        Guid applicantId,
+        Guid requestId,
+        PrepareTelehealthConnectionRequest request,
+        string applicantAccessKey,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        RequireConfiguredHost(httpContext.Request.Host);
+        var key = TelehealthProspectiveApplicantPolicy.RequireAccessKey(applicantAccessKey);
+        var accessKeyHash = TelehealthProspectiveApplicantPolicy.Hash(key);
+        var normalized = Normalize(request);
+        var commandKey = TelehealthCommandFingerprint.RequireIdempotencyKey(idempotencyKey);
+        var subjectHash = TelehealthApplicantConnectionPolicy.CreateParticipantSubjectHash(
+            applicantId,
+            accessKeyHash);
+        var context = await repository.PrepareApplicantContextAsync(
+            _options.PracticeId,
+            _options.FacilityId,
+            applicantId,
+            accessKeyHash,
+            requestId,
+            cancellationToken);
+        return await IssueAsync(
+            context,
+            normalized,
+            "patient",
+            subjectHash,
+            commandKey,
+            cancellationToken);
+    }
+
     public async Task<TelehealthConnectionGrantResponse> PreparePhysicianAsync(
         AuthSessionResponse session,
         StaffAccessContext accessContext,

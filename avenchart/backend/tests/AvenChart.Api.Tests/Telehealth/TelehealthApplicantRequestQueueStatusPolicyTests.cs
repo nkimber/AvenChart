@@ -13,6 +13,7 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
     [InlineData(TelehealthRequestStatus.OperationalReview, true)]
     [InlineData(TelehealthRequestStatus.Queued, true)]
     [InlineData(TelehealthRequestStatus.Reserved, true)]
+    [InlineData(TelehealthRequestStatus.Connecting, true)]
     [InlineData(TelehealthRequestStatus.InConsultation, false)]
     [InlineData(TelehealthRequestStatus.Verification, false)]
     [InlineData(TelehealthRequestStatus.Redirected, false)]
@@ -75,6 +76,21 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
         AssertClosedConsequences(result);
     }
 
+    [Fact]
+    public void ConnectingDisclosesOnlyPrivateSyntheticWaitingRoomWithoutMediaOrCommunication()
+    {
+        var result = Create(TelehealthRequestStatus.Connecting, 15, null);
+
+        Assert.Equal("ConnectionRoom", result.Phase);
+        Assert.True(result.RenderingPhysicianAssigned);
+        Assert.True(result.SyntheticRenderingCandidateMatched);
+        Assert.True(result.ConnectionRoomCreated);
+        Assert.True(result.PatientWaitingRoomEntered);
+        Assert.False(result.MediaSessionCreated);
+        Assert.False(result.CommunicationStarted);
+        AssertClosedConsequences(result);
+    }
+
     private static TelehealthApplicantRequestQueueStatusResponse Create(
         TelehealthRequestStatus status,
         int version,
@@ -94,6 +110,13 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
         Assert.Equal("NON_PRODUCTION", result.SourceMode);
         Assert.False(result.RenderingPhysicianIdentityDisclosed);
         Assert.False(result.RealRenderingPhysicianNetworkConfirmed);
+        if (result.RequestStatus != TelehealthRequestStatus.Connecting.ToString())
+        {
+            Assert.False(result.ConnectionRoomCreated);
+            Assert.False(result.PatientWaitingRoomEntered);
+        }
+        Assert.False(result.MediaSessionCreated);
+        Assert.False(result.CommunicationStarted);
         Assert.False(result.CoverageVerified);
         Assert.False(result.ConsentCreated);
         Assert.False(result.CareAuthorized);

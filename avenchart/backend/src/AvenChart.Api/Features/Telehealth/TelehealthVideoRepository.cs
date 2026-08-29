@@ -32,7 +32,23 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
         Guid requestId,
         CancellationToken cancellationToken) =>
         await PrepareContextAsync(
-            practiceId, facilityId, requestId, patientId, null, cancellationToken);
+            practiceId, facilityId, requestId, patientId, null, null, cancellationToken);
+
+    public async Task<TelehealthVideoContextRecord> PrepareApplicantContextAsync(
+        string practiceId,
+        int facilityId,
+        Guid applicantId,
+        string accessKeyHash,
+        Guid requestId,
+        CancellationToken cancellationToken) =>
+        await PrepareContextAsync(
+            practiceId,
+            facilityId,
+            requestId,
+            null,
+            (applicantId, accessKeyHash),
+            null,
+            cancellationToken);
 
     public async Task<TelehealthVideoContextRecord> PreparePhysicianContextAsync(
         string practiceId,
@@ -41,7 +57,13 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
         Guid reservationId,
         CancellationToken cancellationToken) =>
         await PrepareContextAsync(
-            practiceId, facilityId, null, null, (reservationId, clinicianStaffId), cancellationToken);
+            practiceId,
+            facilityId,
+            null,
+            null,
+            null,
+            (reservationId, clinicianStaffId),
+            cancellationToken);
 
     public async Task<TelehealthVideoGrantRecord> IssueGrantAsync(
         TelehealthVideoContextRecord context,
@@ -247,6 +269,7 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
         int facilityId,
         Guid? requestId,
         string? patientId,
+        (Guid ApplicantId, string AccessKeyHash)? applicant,
         (Guid ReservationId, int ClinicianStaffId)? physician,
         CancellationToken cancellationToken)
     {
@@ -254,7 +277,90 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = physician is null
+        command.CommandText = applicant is not null
+            ? """
+                select r.request_id,r.version,r.status,reservation.reservation_id,
+                       reservation.lease_expires_at,now()
+                from telehealth_prospective_applicants applicant
+                join telehealth_applicant_request_creations creation
+                  on creation.applicant_id=applicant.applicant_id
+                 and creation.practice_id=applicant.practice_id
+                 and creation.facility_id=applicant.facility_id
+                join telehealth_requests r
+                  on r.request_id=creation.request_id
+                 and r.source_applicant_id=applicant.applicant_id
+                 and r.patient_id=creation.canonical_patient_id
+                 and r.practice_id=applicant.practice_id
+                 and r.facility_id=applicant.facility_id
+                join patients patient
+                  on patient.canonical_id=r.patient_id and patient.facility_id=r.facility_id
+                join telehealth_queue_entries queue_entry
+                  on queue_entry.request_id=r.request_id and queue_entry.status='Reserved'
+                join telehealth_reservations reservation
+                  on reservation.request_id=r.request_id
+                 and reservation.queue_entry_id=queue_entry.queue_entry_id
+                 and reservation.status='Active'
+                 and reservation.lease_expires_at>now()
+                join telehealth_clinician_shifts shift
+                  on shift.shift_id=reservation.shift_id
+                 and shift.practice_id=r.practice_id
+                 and shift.facility_id=r.facility_id
+                 and shift.clinician_staff_id=reservation.clinician_staff_id
+                 and shift.status='Active'
+                join telehealth_applicant_request_queue_authorizations queue_authorization
+                  on queue_authorization.request_id=r.request_id
+                 and queue_authorization.applicant_id=applicant.applicant_id
+                 and queue_authorization.practice_id=r.practice_id
+                 and queue_authorization.facility_id=r.facility_id
+                 and queue_authorization.canonical_patient_id=r.patient_id
+                 and queue_authorization.candidate_staff_id=reservation.clinician_staff_id
+                join appointments appointment
+                  on appointment.id=r.appointment_id
+                 and appointment.patient_id=r.patient_id
+                 and appointment.facility_id=r.facility_id
+                 and appointment.provider_id=reservation.clinician_staff_id
+                where applicant.applicant_id=@applicantId
+                  and applicant.practice_id=@practiceId
+                  and applicant.facility_id=@facilityId
+                  and applicant.access_key_hash=@accessKeyHash
+                  and applicant.status='SyntheticRequestCreated'
+                  and applicant.version=26
+                  and applicant.expires_at>now()
+                  and r.request_id=@requestId
+                  and r.triage_outcome='TelehealthEligible'
+                  and r.status in ('Reserved','Connecting')
+                  and not patient.portal_enabled
+                  and patient.merged_into_patient_id is null
+                  and coalesce(lower(patient.lifecycle_status),'active')='active'
+                  and patient.deceased_date is null
+                  and queue_authorization.resulting_request_status='Queued'
+                  and queue_authorization.resulting_request_version=13
+                  and queue_authorization.policy_key='SYNTHETIC_APPLICANT_REQUEST_QUEUE_AUTHORIZATION'
+                  and queue_authorization.policy_version=1
+                  and queue_authorization.evidence_type='APPLICANT_REQUEST_QUEUE_AUTHORIZATION'
+                  and queue_authorization.source_mode='NON_PRODUCTION'
+                  and queue_authorization.compatibility_target='AVENCHART_SYNTHETIC_QUEUE_AUTHORIZATION_V1'
+                  and queue_authorization.business_outcome='SyntheticRequestAuthorizedToQueue'
+                  and queue_authorization.practice_accepted
+                  and queue_authorization.patient_care_queue_entered
+                  and queue_authorization.clinician_queue_entered
+                  and queue_authorization.doctor_search_started
+                  and queue_authorization.appointment_created
+                  and not queue_authorization.rendering_physician_assigned
+                  and not queue_authorization.coverage_verified
+                  and not queue_authorization.financial_route_created
+                  and not queue_authorization.queue_position_assigned
+                  and not queue_authorization.encounter_created
+                  and not queue_authorization.consent_created
+                  and not queue_authorization.care_authorized
+                  and not queue_authorization.integration_enabled
+                  and not queue_authorization.external_call_performed
+                  and reservation.reserved_at>=queue_authorization.authorized_at
+                  and reservation.reserved_at<queue_authorization.result_valid_through
+                  and now()<queue_authorization.result_valid_through
+                for update of r,reservation;
+                """
+            : physician is null
             ? """
                 select r.request_id,r.version,r.status,reservation.reservation_id,
                        reservation.lease_expires_at,now()
@@ -283,7 +389,13 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
                 """;
         command.Parameters.AddWithValue("practiceId", practiceId);
         command.Parameters.AddWithValue("facilityId", facilityId);
-        if (physician is null)
+        if (applicant is not null)
+        {
+            command.Parameters.AddWithValue("requestId", requestId!.Value);
+            command.Parameters.AddWithValue("applicantId", applicant.Value.ApplicantId);
+            command.Parameters.AddWithValue("accessKeyHash", applicant.Value.AccessKeyHash);
+        }
+        else if (physician is null)
         {
             command.Parameters.AddWithValue("requestId", requestId!.Value);
             command.Parameters.AddWithValue("patientId", patientId!);

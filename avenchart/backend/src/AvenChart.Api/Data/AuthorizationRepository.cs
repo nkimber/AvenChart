@@ -4,6 +4,7 @@
 using Npgsql;
 using AvenChart.Api.Models;
 using AvenChart.Api.Workflows;
+using System.Globalization;
 
 namespace AvenChart.Api.Data;
 
@@ -928,7 +929,11 @@ public sealed class AuthorizationRepository(NpgsqlDataSource dataSource)
             return true;
         }
 
-        return DateTimeOffset.TryParse(value, out result);
+        return DateTimeOffset.TryParse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out result);
     }
 
     private static bool TryParseNullable(string? value, out DateTimeOffset? result)
@@ -939,7 +944,11 @@ public sealed class AuthorizationRepository(NpgsqlDataSource dataSource)
             return true;
         }
 
-        if (DateTimeOffset.TryParse(value, out var parsed))
+        if (DateTimeOffset.TryParse(
+                value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsed))
         {
             result = parsed;
             return true;

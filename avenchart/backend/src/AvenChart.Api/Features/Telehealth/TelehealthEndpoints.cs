@@ -571,6 +571,16 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/{requestId:guid}/connection-grants", PrepareApplicantConnectionAsync)
+            .WithName("PrepareTelehealthApplicantConnection")
+            .WithDescription("Runs a coarse device preflight and issues the request owner's short-lived participant-scoped NON_PRODUCTION waiting-room grant after exact clinician reservation. No media, consultation, consent, encounter, or care is started.")
+            .Accepts<PrepareTelehealthConnectionRequest>("application/json")
+            .Produces<TelehealthConnectionGrantResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1875,6 +1885,26 @@ public static class TelehealthEndpoints
                 context,
                 applicantId,
                 ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> PrepareApplicantConnectionAsync(
+        TelehealthVideoService service,
+        HttpContext context,
+        Guid applicantId,
+        Guid requestId,
+        PrepareTelehealthConnectionRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.PrepareApplicantAsync(
+                context,
+                applicantId,
+                requestId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
                 cancellationToken));
         });
 

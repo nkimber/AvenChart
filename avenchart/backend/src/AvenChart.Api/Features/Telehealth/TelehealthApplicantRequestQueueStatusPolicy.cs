@@ -14,7 +14,8 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
     public static bool IsVisibleStatus(TelehealthRequestStatus status) => status is
         TelehealthRequestStatus.OperationalReview
         or TelehealthRequestStatus.Queued
-        or TelehealthRequestStatus.Reserved;
+        or TelehealthRequestStatus.Reserved
+        or TelehealthRequestStatus.Connecting;
 
     public static TelehealthApplicantRequestQueueStatusResponse Create(
         TelehealthApplicantRequestQueueStatusRecord record)
@@ -27,7 +28,8 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
             record.SnapshotAt,
             record.ApproximateRequestsAhead);
         var accepted = record.RequestStatus != TelehealthRequestStatus.OperationalReview;
-        var assigned = record.RequestStatus == TelehealthRequestStatus.Reserved;
+        var assigned = record.RequestStatus is TelehealthRequestStatus.Reserved or TelehealthRequestStatus.Connecting;
+        var connectionRoomCreated = record.RequestStatus == TelehealthRequestStatus.Connecting;
 
         return new(
             RequestId: projected.RequestId,
@@ -54,6 +56,10 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
             RenderingPhysicianIdentityDisclosed: false,
             SyntheticRenderingCandidateMatched: assigned,
             RealRenderingPhysicianNetworkConfirmed: false,
+            ConnectionRoomCreated: connectionRoomCreated,
+            PatientWaitingRoomEntered: connectionRoomCreated,
+            MediaSessionCreated: false,
+            CommunicationStarted: false,
             CoverageVerified: false,
             ConsentCreated: false,
             CareAuthorized: false,
@@ -64,7 +70,8 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
                 "NON_PRODUCTION synthetic status only. Authoritative HTTP polling is used; realtime delivery is not enabled.",
                 "Any requests-ahead count is an approximate same-practice snapshot, not an assigned position or wait-time promise.",
                 "A physician-preparing state means only that the exact synthetic rendering candidate owns an active lease; physician identity and real network confirmation are not disclosed.",
-                "This slice does not authorize connection, consultation, consent, encounter, care, or completion states.",
+                "A connection-room state means only that the owner entered a private NON_PRODUCTION waiting room with a short-lived participant grant; no media or communication is connected.",
+                "This slice does not authorize consultation, consent, encounter, care, or completion states.",
                 "No consent, care authorization, prescription, claim, integration, or external action is created by reading this status."
             ]);
     }
