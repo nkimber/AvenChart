@@ -527,6 +527,24 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/participation-evaluation", GetApplicantTelehealthRequestParticipationEvaluationAsync)
+            .WithName("GetTelehealthApplicantRequestParticipationEvaluation")
+            .WithDescription("Returns a minimized exact NON_PRODUCTION participation-evaluation tuple. It does not verify real authority, credentials, payer or directory participation, coverage, assignment, or care.")
+            .Produces<TelehealthApplicantRequestParticipationEvaluationResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/participation-evaluation", EvaluateApplicantTelehealthRequestParticipationAsync)
+            .WithName("EvaluateTelehealthApplicantRequestParticipation")
+            .WithDescription("Evaluates one server-owned synthetic exact tuple and advances only Verification version 10 to 11. It performs no real payer, directory, authority, credentialing, coverage, or downstream action.")
+            .Accepts<EvaluateTelehealthApplicantRequestParticipation>("application/json")
+            .Produces<TelehealthApplicantRequestParticipationEvaluationResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1727,6 +1745,39 @@ public static class TelehealthEndpoints
         {
             SetProspectiveApplicantPrivateResponse(context);
             return Results.Ok(await service.ConfirmAsync(
+                context,
+                applicantId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestParticipationEvaluationAsync(
+        TelehealthApplicantRequestParticipationEvaluationService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> EvaluateApplicantTelehealthRequestParticipationAsync(
+        TelehealthApplicantRequestParticipationEvaluationService service,
+        HttpContext context,
+        Guid applicantId,
+        EvaluateTelehealthApplicantRequestParticipation request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.EvaluateAsync(
                 context,
                 applicantId,
                 request,

@@ -34,7 +34,7 @@ function Invoke-Scalar([string]$Sql) {
 try {
     if (-not $SkipBaseRehearsal) {
         & (Join-Path $PSScriptRoot 'Test-AvenChartMigrationResilience.ps1')
-        Add-Check 'Repository empty, populated, interruption, and recovery rehearsal includes V0282 through V0324' ($LASTEXITCODE -eq 0)
+        Add-Check 'Repository empty, populated, interruption, and recovery rehearsal includes V0282 through V0325' ($LASTEXITCODE -eq 0)
     }
     else {
         Add-Check 'Repository migration rehearsal supplied by the immediately preceding runtime-evidence step' $true
@@ -1004,6 +1004,44 @@ select count(*) from pg_trigger where not tgisinternal and tgname in (
 "@) -eq 2 -and
         [int](Invoke-Scalar "select count(*) from pg_proc where proname='enforce_th_app_request_part_context';") -eq 1)
     Add-Check 'The applicant request participation-context table exists' ([int](Invoke-Scalar "select count(*) from information_schema.tables where table_schema='public' and table_name='telehealth_applicant_request_participation_contexts';") -eq 1)
+    $requestParticipationEvaluationMigration = Join-Path $solutionRoot 'database/migrations/V0325__telehealth_applicant_request_participation_evaluation.sql'
+    $requestParticipationEvaluationSource = Get-Content -Raw $requestParticipationEvaluationMigration
+    Add-Check 'V0325 adds one exact synthetic participation evaluation with same-status version advance and every real/downstream gate closed' (
+        $requestParticipationEvaluationSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
+        $requestParticipationEvaluationSource -match 'create\s+table\s+(?:if\s+not\s+exists\s+)?telehealth_applicant_request_participation_evaluations' -and
+        $requestParticipationEvaluationSource -match 'source_request_version=10' -and
+        $requestParticipationEvaluationSource -match 'resulting_request_version=11' -and
+        $requestParticipationEvaluationSource -match "source_request_status='Verification'" -and
+        $requestParticipationEvaluationSource -match "resulting_request_status='Verification'" -and
+        $requestParticipationEvaluationSource -match "source_mode='NON_PRODUCTION'" -and
+        $requestParticipationEvaluationSource -match "compatibility_target='HL7_FHIR_R4_DAVINCI_PDEX_PLAN_NET_1_2_0'" -and
+        $requestParticipationEvaluationSource -match 'synthetic_billing_entity_in_network' -and
+        $requestParticipationEvaluationSource -match 'synthetic_rendering_provider_in_network' -and
+        $requestParticipationEvaluationSource -match 'synthetic_new_patients_accepted' -and
+        $requestParticipationEvaluationSource -match 'synthetic_exact_network_matched' -and
+        $requestParticipationEvaluationSource -match 'not real_state_authority_verified' -and
+        $requestParticipationEvaluationSource -match 'not real_credentialing_verified' -and
+        $requestParticipationEvaluationSource -match 'not rendering_physician_network_checked' -and
+        $requestParticipationEvaluationSource -match 'not exact_network_confirmed' -and
+        $requestParticipationEvaluationSource -match 'not patient_care_queue_entered and not clinician_queue_entered' -and
+        $requestParticipationEvaluationSource -match 'not integration_enabled and not external_call_performed')
+    Add-Check 'V0325 is recorded in the live migration ledger' ((Invoke-Scalar "select count(*) from schema_migrations where migration_id='V0325__telehealth_applicant_request_participation_evaluation';") -eq '1')
+    Add-Check 'Participation-evaluation source, matrix, freshness, acknowledgment, result, replay, no-consequence, provenance, and append-only constraints are database-enforced' (
+        [int](Invoke-Scalar @"
+select count(*) from pg_constraint where conname in (
+'uq_th_app_req_part_eval_idem','chk_th_app_req_part_eval_scope',
+'chk_th_app_req_part_eval_versions','chk_th_app_req_part_eval_source',
+'chk_th_app_req_part_eval_matrix','chk_th_app_req_part_eval_freshness',
+'chk_th_app_req_part_eval_ack','chk_th_app_req_part_eval_result',
+'chk_th_app_req_part_eval_policy','chk_th_app_req_part_eval_hashes',
+'chk_th_app_req_part_eval_idem','chk_th_app_req_part_eval_no_consequence');
+"@) -eq 12 -and
+        [int](Invoke-Scalar @"
+select count(*) from pg_trigger where not tgisinternal and tgname in (
+'trg_th_app_request_part_eval_guard','trg_th_app_request_part_eval_append');
+"@) -eq 2 -and
+        [int](Invoke-Scalar "select count(*) from pg_proc where proname='enforce_th_app_request_part_eval';") -eq 1)
+    Add-Check 'The applicant request participation-evaluation table exists' ([int](Invoke-Scalar "select count(*) from information_schema.tables where table_schema='public' and table_name='telehealth_applicant_request_participation_evaluations';") -eq 1)
     Add-Check 'All eight foundation tables exist' ([int](Invoke-Scalar @"
 select count(*) from information_schema.tables
 where table_schema='public' and table_name in (
@@ -1443,7 +1481,7 @@ catch {
     Add-Check 'Telehealth migration resilience execution' $false $_.Exception.Message
 }
 finally {
-    $result = [ordered]@{ status=$(if ($passed) { 'passed' } else { 'failed' }); generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O'); decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052'); checks=$checks }
+    $result = [ordered]@{ status=$(if ($passed) { 'passed' } else { 'failed' }); generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O'); decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053'); checks=$checks }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8
     $result | ConvertTo-Json -Depth 8
 }

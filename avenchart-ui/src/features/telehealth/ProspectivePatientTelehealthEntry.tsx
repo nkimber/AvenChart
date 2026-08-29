@@ -10,6 +10,7 @@ import {
   assessApplicantTelehealthRequestComplaintTriage,
   assessApplicantTelehealthRequestUniversalSafety,
   confirmApplicantTelehealthRequestParticipationContext,
+  evaluateApplicantTelehealthRequestParticipation,
   confirmApplicantTelehealthRequestInsuranceSource,
   confirmApplicantTelehealthRequestIntake,
   confirmApplicantInsuranceHandoff,
@@ -31,6 +32,7 @@ import {
   getApplicantTelehealthRequestEligibility,
   getApplicantTelehealthRequestPracticeNetwork,
   getApplicantTelehealthRequestParticipationContext,
+  getApplicantTelehealthRequestParticipationEvaluation,
   getApplicantTelehealthRequestRenderingCandidate,
   getApplicantTelehealthRequestIntake,
   getApplicantTelehealthRequestLocation,
@@ -114,6 +116,8 @@ import {
   type TelehealthApplicantRequestPracticeNetworkInput,
   type TelehealthApplicantRequestParticipationContext,
   type TelehealthApplicantRequestParticipationContextInput,
+  type TelehealthApplicantRequestParticipationEvaluation,
+  type TelehealthApplicantRequestParticipationEvaluationInput,
   type TelehealthApplicantRequestRenderingCandidate,
   type TelehealthApplicantRequestRenderingCandidateInput,
   type TelehealthApplicantRequestIntake,
@@ -182,6 +186,7 @@ type PendingRequestEligibility = { content: string; idempotencyKey: string }
 type PendingRequestPracticeNetwork = { content: string; idempotencyKey: string }
 type PendingRequestRenderingCandidate = { content: string; idempotencyKey: string }
 type PendingRequestParticipationContext = { content: string; idempotencyKey: string }
+type PendingRequestParticipationEvaluation = { content: string; idempotencyKey: string }
 type YesNoAnswer = '' | 'yes' | 'no'
 type ComplaintAnswer = '' | TelehealthSyntheticComplaintAnswer
 
@@ -378,6 +383,13 @@ const initialRequestParticipationContextAcknowledgments = {
   npiNotCredential: false,
   realAuthorityNotVerified: false,
   exactParticipationStillRequired: false,
+}
+
+const initialRequestParticipationEvaluationAcknowledgments = {
+  syntheticData: false,
+  exactTupleScope: false,
+  noCoverageGuarantee: false,
+  realVerificationStillRequired: false,
 }
 
 function ComplaintAnswerField({
@@ -581,6 +593,10 @@ export default function ProspectivePatientTelehealthEntry() {
   const [requestParticipationContextLoading, setRequestParticipationContextLoading] = useState(false)
   const [requestParticipationContextLoadAttempt, setRequestParticipationContextLoadAttempt] = useState(0)
   const [requestParticipationContextAcknowledgments, setRequestParticipationContextAcknowledgments] = useState(initialRequestParticipationContextAcknowledgments)
+  const [requestParticipationEvaluation, setRequestParticipationEvaluation] = useState<TelehealthApplicantRequestParticipationEvaluation | null>(null)
+  const [requestParticipationEvaluationLoading, setRequestParticipationEvaluationLoading] = useState(false)
+  const [requestParticipationEvaluationLoadAttempt, setRequestParticipationEvaluationLoadAttempt] = useState(0)
+  const [requestParticipationEvaluationAcknowledgments, setRequestParticipationEvaluationAcknowledgments] = useState(initialRequestParticipationEvaluationAcknowledgments)
   const [loading, setLoading] = useState(Boolean(applicantSession))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -616,6 +632,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const pendingRequestPracticeNetwork = useRef<PendingRequestPracticeNetwork | null>(null)
   const pendingRequestRenderingCandidate = useRef<PendingRequestRenderingCandidate | null>(null)
   const pendingRequestParticipationContext = useRef<PendingRequestParticipationContext | null>(null)
+  const pendingRequestParticipationEvaluation = useRef<PendingRequestParticipationEvaluation | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const safetyResultRef = useRef<HTMLDivElement>(null)
   const purposeResultRef = useRef<HTMLDivElement>(null)
@@ -646,6 +663,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const requestPracticeNetworkResultRef = useRef<HTMLDivElement>(null)
   const requestRenderingCandidateResultRef = useRef<HTMLDivElement>(null)
   const requestParticipationContextResultRef = useRef<HTMLDivElement>(null)
+  const requestParticipationEvaluationResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -766,6 +784,10 @@ export default function ProspectivePatientTelehealthEntry() {
   useEffect(() => {
     if (requestParticipationContext?.confirmationCompleted) requestParticipationContextResultRef.current?.focus()
   }, [requestParticipationContext])
+
+  useEffect(() => {
+    if (requestParticipationEvaluation?.evaluationCompleted) requestParticipationEvaluationResultRef.current?.focus()
+  }, [requestParticipationEvaluation])
 
   useEffect(() => {
     if (!applicantSession) {
@@ -1325,6 +1347,29 @@ export default function ProspectivePatientTelehealthEntry() {
       })
     return () => controller.abort()
   }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestRenderingCandidate?.selectionCompleted, requestParticipationContextLoadAttempt])
+
+  useEffect(() => {
+    if (!applicantSession
+      || applicant?.status !== 'SyntheticRequestCreated'
+      || !requestParticipationContext?.confirmationCompleted) return
+    const controller = new AbortController()
+    setRequestParticipationEvaluationLoading(true)
+    setError(null)
+    getApplicantTelehealthRequestParticipationEvaluation(
+      applicant.applicantId,
+      applicantSession.applicantAccessKey,
+      controller.signal,
+    )
+      .then(setRequestParticipationEvaluation)
+      .catch((caught: unknown) => {
+        if (isRequestCancellation(caught)) return
+        setError(caught instanceof Error ? caught.message : 'The participation evaluation could not be loaded.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestParticipationEvaluationLoading(false)
+      })
+    return () => controller.abort()
+  }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestParticipationContext?.confirmationCompleted, requestParticipationEvaluationLoadAttempt])
 
   function updateValue<Key extends keyof FormValues>(key: Key, value: FormValues[Key]) {
     pendingCreate.current = null
@@ -3189,6 +3234,59 @@ export default function ProspectivePatientTelehealthEntry() {
     }
   }
 
+  function updateRequestParticipationEvaluationAcknowledgment(
+    key: keyof typeof initialRequestParticipationEvaluationAcknowledgments,
+    checked: boolean,
+  ) {
+    pendingRequestParticipationEvaluation.current = null
+    setRequestParticipationEvaluationAcknowledgments((current) => ({ ...current, [key]: checked }))
+  }
+
+  async function evaluateRequestParticipation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!applicant || !applicantSession || !requestParticipationEvaluation) return
+    if (!Object.values(requestParticipationEvaluationAcknowledgments).every(Boolean)) {
+      setError('Accept all four participation-evaluation acknowledgments before continuing.')
+      return
+    }
+    const input = {
+      expectedRequestVersion: requestParticipationEvaluation.requestVersion,
+      evaluationSnapshotFingerprint: requestParticipationEvaluation.evaluationSnapshotFingerprint,
+      syntheticDataConfirmed: true,
+      exactTupleScopeAcknowledged: true,
+      noCoverageGuaranteeAcknowledged: true,
+      realVerificationStillRequiredAcknowledged: true,
+    } satisfies TelehealthApplicantRequestParticipationEvaluationInput
+    const content = JSON.stringify(input)
+    if (!pendingRequestParticipationEvaluation.current
+      || pendingRequestParticipationEvaluation.current.content !== content) {
+      pendingRequestParticipationEvaluation.current = { content, idempotencyKey: crypto.randomUUID() }
+    }
+
+    setError(null)
+    setSubmitting(true)
+    try {
+      const result = await evaluateApplicantTelehealthRequestParticipation(
+        applicant.applicantId,
+        applicantSession.applicantAccessKey,
+        input,
+        pendingRequestParticipationEvaluation.current.idempotencyKey,
+      )
+      setRequestParticipationEvaluation(result)
+      pendingRequestParticipationEvaluation.current = null
+      setRequestParticipationEvaluationAcknowledgments(initialRequestParticipationEvaluationAcknowledgments)
+    } catch (caught: unknown) {
+      if (caught instanceof ApiRequestError && caught.status && caught.status < 500) {
+        pendingRequestParticipationEvaluation.current = null
+      }
+      setError(caught instanceof Error
+        ? caught.message
+        : 'The participation evaluation could not be completed.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   function restart() {
     clearApplicantSession()
     pendingCreate.current = null
@@ -3222,6 +3320,7 @@ export default function ProspectivePatientTelehealthEntry() {
     pendingRequestPracticeNetwork.current = null
     pendingRequestRenderingCandidate.current = null
     pendingRequestParticipationContext.current = null
+    pendingRequestParticipationEvaluation.current = null
     setApplicantSession(null)
     setApplicant(null)
     setValues(initialValues)
@@ -3363,6 +3462,10 @@ export default function ProspectivePatientTelehealthEntry() {
     setRequestParticipationContextLoading(false)
     setRequestParticipationContextLoadAttempt(0)
     setRequestParticipationContextAcknowledgments(initialRequestParticipationContextAcknowledgments)
+    setRequestParticipationEvaluation(null)
+    setRequestParticipationEvaluationLoading(false)
+    setRequestParticipationEvaluationLoadAttempt(0)
+    setRequestParticipationEvaluationAcknowledgments(initialRequestParticipationEvaluationAcknowledgments)
     setError(null)
   }
 
@@ -5798,6 +5901,88 @@ export default function ProspectivePatientTelehealthEntry() {
                     <p><strong>{requestParticipationContext.direction}</strong></p>
                     <p>No real authority, credentialing, participation, assignment, exact network, canonical coverage, financial route, operational review, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
                     <ul>{requestParticipationContext.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                  </div>
+                ) : null}
+                {requestParticipationContext?.confirmationCompleted && requestParticipationEvaluationLoading ? (
+                  <p role="status">Loading the exact synthetic participation evaluation…</p>
+                ) : null}
+                {requestParticipationContext?.confirmationCompleted
+                  && !requestParticipationEvaluationLoading
+                  && !requestParticipationEvaluation ? (
+                    <button
+                      className="telehealth-button"
+                      type="button"
+                      onClick={() => setRequestParticipationEvaluationLoadAttempt((value) => value + 1)}
+                    >
+                      Retry participation-evaluation load
+                    </button>
+                  ) : null}
+                {requestParticipationEvaluation?.evaluationReady ? (
+                  <form className="telehealth-review-form" onSubmit={evaluateRequestParticipation}>
+                    <div className="telehealth-synthetic" role="note">
+                      NON_PRODUCTION synthetic evaluation only. No payer, provider directory, licensing board, credentialing source, or clinician will be contacted.
+                    </div>
+                    <h3>Review exact synthetic participation tuple</h3>
+                    <p id="request-participation-evaluation-help">The server will compare this fixed tuple with its effective-dated synthetic catalog. A match is not real payer or directory verification and is not a coverage guarantee.</p>
+                    <dl className="telehealth-details" aria-describedby="request-participation-evaluation-help">
+                      <div><dt>Candidate</dt><dd>{requestParticipationEvaluation.candidateDisplayName}</dd></div>
+                      <div><dt>Masked provider reference</dt><dd>{requestParticipationEvaluation.maskedProviderReference}</dd></div>
+                      <div><dt>Masked billing provider reference</dt><dd>{requestParticipationEvaluation.maskedBillingProviderReference}</dd></div>
+                      <div><dt>Practice</dt><dd>{requestParticipationEvaluation.practiceDisplayName}</dd></div>
+                      <div><dt>Payer and product</dt><dd>{requestParticipationEvaluation.payerDisplayName} — {requestParticipationEvaluation.productDisplayName}</dd></div>
+                      <div><dt>Patient state</dt><dd>{requestParticipationEvaluation.currentLocationStateCode}</dd></div>
+                      <div><dt>Date of service</dt><dd>{requestParticipationEvaluation.dateOfService}</dd></div>
+                      <div><dt>Service and modality</dt><dd>{requestParticipationEvaluation.serviceCategory} — {requestParticipationEvaluation.modality}</dd></div>
+                      <div><dt>New-patient dimension</dt><dd>Included in the exact synthetic tuple</dd></div>
+                      <div><dt>Compatibility target</dt><dd>{requestParticipationEvaluation.compatibilityTarget}</dd></div>
+                      <div><dt>Effective period</dt><dd>{new Date(requestParticipationEvaluation.effectiveFrom).toLocaleString()} through {new Date(requestParticipationEvaluation.effectiveThrough).toLocaleString()}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestParticipationEvaluation.requestVersion}</dd></div>
+                      <div><dt>Evaluate before</dt><dd>{new Date(requestParticipationEvaluation.resultValidThrough).toLocaleString()}</dd></div>
+                    </dl>
+                    <fieldset className="telehealth-fieldset">
+                      <legend>Four required acknowledgments</legend>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestParticipationEvaluationAcknowledgments.syntheticData} onChange={(event) => updateRequestParticipationEvaluationAcknowledgment('syntheticData', event.target.checked)} /><span>I confirm this evaluation uses fictional synthetic data only.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestParticipationEvaluationAcknowledgments.exactTupleScope} onChange={(event) => updateRequestParticipationEvaluationAcknowledgment('exactTupleScope', event.target.checked)} /><span>I understand the result applies only to the exact provider, billing, network, location, service, modality, state, date, and new-patient tuple shown.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestParticipationEvaluationAcknowledgments.noCoverageGuarantee} onChange={(event) => updateRequestParticipationEvaluationAcknowledgment('noCoverageGuarantee', event.target.checked)} /><span>I understand a synthetic match is not a coverage, benefits, payment, or price guarantee.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestParticipationEvaluationAcknowledgments.realVerificationStillRequired} onChange={(event) => updateRequestParticipationEvaluationAcknowledgment('realVerificationStillRequired', event.target.checked)} /><span>I understand real authority, credentialing, payer, and provider-directory verification is still required.</span></label>
+                    </fieldset>
+                    <ul>{requestParticipationEvaluation.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                    <button
+                      className="telehealth-button"
+                      type="submit"
+                      disabled={submitting || !Object.values(requestParticipationEvaluationAcknowledgments).every(Boolean)}
+                    >
+                      {submitting ? 'Evaluating tuple…' : 'Run synthetic participation evaluation'}
+                    </button>
+                  </form>
+                ) : null}
+                {requestParticipationEvaluation?.evaluationCompleted ? (
+                  <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestParticipationEvaluationResultRef}>
+                    <h3>Exact synthetic participation evaluation complete</h3>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestParticipationEvaluation.requestId}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestParticipationEvaluation.requestStatus}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestParticipationEvaluation.requestVersion}</dd></div>
+                      <div><dt>Business outcome</dt><dd>{requestParticipationEvaluation.businessOutcome ?? 'No result'}</dd></div>
+                      <div><dt>Candidate</dt><dd>{requestParticipationEvaluation.candidateDisplayName}</dd></div>
+                      <div><dt>Masked provider reference</dt><dd>{requestParticipationEvaluation.maskedProviderReference}</dd></div>
+                      <div><dt>Masked billing provider reference</dt><dd>{requestParticipationEvaluation.maskedBillingProviderReference}</dd></div>
+                      <div><dt>Synthetic billing entity in network</dt><dd>{requestParticipationEvaluation.syntheticBillingEntityInNetwork ? 'Matched' : 'Not matched'}</dd></div>
+                      <div><dt>Synthetic rendering provider in network</dt><dd>{requestParticipationEvaluation.syntheticRenderingProviderInNetwork ? 'Matched' : 'Not matched'}</dd></div>
+                      <div><dt>Synthetic plan network</dt><dd>{requestParticipationEvaluation.syntheticPlanNetworkMatched ? 'Matched' : 'Not matched'}</dd></div>
+                      <div><dt>Synthetic service and location</dt><dd>{requestParticipationEvaluation.syntheticServiceLocationMatched ? 'Matched' : 'Not matched'}</dd></div>
+                      <div><dt>Synthetic new patients accepted</dt><dd>{requestParticipationEvaluation.syntheticNewPatientsAccepted ? 'Matched' : 'Not matched'}</dd></div>
+                      <div><dt>Exact synthetic tuple</dt><dd>{requestParticipationEvaluation.syntheticExactNetworkMatched ? 'Matched' : 'Not matched'}</dd></div>
+                      <div><dt>Real state authority verified</dt><dd>{requestParticipationEvaluation.realStateAuthorityVerified ? 'Yes' : 'No — still required'}</dd></div>
+                      <div><dt>Real credentialing verified</dt><dd>{requestParticipationEvaluation.realCredentialingVerified ? 'Yes' : 'No — still required'}</dd></div>
+                      <div><dt>Real physician participation checked</dt><dd>{requestParticipationEvaluation.renderingPhysicianNetworkChecked ? 'Yes' : 'No — still required'}</dd></div>
+                      <div><dt>Exact real network confirmed</dt><dd>{requestParticipationEvaluation.exactNetworkConfirmed ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Doctor search or queue</dt><dd>{requestParticipationEvaluation.doctorSearchStarted || requestParticipationEvaluation.patientCareQueueEntered || requestParticipationEvaluation.clinicianQueueEntered ? 'Started' : 'Not started'}</dd></div>
+                      <div><dt>Evaluated</dt><dd>{requestParticipationEvaluation.evaluatedAt ? new Date(requestParticipationEvaluation.evaluatedAt).toLocaleString() : 'Recorded'}</dd></div>
+                    </dl>
+                    <p><strong>{requestParticipationEvaluation.direction}</strong></p>
+                    <p>No real authority, credentialing, payer/directory participation, assignment, exact real network, canonical coverage, financial route, operational review, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
+                    <ul>{requestParticipationEvaluation.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                   </div>
                 ) : null}
               </>

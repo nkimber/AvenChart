@@ -1981,7 +1981,7 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
-  test('eligible synthetic applicant confirms intake through participation context with stable retries and no downstream implication', async ({ page }) => {
+  test('eligible synthetic applicant confirms intake through exact synthetic participation evaluation with stable retries and no downstream implication', async ({ page }) => {
     await page.addInitScript((session) => {
       sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
     }, { applicantId: prospectiveApplicant.applicantId, applicantAccessKey: 'r'.repeat(64) })
@@ -2614,6 +2614,93 @@ test.describe('telehealth accessibility', () => {
       participationEvaluationContextConfirmed: true,
       direction: 'The synthetic prerequisite context is fixed for a future exact participation evaluation.',
     }
+    const readyParticipationEvaluation = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 10,
+      requestStatus: 'Verification',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_PARTICIPATION_EVALUATION',
+      policyVersion: 1,
+      catalogKey: 'avenchart-synthetic-participation-evaluation-2026-08',
+      catalogVersion: 1,
+      sourceMode: 'NON_PRODUCTION',
+      compatibilityTarget: 'HL7_FHIR_R4_DAVINCI_PDEX_PLAN_NET_1_2_0',
+      evaluationScope: 'BILLING_ENTITY_RENDERING_PROVIDER_NETWORK_LOCATION_SERVICE_MODALITY_NEW_PATIENT',
+      evaluationSnapshotFingerprint: 'f'.repeat(64),
+      resultValidThrough: '2026-08-28T17:28:00Z',
+      practiceDisplayName: 'AvenChart Synthetic Practice',
+      payerDisplayName: 'AvenChart Synthetic Health',
+      productDisplayName: 'Synthetic Silver Demo',
+      currentLocationStateCode: 'GA',
+      purposeCategory: 'sleep',
+      dateOfService: '2026-08-29',
+      eligibilityVerificationId: completedRequestEligibility.verificationId,
+      practiceNetworkVerificationId: completedRequestPracticeNetwork.verificationId,
+      candidateSelectionId: completedRenderingCandidate.selectionId,
+      participationContextConfirmationId: completedParticipationContext.confirmationId,
+      candidateDisplayName: 'Georgia Synthetic Clinician',
+      maskedProviderReference: 'Synthetic provider ••••8101',
+      maskedBillingProviderReference: 'Synthetic billing provider ••••8800',
+      serviceCategory: 'ProfessionalTelehealthConsultation',
+      modality: 'RealTimeAudioVideo',
+      effectiveFrom: '2026-08-29T00:00:00Z',
+      effectiveThrough: '2026-10-31T23:59:59Z',
+      evaluationReady: true,
+      evaluationCompleted: false,
+      evaluationId: null,
+      evaluatedAt: null,
+      businessOutcome: null,
+      syntheticParticipationEvaluated: false,
+      syntheticBillingEntityInNetwork: false,
+      syntheticRenderingProviderInNetwork: false,
+      syntheticPlanNetworkMatched: false,
+      syntheticServiceLocationMatched: false,
+      syntheticNewPatientsAccepted: false,
+      syntheticExactNetworkMatched: false,
+      realStateAuthorityVerified: false,
+      realCredentialingVerified: false,
+      renderingPhysicianAssigned: false,
+      renderingPhysicianNetworkChecked: false,
+      exactNetworkConfirmed: false,
+      canonicalCoverageCreated: false,
+      coverageSelected: false,
+      coverageVerified: false,
+      financialRouteCreated: false,
+      operationalReviewCreated: false,
+      practiceAccepted: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Review the exact synthetic tuple.',
+      limitations: ['No payer, directory, licensing board, credentialing source, or clinician was contacted.'],
+    }
+    const completedParticipationEvaluation = {
+      ...readyParticipationEvaluation,
+      requestVersion: 11,
+      evaluationReady: false,
+      evaluationCompleted: true,
+      evaluationId: '50000000-0000-4000-8000-000000000001',
+      evaluatedAt: '2026-08-29T12:00:00Z',
+      businessOutcome: 'SyntheticExactParticipationMatched',
+      syntheticParticipationEvaluated: true,
+      syntheticBillingEntityInNetwork: true,
+      syntheticRenderingProviderInNetwork: true,
+      syntheticPlanNetworkMatched: true,
+      syntheticServiceLocationMatched: true,
+      syntheticNewPatientsAccepted: true,
+      syntheticExactNetworkMatched: true,
+      direction: 'The exact tuple matched the synthetic catalog. Real verification remains required.',
+    }
     let intakeLoadCalls = 0
     let intakeConfirmationCalls = 0
     const intakeKeys: Array<string | undefined> = []
@@ -2638,10 +2725,34 @@ test.describe('telehealth accessibility', () => {
     let participationContextConfirmationCalls = 0
     const participationContextKeys: Array<string | undefined> = []
     const participationContextBodies: Array<Record<string, unknown>> = []
+    let participationEvaluationLoadCalls = 0
+    let participationEvaluationRunCalls = 0
+    const participationEvaluationKeys: Array<string | undefined> = []
+    const participationEvaluationBodies: Array<Record<string, unknown>> = []
     await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
       const request = route.request()
       const path = new URL(request.url()).pathname
       expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('r'.repeat(64))
+      if (path.endsWith('/telehealth-request/participation-evaluation')) {
+        if (request.method() === 'POST') {
+          participationEvaluationRunCalls += 1
+          participationEvaluationKeys.push(request.headers()['x-idempotency-key'])
+          participationEvaluationBodies.push(request.postDataJSON() as Record<string, unknown>)
+          if (participationEvaluationRunCalls === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Participation-evaluation result unknown; retry unchanged.' }) })
+            return
+          }
+          await route.fulfill({ json: completedParticipationEvaluation })
+          return
+        }
+        participationEvaluationLoadCalls += 1
+        if (participationEvaluationLoadCalls === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Participation-evaluation projection temporarily unavailable.' }) })
+          return
+        }
+        await route.fulfill({ json: readyParticipationEvaluation })
+        return
+      }
       if (path.endsWith('/telehealth-request/participation-context')) {
         if (request.method() === 'POST') {
           participationContextConfirmationCalls += 1
@@ -3074,7 +3185,57 @@ test.describe('telehealth accessibility', () => {
       realAuthorityNotVerifiedAcknowledged: true,
       exactParticipationStillRequiredAcknowledged: true,
     })
-    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|networkSnapshotFingerprint|candidateSnapshotFingerprint|payerDisplayName|maskedMemberId|businessOutcome|candidateDisplayName|providerReference|requestId/i)
+    await expect(page.getByRole('alert')).toContainText('Participation-evaluation projection temporarily unavailable.')
+    await page.getByRole('button', { name: 'Retry participation-evaluation load' }).click()
+    const evaluationHeading = page.getByRole('heading', { name: 'Review exact synthetic participation tuple' })
+    await expect(evaluationHeading).toBeVisible()
+    const evaluationForm = evaluationHeading.locator('..')
+    await expect(evaluationForm).toContainText('Georgia Synthetic Clinician')
+    await expect(evaluationForm).toContainText('New-patient dimensionIncluded in the exact synthetic tuple')
+    await expect(evaluationForm).toContainText('HL7_FHIR_R4_DAVINCI_PDEX_PLAN_NET_1_2_0')
+    await expect(evaluationForm).not.toContainText('18888101')
+    await expect(evaluationForm).not.toContainText('syn-contract')
+    await expect(evaluationForm.locator('textarea')).toHaveCount(0)
+    await expect(evaluationForm.locator('select')).toHaveCount(0)
+    await expect(evaluationForm.locator('input:not([type="checkbox"])')).toHaveCount(0)
+    const evaluationSubmit = evaluationForm.getByRole('button', { name: 'Run synthetic participation evaluation' })
+    await expect(evaluationSubmit).toBeDisabled()
+    for (const label of [
+      'I confirm this evaluation uses fictional synthetic data only.',
+      'I understand the result applies only to the exact provider, billing, network, location, service, modality, state, date, and new-patient tuple shown.',
+      'I understand a synthetic match is not a coverage, benefits, payment, or price guarantee.',
+      'I understand real authority, credentialing, payer, and provider-directory verification is still required.',
+    ]) {
+      await evaluationForm.getByLabel(label).check()
+    }
+    await evaluationSubmit.click()
+    const evaluationRetryAlert = page.getByRole('alert').filter({ hasText: 'Participation-evaluation result unknown; retry unchanged.' })
+    await expect(evaluationRetryAlert).toBeVisible()
+    await expect(evaluationRetryAlert).toBeFocused()
+    await evaluationSubmit.click()
+    const evaluationResult = page.getByRole('heading', { name: 'Exact synthetic participation evaluation complete' })
+    await expect(evaluationResult).toBeVisible()
+    await expect(evaluationResult.locator('..')).toContainText('Request version11')
+    await expect(evaluationResult.locator('..')).toContainText('Business outcomeSyntheticExactParticipationMatched')
+    await expect(evaluationResult.locator('..')).toContainText('Synthetic billing entity in networkMatched')
+    await expect(evaluationResult.locator('..')).toContainText('Synthetic rendering provider in networkMatched')
+    await expect(evaluationResult.locator('..')).toContainText('Synthetic new patients acceptedMatched')
+    await expect(evaluationResult.locator('..')).toContainText('Exact synthetic tupleMatched')
+    await expect(evaluationResult.locator('..')).toContainText('Real state authority verifiedNo — still required')
+    await expect(evaluationResult.locator('..')).toContainText('Real physician participation checkedNo — still required')
+    await expect(evaluationResult.locator('..')).toContainText('Exact real network confirmedNo')
+    await expect(evaluationResult.locator('..')).toContainText('Doctor search or queueNot started')
+    expect(participationEvaluationKeys).toHaveLength(2)
+    expect(participationEvaluationKeys[0]).toBe(participationEvaluationKeys[1])
+    expect(participationEvaluationBodies[0]).toEqual({
+      expectedRequestVersion: 10,
+      evaluationSnapshotFingerprint: 'f'.repeat(64),
+      syntheticDataConfirmed: true,
+      exactTupleScopeAcknowledged: true,
+      noCoverageGuaranteeAcknowledged: true,
+      realVerificationStillRequiredAcknowledged: true,
+    })
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|evaluationSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|networkSnapshotFingerprint|candidateSnapshotFingerprint|payerDisplayName|maskedMemberId|businessOutcome|candidateDisplayName|providerReference|requestId/i)
 
     await expectNoSeriousAccessibilityViolations(page)
     await expectTelehealthReflow(page)

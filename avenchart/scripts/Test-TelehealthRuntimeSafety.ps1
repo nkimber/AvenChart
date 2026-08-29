@@ -1023,6 +1023,37 @@ try {
         $requestParticipationContextMigrationSource -match 'reject_telehealth_evidence_mutation' -and
         $requestParticipationContextMigrationSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
         $endpointSource -match '/\{applicantId:guid\}/telehealth-request/participation-context')
+    $requestParticipationEvaluationRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestParticipationEvaluationRepository.cs')
+    $requestParticipationEvaluationServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestParticipationEvaluationService.cs')
+    $requestParticipationEvaluationPolicySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantRequestParticipationEvaluationPolicy.cs')
+    $requestParticipationEvaluationMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0325__telehealth_applicant_request_participation_evaluation.sql')
+    Add-Check 'Applicant request participation evaluation is an exact synthetic catalog match with no real verification, assignment, coverage, or downstream path' (
+        $requestParticipationEvaluationRepositorySource -match 'insert into telehealth_applicant_request_participation_evaluations' -and
+        $requestParticipationEvaluationRepositorySource -notmatch '(?i)insert\s+into\s+(patients|insurance_records|telehealth_coverage_selections|telehealth_coverage_verifications|telehealth_queue_entries|telehealth_reservations|telehealth_video_sessions|telehealth_consultation_contexts|appointments|encounters|claims|billing|prescriptions|messages|integration_outbox)' -and
+        $requestParticipationEvaluationRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|WebRequest|SendAsync' -and
+        $requestParticipationEvaluationServiceSource -match 'SyntheticParticipationEvaluated: complete' -and
+        $requestParticipationEvaluationServiceSource -match 'SyntheticNewPatientsAccepted: complete' -and
+        $requestParticipationEvaluationServiceSource -match 'SyntheticExactNetworkMatched: complete' -and
+        $requestParticipationEvaluationServiceSource -match 'RealStateAuthorityVerified: false' -and
+        $requestParticipationEvaluationServiceSource -match 'RealCredentialingVerified: false' -and
+        $requestParticipationEvaluationServiceSource -match 'RenderingPhysicianAssigned: false' -and
+        $requestParticipationEvaluationServiceSource -match 'RenderingPhysicianNetworkChecked: false' -and
+        $requestParticipationEvaluationServiceSource -match 'ExactNetworkConfirmed: false' -and
+        $requestParticipationEvaluationServiceSource -match 'CoverageVerified: false' -and
+        $requestParticipationEvaluationServiceSource -match 'OperationalReviewCreated: false' -and
+        $requestParticipationEvaluationServiceSource -match 'PatientCareQueueEntered: false' -and
+        $requestParticipationEvaluationServiceSource -match 'CareAuthorized: false' -and
+        $requestParticipationEvaluationServiceSource -match 'ExternalCallPerformed: false' -and
+        $requestParticipationEvaluationPolicySource -match 'SYNTHETIC_APPLICANT_REQUEST_PARTICIPATION_EVALUATION' -and
+        $requestParticipationEvaluationPolicySource -match 'EntryRequestVersion = 10' -and
+        $requestParticipationEvaluationPolicySource -match 'ResultingRequestVersion = 11' -and
+        $requestParticipationEvaluationPolicySource -match 'HL7_FHIR_R4_DAVINCI_PDEX_PLAN_NET_1_2_0' -and
+        $requestParticipationEvaluationMigrationSource -match 'trg_th_app_request_part_eval_guard' -and
+        $requestParticipationEvaluationMigrationSource -match 'chk_th_app_req_part_eval_result' -and
+        $requestParticipationEvaluationMigrationSource -match 'chk_th_app_req_part_eval_no_consequence' -and
+        $requestParticipationEvaluationMigrationSource -match 'reject_telehealth_evidence_mutation' -and
+        $requestParticipationEvaluationMigrationSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
+        $endpointSource -match '/\{applicantId:guid\}/telehealth-request/participation-evaluation')
     $videoProviderSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoProvider.cs')
     $videoServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoService.cs')
     $videoRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoRepository.cs')
@@ -1123,8 +1154,8 @@ try {
             $health.status -eq 'healthy' -and
             $telehealth.data.enabled -eq $true -and
             $telehealth.data.mode -eq 'Synthetic' -and
-            [int]$telehealth.data.requiredTableCount -eq 68 -and
-            [int]$telehealth.data.presentTableCount -eq 68) $telehealth
+            [int]$telehealth.data.requiredTableCount -eq 69 -and
+            [int]$telehealth.data.presentTableCount -eq 69) $telehealth
     }
 }
 catch {
@@ -1134,7 +1165,7 @@ finally {
     $result = [ordered]@{
         status=$(if ($passed) { 'passed' } else { 'failed' })
         generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O')
-        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052')
+        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053')
         checks=$checks
     }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8

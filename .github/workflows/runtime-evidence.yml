@@ -132,6 +132,7 @@ jobs:
           ./scripts/Test-TelehealthApplicantRequestPracticeNetwork.ps1
           ./scripts/Test-TelehealthApplicantRequestRenderingCandidate.ps1
           ./scripts/Test-TelehealthApplicantRequestParticipationContext.ps1
+          ./scripts/Test-TelehealthApplicantRequestParticipationEvaluation.ps1
       - name: Run telehealth real PostgreSQL queue-concurrency evidence
         working-directory: avenchart
         shell: pwsh
