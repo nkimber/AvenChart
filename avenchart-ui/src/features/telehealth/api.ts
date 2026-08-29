@@ -2055,6 +2055,81 @@ export type TelehealthApplicantRequestRenderingCandidate = {
   limitations: string[]
 }
 
+export type TelehealthApplicantRequestParticipationContextInput = {
+  expectedRequestVersion: number
+  contextSnapshotFingerprint: string
+  syntheticDataConfirmed: true
+  npiNotCredentialAcknowledged: true
+  realAuthorityNotVerifiedAcknowledged: true
+  exactParticipationStillRequiredAcknowledged: true
+}
+
+export type TelehealthApplicantRequestParticipationContext = {
+  applicantId: string
+  applicantVersion: 26
+  applicantStatus: 'SyntheticRequestCreated'
+  requestId: string
+  requestVersion: 9 | 10
+  requestStatus: 'Verification'
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_PARTICIPATION_CONTEXT'
+  policyVersion: 1
+  catalogKey: 'avenchart-synthetic-participation-context-2026-08'
+  catalogVersion: 1
+  contextSnapshotFingerprint: string
+  contextExpiresAt: string
+  practiceDisplayName: string
+  payerDisplayName: string
+  productDisplayName: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  purposeCategory: 'migraine' | 'sleep'
+  eligibilityVerificationId: string
+  practiceNetworkVerificationId: string
+  candidateSelectionId: string
+  candidateDisplayName: string
+  maskedProviderReference: string
+  maskedBillingProviderReference: string
+  authorityJurisdiction: 'GA' | 'CA' | 'FL'
+  authorityKind: 'PHYSICIAN_PRACTICE_AUTHORITY'
+  authorityContextStatus: 'SYNTHETIC_ACTIVE'
+  practitionerRoleContextStatus: 'SYNTHETIC_ACTIVE'
+  organizationAffiliationContextStatus: 'SYNTHETIC_ACTIVE'
+  billingContractContextStatus: 'SYNTHETIC_ACTIVE'
+  serviceCategory: string
+  modality: 'RealTimeAudioVideo'
+  effectiveFrom: string
+  effectiveThrough: string
+  contextPurpose: 'PARTICIPATION_EVALUATION_PREREQUISITES_ONLY'
+  confirmationReady: boolean
+  confirmationCompleted: boolean
+  confirmationId: string | null
+  confirmedAt: string | null
+  participationEvaluationContextConfirmed: boolean
+  realStateAuthorityVerified: false
+  realCredentialingVerified: false
+  renderingPhysicianAssigned: false
+  renderingPhysicianNetworkChecked: false
+  exactNetworkConfirmed: false
+  canonicalCoverageCreated: false
+  coverageSelected: false
+  coverageVerified: false
+  financialRouteCreated: false
+  operationalReviewCreated: false
+  practiceAccepted: false
+  patientContacted: false
+  patientCareQueueEntered: false
+  clinicianQueueEntered: false
+  doctorSearchStarted: false
+  queuePositionAssigned: false
+  appointmentCreated: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -3521,6 +3596,41 @@ export function selectApplicantTelehealthRequestRenderingCandidate(
 ) {
   return json<TelehealthApplicantRequestRenderingCandidate>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/rendering-candidate`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequestParticipationContext(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestParticipationContext>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/participation-context`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function confirmApplicantTelehealthRequestParticipationContext(
+  applicantId: string,
+  applicantAccessKey: string,
+  input: TelehealthApplicantRequestParticipationContextInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestParticipationContext>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/participation-context`,
     {
       method: 'POST',
       headers: applicantHeaders(applicantAccessKey, {

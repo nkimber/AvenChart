@@ -509,6 +509,24 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/participation-context", GetApplicantTelehealthRequestParticipationContextAsync)
+            .WithName("GetTelehealthApplicantRequestParticipationContext")
+            .WithDescription("Returns a minimized server-owned synthetic prerequisite context for a future exact participation evaluation. It does not verify real authority, credentials, provider participation, assignment, coverage, or care.")
+            .Produces<TelehealthApplicantRequestParticipationContextResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/participation-context", ConfirmApplicantTelehealthRequestParticipationContextAsync)
+            .WithName("ConfirmTelehealthApplicantRequestParticipationContext")
+            .WithDescription("Confirms one effective-dated NON_PRODUCTION prerequisite context and advances only Verification version 9 to 10. It performs no real authority, credentialing, or participation verification and creates no downstream consequence.")
+            .Accepts<ConfirmTelehealthApplicantRequestParticipationContext>("application/json")
+            .Produces<TelehealthApplicantRequestParticipationContextResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1676,6 +1694,39 @@ public static class TelehealthEndpoints
         {
             SetProspectiveApplicantPrivateResponse(context);
             return Results.Ok(await service.SelectAsync(
+                context,
+                applicantId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestParticipationContextAsync(
+        TelehealthApplicantRequestParticipationContextService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> ConfirmApplicantTelehealthRequestParticipationContextAsync(
+        TelehealthApplicantRequestParticipationContextService service,
+        HttpContext context,
+        Guid applicantId,
+        ConfirmTelehealthApplicantRequestParticipationContext request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.ConfirmAsync(
                 context,
                 applicantId,
                 request,
