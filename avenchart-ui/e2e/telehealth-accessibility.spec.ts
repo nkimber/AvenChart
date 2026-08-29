@@ -1981,7 +1981,7 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
-  test('eligible synthetic applicant confirms intake through exact synthetic participation evaluation with stable retries and no downstream implication', async ({ page }) => {
+  test('eligible synthetic applicant submits for operational review with stable retries and no downstream implication', async ({ page }) => {
     await page.addInitScript((session) => {
       sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
     }, { applicantId: prospectiveApplicant.applicantId, applicantAccessKey: 'r'.repeat(64) })
@@ -2701,6 +2701,72 @@ test.describe('telehealth accessibility', () => {
       syntheticExactNetworkMatched: true,
       direction: 'The exact tuple matched the synthetic catalog. Real verification remains required.',
     }
+    const readyOperationalReviewSubmission = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 11,
+      requestStatus: 'Verification',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_OPERATIONAL_REVIEW_SUBMISSION',
+      policyVersion: 1,
+      sourceMode: 'NON_PRODUCTION',
+      compatibilityTarget: 'AVENCHART_SYNTHETIC_OPERATIONAL_REVIEW_V1',
+      submissionSnapshotFingerprint: '0'.repeat(64),
+      resultValidThrough: '2026-08-29T17:28:00Z',
+      practiceDisplayName: 'AvenChart Synthetic Practice',
+      payerDisplayName: 'AvenChart Synthetic Health',
+      productDisplayName: 'Synthetic Silver Demo',
+      currentLocationStateCode: 'GA',
+      purposeCategory: 'sleep',
+      dateOfService: '2026-08-29',
+      candidateDisplayName: 'Georgia Synthetic Clinician',
+      maskedProviderReference: 'Synthetic provider ••••8101',
+      maskedBillingProviderReference: 'Synthetic billing provider ••••8800',
+      serviceCategory: 'ProfessionalTelehealthConsultation',
+      modality: 'RealTimeAudioVideo',
+      submissionReady: true,
+      submissionCompleted: false,
+      submittedAt: null,
+      businessOutcome: null,
+      syntheticAutomatedChecksComplete: false,
+      operationalReviewCreated: false,
+      realStateAuthorityVerified: false,
+      realCredentialingVerified: false,
+      renderingPhysicianAssigned: false,
+      renderingPhysicianNetworkChecked: false,
+      exactNetworkConfirmed: false,
+      canonicalCoverageCreated: false,
+      coverageSelected: false,
+      coverageVerified: false,
+      financialRouteCreated: false,
+      practiceAccepted: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Review the bounded synthetic evidence and submit it for staff review.',
+      limitations: ['Operational review is not practice acceptance or authorization for care.'],
+    }
+    const completedOperationalReviewSubmission = {
+      ...readyOperationalReviewSubmission,
+      requestVersion: 12,
+      requestStatus: 'OperationalReview',
+      submissionReady: false,
+      submissionCompleted: true,
+      submittedAt: '2026-08-29T12:01:00Z',
+      businessOutcome: 'SyntheticRequestSubmittedForOperationalReview',
+      syntheticAutomatedChecksComplete: true,
+      operationalReviewCreated: true,
+      direction: 'Submitted for practice review. The practice has not accepted the request, and insurance or payment is not guaranteed.',
+    }
     let intakeLoadCalls = 0
     let intakeConfirmationCalls = 0
     const intakeKeys: Array<string | undefined> = []
@@ -2729,10 +2795,34 @@ test.describe('telehealth accessibility', () => {
     let participationEvaluationRunCalls = 0
     const participationEvaluationKeys: Array<string | undefined> = []
     const participationEvaluationBodies: Array<Record<string, unknown>> = []
+    let operationalReviewSubmissionLoadCalls = 0
+    let operationalReviewSubmissionCalls = 0
+    const operationalReviewSubmissionKeys: Array<string | undefined> = []
+    const operationalReviewSubmissionBodies: Array<Record<string, unknown>> = []
     await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
       const request = route.request()
       const path = new URL(request.url()).pathname
       expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('r'.repeat(64))
+      if (path.endsWith('/telehealth-request/operational-review-submission')) {
+        if (request.method() === 'POST') {
+          operationalReviewSubmissionCalls += 1
+          operationalReviewSubmissionKeys.push(request.headers()['x-idempotency-key'])
+          operationalReviewSubmissionBodies.push(request.postDataJSON() as Record<string, unknown>)
+          if (operationalReviewSubmissionCalls === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Operational-review submission result unknown; retry unchanged.' }) })
+            return
+          }
+          await route.fulfill({ json: completedOperationalReviewSubmission })
+          return
+        }
+        operationalReviewSubmissionLoadCalls += 1
+        if (operationalReviewSubmissionLoadCalls === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Operational-review submission temporarily unavailable.' }) })
+          return
+        }
+        await route.fulfill({ json: readyOperationalReviewSubmission })
+        return
+      }
       if (path.endsWith('/telehealth-request/participation-evaluation')) {
         if (request.method() === 'POST') {
           participationEvaluationRunCalls += 1
@@ -3235,7 +3325,51 @@ test.describe('telehealth accessibility', () => {
       noCoverageGuaranteeAcknowledged: true,
       realVerificationStillRequiredAcknowledged: true,
     })
-    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|evaluationSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|networkSnapshotFingerprint|candidateSnapshotFingerprint|payerDisplayName|maskedMemberId|businessOutcome|candidateDisplayName|providerReference|requestId/i)
+
+    const submissionLoadAlert = page.getByRole('alert').filter({ hasText: 'Operational-review submission temporarily unavailable.' })
+    await expect(submissionLoadAlert).toBeVisible()
+    await expect(submissionLoadAlert).toBeFocused()
+    await page.getByRole('button', { name: 'Try loading submission again' }).click()
+    const submissionForm = page.getByRole('group', { name: 'Submit the synthetic request for practice review' })
+    await expect(submissionForm).toBeVisible()
+    await expect(submissionForm).toContainText('Synthetic provider ••••8101')
+    await expect(submissionForm).toContainText('Synthetic billing provider ••••8800')
+    await expect(submissionForm).not.toContainText('18888101')
+    const submissionSubmit = page.getByRole('button', { name: 'Submit for practice review' })
+    await expect(submissionSubmit).toBeDisabled()
+    for (const label of [
+      'I understand this submission uses fictional synthetic automated evidence only.',
+      'I understand insurance coverage, benefits, payment, and price are not guaranteed.',
+      'I understand the practice has not accepted this request and staff review is still pending.',
+      'I understand this submission does not create a care relationship, queue position, appointment, encounter, consent, or treatment.',
+    ]) {
+      await submissionForm.getByLabel(label).check()
+    }
+    await submissionSubmit.click()
+    const submissionRetryAlert = page.getByRole('alert').filter({ hasText: 'Operational-review submission result unknown; retry unchanged.' })
+    await expect(submissionRetryAlert).toBeVisible()
+    await expect(submissionRetryAlert).toBeFocused()
+    await submissionSubmit.click()
+    const submissionResult = page.getByRole('heading', { name: 'Submitted for practice review' })
+    await expect(submissionResult).toBeVisible()
+    await expect(submissionResult.locator('..')).toContainText('Request statusOperationalReview')
+    await expect(submissionResult.locator('..')).toContainText('Request version12')
+    await expect(submissionResult.locator('..')).toContainText('Synthetic checks complete')
+    await expect(submissionResult.locator('..')).toContainText('Awaiting staff review')
+    await expect(submissionResult.locator('..')).toContainText('Practice acceptedNo — review pending')
+    await expect(submissionResult.locator('..')).toContainText('Coverage verifiedNo — still required')
+    await expect(submissionResult.locator('..')).toContainText('Doctor search or queueNot started')
+    expect(operationalReviewSubmissionKeys).toHaveLength(2)
+    expect(operationalReviewSubmissionKeys[0]).toBe(operationalReviewSubmissionKeys[1])
+    expect(operationalReviewSubmissionBodies[0]).toEqual({
+      expectedRequestVersion: 11,
+      submissionSnapshotFingerprint: '0'.repeat(64),
+      syntheticEvidenceAcknowledged: true,
+      noCoverageGuaranteeAcknowledged: true,
+      practiceReviewPendingAcknowledged: true,
+      noCareRelationshipAcknowledged: true,
+    })
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|evaluationSnapshotFingerprint|submissionSnapshotFingerprint|symptomDuration|sourceComplaint|intakeSnapshot|insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|networkSnapshotFingerprint|candidateSnapshotFingerprint|payerDisplayName|maskedMemberId|businessOutcome|candidateDisplayName|providerReference|requestId/i)
 
     await expectNoSeriousAccessibilityViolations(page)
     await expectTelehealthReflow(page)

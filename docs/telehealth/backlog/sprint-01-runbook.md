@@ -1,10 +1,10 @@
 # Sprint 1 synthetic telehealth runbook
 
-Scope: local deterministic evidence only under Decisions 0003 and 0005–0053, most recently [Decision 0053](../decisions/0053-approved-sprint-50-applicant-request-participation-evaluation.md). Never use live data, credentials, destinations or a production-like host.
+Scope: local deterministic evidence only under Decisions 0003 and 0005–0054, most recently [Decision 0054](../decisions/0054-approved-sprint-51-applicant-request-operational-review-submission.md). Never use live data, credentials, destinations or a production-like host.
 
 ## Preconditions
 
-- PostgreSQL contains the deterministic AvenChart gold dataset and migrations `V0282` through `V0325`.
+- PostgreSQL contains the deterministic AvenChart gold dataset and migrations `V0282` through `V0326`.
 - ASP.NET Core environment is `Development` or `Testing`.
 - `Telehealth:Enabled` is false in committed base and Development settings.
 - Only `127.0.0.1`, `localhost` and the configured `.example.test` branded host are used.
@@ -56,6 +56,7 @@ pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestPracticeNetwork.p
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestRenderingCandidate.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestParticipationContext.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestParticipationEvaluation.ps1
+pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestOperationalReviewSubmission.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthQueueConcurrency.ps1 -CallerCount 20
 ```
 

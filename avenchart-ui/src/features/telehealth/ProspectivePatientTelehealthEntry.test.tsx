@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProspectivePatientTelehealthEntry from './ProspectivePatientTelehealthEntry.tsx'
-import { acknowledgeApplicantPreRequestReadiness, acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, confirmApplicantClinicalInformationSummary, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestInsuranceSource, confirmApplicantTelehealthRequestIntake, confirmApplicantTelehealthRequestLocation, confirmApplicantTelehealthRequestParticipationContext, createApplicantTelehealthRequest, createProspectiveApplicant, evaluateApplicantTelehealthRequestParticipation, evaluateProspectiveSafetyTriage, getApplicantAllergyInformation, getApplicantClinicalInformationInventory, getApplicantClinicalInformationSummary, getApplicantCommunicationAccessReadiness, getApplicantDevicePreparation, getApplicantHealthHistoryInformation, getApplicantInsuranceHandoff, getApplicantMedicationInformation, getApplicantPracticeReviewSubmission, getApplicantPreRequestReadiness, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestEligibility, getApplicantTelehealthRequestInsuranceSource, getApplicantTelehealthRequestIntake, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestParticipationContext, getApplicantTelehealthRequestParticipationEvaluation, getApplicantTelehealthRequestPracticeNetwork, getApplicantTelehealthRequestRenderingCandidate, getApplicantTelehealthRequestUniversalSafety, getProspectiveApplicant, getProspectivePracticeNetworkOptions, recordApplicantAllergyInformation, recordApplicantClinicalInformationInventory, recordApplicantCommunicationAccessReadiness, recordApplicantDevicePreparation, recordApplicantHealthHistoryInformation, recordApplicantMedicationInformation, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, runApplicantTelehealthRequestEligibility, runApplicantTelehealthRequestPracticeNetwork, selectApplicantTelehealthRequestRenderingCandidate, submitApplicantPracticeReview, verifyProspectiveApplicantContact, type TelehealthApplicantAllergyInformation, type TelehealthApplicantClinicalInformationInventory, type TelehealthApplicantClinicalInformationSummary, type TelehealthApplicantCommunicationAccessReadiness, type TelehealthApplicantDevicePreparation, type TelehealthApplicantHealthHistoryInformation, type TelehealthApplicantInsuranceHandoff, type TelehealthApplicantMedicationInformation, type TelehealthApplicantNotice, type TelehealthApplicantPracticeReview, type TelehealthApplicantPreRequestReadiness, type TelehealthApplicantRegistrationDetails, type TelehealthApplicantRequestComplaintTriage, type TelehealthApplicantRequestCreation, type TelehealthApplicantRequestEligibility, type TelehealthApplicantRequestInsuranceSource, type TelehealthApplicantRequestIntake, type TelehealthApplicantRequestLocation, type TelehealthApplicantRequestParticipationContext, type TelehealthApplicantRequestParticipationEvaluation, type TelehealthApplicantRequestPracticeNetwork, type TelehealthApplicantRequestRenderingCandidate, type TelehealthApplicantRequestUniversalSafety } from './api.ts'
+import { acknowledgeApplicantPreRequestReadiness, acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, confirmApplicantClinicalInformationSummary, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestInsuranceSource, confirmApplicantTelehealthRequestIntake, confirmApplicantTelehealthRequestLocation, confirmApplicantTelehealthRequestParticipationContext, createApplicantTelehealthRequest, createProspectiveApplicant, evaluateApplicantTelehealthRequestParticipation, evaluateProspectiveSafetyTriage, getApplicantAllergyInformation, getApplicantClinicalInformationInventory, getApplicantClinicalInformationSummary, getApplicantCommunicationAccessReadiness, getApplicantDevicePreparation, getApplicantHealthHistoryInformation, getApplicantInsuranceHandoff, getApplicantMedicationInformation, getApplicantPracticeReviewSubmission, getApplicantPreRequestReadiness, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestEligibility, getApplicantTelehealthRequestInsuranceSource, getApplicantTelehealthRequestIntake, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestOperationalReviewSubmission, getApplicantTelehealthRequestParticipationContext, getApplicantTelehealthRequestParticipationEvaluation, getApplicantTelehealthRequestPracticeNetwork, getApplicantTelehealthRequestRenderingCandidate, getApplicantTelehealthRequestUniversalSafety, getProspectiveApplicant, getProspectivePracticeNetworkOptions, recordApplicantAllergyInformation, recordApplicantClinicalInformationInventory, recordApplicantCommunicationAccessReadiness, recordApplicantDevicePreparation, recordApplicantHealthHistoryInformation, recordApplicantMedicationInformation, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, runApplicantTelehealthRequestEligibility, runApplicantTelehealthRequestPracticeNetwork, selectApplicantTelehealthRequestRenderingCandidate, submitApplicantPracticeReview, submitApplicantTelehealthRequestForOperationalReview, verifyProspectiveApplicantContact, type TelehealthApplicantAllergyInformation, type TelehealthApplicantClinicalInformationInventory, type TelehealthApplicantClinicalInformationSummary, type TelehealthApplicantCommunicationAccessReadiness, type TelehealthApplicantDevicePreparation, type TelehealthApplicantHealthHistoryInformation, type TelehealthApplicantInsuranceHandoff, type TelehealthApplicantMedicationInformation, type TelehealthApplicantNotice, type TelehealthApplicantPracticeReview, type TelehealthApplicantPreRequestReadiness, type TelehealthApplicantRegistrationDetails, type TelehealthApplicantRequestComplaintTriage, type TelehealthApplicantRequestCreation, type TelehealthApplicantRequestEligibility, type TelehealthApplicantRequestInsuranceSource, type TelehealthApplicantRequestIntake, type TelehealthApplicantRequestLocation, type TelehealthApplicantRequestOperationalReviewSubmission, type TelehealthApplicantRequestParticipationContext, type TelehealthApplicantRequestParticipationEvaluation, type TelehealthApplicantRequestPracticeNetwork, type TelehealthApplicantRequestRenderingCandidate, type TelehealthApplicantRequestUniversalSafety } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 
 vi.mock('./api.ts', async (importOriginal) => {
@@ -24,6 +24,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     confirmApplicantTelehealthRequestLocation: vi.fn(),
     confirmApplicantTelehealthRequestParticipationContext: vi.fn(),
     evaluateApplicantTelehealthRequestParticipation: vi.fn(),
+    submitApplicantTelehealthRequestForOperationalReview: vi.fn(),
     createProspectiveApplicant: vi.fn(),
     createApplicantTelehealthRequest: vi.fn(),
     evaluateProspectiveSafetyTriage: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     getApplicantTelehealthRequestInsuranceSource: vi.fn(),
     getApplicantTelehealthRequestIntake: vi.fn(),
     getApplicantTelehealthRequestLocation: vi.fn(),
+    getApplicantTelehealthRequestOperationalReviewSubmission: vi.fn(),
     getApplicantTelehealthRequestParticipationContext: vi.fn(),
     getApplicantTelehealthRequestParticipationEvaluation: vi.fn(),
     getApplicantTelehealthRequestPracticeNetwork: vi.fn(),
@@ -1125,6 +1127,61 @@ const requestParticipationEvaluationFixture = {
   limitations: ['No payer, directory, licensing board, credentialing source, or clinician was contacted.'],
 } satisfies TelehealthApplicantRequestParticipationEvaluation
 
+const requestOperationalReviewSubmissionFixture = {
+  applicantId: approvedApplicant.applicantId,
+  applicantVersion: 26,
+  applicantStatus: 'SyntheticRequestCreated',
+  requestId: requestLocationFixture.requestId,
+  requestVersion: 11,
+  requestStatus: 'Verification',
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_OPERATIONAL_REVIEW_SUBMISSION',
+  policyVersion: 1,
+  sourceMode: 'NON_PRODUCTION',
+  compatibilityTarget: 'AVENCHART_SYNTHETIC_OPERATIONAL_REVIEW_V1',
+  submissionSnapshotFingerprint: 'f'.repeat(64),
+  resultValidThrough: '2026-08-29T17:28:00Z',
+  practiceDisplayName: 'AvenChart Synthetic Practice',
+  payerDisplayName: 'AvenChart Synthetic Health',
+  productDisplayName: 'Synthetic Silver Demo',
+  currentLocationStateCode: 'GA',
+  purposeCategory: 'migraine',
+  dateOfService: '2026-08-29',
+  candidateDisplayName: 'Georgia Synthetic Clinician',
+  maskedProviderReference: 'Synthetic provider ••••8101',
+  maskedBillingProviderReference: 'Synthetic billing provider ••••8800',
+  serviceCategory: 'ProfessionalTelehealthConsultation',
+  modality: 'RealTimeAudioVideo',
+  submissionReady: true,
+  submissionCompleted: false,
+  submittedAt: null,
+  businessOutcome: null,
+  syntheticAutomatedChecksComplete: false,
+  operationalReviewCreated: false,
+  realStateAuthorityVerified: false,
+  realCredentialingVerified: false,
+  renderingPhysicianAssigned: false,
+  renderingPhysicianNetworkChecked: false,
+  exactNetworkConfirmed: false,
+  canonicalCoverageCreated: false,
+  coverageSelected: false,
+  coverageVerified: false,
+  financialRouteCreated: false,
+  practiceAccepted: false,
+  patientContacted: false,
+  patientCareQueueEntered: false,
+  clinicianQueueEntered: false,
+  doctorSearchStarted: false,
+  queuePositionAssigned: false,
+  appointmentCreated: false,
+  encounterCreated: false,
+  consentCreated: false,
+  careAuthorized: false,
+  integrationEnabled: false,
+  externalCallPerformed: false,
+  direction: 'Review the bounded synthetic evidence and submit it for staff review.',
+  limitations: ['Operational review is not practice acceptance or authorization for care.'],
+} satisfies TelehealthApplicantRequestOperationalReviewSubmission
+
 describe('ProspectivePatientTelehealthEntry safety triage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -1155,6 +1212,7 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
     vi.mocked(getApplicantTelehealthRequestRenderingCandidate).mockResolvedValue(requestRenderingCandidateFixture)
     vi.mocked(getApplicantTelehealthRequestParticipationContext).mockResolvedValue(requestParticipationContextFixture)
     vi.mocked(getApplicantTelehealthRequestParticipationEvaluation).mockResolvedValue(requestParticipationEvaluationFixture)
+    vi.mocked(getApplicantTelehealthRequestOperationalReviewSubmission).mockResolvedValue(requestOperationalReviewSubmissionFixture)
     vi.mocked(runTelehealthDevicePreflight).mockResolvedValue({
       status: 'failed',
       message: 'This browser cannot run the secure telehealth device check.',
@@ -3842,6 +3900,18 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
       syntheticExactNetworkMatched: true,
       direction: 'The exact tuple matched the synthetic catalog; real verification remains required.',
     } satisfies TelehealthApplicantRequestParticipationEvaluation
+    const completedOperationalReviewSubmission = {
+      ...requestOperationalReviewSubmissionFixture,
+      requestVersion: 12,
+      requestStatus: 'OperationalReview',
+      submissionReady: false,
+      submissionCompleted: true,
+      submittedAt: '2026-08-29T17:18:00Z',
+      businessOutcome: 'SyntheticRequestSubmittedForOperationalReview',
+      syntheticAutomatedChecksComplete: true,
+      operationalReviewCreated: true,
+      direction: 'Submitted for practice review. The practice has not accepted the request, and insurance or payment is not guaranteed.',
+    } satisfies TelehealthApplicantRequestOperationalReviewSubmission
     vi.mocked(getProspectiveApplicant).mockResolvedValue(requestCreatedApplicant)
     vi.mocked(getApplicantTelehealthRequest).mockResolvedValue(requestCreationReceipt)
     vi.mocked(getApplicantTelehealthRequestLocation).mockResolvedValue(confirmedLocation)
@@ -3884,6 +3954,12 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
     vi.mocked(evaluateApplicantTelehealthRequestParticipation)
       .mockRejectedValueOnce(new Error('Participation-evaluation result unknown; retry unchanged.'))
       .mockResolvedValue(completedParticipationEvaluation)
+    vi.mocked(getApplicantTelehealthRequestOperationalReviewSubmission)
+      .mockRejectedValueOnce(new Error('Operational-review submission temporarily unavailable.'))
+      .mockResolvedValue(requestOperationalReviewSubmissionFixture)
+    vi.mocked(submitApplicantTelehealthRequestForOperationalReview)
+      .mockRejectedValueOnce(new Error('Operational-review submission result unknown; retry unchanged.'))
+      .mockResolvedValue(completedOperationalReviewSubmission)
 
     render(<MemoryRouter><ProspectivePatientTelehealthEntry /></MemoryRouter>)
 
@@ -4173,7 +4249,55 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
     expect(evaluationResult.parentElement).toHaveTextContent('Doctor search or queueNot started')
     await waitFor(() => expect(evaluationResult.parentElement).toHaveFocus())
 
+    expect(await screen.findByRole('alert')).toHaveTextContent('Operational-review submission temporarily unavailable.')
+    fireEvent.click(screen.getByRole('button', { name: 'Try loading submission again' }))
+    const submissionGroup = await screen.findByRole('group', { name: 'Submit the synthetic request for practice review' })
+    const submissionForm = submissionGroup.closest('form')
+    expect(submissionForm).not.toBeNull()
+    expect(submissionForm?.querySelector('textarea')).toBeNull()
+    expect(submissionForm?.querySelector('select')).toBeNull()
+    expect(submissionForm?.querySelector('input:not([type="checkbox"])')).toBeNull()
+    expect(submissionForm).toHaveTextContent('AvenChart Synthetic Practice')
+    expect(submissionForm).toHaveTextContent('Synthetic provider ••••8101')
+    expect(submissionForm).toHaveTextContent('Synthetic billing provider ••••8800')
+    expect(submissionForm).not.toHaveTextContent('18888101')
+    expect(submissionForm).not.toHaveTextContent('syn-contract')
+    for (const label of [
+      'I understand this submission uses fictional synthetic automated evidence only.',
+      'I understand insurance coverage, benefits, payment, and price are not guaranteed.',
+      'I understand the practice has not accepted this request and staff review is still pending.',
+      'I understand this submission does not create a care relationship, queue position, appointment, encounter, consent, or treatment.',
+    ]) {
+      fireEvent.click(within(submissionForm!).getByLabelText(label))
+    }
+    fireEvent.click(within(submissionForm!).getByRole('button', { name: 'Submit for practice review' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Operational-review submission result unknown; retry unchanged.')
+    fireEvent.click(within(submissionForm!).getByRole('button', { name: 'Submit for practice review' }))
+    await waitFor(() => expect(submitApplicantTelehealthRequestForOperationalReview).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(submitApplicantTelehealthRequestForOperationalReview).mock.calls[0][3]).toBe(
+      vi.mocked(submitApplicantTelehealthRequestForOperationalReview).mock.calls[1][3],
+    )
+    expect(vi.mocked(submitApplicantTelehealthRequestForOperationalReview).mock.calls[0][2]).toEqual({
+      expectedRequestVersion: 11,
+      submissionSnapshotFingerprint: 'f'.repeat(64),
+      syntheticEvidenceAcknowledged: true,
+      noCoverageGuaranteeAcknowledged: true,
+      practiceReviewPendingAcknowledged: true,
+      noCareRelationshipAcknowledged: true,
+    })
+
+    const submissionResult = await screen.findByRole('heading', { name: 'Submitted for practice review' })
+    expect(submissionResult.parentElement).toHaveTextContent('Request statusOperationalReview')
+    expect(submissionResult.parentElement).toHaveTextContent('Request version12')
+    expect(submissionResult.parentElement).toHaveTextContent('Synthetic checks complete')
+    expect(submissionResult.parentElement).toHaveTextContent('Awaiting staff review')
+    expect(submissionResult.parentElement).toHaveTextContent('Practice acceptedNo — review pending')
+    expect(submissionResult.parentElement).toHaveTextContent('Coverage verifiedNo — still required')
+    expect(submissionResult.parentElement).toHaveTextContent('Doctor search or queueNot started')
+    await waitFor(() => expect(submissionResult.parentElement).toHaveFocus())
+
     const stored = `${sessionStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}${localStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}`
-    expect(stored).not.toMatch(/insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|networkSnapshotFingerprint|candidateSnapshotFingerprint|contextSnapshotFingerprint|evaluationSnapshotFingerprint|payerDisplayName|maskedMemberId|eligibilityBusinessOutcome|networkBusinessOutcome|businessOutcome|candidateDisplayName|providerReference|billingProviderReference|contractReference/i)
-  })
+    expect(stored).not.toMatch(/insuranceSourceSnapshotFingerprint|eligibilitySnapshotFingerprint|networkSnapshotFingerprint|candidateSnapshotFingerprint|contextSnapshotFingerprint|evaluationSnapshotFingerprint|submissionSnapshotFingerprint|payerDisplayName|maskedMemberId|eligibilityBusinessOutcome|networkBusinessOutcome|businessOutcome|candidateDisplayName|providerReference|billingProviderReference|contractReference/i)
+  }, 30_000)
 })

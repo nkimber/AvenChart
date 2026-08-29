@@ -2210,6 +2210,70 @@ export type TelehealthApplicantRequestParticipationEvaluation = {
   limitations: string[]
 }
 
+export type TelehealthApplicantRequestOperationalReviewSubmissionInput = {
+  expectedRequestVersion: number
+  submissionSnapshotFingerprint: string
+  syntheticEvidenceAcknowledged: true
+  noCoverageGuaranteeAcknowledged: true
+  practiceReviewPendingAcknowledged: true
+  noCareRelationshipAcknowledged: true
+}
+
+export type TelehealthApplicantRequestOperationalReviewSubmission = {
+  applicantId: string
+  applicantVersion: 26
+  applicantStatus: 'SyntheticRequestCreated'
+  requestId: string
+  requestVersion: 11 | 12
+  requestStatus: 'Verification' | 'OperationalReview'
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_OPERATIONAL_REVIEW_SUBMISSION'
+  policyVersion: 1
+  sourceMode: 'NON_PRODUCTION'
+  compatibilityTarget: 'AVENCHART_SYNTHETIC_OPERATIONAL_REVIEW_V1'
+  submissionSnapshotFingerprint: string
+  resultValidThrough: string
+  practiceDisplayName: string
+  payerDisplayName: string
+  productDisplayName: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  purposeCategory: 'migraine' | 'sleep'
+  dateOfService: string
+  candidateDisplayName: string
+  maskedProviderReference: string
+  maskedBillingProviderReference: string
+  serviceCategory: string
+  modality: 'RealTimeAudioVideo'
+  submissionReady: boolean
+  submissionCompleted: boolean
+  submittedAt: string | null
+  businessOutcome: 'SyntheticRequestSubmittedForOperationalReview' | null
+  syntheticAutomatedChecksComplete: boolean
+  operationalReviewCreated: boolean
+  realStateAuthorityVerified: false
+  realCredentialingVerified: false
+  renderingPhysicianAssigned: false
+  renderingPhysicianNetworkChecked: false
+  exactNetworkConfirmed: false
+  canonicalCoverageCreated: false
+  coverageSelected: false
+  coverageVerified: false
+  financialRouteCreated: false
+  practiceAccepted: false
+  patientContacted: false
+  patientCareQueueEntered: false
+  clinicianQueueEntered: false
+  doctorSearchStarted: false
+  queuePositionAssigned: false
+  appointmentCreated: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -3746,6 +3810,41 @@ export function evaluateApplicantTelehealthRequestParticipation(
 ) {
   return json<TelehealthApplicantRequestParticipationEvaluation>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/participation-evaluation`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequestOperationalReviewSubmission(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestOperationalReviewSubmission>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/operational-review-submission`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function submitApplicantTelehealthRequestForOperationalReview(
+  applicantId: string,
+  applicantAccessKey: string,
+  input: TelehealthApplicantRequestOperationalReviewSubmissionInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestOperationalReviewSubmission>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/operational-review-submission`,
     {
       method: 'POST',
       headers: applicantHeaders(applicantAccessKey, {

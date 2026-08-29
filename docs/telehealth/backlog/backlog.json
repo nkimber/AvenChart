@@ -3,7 +3,7 @@
   "baselineDecision": "TH-DEC-0001",
   "baselineDate": "2026-08-26",
   "decisionOwner": "Project owner",
-  "implementationAuthorization": "disabled-synthetic-sprints-01-through-50-authorized-by-th-dec-0003-and-th-dec-0005-through-th-dec-0053-through-2026-10-31; all-other-feature-code-blocked-by-phase-2-exit-gate",
+  "implementationAuthorization": "disabled-synthetic-sprints-01-through-51-authorized-by-th-dec-0003-and-th-dec-0005-through-th-dec-0054-through-2026-10-31; all-other-feature-code-blocked-by-phase-2-exit-gate",
   "allowedStatuses": [
     "planned",
     "ready",

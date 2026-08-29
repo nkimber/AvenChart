@@ -11,6 +11,7 @@ import {
   assessApplicantTelehealthRequestUniversalSafety,
   confirmApplicantTelehealthRequestParticipationContext,
   evaluateApplicantTelehealthRequestParticipation,
+  submitApplicantTelehealthRequestForOperationalReview,
   confirmApplicantTelehealthRequestInsuranceSource,
   confirmApplicantTelehealthRequestIntake,
   confirmApplicantInsuranceHandoff,
@@ -33,6 +34,7 @@ import {
   getApplicantTelehealthRequestPracticeNetwork,
   getApplicantTelehealthRequestParticipationContext,
   getApplicantTelehealthRequestParticipationEvaluation,
+  getApplicantTelehealthRequestOperationalReviewSubmission,
   getApplicantTelehealthRequestRenderingCandidate,
   getApplicantTelehealthRequestIntake,
   getApplicantTelehealthRequestLocation,
@@ -118,6 +120,8 @@ import {
   type TelehealthApplicantRequestParticipationContextInput,
   type TelehealthApplicantRequestParticipationEvaluation,
   type TelehealthApplicantRequestParticipationEvaluationInput,
+  type TelehealthApplicantRequestOperationalReviewSubmission,
+  type TelehealthApplicantRequestOperationalReviewSubmissionInput,
   type TelehealthApplicantRequestRenderingCandidate,
   type TelehealthApplicantRequestRenderingCandidateInput,
   type TelehealthApplicantRequestIntake,
@@ -187,6 +191,7 @@ type PendingRequestPracticeNetwork = { content: string; idempotencyKey: string }
 type PendingRequestRenderingCandidate = { content: string; idempotencyKey: string }
 type PendingRequestParticipationContext = { content: string; idempotencyKey: string }
 type PendingRequestParticipationEvaluation = { content: string; idempotencyKey: string }
+type PendingRequestOperationalReviewSubmission = { content: string; idempotencyKey: string }
 type YesNoAnswer = '' | 'yes' | 'no'
 type ComplaintAnswer = '' | TelehealthSyntheticComplaintAnswer
 
@@ -390,6 +395,13 @@ const initialRequestParticipationEvaluationAcknowledgments = {
   exactTupleScope: false,
   noCoverageGuarantee: false,
   realVerificationStillRequired: false,
+}
+
+const initialRequestOperationalReviewSubmissionAcknowledgments = {
+  syntheticEvidence: false,
+  noCoverageGuarantee: false,
+  practiceReviewPending: false,
+  noCareRelationship: false,
 }
 
 function ComplaintAnswerField({
@@ -597,6 +609,10 @@ export default function ProspectivePatientTelehealthEntry() {
   const [requestParticipationEvaluationLoading, setRequestParticipationEvaluationLoading] = useState(false)
   const [requestParticipationEvaluationLoadAttempt, setRequestParticipationEvaluationLoadAttempt] = useState(0)
   const [requestParticipationEvaluationAcknowledgments, setRequestParticipationEvaluationAcknowledgments] = useState(initialRequestParticipationEvaluationAcknowledgments)
+  const [requestOperationalReviewSubmission, setRequestOperationalReviewSubmission] = useState<TelehealthApplicantRequestOperationalReviewSubmission | null>(null)
+  const [requestOperationalReviewSubmissionLoading, setRequestOperationalReviewSubmissionLoading] = useState(false)
+  const [requestOperationalReviewSubmissionLoadAttempt, setRequestOperationalReviewSubmissionLoadAttempt] = useState(0)
+  const [requestOperationalReviewSubmissionAcknowledgments, setRequestOperationalReviewSubmissionAcknowledgments] = useState(initialRequestOperationalReviewSubmissionAcknowledgments)
   const [loading, setLoading] = useState(Boolean(applicantSession))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -633,6 +649,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const pendingRequestRenderingCandidate = useRef<PendingRequestRenderingCandidate | null>(null)
   const pendingRequestParticipationContext = useRef<PendingRequestParticipationContext | null>(null)
   const pendingRequestParticipationEvaluation = useRef<PendingRequestParticipationEvaluation | null>(null)
+  const pendingRequestOperationalReviewSubmission = useRef<PendingRequestOperationalReviewSubmission | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const safetyResultRef = useRef<HTMLDivElement>(null)
   const purposeResultRef = useRef<HTMLDivElement>(null)
@@ -664,6 +681,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const requestRenderingCandidateResultRef = useRef<HTMLDivElement>(null)
   const requestParticipationContextResultRef = useRef<HTMLDivElement>(null)
   const requestParticipationEvaluationResultRef = useRef<HTMLDivElement>(null)
+  const requestOperationalReviewSubmissionResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -788,6 +806,10 @@ export default function ProspectivePatientTelehealthEntry() {
   useEffect(() => {
     if (requestParticipationEvaluation?.evaluationCompleted) requestParticipationEvaluationResultRef.current?.focus()
   }, [requestParticipationEvaluation])
+
+  useEffect(() => {
+    if (requestOperationalReviewSubmission?.submissionCompleted) requestOperationalReviewSubmissionResultRef.current?.focus()
+  }, [requestOperationalReviewSubmission])
 
   useEffect(() => {
     if (!applicantSession) {
@@ -1370,6 +1392,29 @@ export default function ProspectivePatientTelehealthEntry() {
       })
     return () => controller.abort()
   }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestParticipationContext?.confirmationCompleted, requestParticipationEvaluationLoadAttempt])
+
+  useEffect(() => {
+    if (!applicantSession
+      || applicant?.status !== 'SyntheticRequestCreated'
+      || !requestParticipationEvaluation?.evaluationCompleted) return
+    const controller = new AbortController()
+    setRequestOperationalReviewSubmissionLoading(true)
+    setError(null)
+    getApplicantTelehealthRequestOperationalReviewSubmission(
+      applicant.applicantId,
+      applicantSession.applicantAccessKey,
+      controller.signal,
+    )
+      .then(setRequestOperationalReviewSubmission)
+      .catch((caught: unknown) => {
+        if (isRequestCancellation(caught)) return
+        setError(caught instanceof Error ? caught.message : 'The operational-review submission could not be loaded.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestOperationalReviewSubmissionLoading(false)
+      })
+    return () => controller.abort()
+  }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestParticipationEvaluation?.evaluationCompleted, requestOperationalReviewSubmissionLoadAttempt])
 
   function updateValue<Key extends keyof FormValues>(key: Key, value: FormValues[Key]) {
     pendingCreate.current = null
@@ -3287,6 +3332,59 @@ export default function ProspectivePatientTelehealthEntry() {
     }
   }
 
+  function updateRequestOperationalReviewSubmissionAcknowledgment(
+    key: keyof typeof initialRequestOperationalReviewSubmissionAcknowledgments,
+    checked: boolean,
+  ) {
+    pendingRequestOperationalReviewSubmission.current = null
+    setRequestOperationalReviewSubmissionAcknowledgments((current) => ({ ...current, [key]: checked }))
+  }
+
+  async function submitRequestForOperationalReview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!applicant || !applicantSession || !requestOperationalReviewSubmission) return
+    if (!Object.values(requestOperationalReviewSubmissionAcknowledgments).every(Boolean)) {
+      setError('Accept all four operational-review submission acknowledgments before continuing.')
+      return
+    }
+    const input = {
+      expectedRequestVersion: requestOperationalReviewSubmission.requestVersion,
+      submissionSnapshotFingerprint: requestOperationalReviewSubmission.submissionSnapshotFingerprint,
+      syntheticEvidenceAcknowledged: true,
+      noCoverageGuaranteeAcknowledged: true,
+      practiceReviewPendingAcknowledged: true,
+      noCareRelationshipAcknowledged: true,
+    } satisfies TelehealthApplicantRequestOperationalReviewSubmissionInput
+    const content = JSON.stringify(input)
+    if (!pendingRequestOperationalReviewSubmission.current
+      || pendingRequestOperationalReviewSubmission.current.content !== content) {
+      pendingRequestOperationalReviewSubmission.current = { content, idempotencyKey: crypto.randomUUID() }
+    }
+
+    setError(null)
+    setSubmitting(true)
+    try {
+      const result = await submitApplicantTelehealthRequestForOperationalReview(
+        applicant.applicantId,
+        applicantSession.applicantAccessKey,
+        input,
+        pendingRequestOperationalReviewSubmission.current.idempotencyKey,
+      )
+      setRequestOperationalReviewSubmission(result)
+      pendingRequestOperationalReviewSubmission.current = null
+      setRequestOperationalReviewSubmissionAcknowledgments(initialRequestOperationalReviewSubmissionAcknowledgments)
+    } catch (caught: unknown) {
+      if (caught instanceof ApiRequestError && caught.status && caught.status < 500) {
+        pendingRequestOperationalReviewSubmission.current = null
+      }
+      setError(caught instanceof Error
+        ? caught.message
+        : 'The request could not be submitted for operational review.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   function restart() {
     clearApplicantSession()
     pendingCreate.current = null
@@ -3321,6 +3419,7 @@ export default function ProspectivePatientTelehealthEntry() {
     pendingRequestRenderingCandidate.current = null
     pendingRequestParticipationContext.current = null
     pendingRequestParticipationEvaluation.current = null
+    pendingRequestOperationalReviewSubmission.current = null
     setApplicantSession(null)
     setApplicant(null)
     setValues(initialValues)
@@ -3466,6 +3565,10 @@ export default function ProspectivePatientTelehealthEntry() {
     setRequestParticipationEvaluationLoading(false)
     setRequestParticipationEvaluationLoadAttempt(0)
     setRequestParticipationEvaluationAcknowledgments(initialRequestParticipationEvaluationAcknowledgments)
+    setRequestOperationalReviewSubmission(null)
+    setRequestOperationalReviewSubmissionLoading(false)
+    setRequestOperationalReviewSubmissionLoadAttempt(0)
+    setRequestOperationalReviewSubmissionAcknowledgments(initialRequestOperationalReviewSubmissionAcknowledgments)
     setError(null)
   }
 
@@ -5983,6 +6086,70 @@ export default function ProspectivePatientTelehealthEntry() {
                     <p><strong>{requestParticipationEvaluation.direction}</strong></p>
                     <p>No real authority, credentialing, payer/directory participation, assignment, exact real network, canonical coverage, financial route, operational review, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
                     <ul>{requestParticipationEvaluation.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                  </div>
+                ) : null}
+                {requestParticipationEvaluation?.evaluationCompleted && requestOperationalReviewSubmissionLoading ? (
+                  <p>Loading the operational-review submission…</p>
+                ) : null}
+                {requestParticipationEvaluation?.evaluationCompleted
+                  && !requestOperationalReviewSubmissionLoading
+                  && !requestOperationalReviewSubmission ? (
+                  <div className="telehealth-inline-warning" role="status">
+                    <p>The operational-review submission could not be loaded.</p>
+                    <button className="telehealth-button telehealth-button-secondary" type="button" onClick={() => setRequestOperationalReviewSubmissionLoadAttempt((value) => value + 1)}>Try loading submission again</button>
+                  </div>
+                ) : null}
+                {requestOperationalReviewSubmission?.submissionReady ? (
+                  <form className="telehealth-form" onSubmit={submitRequestForOperationalReview}>
+                    <fieldset>
+                      <legend>Submit the synthetic request for practice review</legend>
+                      <p>This no-edit review is based only on the bounded automated evidence shown below. Practice staff must still review the request.</p>
+                      <dl className="telehealth-details">
+                        <div><dt>Practice</dt><dd>{requestOperationalReviewSubmission.practiceDisplayName}</dd></div>
+                        <div><dt>Payer and product</dt><dd>{requestOperationalReviewSubmission.payerDisplayName} — {requestOperationalReviewSubmission.productDisplayName}</dd></div>
+                        <div><dt>Patient state</dt><dd>{requestOperationalReviewSubmission.currentLocationStateCode}</dd></div>
+                        <div><dt>Visit purpose</dt><dd>{requestOperationalReviewSubmission.purposeCategory}</dd></div>
+                        <div><dt>Date of service</dt><dd>{requestOperationalReviewSubmission.dateOfService}</dd></div>
+                        <div><dt>Candidate</dt><dd>{requestOperationalReviewSubmission.candidateDisplayName}</dd></div>
+                        <div><dt>Masked provider reference</dt><dd>{requestOperationalReviewSubmission.maskedProviderReference}</dd></div>
+                        <div><dt>Masked billing provider reference</dt><dd>{requestOperationalReviewSubmission.maskedBillingProviderReference}</dd></div>
+                        <div><dt>Service and modality</dt><dd>{requestOperationalReviewSubmission.serviceCategory} — {requestOperationalReviewSubmission.modality}</dd></div>
+                        <div><dt>Request version</dt><dd>{requestOperationalReviewSubmission.requestVersion}</dd></div>
+                        <div><dt>Submit before</dt><dd>{new Date(requestOperationalReviewSubmission.resultValidThrough).toLocaleString()}</dd></div>
+                      </dl>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestOperationalReviewSubmissionAcknowledgments.syntheticEvidence} onChange={(event) => updateRequestOperationalReviewSubmissionAcknowledgment('syntheticEvidence', event.target.checked)} /><span>I understand this submission uses fictional synthetic automated evidence only.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestOperationalReviewSubmissionAcknowledgments.noCoverageGuarantee} onChange={(event) => updateRequestOperationalReviewSubmissionAcknowledgment('noCoverageGuarantee', event.target.checked)} /><span>I understand insurance coverage, benefits, payment, and price are not guaranteed.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestOperationalReviewSubmissionAcknowledgments.practiceReviewPending} onChange={(event) => updateRequestOperationalReviewSubmissionAcknowledgment('practiceReviewPending', event.target.checked)} /><span>I understand the practice has not accepted this request and staff review is still pending.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestOperationalReviewSubmissionAcknowledgments.noCareRelationship} onChange={(event) => updateRequestOperationalReviewSubmissionAcknowledgment('noCareRelationship', event.target.checked)} /><span>I understand this submission does not create a care relationship, queue position, appointment, encounter, consent, or treatment.</span></label>
+                    </fieldset>
+                    <ul>{requestOperationalReviewSubmission.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                    <button
+                      className="telehealth-button"
+                      type="submit"
+                      disabled={submitting || !Object.values(requestOperationalReviewSubmissionAcknowledgments).every(Boolean)}
+                    >
+                      {submitting ? 'Submitting for review…' : 'Submit for practice review'}
+                    </button>
+                  </form>
+                ) : null}
+                {requestOperationalReviewSubmission?.submissionCompleted ? (
+                  <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestOperationalReviewSubmissionResultRef}>
+                    <h3>Submitted for practice review</h3>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestOperationalReviewSubmission.requestId}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestOperationalReviewSubmission.requestStatus}</dd></div>
+                      <div><dt>Request version</dt><dd>{requestOperationalReviewSubmission.requestVersion}</dd></div>
+                      <div><dt>Practice</dt><dd>{requestOperationalReviewSubmission.practiceDisplayName}</dd></div>
+                      <div><dt>Automated checks</dt><dd>{requestOperationalReviewSubmission.syntheticAutomatedChecksComplete ? 'Synthetic checks complete' : 'Incomplete'}</dd></div>
+                      <div><dt>Practice operational review</dt><dd>{requestOperationalReviewSubmission.operationalReviewCreated ? 'Awaiting staff review' : 'Not submitted'}</dd></div>
+                      <div><dt>Practice accepted</dt><dd>{requestOperationalReviewSubmission.practiceAccepted ? 'Yes' : 'No — review pending'}</dd></div>
+                      <div><dt>Coverage verified</dt><dd>{requestOperationalReviewSubmission.coverageVerified ? 'Yes' : 'No — still required'}</dd></div>
+                      <div><dt>Doctor search or queue</dt><dd>{requestOperationalReviewSubmission.doctorSearchStarted || requestOperationalReviewSubmission.patientCareQueueEntered || requestOperationalReviewSubmission.clinicianQueueEntered ? 'Started' : 'Not started'}</dd></div>
+                      <div><dt>Submitted</dt><dd>{requestOperationalReviewSubmission.submittedAt ? new Date(requestOperationalReviewSubmission.submittedAt).toLocaleString() : 'Recorded'}</dd></div>
+                    </dl>
+                    <p><strong>{requestOperationalReviewSubmission.direction}</strong></p>
+                    <p>No staff decision, practice acceptance, coverage, financial route, contact, queue, appointment, encounter, consent, care, integration, or external action was created.</p>
+                    <ul>{requestOperationalReviewSubmission.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                   </div>
                 ) : null}
               </>

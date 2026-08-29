@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, authorizeApplicantPracticeReview, authorizeRequest, claimApplicantPracticeReview, completePatientReadiness, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestInsuranceSource, confirmApplicantTelehealthRequestIntake, confirmApplicantTelehealthRequestLocation, confirmApplicantTelehealthRequestParticipationContext, createApplicantTelehealthRequest, createPatientRequest, createProspectiveApplicant, enterTelehealthConsultationWrapUp, evaluateApplicantTelehealthRequestParticipation, evaluateProspectiveSafetyTriage, executeApplicantSyntheticPromotion, getApplicantInsuranceHandoff, getApplicantPracticeReviewPacket, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestEligibility, getApplicantTelehealthRequestInsuranceSource, getApplicantTelehealthRequestIntake, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestParticipationContext, getApplicantTelehealthRequestParticipationEvaluation, getApplicantTelehealthRequestPracticeNetwork, getApplicantTelehealthRequestRenderingCandidate, getApplicantTelehealthRequestUniversalSafety, getPatientQueueStatus, getProspectivePracticeNetworkOptions, getTelehealthCompletionPrerequisites, getTelehealthConsultationWorkspace, getTelehealthPharmacyChoices, getTelehealthPrescriptionPreparationDraft, getTelehealthSafetyDispositionDraft, listApplicantIdentityReview, listApplicantPracticeReviewInbox, listApplicantPromotionAuthorization, listApplicantSyntheticPromotion, preparePatientConnection, preparePhysicianConnection, recordApplicantIdentityReview, recordApplicantPromotionAuthorization, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, recordTelehealthPharmacyChoice, recordTelehealthPrescriptionPreparationDraft, recordTelehealthSafetyDispositionDraft, runApplicantTelehealthRequestEligibility, runApplicantTelehealthRequestPracticeNetwork, saveTelehealthConsultationDocumentationDraft, selectApplicantTelehealthRequestRenderingCandidate, startTelehealthConsultation, verifyPatientCoverage, verifyProspectiveApplicantContact, type TelehealthDevicePreflight, type TelehealthReadiness } from './api.ts'
+import { acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, authorizeApplicantPracticeReview, authorizeRequest, claimApplicantPracticeReview, completePatientReadiness, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestInsuranceSource, confirmApplicantTelehealthRequestIntake, confirmApplicantTelehealthRequestLocation, confirmApplicantTelehealthRequestParticipationContext, createApplicantTelehealthRequest, createPatientRequest, createProspectiveApplicant, enterTelehealthConsultationWrapUp, evaluateApplicantTelehealthRequestParticipation, evaluateProspectiveSafetyTriage, executeApplicantSyntheticPromotion, getApplicantInsuranceHandoff, getApplicantPracticeReviewPacket, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestEligibility, getApplicantTelehealthRequestInsuranceSource, getApplicantTelehealthRequestIntake, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestOperationalReviewSubmission, getApplicantTelehealthRequestParticipationContext, getApplicantTelehealthRequestParticipationEvaluation, getApplicantTelehealthRequestPracticeNetwork, getApplicantTelehealthRequestRenderingCandidate, getApplicantTelehealthRequestUniversalSafety, getPatientQueueStatus, getProspectivePracticeNetworkOptions, getTelehealthCompletionPrerequisites, getTelehealthConsultationWorkspace, getTelehealthPharmacyChoices, getTelehealthPrescriptionPreparationDraft, getTelehealthSafetyDispositionDraft, listApplicantIdentityReview, listApplicantPracticeReviewInbox, listApplicantPromotionAuthorization, listApplicantSyntheticPromotion, preparePatientConnection, preparePhysicianConnection, recordApplicantIdentityReview, recordApplicantPromotionAuthorization, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, recordTelehealthPharmacyChoice, recordTelehealthPrescriptionPreparationDraft, recordTelehealthSafetyDispositionDraft, runApplicantTelehealthRequestEligibility, runApplicantTelehealthRequestPracticeNetwork, saveTelehealthConsultationDocumentationDraft, selectApplicantTelehealthRequestRenderingCandidate, startTelehealthConsultation, submitApplicantTelehealthRequestForOperationalReview, verifyPatientCoverage, verifyProspectiveApplicantContact, type TelehealthDevicePreflight, type TelehealthReadiness } from './api.ts'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -479,6 +479,45 @@ describe('telehealth transport boundaries', () => {
     expect(postInit?.cache).toBe('no-store')
     expect(postHeaders.get('X-AvenChart-Telehealth-Applicant-Key')).toBe('access-secret')
     expect(postHeaders.get('X-Idempotency-Key')).toBe('participation-evaluation-retry-key')
+    expect(JSON.parse(String(postInit?.body))).toEqual(input)
+    expect(String(postInit?.body)).not.toMatch(/"(?:staffId|provider|physician|npi|tin|license|authority|contract|payer|product|network|location|service|modality|outcome|patientId|price|queue|freeText|note)"\s*:/i)
+  })
+
+  it('submits the applicant request for operational review using only snapshot and four acknowledgments', async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ submissionReady: true }))
+    const input = {
+      expectedRequestVersion: 11,
+      submissionSnapshotFingerprint: 'f'.repeat(64),
+      syntheticEvidenceAcknowledged: true as const,
+      noCoverageGuaranteeAcknowledged: true as const,
+      practiceReviewPendingAcknowledged: true as const,
+      noCareRelationshipAcknowledged: true as const,
+    }
+
+    await getApplicantTelehealthRequestOperationalReviewSubmission('applicant/1', 'access-secret')
+    await submitApplicantTelehealthRequestForOperationalReview(
+      'applicant/1',
+      'access-secret',
+      input,
+      'operational-review-submission-retry-key',
+    )
+
+    const [getUrl, getInit] = fetchMock.mock.calls[0]
+    const getHeaders = new Headers(getInit?.headers)
+    expect(String(getUrl)).toContain('/applicants/applicant%2F1/telehealth-request/operational-review-submission')
+    expect(getInit?.method).toBeUndefined()
+    expect(getInit?.cache).toBe('no-store')
+    expect(getInit?.body).toBeUndefined()
+    expect(getHeaders.get('X-AvenChart-Telehealth-Applicant-Key')).toBe('access-secret')
+    expect(getHeaders.has('X-Idempotency-Key')).toBe(false)
+
+    const [postUrl, postInit] = fetchMock.mock.calls[1]
+    const postHeaders = new Headers(postInit?.headers)
+    expect(String(postUrl)).toContain('/applicants/applicant%2F1/telehealth-request/operational-review-submission')
+    expect(postInit?.method).toBe('POST')
+    expect(postInit?.cache).toBe('no-store')
+    expect(postHeaders.get('X-AvenChart-Telehealth-Applicant-Key')).toBe('access-secret')
+    expect(postHeaders.get('X-Idempotency-Key')).toBe('operational-review-submission-retry-key')
     expect(JSON.parse(String(postInit?.body))).toEqual(input)
     expect(String(postInit?.body)).not.toMatch(/"(?:staffId|provider|physician|npi|tin|license|authority|contract|payer|product|network|location|service|modality|outcome|patientId|price|queue|freeText|note)"\s*:/i)
   })

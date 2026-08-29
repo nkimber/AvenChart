@@ -545,6 +545,24 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/operational-review-submission", GetApplicantTelehealthRequestOperationalReviewSubmissionAsync)
+            .WithName("GetTelehealthApplicantRequestOperationalReviewSubmission")
+            .WithDescription("Returns a minimized NON_PRODUCTION request submission review. It does not create coverage, practice acceptance, a queue entry, an appointment, an encounter, or care.")
+            .Produces<TelehealthApplicantRequestOperationalReviewSubmissionResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/operational-review-submission", SubmitApplicantTelehealthRequestForOperationalReviewAsync)
+            .WithName("SubmitTelehealthApplicantRequestForOperationalReview")
+            .WithDescription("Submits one exact synthetic request for practice operational review and advances only Verification version 11 to OperationalReview version 12. It does not accept the request or create a care queue or other downstream consequence.")
+            .Accepts<SubmitTelehealthApplicantRequestForOperationalReview>("application/json")
+            .Produces<TelehealthApplicantRequestOperationalReviewSubmissionResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1778,6 +1796,39 @@ public static class TelehealthEndpoints
         {
             SetProspectiveApplicantPrivateResponse(context);
             return Results.Ok(await service.EvaluateAsync(
+                context,
+                applicantId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestOperationalReviewSubmissionAsync(
+        TelehealthApplicantRequestOperationalReviewSubmissionService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> SubmitApplicantTelehealthRequestForOperationalReviewAsync(
+        TelehealthApplicantRequestOperationalReviewSubmissionService service,
+        HttpContext context,
+        Guid applicantId,
+        SubmitTelehealthApplicantRequestForOperationalReview request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.SubmitAsync(
                 context,
                 applicantId,
                 request,
