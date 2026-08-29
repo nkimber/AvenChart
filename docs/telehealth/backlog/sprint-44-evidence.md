@@ -32,8 +32,8 @@ The response remains explicitly pending and publication-blocked. It does not ver
 | Isolated migration ledger/readiness | 275 migrations through V0319 / 63 required tables |
 | Full migration and recovery rehearsal | 275 migrations / 29 scenarios |
 | Queue and consultation lifecycle regression | 134 checks / 20 concurrent callers |
-| Planning and governance validation | Pending final generated count / 3 rejected mutations |
-| Deterministic code graph | Pending final generated count / 2 portable artifacts required |
+| Planning and governance validation | 89 checks / 162 Markdown files / 542 relative links / 3 rejected mutations |
+| Deterministic code graph | 9,709 nodes / 21,707 edges / 532 communities / 2 portable artifacts passed |
 | Generated bootstrap fingerprint | Unchanged SHA-256 `6a1a6ca3de61608654921edb843d48a4b07dcc8899d3e6ca4056cf8b838745a2` |
 
 ## Controls demonstrated
@@ -59,9 +59,11 @@ The first runtime-safety run identified its expected readiness-table count as 62
 
 ## Environment boundary
 
-The live proof ran against the exact disposable `avenchart_test_sprint44_schema` database and `avenchart-api-sprint44-e2e` API container with synthetic Georgia, California, and Florida fixtures. No real person, PHI, credential, payer, pharmacy, provider directory, notification, media, clearinghouse, or other external destination was used. The normal database remained outside the proof. The generated bootstrap verified unchanged with the recorded fingerprint.
+The live proof ran against the exact disposable `avenchart_test_sprint44_schema` database and `avenchart-api-sprint44-e2e` API container with synthetic Georgia, California, and Florida fixtures. No real person, PHI, credential, payer, pharmacy, provider directory, notification, media, clearinghouse, or other external destination was used. The normal database remained outside the proof and was verified unchanged at 237 recorded migrations, maximum numeric migration version 281, and 1,000 patients. The generated bootstrap verified unchanged with the recorded fingerprint.
 
-Graph size, review-delta coverage, planning-validation counts, normal-database invariants, and final disposable-environment removal are recorded after the remaining deterministic verification steps complete.
+The deterministic graph was rebuilt from 1,036 code files into 9,709 nodes, 21,707 edges, and 532 communities. Its two durable artifacts passed the repository portability check. The Sprint 44 review delta identified all 11 selected migration, policy, repository, service, endpoint, contract, registration, readiness, frontend API, applicant-entry, and staff-access-helper surfaces across 442 changed nodes and 80 capped impacted nodes. The endpoint group, shared frontend transport and applicant headers, database provenance guard, applicant receipt, and repository are the principal hubs. Direct backend, frontend, policy, browser, schema, live replay/isolation/drift, OpenAPI, runtime, authorization, and queue-concurrency coverage addresses the graph's conservative test-gap warnings.
+
+The exact disposable Sprint 44 API container and database were removed after every API-dependent verification completed and the normal database was confirmed unchanged. Both disposable targets were then confirmed absent; this synthetic proof environment is intentionally not recoverable.
 
 ## Remaining product and production gates
 
