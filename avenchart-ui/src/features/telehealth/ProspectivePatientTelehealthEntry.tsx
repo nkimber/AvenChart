@@ -7,6 +7,7 @@ import { ApiRequestError, isRequestCancellation } from '../../api/transport.ts'
 import {
   acknowledgeApplicantPreRequestReadiness,
   acknowledgeApplicantTelehealthNotice,
+  assessApplicantTelehealthRequestUniversalSafety,
   confirmApplicantInsuranceHandoff,
   confirmApplicantClinicalInformationSummary,
   confirmApplicantRegistrationDetails,
@@ -22,6 +23,7 @@ import {
   getApplicantPracticeReviewSubmission,
   getApplicantTelehealthRequest,
   getApplicantTelehealthRequestLocation,
+  getApplicantTelehealthRequestUniversalSafety,
   getApplicantMedicationInformation,
   getApplicantDevicePreparation,
   getApplicantTelehealthNotice,
@@ -90,6 +92,8 @@ import {
   type TelehealthApplicantRequestCreationInput,
   type TelehealthApplicantRequestLocation,
   type TelehealthApplicantRequestLocationInput,
+  type TelehealthApplicantRequestUniversalSafety,
+  type TelehealthApplicantRequestUniversalSafetyInput,
   type TelehealthApplicantDevicePreparation,
   type TelehealthApplicantDevicePreparationInput,
 } from './api.ts'
@@ -141,6 +145,7 @@ type PendingPreRequestReadiness = { content: string; idempotencyKey: string }
 type PendingPracticeReview = { content: string; idempotencyKey: string }
 type PendingRequestCreation = { content: string; idempotencyKey: string }
 type PendingRequestLocation = { content: string; idempotencyKey: string }
+type PendingRequestSafety = { content: string; idempotencyKey: string }
 type YesNoAnswer = '' | 'yes' | 'no'
 
 const initialSafetyAnswers = {
@@ -249,6 +254,19 @@ const initialRequestLocationAcknowledgments = {
   callbackNumber: false,
   changedLocationRequiresRestart: false,
   urgentOrWorseningSymptomsRequireImmediateAction: false,
+}
+
+const initialRequestSafetyAnswers = {
+  emergency: '' as YesNoAnswer,
+  severe: '' as YesNoAnswer,
+  handsOn: '' as YesNoAnswer,
+  unsure: '' as YesNoAnswer,
+}
+
+const initialRequestSafetyConfirmations = {
+  currentLocation: false,
+  callbackNumber: false,
+  syntheticData: false,
 }
 
 function clinicalInformationStatusLabel(status: TelehealthApplicantClinicalInformationCategoryStatus | null) {
@@ -380,6 +398,11 @@ export default function ProspectivePatientTelehealthEntry() {
   const [requestLocationLoadAttempt, setRequestLocationLoadAttempt] = useState(0)
   const [requestLocationStateCode, setRequestLocationStateCode] = useState<'' | 'GA' | 'CA' | 'FL'>('')
   const [requestLocationAcknowledgments, setRequestLocationAcknowledgments] = useState(initialRequestLocationAcknowledgments)
+  const [requestSafety, setRequestSafety] = useState<TelehealthApplicantRequestUniversalSafety | null>(null)
+  const [requestSafetyLoading, setRequestSafetyLoading] = useState(false)
+  const [requestSafetyLoadAttempt, setRequestSafetyLoadAttempt] = useState(0)
+  const [requestSafetyAnswers, setRequestSafetyAnswers] = useState(initialRequestSafetyAnswers)
+  const [requestSafetyConfirmations, setRequestSafetyConfirmations] = useState(initialRequestSafetyConfirmations)
   const [loading, setLoading] = useState(Boolean(applicantSession))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -407,6 +430,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const pendingPracticeReview = useRef<PendingPracticeReview | null>(null)
   const pendingRequestCreation = useRef<PendingRequestCreation | null>(null)
   const pendingRequestLocation = useRef<PendingRequestLocation | null>(null)
+  const pendingRequestSafety = useRef<PendingRequestSafety | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const safetyResultRef = useRef<HTMLDivElement>(null)
   const purposeResultRef = useRef<HTMLDivElement>(null)
@@ -429,6 +453,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const practiceReviewResultRef = useRef<HTMLDivElement>(null)
   const requestCreationResultRef = useRef<HTMLDivElement>(null)
   const requestLocationResultRef = useRef<HTMLDivElement>(null)
+  const requestSafetyResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -517,6 +542,10 @@ export default function ProspectivePatientTelehealthEntry() {
   useEffect(() => {
     if (requestLocation?.locationConfirmed) requestLocationResultRef.current?.focus()
   }, [requestLocation])
+
+  useEffect(() => {
+    if (requestSafety?.assessmentCreated) requestSafetyResultRef.current?.focus()
+  }, [requestSafety])
 
   useEffect(() => {
     if (!applicantSession) {
@@ -889,6 +918,29 @@ export default function ProspectivePatientTelehealthEntry() {
       })
     return () => controller.abort()
   }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestLocationLoadAttempt])
+
+  useEffect(() => {
+    if (!applicantSession
+      || applicant?.status !== 'SyntheticRequestCreated'
+      || !requestLocation?.locationConfirmed) return
+    const controller = new AbortController()
+    setRequestSafetyLoading(true)
+    setError(null)
+    getApplicantTelehealthRequestUniversalSafety(
+      applicant.applicantId,
+      applicantSession.applicantAccessKey,
+      controller.signal,
+    )
+      .then(setRequestSafety)
+      .catch((caught: unknown) => {
+        if (isRequestCancellation(caught)) return
+        setError(caught instanceof Error ? caught.message : 'The request universal safety screen could not be loaded.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestSafetyLoading(false)
+      })
+    return () => controller.abort()
+  }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestLocation?.locationConfirmed, requestSafetyLoadAttempt])
 
   function updateValue<Key extends keyof FormValues>(key: Key, value: FormValues[Key]) {
     pendingCreate.current = null
@@ -2242,6 +2294,76 @@ export default function ProspectivePatientTelehealthEntry() {
     }
   }
 
+  function updateRequestSafetyAnswer(
+    key: keyof typeof initialRequestSafetyAnswers,
+    answer: YesNoAnswer,
+  ) {
+    pendingRequestSafety.current = null
+    setRequestSafetyAnswers((current) => ({ ...current, [key]: answer }))
+  }
+
+  function updateRequestSafetyConfirmation(
+    key: keyof typeof initialRequestSafetyConfirmations,
+    checked: boolean,
+  ) {
+    pendingRequestSafety.current = null
+    setRequestSafetyConfirmations((current) => ({ ...current, [key]: checked }))
+  }
+
+  async function assessRequestSafety(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!applicant || !applicantSession || !requestSafety) return
+    if (Object.values(requestSafetyAnswers).some((answer) => answer === '')) {
+      setError('Answer every universal safety question before continuing.')
+      return
+    }
+    if (!Object.values(requestSafetyConfirmations).every(Boolean)) {
+      setError('Confirm the location, callback route, and synthetic-data boundary before continuing.')
+      return
+    }
+
+    setError(null)
+    const input = {
+      expectedRequestVersion: requestSafety.requestVersion,
+      contextSnapshotFingerprint: requestSafety.contextSnapshotFingerprint,
+      currentLocationStateCode: requestSafety.currentLocationStateCode,
+      currentLocationConfirmed: true,
+      callbackNumberConfirmed: true,
+      syntheticDataConfirmed: true,
+      hasEmergencyWarning: requestSafetyAnswers.emergency === 'yes',
+      severeOrWorsening: requestSafetyAnswers.severe === 'yes',
+      requiresHandsOnExam: requestSafetyAnswers.handsOn === 'yes',
+      unsure: requestSafetyAnswers.unsure === 'yes',
+    } satisfies TelehealthApplicantRequestUniversalSafetyInput
+    const content = JSON.stringify(input)
+    if (!pendingRequestSafety.current || pendingRequestSafety.current.content !== content) {
+      pendingRequestSafety.current = { content, idempotencyKey: crypto.randomUUID() }
+    }
+
+    setSubmitting(true)
+    try {
+      const result = await assessApplicantTelehealthRequestUniversalSafety(
+        applicant.applicantId,
+        applicantSession.applicantAccessKey,
+        input,
+        pendingRequestSafety.current.idempotencyKey,
+      )
+      setRequestSafety(result)
+      pendingRequestSafety.current = null
+      setRequestSafetyAnswers(initialRequestSafetyAnswers)
+      setRequestSafetyConfirmations(initialRequestSafetyConfirmations)
+    } catch (caught: unknown) {
+      if (caught instanceof ApiRequestError && caught.status && caught.status < 500) {
+        pendingRequestSafety.current = null
+      }
+      setError(caught instanceof Error
+        ? caught.message
+        : 'The request universal safety screen could not be evaluated.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   function restart() {
     clearApplicantSession()
     pendingCreate.current = null
@@ -2267,6 +2389,7 @@ export default function ProspectivePatientTelehealthEntry() {
     pendingPracticeReview.current = null
     pendingRequestCreation.current = null
     pendingRequestLocation.current = null
+    pendingRequestSafety.current = null
     setApplicantSession(null)
     setApplicant(null)
     setValues(initialValues)
@@ -2372,6 +2495,11 @@ export default function ProspectivePatientTelehealthEntry() {
     setRequestLocationLoadAttempt(0)
     setRequestLocationStateCode('')
     setRequestLocationAcknowledgments(initialRequestLocationAcknowledgments)
+    setRequestSafety(null)
+    setRequestSafetyLoading(false)
+    setRequestSafetyLoadAttempt(0)
+    setRequestSafetyAnswers(initialRequestSafetyAnswers)
+    setRequestSafetyConfirmations(initialRequestSafetyConfirmations)
     setError(null)
   }
 
@@ -4170,6 +4298,71 @@ export default function ProspectivePatientTelehealthEntry() {
                       <strong>Emergency symptoms now?</strong>
                       <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a>
                     </div>
+                  </div>
+                ) : null}
+                {requestLocation?.locationConfirmed && requestSafetyLoading ? (
+                  <p role="status">Loading the request universal safety screen…</p>
+                ) : null}
+                {requestLocation?.locationConfirmed && !requestSafetyLoading && !requestSafety ? (
+                  <button className="telehealth-button" type="button" onClick={() => setRequestSafetyLoadAttempt((value) => value + 1)}>
+                    Retry universal safety-screen load
+                  </button>
+                ) : null}
+                {requestSafety?.assessmentReady ? (
+                  <form className="telehealth-review-form" onSubmit={assessRequestSafety}>
+                    <div className="telehealth-emergency" role="note">
+                      <h3>Emergency direction is immediate</h3>
+                      <p>If any current symptom may be an emergency, call 911 now or go to the nearest emergency department. Do not wait to submit this form.</p>
+                      <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a>
+                    </div>
+                    <h3>Request universal safety screen</h3>
+                    <p id="request-universal-safety-help">Choose an explicit answer for every question. This immutable synthetic fixture is not approved clinical content, diagnosis, or complete telehealth eligibility.</p>
+                    <dl className="telehealth-details">
+                      <div><dt>Current location state</dt><dd>{requestSafety.currentLocationStateCode}</dd></div>
+                      <div><dt>Callback number</dt><dd>{requestSafety.maskedCallbackPhone}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestSafety.requestStatus}</dd></div>
+                      <div><dt>Context expires</dt><dd>{new Date(requestSafety.contextExpiresAt).toLocaleString()}</dd></div>
+                    </dl>
+                    <fieldset aria-describedby="request-universal-safety-help"><legend>Could any current symptom be an emergency?</legend><label className="telehealth-check"><input required type="radio" name="request-emergency" value="yes" checked={requestSafetyAnswers.emergency === 'yes'} onChange={() => updateRequestSafetyAnswer('emergency', 'yes')} />Yes</label><label className="telehealth-check"><input required type="radio" name="request-emergency" value="no" checked={requestSafetyAnswers.emergency === 'no'} onChange={() => updateRequestSafetyAnswer('emergency', 'no')} />No</label></fieldset>
+                    {requestSafetyAnswers.emergency === 'yes' ? <p className="telehealth-inline-warning" role="alert"><strong>Call 911 now or go to the nearest emergency department.</strong> This application has not contacted or dispatched emergency services.</p> : null}
+                    <fieldset><legend>Are symptoms severe or getting worse quickly?</legend><label className="telehealth-check"><input required type="radio" name="request-severe" value="yes" checked={requestSafetyAnswers.severe === 'yes'} onChange={() => updateRequestSafetyAnswer('severe', 'yes')} />Yes</label><label className="telehealth-check"><input required type="radio" name="request-severe" value="no" checked={requestSafetyAnswers.severe === 'no'} onChange={() => updateRequestSafetyAnswer('severe', 'no')} />No</label></fieldset>
+                    <fieldset><legend>Does this seem to require a hands-on examination or procedure?</legend><label className="telehealth-check"><input required type="radio" name="request-hands-on" value="yes" checked={requestSafetyAnswers.handsOn === 'yes'} onChange={() => updateRequestSafetyAnswer('handsOn', 'yes')} />Yes</label><label className="telehealth-check"><input required type="radio" name="request-hands-on" value="no" checked={requestSafetyAnswers.handsOn === 'no'} onChange={() => updateRequestSafetyAnswer('handsOn', 'no')} />No</label></fieldset>
+                    <fieldset><legend>Are you unsure about any answer above?</legend><label className="telehealth-check"><input required type="radio" name="request-unsure" value="yes" checked={requestSafetyAnswers.unsure === 'yes'} onChange={() => updateRequestSafetyAnswer('unsure', 'yes')} />Yes</label><label className="telehealth-check"><input required type="radio" name="request-unsure" value="no" checked={requestSafetyAnswers.unsure === 'no'} onChange={() => updateRequestSafetyAnswer('unsure', 'no')} />No</label></fieldset>
+                    <fieldset className="telehealth-fieldset">
+                      <legend>Required context confirmations</legend>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestSafetyConfirmations.currentLocation} onChange={(event) => updateRequestSafetyConfirmation('currentLocation', event.target.checked)} /><span>I confirm the displayed state is my current physical location.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestSafetyConfirmations.callbackNumber} onChange={(event) => updateRequestSafetyConfirmation('callbackNumber', event.target.checked)} /><span>I confirm the displayed masked callback number remains correct.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestSafetyConfirmations.syntheticData} onChange={(event) => updateRequestSafetyConfirmation('syntheticData', event.target.checked)} /><span>I confirm every answer is fictional synthetic demonstration data.</span></label>
+                    </fieldset>
+                    <ul>{requestSafety.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                    <button
+                      className="telehealth-button"
+                      type="submit"
+                      disabled={submitting || Object.values(requestSafetyAnswers).some((answer) => answer === '') || !Object.values(requestSafetyConfirmations).every(Boolean)}
+                    >
+                      {submitting ? 'Evaluating request safety screen…' : 'Evaluate request universal safety screen'}
+                    </button>
+                  </form>
+                ) : null}
+                {requestSafety?.assessmentCreated ? (
+                  <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestSafetyResultRef}>
+                    <h3>{requestSafety.publicDisposition === 'UniversalSafetyPassed' ? 'Universal safety screen passed' : 'Universal safety screen stopped progression'}</h3>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestSafety.requestId}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestSafety.requestStatus}</dd></div>
+                      <div><dt>Public disposition</dt><dd>{requestSafety.publicDisposition}</dd></div>
+                      <div><dt>Universal safety passed</dt><dd>{requestSafety.universalSafetyPassed ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Complaint-specific triage required</dt><dd>{requestSafety.complaintSpecificTriageRequired ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Complaint-specific triage created</dt><dd>{requestSafety.complaintSpecificTriageCreated ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Clinical review required</dt><dd>{requestSafety.clinicalReviewRequired ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Clinical-review work item created</dt><dd>{requestSafety.clinicalReviewCreated ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Doctor search or queue</dt><dd>{requestSafety.doctorSearchStarted || requestSafety.patientCareQueueEntered || requestSafety.clinicianQueueEntered ? 'Started' : 'Not started'}</dd></div>
+                      <div><dt>Evaluated</dt><dd>{requestSafety.evaluatedAt ? new Date(requestSafety.evaluatedAt).toLocaleString() : 'Recorded'}</dd></div>
+                    </dl>
+                    <p><strong>{requestSafety.direction}</strong></p>
+                    {requestSafety.outcome === 'Emergency' ? <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a> : null}
+                    <p>No submitted safety answer or answer fingerprint is returned. No doctor search, queue, appointment, encounter, consent, care, prescribing, financial, integration, or external action was created.</p>
+                    <ul>{requestSafety.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                   </div>
                 ) : null}
               </>

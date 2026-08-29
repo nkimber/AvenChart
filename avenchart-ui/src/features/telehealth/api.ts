@@ -1552,6 +1552,63 @@ export type TelehealthApplicantRequestLocation = {
   limitations: string[]
 }
 
+export type TelehealthApplicantRequestUniversalSafetyInput = {
+  expectedRequestVersion: number
+  contextSnapshotFingerprint: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  currentLocationConfirmed: true
+  callbackNumberConfirmed: true
+  syntheticDataConfirmed: true
+  hasEmergencyWarning: boolean
+  severeOrWorsening: boolean
+  requiresHandsOnExam: boolean
+  unsure: boolean
+}
+
+export type TelehealthApplicantRequestUniversalSafety = {
+  applicantId: string
+  applicantVersion: number
+  applicantStatus: 'SyntheticRequestCreated'
+  requestId: string
+  requestVersion: 2 | 3
+  requestStatus: 'LocationConfirmed' | 'SafetyScreening' | 'EmergencyRedirected' | 'InPersonRecommended' | 'ClinicalReview'
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_UNIVERSAL_SAFETY_ASSESSMENT'
+  policyVersion: 1
+  protocolKey: 'synthetic-universal-safety'
+  protocolVersion: 1
+  contextSnapshotFingerprint: string
+  contextExpiresAt: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  maskedCallbackPhone: string
+  assessmentReady: boolean
+  assessmentCreated: boolean
+  outcome: 'Emergency' | 'UrgentInPerson' | 'InPersonRequired' | 'ClinicalReview' | 'TelehealthEligible' | null
+  publicDisposition: 'EmergencyCareNow' | 'PromptInPersonCare' | 'InPersonCareRequired' | 'ClinicalReviewRequired' | 'UniversalSafetyPassed' | null
+  evaluatedAt: string | null
+  universalSafetyPassed: boolean
+  complaintSpecificTriageRequired: boolean
+  complaintSpecificTriageCreated: false
+  clinicalReviewRequired: boolean
+  clinicalReviewCreated: false
+  terminalForTelehealth: boolean
+  patientContacted: false
+  patientCareQueueEntered: false
+  clinicianQueueEntered: false
+  doctorSearchStarted: false
+  queuePositionAssigned: false
+  appointmentCreated: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  prescribingEnabled: false
+  billingEnabled: false
+  claimCreated: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -1566,7 +1623,7 @@ export type TelehealthRequest = {
   coverage: TelehealthCoverageStatus | null
 }
 
-export type TelehealthRequestStatus = 'Draft' | 'LocationConfirmed' | 'Intake' | 'Verification' | 'OperationalReview' | 'Redirected' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp'
+export type TelehealthRequestStatus = 'Draft' | 'LocationConfirmed' | 'SafetyScreening' | 'EmergencyRedirected' | 'InPersonRecommended' | 'ClinicalReview' | 'Intake' | 'Verification' | 'OperationalReview' | 'Redirected' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp'
 
 export type TelehealthPatientQueueStatus = {
   requestId: string
@@ -2773,6 +2830,41 @@ export function confirmApplicantTelehealthRequestLocation(
 ) {
   return json<TelehealthApplicantRequestLocation>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/location`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequestUniversalSafety(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestUniversalSafety>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/safety`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function assessApplicantTelehealthRequestUniversalSafety(
+  applicantId: string,
+  applicantAccessKey: string,
+  input: TelehealthApplicantRequestUniversalSafetyInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestUniversalSafety>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/safety`,
     {
       method: 'POST',
       headers: applicantHeaders(applicantAccessKey, {

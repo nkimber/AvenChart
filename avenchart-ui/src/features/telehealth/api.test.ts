@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { acknowledgeApplicantTelehealthNotice, authorizeApplicantPracticeReview, authorizeRequest, claimApplicantPracticeReview, completePatientReadiness, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestLocation, createApplicantTelehealthRequest, createPatientRequest, createProspectiveApplicant, enterTelehealthConsultationWrapUp, evaluateProspectiveSafetyTriage, executeApplicantSyntheticPromotion, getApplicantInsuranceHandoff, getApplicantPracticeReviewPacket, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestLocation, getPatientQueueStatus, getProspectivePracticeNetworkOptions, getTelehealthCompletionPrerequisites, getTelehealthConsultationWorkspace, getTelehealthPharmacyChoices, getTelehealthPrescriptionPreparationDraft, getTelehealthSafetyDispositionDraft, listApplicantIdentityReview, listApplicantPracticeReviewInbox, listApplicantPromotionAuthorization, listApplicantSyntheticPromotion, preparePatientConnection, preparePhysicianConnection, recordApplicantIdentityReview, recordApplicantPromotionAuthorization, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, recordTelehealthPharmacyChoice, recordTelehealthPrescriptionPreparationDraft, recordTelehealthSafetyDispositionDraft, saveTelehealthConsultationDocumentationDraft, startTelehealthConsultation, verifyPatientCoverage, verifyProspectiveApplicantContact, type TelehealthDevicePreflight, type TelehealthReadiness } from './api.ts'
+import { acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestUniversalSafety, authorizeApplicantPracticeReview, authorizeRequest, claimApplicantPracticeReview, completePatientReadiness, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestLocation, createApplicantTelehealthRequest, createPatientRequest, createProspectiveApplicant, enterTelehealthConsultationWrapUp, evaluateProspectiveSafetyTriage, executeApplicantSyntheticPromotion, getApplicantInsuranceHandoff, getApplicantPracticeReviewPacket, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestUniversalSafety, getPatientQueueStatus, getProspectivePracticeNetworkOptions, getTelehealthCompletionPrerequisites, getTelehealthConsultationWorkspace, getTelehealthPharmacyChoices, getTelehealthPrescriptionPreparationDraft, getTelehealthSafetyDispositionDraft, listApplicantIdentityReview, listApplicantPracticeReviewInbox, listApplicantPromotionAuthorization, listApplicantSyntheticPromotion, preparePatientConnection, preparePhysicianConnection, recordApplicantIdentityReview, recordApplicantPromotionAuthorization, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, recordTelehealthPharmacyChoice, recordTelehealthPrescriptionPreparationDraft, recordTelehealthSafetyDispositionDraft, saveTelehealthConsultationDocumentationDraft, startTelehealthConsultation, verifyPatientCoverage, verifyProspectiveApplicantContact, type TelehealthDevicePreflight, type TelehealthReadiness } from './api.ts'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -109,6 +109,49 @@ describe('telehealth transport boundaries', () => {
     expect(postHeaders.get('X-Idempotency-Key')).toBe('request-location-retry-key')
     expect(JSON.parse(String(postInit?.body))).toEqual(input)
     expect(String(postInit?.body)).not.toMatch(/patientId|callbackPhone|phoneNumber|clinical|complaint|priority|note/i)
+  })
+
+  it('keeps applicant request-safety reads private and submits only explicit bounded answers with retry identity', async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ assessmentReady: true }))
+    const input = {
+      expectedRequestVersion: 2,
+      contextSnapshotFingerprint: 'b'.repeat(64),
+      currentLocationStateCode: 'CA' as const,
+      currentLocationConfirmed: true as const,
+      callbackNumberConfirmed: true as const,
+      syntheticDataConfirmed: true as const,
+      hasEmergencyWarning: false,
+      severeOrWorsening: false,
+      requiresHandsOnExam: false,
+      unsure: true,
+    }
+
+    await getApplicantTelehealthRequestUniversalSafety('applicant/1', 'access-secret')
+    await assessApplicantTelehealthRequestUniversalSafety(
+      'applicant/1',
+      'access-secret',
+      input,
+      'request-safety-retry-key',
+    )
+
+    const [getUrl, getInit] = fetchMock.mock.calls[0]
+    const getHeaders = new Headers(getInit?.headers)
+    expect(String(getUrl)).toContain('/applicants/applicant%2F1/telehealth-request/safety')
+    expect(getInit?.method).toBeUndefined()
+    expect(getInit?.cache).toBe('no-store')
+    expect(getInit?.body).toBeUndefined()
+    expect(getHeaders.get('X-AvenChart-Telehealth-Applicant-Key')).toBe('access-secret')
+    expect(getHeaders.has('X-Idempotency-Key')).toBe(false)
+
+    const [postUrl, postInit] = fetchMock.mock.calls[1]
+    const postHeaders = new Headers(postInit?.headers)
+    expect(String(postUrl)).toContain('/applicants/applicant%2F1/telehealth-request/safety')
+    expect(postInit?.method).toBe('POST')
+    expect(postInit?.cache).toBe('no-store')
+    expect(postHeaders.get('X-AvenChart-Telehealth-Applicant-Key')).toBe('access-secret')
+    expect(postHeaders.get('X-Idempotency-Key')).toBe('request-safety-retry-key')
+    expect(JSON.parse(String(postInit?.body))).toEqual(input)
+    expect(String(postInit?.body)).not.toMatch(/patientId|phoneNumber|freeText|complaint|priority|note/i)
   })
 
   it('binds operational authorization to staff facility and purpose context', async () => {

@@ -1358,6 +1358,10 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
     {
         TelehealthRequestStatus.Draft => ["confirm-location"],
         TelehealthRequestStatus.LocationConfirmed => ["evaluate-triage"],
+        TelehealthRequestStatus.SafetyScreening => ["complete-complaint-specific-triage"],
+        TelehealthRequestStatus.ClinicalReview => ["await-clinical-review"],
+        TelehealthRequestStatus.EmergencyRedirected => ["follow-emergency-guidance"],
+        TelehealthRequestStatus.InPersonRecommended => ["follow-in-person-guidance"],
         TelehealthRequestStatus.Intake => ["complete-readiness"],
         TelehealthRequestStatus.Verification => ["verify-coverage"],
         TelehealthRequestStatus.OperationalReview => ["await-operational-review", "refresh-coverage"],

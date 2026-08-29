@@ -10,6 +10,10 @@ public enum TelehealthRequestStatus
 {
     Draft,
     LocationConfirmed,
+    SafetyScreening,
+    EmergencyRedirected,
+    InPersonRecommended,
+    ClinicalReview,
     Intake,
     Verification,
     OperationalReview,
@@ -36,7 +40,19 @@ public static class TelehealthRequestStateMachine
         new Dictionary<TelehealthRequestStatus, TelehealthRequestStatus[]>
         {
             [TelehealthRequestStatus.Draft] = [TelehealthRequestStatus.LocationConfirmed],
-            [TelehealthRequestStatus.LocationConfirmed] = [TelehealthRequestStatus.Intake, TelehealthRequestStatus.Redirected],
+            [TelehealthRequestStatus.LocationConfirmed] =
+            [
+                TelehealthRequestStatus.SafetyScreening,
+                TelehealthRequestStatus.EmergencyRedirected,
+                TelehealthRequestStatus.InPersonRecommended,
+                TelehealthRequestStatus.ClinicalReview,
+                TelehealthRequestStatus.Intake,
+                TelehealthRequestStatus.Redirected
+            ],
+            [TelehealthRequestStatus.SafetyScreening] = [],
+            [TelehealthRequestStatus.EmergencyRedirected] = [],
+            [TelehealthRequestStatus.InPersonRecommended] = [],
+            [TelehealthRequestStatus.ClinicalReview] = [],
             [TelehealthRequestStatus.Intake] = [TelehealthRequestStatus.Verification],
             [TelehealthRequestStatus.Verification] = [TelehealthRequestStatus.Verification, TelehealthRequestStatus.OperationalReview],
             [TelehealthRequestStatus.OperationalReview] = [TelehealthRequestStatus.Verification, TelehealthRequestStatus.OperationalReview, TelehealthRequestStatus.Queued],

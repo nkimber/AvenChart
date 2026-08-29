@@ -360,8 +360,9 @@ public sealed class TelehealthApplicantRequestLocationRepository(NpgsqlDataSourc
               and not c.encounter_created and not c.consent_created and not c.care_authorized
               and not c.prescribing_enabled and not c.billing_enabled and not c.claim_created
               and not c.integration_enabled and not c.external_call_performed
-              and r.status in ('Draft','LocationConfirmed') and r.version in (1,2)
-              and r.triage_outcome is null and r.ready_at is null
+              and r.status in ('Draft','LocationConfirmed','SafetyScreening',
+                               'EmergencyRedirected','InPersonRecommended','ClinicalReview')
+              and r.version in (1,2,3) and r.ready_at is null
               and communication.current_location_state_code in ('GA','CA','FL')
               and communication.callback_phone_last4=right(regexp_replace(a.phone,'[^0-9]','','g'),4)
               and communication.current_location_confirmed and communication.callback_number_confirmed
@@ -407,7 +408,8 @@ public sealed class TelehealthApplicantRequestLocationRepository(NpgsqlDataSourc
         command.Transaction = transaction;
         command.CommandText = $"""
             select confirmation.applicant_id,confirmation.applicant_version,
-                   a.status,confirmation.request_id,r.version,r.status,
+                   a.status,confirmation.request_id,confirmation.resulting_request_version,
+                   confirmation.resulting_request_status,
                    confirmation.context_snapshot_fingerprint,
                    confirmation.current_location_state_code,
                    confirmation.callback_phone_last4,confirmation.confirmed_at,
@@ -508,11 +510,17 @@ public sealed class TelehealthApplicantRequestLocationRepository(NpgsqlDataSourc
 
     private static void RequireCompletedContext(TelehealthApplicantRequestLocationContext context)
     {
-        if (context.RequestStatus != TelehealthApplicantRequestLocationPolicy.ResultingRequestStatus
-            || context.RequestVersion != TelehealthApplicantRequestLocationPolicy.ResultingRequestVersion
+        var requestStateIsValid =
+            (context.RequestStatus == TelehealthApplicantRequestLocationPolicy.ResultingRequestStatus
+             && context.RequestVersion == TelehealthApplicantRequestLocationPolicy.ResultingRequestVersion
+             && context.TriageCount == 0)
+            || (context.RequestVersion == TelehealthApplicantRequestUniversalSafetyPolicy.ResultingRequestVersion
+                && context.RequestStatus is "SafetyScreening" or "EmergencyRedirected"
+                    or "InPersonRecommended" or "ClinicalReview"
+                && context.TriageCount == 1);
+        if (!requestStateIsValid
             || context.LocationCount != 1
             || context.ReceiptCount != 1
-            || context.TriageCount != 0
             || context.QueueCount != 0)
         {
             throw ProvenanceConflict();

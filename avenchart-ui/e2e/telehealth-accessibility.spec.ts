@@ -1460,6 +1460,233 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
+  test('applicant completes the request universal safety screen with stable retry, emergency direction, and no downstream care semantics', async ({ page }) => {
+    await page.addInitScript((session) => {
+      sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
+    }, { applicantId: prospectiveApplicant.applicantId, applicantAccessKey: 'i'.repeat(64) })
+    const requestCreatedApplicant = {
+      ...prospectiveApplicant,
+      status: 'SyntheticRequestCreated',
+      version: 26,
+      contactVerified: true,
+      identityAssurance: 'ContactControlOnly',
+      duplicateDisposition: 'NoCandidate',
+      canonicalPatientCreated: true,
+      verificationAttemptsRemaining: 0,
+      demonstrationVerificationCode: null,
+      nextAction: 'Complete the bounded synthetic universal safety screen.',
+    }
+    const requestReceipt = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      policyKey: 'SYNTHETIC_APPLICANT_TELEHEALTH_REQUEST_CREATION',
+      policyVersion: 1,
+      authorizationPolicyVersion: 1,
+      requestCreationReady: false,
+      requestCreated: true,
+      requestId: '1e000000-0000-4000-8000-00000000001e',
+      requestStatus: 'LocationConfirmed',
+      requestVersion: 2,
+      complaintCategory: 'migraine',
+      createdAt: '2026-08-28T16:00:00Z',
+      telehealthRequestCreated: true,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'The Draft request was created; no doctor search or queue exists.',
+      limitations: ['No queue or care exists.'],
+    }
+    const confirmedLocation = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 2,
+      requestStatus: 'LocationConfirmed',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_LOCATION_CONFIRMATION',
+      policyVersion: 1,
+      contextSnapshotFingerprint: '2'.repeat(64),
+      currentLocationStateCode: 'GA',
+      maskedCallbackPhone: '***-***-0199',
+      confirmationReady: false,
+      locationConfirmed: true,
+      confirmedAt: '2026-08-28T17:00:00Z',
+      triageAssessmentCreated: false,
+      clinicalReviewCreated: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Location and callback are confirmed; no triage or care workflow was created.',
+      limitations: ['No triage, queue, appointment, encounter, consent, or care is created.'],
+    }
+    const readySafety = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 2,
+      requestStatus: 'LocationConfirmed',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_UNIVERSAL_SAFETY_ASSESSMENT',
+      policyVersion: 1,
+      protocolKey: 'synthetic-universal-safety',
+      protocolVersion: 1,
+      contextSnapshotFingerprint: '3'.repeat(64),
+      contextExpiresAt: '2026-08-28T17:30:00Z',
+      currentLocationStateCode: 'GA',
+      maskedCallbackPhone: '***-***-0199',
+      assessmentReady: true,
+      assessmentCreated: false,
+      outcome: null,
+      publicDisposition: null,
+      evaluatedAt: null,
+      universalSafetyPassed: false,
+      complaintSpecificTriageRequired: false,
+      complaintSpecificTriageCreated: false,
+      clinicalReviewRequired: false,
+      clinicalReviewCreated: false,
+      terminalForTelehealth: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Answer every universal safety question.',
+      limitations: ['This immutable synthetic fixture is not approved clinical content.'],
+    }
+    const emergencyResult = {
+      ...readySafety,
+      requestVersion: 3,
+      requestStatus: 'EmergencyRedirected',
+      assessmentReady: false,
+      assessmentCreated: true,
+      outcome: 'Emergency',
+      publicDisposition: 'EmergencyCareNow',
+      evaluatedAt: '2026-08-28T17:05:00Z',
+      terminalForTelehealth: true,
+      direction: 'Call 911 now. This application did not dispatch emergency services.',
+    }
+    let safetyLoadCalls = 0
+    let assessmentCalls = 0
+    const assessmentKeys: Array<string | undefined> = []
+    const assessmentBodies: Array<Record<string, unknown>> = []
+    await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('i'.repeat(64))
+      if (path.endsWith('/telehealth-request/safety')) {
+        if (request.method() === 'POST') {
+          assessmentCalls += 1
+          assessmentKeys.push(request.headers()['x-idempotency-key'])
+          assessmentBodies.push(request.postDataJSON() as Record<string, unknown>)
+          if (assessmentCalls === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Safety result unknown; retry unchanged.' }) })
+            return
+          }
+          await route.fulfill({ json: emergencyResult })
+          return
+        }
+        safetyLoadCalls += 1
+        if (safetyLoadCalls === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Safety screen temporarily unavailable.' }) })
+          return
+        }
+        await route.fulfill({ json: readySafety })
+        return
+      }
+      if (path.endsWith('/telehealth-request/location')) {
+        await route.fulfill({ json: confirmedLocation })
+        return
+      }
+      if (path.endsWith('/telehealth-request')) {
+        await route.fulfill({ json: requestReceipt })
+        return
+      }
+      await route.fulfill({ json: requestCreatedApplicant })
+    })
+
+    await page.goto('/telehealth/new')
+    await expect(page.getByRole('alert')).toContainText('Safety screen temporarily unavailable.')
+    await page.getByRole('button', { name: 'Retry universal safety-screen load' }).click()
+    const heading = page.getByRole('heading', { name: 'Request universal safety screen' })
+    await expect(heading).toBeVisible()
+    await expect(heading.locator('..')).toContainText('Callback number***-***-0199')
+    await expect(heading.locator('..')).toContainText(/not approved clinical content/i)
+    await expect(heading.locator('..').locator('input[type="text"]')).toHaveCount(0)
+    await expect(heading.locator('..').locator('textarea')).toHaveCount(0)
+
+    await page.getByRole('group', { name: 'Could any current symptom be an emergency?' }).getByLabel('Yes').check()
+    await expect(page.getByRole('alert')).toContainText(/Call 911 now.*has not contacted or dispatched/i)
+    await page.getByRole('group', { name: 'Are symptoms severe or getting worse quickly?' }).getByLabel('No').check()
+    await page.getByRole('group', { name: 'Does this seem to require a hands-on examination or procedure?' }).getByLabel('No').check()
+    await page.getByRole('group', { name: 'Are you unsure about any answer above?' }).getByLabel('No').check()
+    await page.getByLabel('I confirm the displayed state is my current physical location.').check()
+    await page.getByLabel('I confirm the displayed masked callback number remains correct.').check()
+    await page.getByLabel('I confirm every answer is fictional synthetic demonstration data.').check()
+    const evaluate = page.getByRole('button', { name: 'Evaluate request universal safety screen' })
+    await evaluate.click()
+    await expect(page.getByRole('alert').filter({ hasText: 'Safety result unknown; retry unchanged.' })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Could any current symptom be an emergency?' }).getByLabel('Yes')).toBeChecked()
+    await evaluate.click()
+
+    const result = page.getByRole('heading', { name: 'Universal safety screen stopped progression' })
+    await expect(result).toBeVisible()
+    await expect(result.locator('..')).toContainText('Request statusEmergencyRedirected')
+    await expect(result.locator('..')).toContainText('Public dispositionEmergencyCareNow')
+    await expect(result.locator('..')).toContainText('Doctor search or queueNot started')
+    await expect(result.locator('..')).toContainText(/No submitted safety answer or answer fingerprint is returned/i)
+    await expect(result.locator('..').getByRole('link', { name: 'Call 911' })).toHaveAttribute('href', 'tel:911')
+    expect(assessmentKeys).toHaveLength(2)
+    expect(assessmentKeys[0]).toBe(assessmentKeys[1])
+    expect(assessmentBodies[0]).toEqual({
+      expectedRequestVersion: 2,
+      contextSnapshotFingerprint: '3'.repeat(64),
+      currentLocationStateCode: 'GA',
+      currentLocationConfirmed: true,
+      callbackNumberConfirmed: true,
+      syntheticDataConfirmed: true,
+      hasEmergencyWarning: true,
+      severeOrWorsening: false,
+      requiresHandsOnExam: false,
+      unsure: false,
+    })
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|hasEmergencyWarning|severeOrWorsening|requiresHandsOnExam|answerFingerprint|requestId/i)
+
+    await expectNoSeriousAccessibilityViolations(page)
+    await expectTelehealthReflow(page)
+  })
+
   test('promoted applicant completes bounded post-promotion confirmations through practice-review submission without implying acceptance, queueing, or care', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })

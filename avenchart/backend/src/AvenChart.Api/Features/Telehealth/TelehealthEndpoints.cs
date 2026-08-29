@@ -383,6 +383,24 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/safety", GetApplicantTelehealthRequestSafetyAsync)
+            .WithName("GetTelehealthApplicantRequestUniversalSafety")
+            .WithDescription("Returns the applicant owner's private request-time universal safety-screen state. It returns no submitted answers and creates no review work item, contact, queue, appointment, encounter, care, financial, integration, or external capability.")
+            .Produces<TelehealthApplicantRequestUniversalSafetyResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/safety", AssessApplicantTelehealthRequestSafetyAsync)
+            .WithName("AssessTelehealthApplicantRequestUniversalSafety")
+            .WithDescription("Evaluates the four explicit synthetic universal-safety answers against the immutable non-production fixture. A pass advances only to complaint-specific safety screening; it is not clinical eligibility and creates no downstream care workflow.")
+            .Accepts<EvaluateTelehealthApplicantRequestUniversalSafety>("application/json")
+            .Produces<TelehealthApplicantRequestUniversalSafetyResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1319,6 +1337,39 @@ public static class TelehealthEndpoints
         {
             SetProspectiveApplicantPrivateResponse(context);
             return Results.Ok(await service.ConfirmAsync(
+                context,
+                applicantId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestSafetyAsync(
+        TelehealthApplicantRequestUniversalSafetyService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> AssessApplicantTelehealthRequestSafetyAsync(
+        TelehealthApplicantRequestUniversalSafetyService service,
+        HttpContext context,
+        Guid applicantId,
+        EvaluateTelehealthApplicantRequestUniversalSafety request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.AssessAsync(
                 context,
                 applicantId,
                 request,

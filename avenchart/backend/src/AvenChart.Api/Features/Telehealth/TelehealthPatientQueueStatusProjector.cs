@@ -74,6 +74,22 @@ public static class TelehealthPatientQueueStatusProjector
             "Redirected",
             "This request cannot enter the telehealth queue",
             "Follow the care guidance already shown. Do not wait on this page if symptoms are urgent or worsening."),
+        TelehealthRequestStatus.EmergencyRedirected => new(
+            "EmergencyRedirected",
+            "Call 911 now",
+            "This request cannot continue toward telehealth. Call 911 or go to the nearest emergency department; the application did not dispatch help."),
+        TelehealthRequestStatus.InPersonRecommended => new(
+            "InPersonRecommended",
+            "In-person evaluation is recommended",
+            "This request cannot continue toward the telehealth queue. Follow the in-person care direction already shown."),
+        TelehealthRequestStatus.ClinicalReview => new(
+            "ClinicalReview",
+            "Clinical review is required",
+            "This request cannot continue automatically. A qualified clinical-review workflow is required; no reviewer assignment is promised here."),
+        TelehealthRequestStatus.SafetyScreening => new(
+            "Reviewing",
+            "Continue the safety questions",
+            "The universal safety screen passed, but complaint-specific triage is still required before this request can continue."),
         TelehealthRequestStatus.OperationalReview => new(
             "Reviewing",
             "Reviewing your request",

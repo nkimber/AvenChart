@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProspectivePatientTelehealthEntry from './ProspectivePatientTelehealthEntry.tsx'
-import { acknowledgeApplicantPreRequestReadiness, acknowledgeApplicantTelehealthNotice, confirmApplicantClinicalInformationSummary, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestLocation, createApplicantTelehealthRequest, createProspectiveApplicant, evaluateProspectiveSafetyTriage, getApplicantAllergyInformation, getApplicantClinicalInformationInventory, getApplicantClinicalInformationSummary, getApplicantCommunicationAccessReadiness, getApplicantDevicePreparation, getApplicantHealthHistoryInformation, getApplicantInsuranceHandoff, getApplicantMedicationInformation, getApplicantPracticeReviewSubmission, getApplicantPreRequestReadiness, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestLocation, getProspectiveApplicant, getProspectivePracticeNetworkOptions, recordApplicantAllergyInformation, recordApplicantClinicalInformationInventory, recordApplicantCommunicationAccessReadiness, recordApplicantDevicePreparation, recordApplicantHealthHistoryInformation, recordApplicantMedicationInformation, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, submitApplicantPracticeReview, verifyProspectiveApplicantContact, type TelehealthApplicantAllergyInformation, type TelehealthApplicantClinicalInformationInventory, type TelehealthApplicantClinicalInformationSummary, type TelehealthApplicantCommunicationAccessReadiness, type TelehealthApplicantDevicePreparation, type TelehealthApplicantHealthHistoryInformation, type TelehealthApplicantInsuranceHandoff, type TelehealthApplicantMedicationInformation, type TelehealthApplicantNotice, type TelehealthApplicantPracticeReview, type TelehealthApplicantPreRequestReadiness, type TelehealthApplicantRegistrationDetails, type TelehealthApplicantRequestCreation, type TelehealthApplicantRequestLocation } from './api.ts'
+import { acknowledgeApplicantPreRequestReadiness, acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestUniversalSafety, confirmApplicantClinicalInformationSummary, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestLocation, createApplicantTelehealthRequest, createProspectiveApplicant, evaluateProspectiveSafetyTriage, getApplicantAllergyInformation, getApplicantClinicalInformationInventory, getApplicantClinicalInformationSummary, getApplicantCommunicationAccessReadiness, getApplicantDevicePreparation, getApplicantHealthHistoryInformation, getApplicantInsuranceHandoff, getApplicantMedicationInformation, getApplicantPracticeReviewSubmission, getApplicantPreRequestReadiness, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestUniversalSafety, getProspectiveApplicant, getProspectivePracticeNetworkOptions, recordApplicantAllergyInformation, recordApplicantClinicalInformationInventory, recordApplicantCommunicationAccessReadiness, recordApplicantDevicePreparation, recordApplicantHealthHistoryInformation, recordApplicantMedicationInformation, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, submitApplicantPracticeReview, verifyProspectiveApplicantContact, type TelehealthApplicantAllergyInformation, type TelehealthApplicantClinicalInformationInventory, type TelehealthApplicantClinicalInformationSummary, type TelehealthApplicantCommunicationAccessReadiness, type TelehealthApplicantDevicePreparation, type TelehealthApplicantHealthHistoryInformation, type TelehealthApplicantInsuranceHandoff, type TelehealthApplicantMedicationInformation, type TelehealthApplicantNotice, type TelehealthApplicantPracticeReview, type TelehealthApplicantPreRequestReadiness, type TelehealthApplicantRegistrationDetails, type TelehealthApplicantRequestCreation, type TelehealthApplicantRequestLocation, type TelehealthApplicantRequestUniversalSafety } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 
 vi.mock('./api.ts', async (importOriginal) => {
@@ -14,6 +14,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     ...original,
     acknowledgeApplicantPreRequestReadiness: vi.fn(),
     acknowledgeApplicantTelehealthNotice: vi.fn(),
+    assessApplicantTelehealthRequestUniversalSafety: vi.fn(),
     confirmApplicantClinicalInformationSummary: vi.fn(),
     confirmApplicantInsuranceHandoff: vi.fn(),
     confirmApplicantRegistrationDetails: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     getApplicantTelehealthNotice: vi.fn(),
     getApplicantTelehealthRequest: vi.fn(),
     getApplicantTelehealthRequestLocation: vi.fn(),
+    getApplicantTelehealthRequestUniversalSafety: vi.fn(),
     getProspectiveApplicant: vi.fn(),
     getProspectivePracticeNetworkOptions: vi.fn(),
     recordApplicantAllergyInformation: vi.fn(),
@@ -569,6 +571,50 @@ const requestLocationFixture = {
   limitations: ['No triage result, doctor search, queue, appointment, encounter, consent, or care is created.'],
 } satisfies TelehealthApplicantRequestLocation
 
+const requestSafetyFixture = {
+  applicantId: approvedApplicant.applicantId,
+  applicantVersion: 26,
+  applicantStatus: 'SyntheticRequestCreated',
+  requestId: requestLocationFixture.requestId,
+  requestVersion: 2,
+  requestStatus: 'LocationConfirmed',
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_UNIVERSAL_SAFETY_ASSESSMENT',
+  policyVersion: 1,
+  protocolKey: 'synthetic-universal-safety',
+  protocolVersion: 1,
+  contextSnapshotFingerprint: '3'.repeat(64),
+  contextExpiresAt: '2026-08-28T17:30:00Z',
+  currentLocationStateCode: 'GA',
+  maskedCallbackPhone: '***-***-0199',
+  assessmentReady: true,
+  assessmentCreated: false,
+  outcome: null,
+  publicDisposition: null,
+  evaluatedAt: null,
+  universalSafetyPassed: false,
+  complaintSpecificTriageRequired: false,
+  complaintSpecificTriageCreated: false,
+  clinicalReviewRequired: false,
+  clinicalReviewCreated: false,
+  terminalForTelehealth: false,
+  patientContacted: false,
+  patientCareQueueEntered: false,
+  clinicianQueueEntered: false,
+  doctorSearchStarted: false,
+  queuePositionAssigned: false,
+  appointmentCreated: false,
+  encounterCreated: false,
+  consentCreated: false,
+  careAuthorized: false,
+  prescribingEnabled: false,
+  billingEnabled: false,
+  claimCreated: false,
+  integrationEnabled: false,
+  externalCallPerformed: false,
+  direction: 'Answer every universal safety question.',
+  limitations: ['NON_PRODUCTION synthetic demonstration only.'],
+} satisfies TelehealthApplicantRequestUniversalSafety
+
 describe('ProspectivePatientTelehealthEntry safety triage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -590,6 +636,7 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
     vi.mocked(getApplicantPreRequestReadiness).mockResolvedValue(preRequestReadinessFixture)
     vi.mocked(getApplicantPracticeReviewSubmission).mockResolvedValue(practiceReviewFixture)
     vi.mocked(getApplicantTelehealthRequestLocation).mockResolvedValue(requestLocationFixture)
+    vi.mocked(getApplicantTelehealthRequestUniversalSafety).mockResolvedValue(requestSafetyFixture)
     vi.mocked(runTelehealthDevicePreflight).mockResolvedValue({
       status: 'failed',
       message: 'This browser cannot run the secure telehealth device check.',
@@ -2660,5 +2707,130 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
 
     const stored = `${sessionStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}${localStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}`
     expect(stored).not.toMatch(/contextSnapshotFingerprint|maskedCallbackPhone|requestId|currentLocationStateCode|patientId/i)
+  })
+
+  it('shows immediate emergency direction and evaluates request safety with explicit answers and stable retry', async () => {
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('2f000000-0000-4000-8000-00000000002f')
+    const requestCreatedApplicant = {
+      ...approvedApplicant,
+      status: 'SyntheticRequestCreated',
+      version: 26,
+      canonicalPatientCreated: true,
+      nextAction: 'Complete request-time safety screening.',
+    } as const
+    const requestCreationReceipt = {
+      applicantId: approvedApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      policyKey: 'SYNTHETIC_APPLICANT_TELEHEALTH_REQUEST_CREATION',
+      policyVersion: 1,
+      authorizationPolicyVersion: 1,
+      requestCreationReady: false,
+      requestCreated: true,
+      requestId: requestLocationFixture.requestId,
+      requestStatus: 'Draft',
+      requestVersion: 1,
+      complaintCategory: 'migraine',
+      createdAt: '2026-08-28T16:00:00Z',
+      telehealthRequestCreated: true,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'The Draft request was created.',
+      limitations: ['No queue or care exists.'],
+    } satisfies TelehealthApplicantRequestCreation
+    const confirmedLocation = {
+      ...requestLocationFixture,
+      requestVersion: 2,
+      requestStatus: 'LocationConfirmed',
+      confirmationReady: false,
+      locationConfirmed: true,
+      confirmedAt: '2026-08-28T17:00:00Z',
+    } satisfies TelehealthApplicantRequestLocation
+    const emergencyResult = {
+      ...requestSafetyFixture,
+      requestVersion: 3,
+      requestStatus: 'EmergencyRedirected',
+      assessmentReady: false,
+      assessmentCreated: true,
+      outcome: 'Emergency',
+      publicDisposition: 'EmergencyCareNow',
+      evaluatedAt: '2026-08-28T17:05:00Z',
+      terminalForTelehealth: true,
+      direction: 'Call 911 now. This application did not dispatch emergency services.',
+    } satisfies TelehealthApplicantRequestUniversalSafety
+    vi.mocked(getProspectiveApplicant).mockResolvedValue(requestCreatedApplicant)
+    vi.mocked(getApplicantTelehealthRequest).mockResolvedValue(requestCreationReceipt)
+    vi.mocked(getApplicantTelehealthRequestLocation).mockResolvedValue(confirmedLocation)
+    vi.mocked(getApplicantTelehealthRequestUniversalSafety)
+      .mockRejectedValueOnce(new Error('Safety screen temporarily unavailable.'))
+      .mockResolvedValue(requestSafetyFixture)
+    vi.mocked(assessApplicantTelehealthRequestUniversalSafety)
+      .mockRejectedValueOnce(new Error('Safety result unknown; retry unchanged.'))
+      .mockResolvedValue(emergencyResult)
+
+    render(<MemoryRouter><ProspectivePatientTelehealthEntry /></MemoryRouter>)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Safety screen temporarily unavailable.')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry universal safety-screen load' }))
+    const heading = await screen.findByRole('heading', { name: 'Request universal safety screen' })
+    expect(heading.parentElement).toHaveTextContent('Callback number***-***-0199')
+    expect(heading.parentElement).toHaveTextContent(/not approved clinical content/i)
+
+    const emergency = screen.getByRole('group', { name: 'Could any current symptom be an emergency?' })
+    const severe = screen.getByRole('group', { name: 'Are symptoms severe or getting worse quickly?' })
+    const handsOn = screen.getByRole('group', { name: 'Does this seem to require a hands-on examination or procedure?' })
+    const unsure = screen.getByRole('group', { name: 'Are you unsure about any answer above?' })
+    fireEvent.click(within(emergency).getByLabelText('Yes'))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Call 911 now.*has not contacted or dispatched/i)
+    fireEvent.click(within(severe).getByLabelText('No'))
+    fireEvent.click(within(handsOn).getByLabelText('No'))
+    fireEvent.click(within(unsure).getByLabelText('No'))
+    fireEvent.click(screen.getByLabelText('I confirm the displayed state is my current physical location.'))
+    fireEvent.click(screen.getByLabelText('I confirm the displayed masked callback number remains correct.'))
+    fireEvent.click(screen.getByLabelText('I confirm every answer is fictional synthetic demonstration data.'))
+    fireEvent.click(screen.getByRole('button', { name: 'Evaluate request universal safety screen' }))
+
+    const submissionFailure = await screen.findByText('Safety result unknown; retry unchanged.')
+    expect(submissionFailure.closest('[role="alert"]')).toHaveTextContent('Safety result unknown; retry unchanged.')
+    expect(within(emergency).getByLabelText('Yes')).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Evaluate request universal safety screen' }))
+
+    await waitFor(() => expect(assessApplicantTelehealthRequestUniversalSafety).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(assessApplicantTelehealthRequestUniversalSafety).mock.calls[0][3]).toBe('2f000000-0000-4000-8000-00000000002f')
+    expect(vi.mocked(assessApplicantTelehealthRequestUniversalSafety).mock.calls[1][3]).toBe('2f000000-0000-4000-8000-00000000002f')
+    expect(vi.mocked(assessApplicantTelehealthRequestUniversalSafety).mock.calls[0][2]).toEqual({
+      expectedRequestVersion: 2,
+      contextSnapshotFingerprint: '3'.repeat(64),
+      currentLocationStateCode: 'GA',
+      currentLocationConfirmed: true,
+      callbackNumberConfirmed: true,
+      syntheticDataConfirmed: true,
+      hasEmergencyWarning: true,
+      severeOrWorsening: false,
+      requiresHandsOnExam: false,
+      unsure: false,
+    })
+
+    const result = await screen.findByRole('heading', { name: 'Universal safety screen stopped progression' })
+    expect(result.parentElement).toHaveTextContent('Request statusEmergencyRedirected')
+    expect(result.parentElement).toHaveTextContent('Public dispositionEmergencyCareNow')
+    expect(result.parentElement).toHaveTextContent('Doctor search or queueNot started')
+    expect(result.parentElement).toHaveTextContent(/No submitted safety answer or answer fingerprint is returned/i)
+    await waitFor(() => expect(result.parentElement).toHaveFocus())
+
+    const stored = `${sessionStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}${localStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}`
+    expect(stored).not.toMatch(/contextSnapshotFingerprint|hasEmergencyWarning|severeOrWorsening|requiresHandsOnExam|answerFingerprint/i)
   })
 })

@@ -43,6 +43,10 @@ public sealed class TelehealthPatientQueueStatusProjectorTests
     [InlineData(TelehealthRequestStatus.Connecting, "ConnectionRoom", "connection room is ready")]
     [InlineData(TelehealthRequestStatus.InConsultation, "Consultation", "consultation has started")]
     [InlineData(TelehealthRequestStatus.Redirected, "Redirected", "cannot enter the telehealth queue")]
+    [InlineData(TelehealthRequestStatus.EmergencyRedirected, "EmergencyRedirected", "Call 911 now")]
+    [InlineData(TelehealthRequestStatus.InPersonRecommended, "InPersonRecommended", "In-person evaluation")]
+    [InlineData(TelehealthRequestStatus.ClinicalReview, "ClinicalReview", "Clinical review is required")]
+    [InlineData(TelehealthRequestStatus.SafetyScreening, "Reviewing", "Continue the safety questions")]
     public void NonQueuedStatesExposeCalmBoundedContent(
         TelehealthRequestStatus status,
         string expectedPhase,
