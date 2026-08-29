@@ -27,7 +27,7 @@ Plan: [Sprint 49 applicant request participation context](sprint-49-applicant-re
 | Browser accessibility and recovery | 76 telehealth cases passed across desktop/mobile Chromium, Firefox, and WebKit; the final participation-context case passed in all four projects |
 | Runtime contracts and concurrency | Authorization, OpenAPI with 74 checks, runtime safety, migration resilience, and 20-caller queue/consultation concurrency proofs passed |
 | Planning controls | Validator v3.16 passed 94 checks across 177 Markdown files and 601 relative links; all three controlled negative mutations were rejected |
-| Graphify maintenance | Deterministic code graph refreshed to 10,045 nodes and 22,468 edges; portability check and changed-code delta review passed mechanically without treating graph output as readiness evidence |
+| Graphify maintenance | Deterministic code graph refreshed to 10,120 nodes and 22,625 edges; portability check and changed-code delta review passed mechanically without treating graph output as readiness evidence |
 
 ## Open gates
 
