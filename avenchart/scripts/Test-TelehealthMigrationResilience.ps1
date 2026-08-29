@@ -34,7 +34,7 @@ function Invoke-Scalar([string]$Sql) {
 try {
     if (-not $SkipBaseRehearsal) {
         & (Join-Path $PSScriptRoot 'Test-AvenChartMigrationResilience.ps1')
-        Add-Check 'Repository empty, populated, interruption, and recovery rehearsal includes V0282 through V0317' ($LASTEXITCODE -eq 0)
+        Add-Check 'Repository empty, populated, interruption, and recovery rehearsal includes V0282 through V0318' ($LASTEXITCODE -eq 0)
     }
     else {
         Add-Check 'Repository migration rehearsal supplied by the immediately preceding runtime-evidence step' $true
@@ -739,6 +739,50 @@ select count(*) from pg_trigger where not tgisinternal and tgname in (
 "@) -eq 2 -and
         [int](Invoke-Scalar "select count(*) from pg_proc where proname='enforce_th_app_request_universal_safety';") -eq 1)
     Add-Check 'The applicant request universal-safety assessment table exists' ([int](Invoke-Scalar "select count(*) from information_schema.tables where table_schema='public' and table_name='telehealth_applicant_request_universal_safety_assessments';") -eq 1)
+    $applicantRequestComplaintTriageMigration = Join-Path $solutionRoot 'database/migrations/V0318__telehealth_applicant_request_complaint_triage.sql'
+    $applicantRequestComplaintTriageSource = Get-Content -Raw $applicantRequestComplaintTriageMigration
+    Add-Check 'V0318 adds one append-only complaint-triage receipt with ordered rule evidence, Unsupported, and a false-only production publication gate' (
+        $applicantRequestComplaintTriageSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
+        $applicantRequestComplaintTriageSource -match 'create\s+table\s+(?:if\s+not\s+exists\s+)?telehealth_applicant_request_complaint_triage_assessments' -and
+        $applicantRequestComplaintTriageSource -match 'source_request_version=3' -and
+        $applicantRequestComplaintTriageSource -match 'resulting_request_version=4' -and
+        $applicantRequestComplaintTriageSource -match "resulting_request_status='Unsupported'" -and
+        $applicantRequestComplaintTriageSource -match "resulting_request_status='Intake'" -and
+        $applicantRequestComplaintTriageSource -match 'fired_rule_codes' -and
+        $applicantRequestComplaintTriageSource -match "clinical_content_status='UNAPPROVED_SYNTHETIC'" -and
+        $applicantRequestComplaintTriageSource -match 'not medical_director_approval_recorded' -and
+        $applicantRequestComplaintTriageSource -match 'not clinical_golden_case_pack_approved' -and
+        $applicantRequestComplaintTriageSource -match 'not production_publication_allowed' -and
+        $applicantRequestComplaintTriageSource -match 'not clinical_review_created' -and
+        $applicantRequestComplaintTriageSource -match 'not intake_snapshot_created' -and
+        $applicantRequestComplaintTriageSource -match 'not patient_care_queue_entered' -and
+        $applicantRequestComplaintTriageSource -match 'not clinician_queue_entered' -and
+        $applicantRequestComplaintTriageSource -match 'not doctor_search_started' -and
+        $applicantRequestComplaintTriageSource -match 'not appointment_created' -and
+        $applicantRequestComplaintTriageSource -match 'not care_authorized' -and
+        $applicantRequestComplaintTriageSource -match 'not claim_created' -and
+        $applicantRequestComplaintTriageSource -match 'not integration_enabled' -and
+        $applicantRequestComplaintTriageSource -match 'not external_call_performed')
+    Add-Check 'V0318 is recorded in the live migration ledger' ((Invoke-Scalar "select count(*) from schema_migrations where migration_id='V0318__telehealth_applicant_request_complaint_triage';") -eq '1')
+    Add-Check 'Complaint-triage versions, context, answers, ordered evidence, protocol, publication gate, outcome, policy, replay, no-consequence, provenance, and append-only constraints are database-enforced' (
+        [int](Invoke-Scalar @"
+select count(*) from pg_constraint where conname in (
+'uq_th_app_req_complaint_triage_idempotency','chk_th_app_req_complaint_triage_scope',
+'chk_th_app_req_complaint_triage_versions','chk_th_app_req_complaint_triage_category',
+'chk_th_app_req_complaint_triage_context','chk_th_app_req_complaint_triage_freshness',
+'chk_th_app_req_complaint_triage_answers','chk_th_app_req_complaint_triage_rule_evidence',
+'chk_th_app_req_complaint_triage_protocol','chk_th_app_req_complaint_triage_publication_gate',
+'chk_th_app_req_complaint_triage_result','chk_th_app_req_complaint_triage_policy',
+'chk_th_app_req_complaint_triage_hashes','chk_th_app_req_complaint_triage_idem',
+'chk_th_app_req_complaint_triage_no_consequence');
+"@) -eq 15 -and
+        [int](Invoke-Scalar @"
+select count(*) from pg_trigger where not tgisinternal and tgname in (
+'trg_th_app_request_complaint_triage_guard',
+'trg_th_app_request_complaint_triage_append');
+"@) -eq 2 -and
+        [int](Invoke-Scalar "select count(*) from pg_proc where proname='enforce_th_app_request_complaint_triage';") -eq 1)
+    Add-Check 'The applicant request complaint-triage assessment table exists' ([int](Invoke-Scalar "select count(*) from information_schema.tables where table_schema='public' and table_name='telehealth_applicant_request_complaint_triage_assessments';") -eq 1)
     Add-Check 'All eight foundation tables exist' ([int](Invoke-Scalar @"
 select count(*) from information_schema.tables
 where table_schema='public' and table_name in (
@@ -1178,7 +1222,7 @@ catch {
     Add-Check 'Telehealth migration resilience execution' $false $_.Exception.Message
 }
 finally {
-    $result = [ordered]@{ status=$(if ($passed) { 'passed' } else { 'failed' }); generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O'); decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045'); checks=$checks }
+    $result = [ordered]@{ status=$(if ($passed) { 'passed' } else { 'failed' }); generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O'); decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046'); checks=$checks }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8
     $result | ConvertTo-Json -Depth 8
 }

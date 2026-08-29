@@ -7,6 +7,7 @@ import { ApiRequestError, isRequestCancellation } from '../../api/transport.ts'
 import {
   acknowledgeApplicantPreRequestReadiness,
   acknowledgeApplicantTelehealthNotice,
+  assessApplicantTelehealthRequestComplaintTriage,
   assessApplicantTelehealthRequestUniversalSafety,
   confirmApplicantInsuranceHandoff,
   confirmApplicantClinicalInformationSummary,
@@ -22,6 +23,7 @@ import {
   getApplicantPreRequestReadiness,
   getApplicantPracticeReviewSubmission,
   getApplicantTelehealthRequest,
+  getApplicantTelehealthRequestComplaintTriage,
   getApplicantTelehealthRequestLocation,
   getApplicantTelehealthRequestUniversalSafety,
   getApplicantMedicationInformation,
@@ -90,12 +92,15 @@ import {
   type TelehealthApplicantPracticeReviewInput,
   type TelehealthApplicantRequestCreation,
   type TelehealthApplicantRequestCreationInput,
+  type TelehealthApplicantRequestComplaintTriage,
+  type TelehealthApplicantRequestComplaintTriageInput,
   type TelehealthApplicantRequestLocation,
   type TelehealthApplicantRequestLocationInput,
   type TelehealthApplicantRequestUniversalSafety,
   type TelehealthApplicantRequestUniversalSafetyInput,
   type TelehealthApplicantDevicePreparation,
   type TelehealthApplicantDevicePreparationInput,
+  type TelehealthSyntheticComplaintAnswer,
 } from './api.ts'
 import {
   clearApplicantSession,
@@ -146,7 +151,9 @@ type PendingPracticeReview = { content: string; idempotencyKey: string }
 type PendingRequestCreation = { content: string; idempotencyKey: string }
 type PendingRequestLocation = { content: string; idempotencyKey: string }
 type PendingRequestSafety = { content: string; idempotencyKey: string }
+type PendingRequestComplaintTriage = { content: string; idempotencyKey: string }
 type YesNoAnswer = '' | 'yes' | 'no'
+type ComplaintAnswer = '' | TelehealthSyntheticComplaintAnswer
 
 const initialSafetyAnswers = {
   emergency: '' as YesNoAnswer,
@@ -267,6 +274,70 @@ const initialRequestSafetyConfirmations = {
   currentLocation: false,
   callbackNumber: false,
   syntheticData: false,
+}
+
+const initialMigraineComplaintAnswers = {
+  suddenOrWorstOnset: '' as ComplaintAnswer,
+  newNeurologicOrVisionChange: '' as ComplaintAnswer,
+  feverOrStiffNeck: '' as ComplaintAnswer,
+  recentHeadInjury: '' as ComplaintAnswer,
+  pregnantOrPostpartum: '' as ComplaintAnswer,
+  cancerOrImmunocompromised: '' as ComplaintAnswer,
+  knownSimilarPattern: '' as ComplaintAnswer,
+  persistentVomiting: '' as ComplaintAnswer,
+}
+
+const initialSleepComplaintAnswers = {
+  selfHarmThoughts: '' as ComplaintAnswer,
+  maniaOrPsychosis: '' as ComplaintAnswer,
+  dangerousSomnolence: '' as ComplaintAnswer,
+  withdrawalConcern: '' as ComplaintAnswer,
+  breathingPausesOrSevereSnoring: '' as ComplaintAnswer,
+  pregnantOrComplexMedicationConcern: '' as ComplaintAnswer,
+  controlledSedativeRequest: '' as ComplaintAnswer,
+  uncomplicatedSleepDifficulty: '' as ComplaintAnswer,
+}
+
+const initialRequestComplaintTriageConfirmations = {
+  currentLocation: false,
+  callbackNumber: false,
+  syntheticData: false,
+}
+
+function ComplaintAnswerField({
+  legend,
+  name,
+  answer,
+  onChange,
+}: {
+  legend: string
+  name: string
+  answer: ComplaintAnswer
+  onChange: (answer: TelehealthSyntheticComplaintAnswer) => void
+}) {
+  return (
+    <fieldset>
+      <legend>{legend}</legend>
+      {(['Yes', 'No', 'NotSure'] as const).map((choice) => (
+        <label className="telehealth-check" key={choice}>
+          <input
+            required
+            type="radio"
+            name={name}
+            value={choice}
+            checked={answer === choice}
+            onChange={() => onChange(choice)}
+          />
+          <span>{choice === 'NotSure' ? 'Not sure' : choice}</span>
+        </label>
+      ))}
+    </fieldset>
+  )
+}
+
+function requireComplaintAnswer(answer: ComplaintAnswer): TelehealthSyntheticComplaintAnswer {
+  if (!answer) throw new Error('Answer every complaint-specific question before continuing.')
+  return answer
 }
 
 function clinicalInformationStatusLabel(status: TelehealthApplicantClinicalInformationCategoryStatus | null) {
@@ -403,6 +474,12 @@ export default function ProspectivePatientTelehealthEntry() {
   const [requestSafetyLoadAttempt, setRequestSafetyLoadAttempt] = useState(0)
   const [requestSafetyAnswers, setRequestSafetyAnswers] = useState(initialRequestSafetyAnswers)
   const [requestSafetyConfirmations, setRequestSafetyConfirmations] = useState(initialRequestSafetyConfirmations)
+  const [requestComplaintTriage, setRequestComplaintTriage] = useState<TelehealthApplicantRequestComplaintTriage | null>(null)
+  const [requestComplaintTriageLoading, setRequestComplaintTriageLoading] = useState(false)
+  const [requestComplaintTriageLoadAttempt, setRequestComplaintTriageLoadAttempt] = useState(0)
+  const [migraineComplaintAnswers, setMigraineComplaintAnswers] = useState(initialMigraineComplaintAnswers)
+  const [sleepComplaintAnswers, setSleepComplaintAnswers] = useState(initialSleepComplaintAnswers)
+  const [requestComplaintTriageConfirmations, setRequestComplaintTriageConfirmations] = useState(initialRequestComplaintTriageConfirmations)
   const [loading, setLoading] = useState(Boolean(applicantSession))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -431,6 +508,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const pendingRequestCreation = useRef<PendingRequestCreation | null>(null)
   const pendingRequestLocation = useRef<PendingRequestLocation | null>(null)
   const pendingRequestSafety = useRef<PendingRequestSafety | null>(null)
+  const pendingRequestComplaintTriage = useRef<PendingRequestComplaintTriage | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const safetyResultRef = useRef<HTMLDivElement>(null)
   const purposeResultRef = useRef<HTMLDivElement>(null)
@@ -454,6 +532,7 @@ export default function ProspectivePatientTelehealthEntry() {
   const requestCreationResultRef = useRef<HTMLDivElement>(null)
   const requestLocationResultRef = useRef<HTMLDivElement>(null)
   const requestSafetyResultRef = useRef<HTMLDivElement>(null)
+  const requestComplaintTriageResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -546,6 +625,10 @@ export default function ProspectivePatientTelehealthEntry() {
   useEffect(() => {
     if (requestSafety?.assessmentCreated) requestSafetyResultRef.current?.focus()
   }, [requestSafety])
+
+  useEffect(() => {
+    if (requestComplaintTriage?.assessmentCreated) requestComplaintTriageResultRef.current?.focus()
+  }, [requestComplaintTriage])
 
   useEffect(() => {
     if (!applicantSession) {
@@ -941,6 +1024,29 @@ export default function ProspectivePatientTelehealthEntry() {
       })
     return () => controller.abort()
   }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestLocation?.locationConfirmed, requestSafetyLoadAttempt])
+
+  useEffect(() => {
+    if (!applicantSession
+      || applicant?.status !== 'SyntheticRequestCreated'
+      || !requestSafety?.complaintSpecificTriageRequired) return
+    const controller = new AbortController()
+    setRequestComplaintTriageLoading(true)
+    setError(null)
+    getApplicantTelehealthRequestComplaintTriage(
+      applicant.applicantId,
+      applicantSession.applicantAccessKey,
+      controller.signal,
+    )
+      .then(setRequestComplaintTriage)
+      .catch((caught: unknown) => {
+        if (isRequestCancellation(caught)) return
+        setError(caught instanceof Error ? caught.message : 'Complaint-specific triage could not be loaded.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRequestComplaintTriageLoading(false)
+      })
+    return () => controller.abort()
+  }, [applicant?.applicantId, applicant?.status, applicant?.version, applicantSession, requestSafety?.complaintSpecificTriageRequired, requestComplaintTriageLoadAttempt])
 
   function updateValue<Key extends keyof FormValues>(key: Key, value: FormValues[Key]) {
     pendingCreate.current = null
@@ -2364,6 +2470,111 @@ export default function ProspectivePatientTelehealthEntry() {
     }
   }
 
+  function updateMigraineComplaintAnswer(
+    key: keyof typeof initialMigraineComplaintAnswers,
+    answer: TelehealthSyntheticComplaintAnswer,
+  ) {
+    pendingRequestComplaintTriage.current = null
+    setMigraineComplaintAnswers((current) => ({ ...current, [key]: answer }))
+  }
+
+  function updateSleepComplaintAnswer(
+    key: keyof typeof initialSleepComplaintAnswers,
+    answer: TelehealthSyntheticComplaintAnswer,
+  ) {
+    pendingRequestComplaintTriage.current = null
+    setSleepComplaintAnswers((current) => ({ ...current, [key]: answer }))
+  }
+
+  function updateRequestComplaintTriageConfirmation(
+    key: keyof typeof initialRequestComplaintTriageConfirmations,
+    checked: boolean,
+  ) {
+    pendingRequestComplaintTriage.current = null
+    setRequestComplaintTriageConfirmations((current) => ({ ...current, [key]: checked }))
+  }
+
+  async function assessRequestComplaintTriage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!applicant || !applicantSession || !requestComplaintTriage) return
+    const activeAnswers = requestComplaintTriage.complaintCategory === 'migraine'
+      ? migraineComplaintAnswers
+      : sleepComplaintAnswers
+    if (Object.values(activeAnswers).some((answer) => answer === '')) {
+      setError('Answer every complaint-specific question before continuing. Use “Not sure” when uncertain.')
+      return
+    }
+    if (!Object.values(requestComplaintTriageConfirmations).every(Boolean)) {
+      setError('Confirm the location, callback route, and synthetic-data boundary before continuing.')
+      return
+    }
+
+    const migraine = requestComplaintTriage.complaintCategory === 'migraine'
+      ? {
+          suddenOrWorstOnset: requireComplaintAnswer(migraineComplaintAnswers.suddenOrWorstOnset),
+          newNeurologicOrVisionChange: requireComplaintAnswer(migraineComplaintAnswers.newNeurologicOrVisionChange),
+          feverOrStiffNeck: requireComplaintAnswer(migraineComplaintAnswers.feverOrStiffNeck),
+          recentHeadInjury: requireComplaintAnswer(migraineComplaintAnswers.recentHeadInjury),
+          pregnantOrPostpartum: requireComplaintAnswer(migraineComplaintAnswers.pregnantOrPostpartum),
+          cancerOrImmunocompromised: requireComplaintAnswer(migraineComplaintAnswers.cancerOrImmunocompromised),
+          knownSimilarPattern: requireComplaintAnswer(migraineComplaintAnswers.knownSimilarPattern),
+          persistentVomiting: requireComplaintAnswer(migraineComplaintAnswers.persistentVomiting),
+        }
+      : null
+    const sleep = requestComplaintTriage.complaintCategory === 'sleep'
+      ? {
+          selfHarmThoughts: requireComplaintAnswer(sleepComplaintAnswers.selfHarmThoughts),
+          maniaOrPsychosis: requireComplaintAnswer(sleepComplaintAnswers.maniaOrPsychosis),
+          dangerousSomnolence: requireComplaintAnswer(sleepComplaintAnswers.dangerousSomnolence),
+          withdrawalConcern: requireComplaintAnswer(sleepComplaintAnswers.withdrawalConcern),
+          breathingPausesOrSevereSnoring: requireComplaintAnswer(sleepComplaintAnswers.breathingPausesOrSevereSnoring),
+          pregnantOrComplexMedicationConcern: requireComplaintAnswer(sleepComplaintAnswers.pregnantOrComplexMedicationConcern),
+          controlledSedativeRequest: requireComplaintAnswer(sleepComplaintAnswers.controlledSedativeRequest),
+          uncomplicatedSleepDifficulty: requireComplaintAnswer(sleepComplaintAnswers.uncomplicatedSleepDifficulty),
+        }
+      : null
+    const input = {
+      expectedRequestVersion: requestComplaintTriage.requestVersion,
+      contextSnapshotFingerprint: requestComplaintTriage.contextSnapshotFingerprint,
+      currentLocationStateCode: requestComplaintTriage.currentLocationStateCode,
+      currentLocationConfirmed: true,
+      callbackNumberConfirmed: true,
+      syntheticDataConfirmed: true,
+      migraine,
+      sleep,
+    } satisfies TelehealthApplicantRequestComplaintTriageInput
+    const content = JSON.stringify(input)
+    if (!pendingRequestComplaintTriage.current
+      || pendingRequestComplaintTriage.current.content !== content) {
+      pendingRequestComplaintTriage.current = { content, idempotencyKey: crypto.randomUUID() }
+    }
+
+    setError(null)
+    setSubmitting(true)
+    try {
+      const result = await assessApplicantTelehealthRequestComplaintTriage(
+        applicant.applicantId,
+        applicantSession.applicantAccessKey,
+        input,
+        pendingRequestComplaintTriage.current.idempotencyKey,
+      )
+      setRequestComplaintTriage(result)
+      pendingRequestComplaintTriage.current = null
+      setMigraineComplaintAnswers(initialMigraineComplaintAnswers)
+      setSleepComplaintAnswers(initialSleepComplaintAnswers)
+      setRequestComplaintTriageConfirmations(initialRequestComplaintTriageConfirmations)
+    } catch (caught: unknown) {
+      if (caught instanceof ApiRequestError && caught.status && caught.status < 500) {
+        pendingRequestComplaintTriage.current = null
+      }
+      setError(caught instanceof Error
+        ? caught.message
+        : 'Complaint-specific triage could not be evaluated.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   function restart() {
     clearApplicantSession()
     pendingCreate.current = null
@@ -2390,6 +2601,7 @@ export default function ProspectivePatientTelehealthEntry() {
     pendingRequestCreation.current = null
     pendingRequestLocation.current = null
     pendingRequestSafety.current = null
+    pendingRequestComplaintTriage.current = null
     setApplicantSession(null)
     setApplicant(null)
     setValues(initialValues)
@@ -2500,6 +2712,12 @@ export default function ProspectivePatientTelehealthEntry() {
     setRequestSafetyLoadAttempt(0)
     setRequestSafetyAnswers(initialRequestSafetyAnswers)
     setRequestSafetyConfirmations(initialRequestSafetyConfirmations)
+    setRequestComplaintTriage(null)
+    setRequestComplaintTriageLoading(false)
+    setRequestComplaintTriageLoadAttempt(0)
+    setMigraineComplaintAnswers(initialMigraineComplaintAnswers)
+    setSleepComplaintAnswers(initialSleepComplaintAnswers)
+    setRequestComplaintTriageConfirmations(initialRequestComplaintTriageConfirmations)
     setError(null)
   }
 
@@ -4363,6 +4581,104 @@ export default function ProspectivePatientTelehealthEntry() {
                     {requestSafety.outcome === 'Emergency' ? <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a> : null}
                     <p>No submitted safety answer or answer fingerprint is returned. No doctor search, queue, appointment, encounter, consent, care, prescribing, financial, integration, or external action was created.</p>
                     <ul>{requestSafety.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                  </div>
+                ) : null}
+                {requestSafety?.complaintSpecificTriageRequired && requestComplaintTriageLoading ? (
+                  <p role="status">Loading complaint-specific synthetic triage…</p>
+                ) : null}
+                {requestSafety?.complaintSpecificTriageRequired
+                  && !requestComplaintTriageLoading
+                  && !requestComplaintTriage ? (
+                    <button
+                      className="telehealth-button"
+                      type="button"
+                      onClick={() => setRequestComplaintTriageLoadAttempt((value) => value + 1)}
+                    >
+                      Retry complaint-triage load
+                    </button>
+                  ) : null}
+                {requestComplaintTriage?.assessmentReady ? (
+                  <form className="telehealth-review-form" onSubmit={assessRequestComplaintTriage}>
+                    <div className="telehealth-emergency" role="note">
+                      <h3>Emergency and crisis help is immediate</h3>
+                      <p>Call 911 now for an emergency. Call or text 988 for a mental-health or suicide crisis. Do not wait to submit this demonstration form.</p>
+                      <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a>
+                      <a className="telehealth-button telehealth-button-secondary" href="tel:988">Call 988</a>
+                    </div>
+                    <h3>{requestComplaintTriage.complaintCategory === 'migraine' ? 'Headache or known migraine pattern' : 'Sleep difficulty'} synthetic triage</h3>
+                    <p id="request-complaint-triage-help">Choose Yes, No, or Not sure for every question. “Not sure” routes to review; it never defaults to eligible. These questions are unapproved synthetic engineering content, not medical advice.</p>
+                    <dl className="telehealth-details">
+                      <div><dt>Server-owned category</dt><dd>{requestComplaintTriage.complaintCategory}</dd></div>
+                      <div><dt>Current location state</dt><dd>{requestComplaintTriage.currentLocationStateCode}</dd></div>
+                      <div><dt>Callback number</dt><dd>{requestComplaintTriage.maskedCallbackPhone}</dd></div>
+                      <div><dt>Clinical content status</dt><dd>{requestComplaintTriage.clinicalContentStatus}</dd></div>
+                      <div><dt>Context expires</dt><dd>{new Date(requestComplaintTriage.contextExpiresAt).toLocaleString()}</dd></div>
+                    </dl>
+                    {requestComplaintTriage.complaintCategory === 'migraine' ? (
+                      <div aria-describedby="request-complaint-triage-help">
+                        <ComplaintAnswerField legend="Did this headache begin suddenly, or is it the worst headache in this fictional scenario?" name="complaint-migraine-sudden" answer={migraineComplaintAnswers.suddenOrWorstOnset} onChange={(answer) => updateMigraineComplaintAnswer('suddenOrWorstOnset', answer)} />
+                        <ComplaintAnswerField legend="Is there a new neurologic or vision change in this fictional scenario?" name="complaint-migraine-neurologic" answer={migraineComplaintAnswers.newNeurologicOrVisionChange} onChange={(answer) => updateMigraineComplaintAnswer('newNeurologicOrVisionChange', answer)} />
+                        {(migraineComplaintAnswers.suddenOrWorstOnset === 'Yes' || migraineComplaintAnswers.newNeurologicOrVisionChange === 'Yes') ? <p className="telehealth-inline-warning" role="alert"><strong>Call 911 now.</strong> This application has not contacted or dispatched emergency services.</p> : null}
+                        <ComplaintAnswerField legend="Is there fever or a stiff neck in this fictional scenario?" name="complaint-migraine-fever" answer={migraineComplaintAnswers.feverOrStiffNeck} onChange={(answer) => updateMigraineComplaintAnswer('feverOrStiffNeck', answer)} />
+                        <ComplaintAnswerField legend="Was there a recent head injury in this fictional scenario?" name="complaint-migraine-injury" answer={migraineComplaintAnswers.recentHeadInjury} onChange={(answer) => updateMigraineComplaintAnswer('recentHeadInjury', answer)} />
+                        <ComplaintAnswerField legend="Is the fictional patient pregnant or recently postpartum?" name="complaint-migraine-pregnancy" answer={migraineComplaintAnswers.pregnantOrPostpartum} onChange={(answer) => updateMigraineComplaintAnswer('pregnantOrPostpartum', answer)} />
+                        <ComplaintAnswerField legend="Does the fictional scenario include cancer or immune compromise?" name="complaint-migraine-cancer" answer={migraineComplaintAnswers.cancerOrImmunocompromised} onChange={(answer) => updateMigraineComplaintAnswer('cancerOrImmunocompromised', answer)} />
+                        <ComplaintAnswerField legend="Is this similar to a previously known headache or migraine pattern in the fictional scenario?" name="complaint-migraine-pattern" answer={migraineComplaintAnswers.knownSimilarPattern} onChange={(answer) => updateMigraineComplaintAnswer('knownSimilarPattern', answer)} />
+                        <ComplaintAnswerField legend="Is there persistent vomiting in this fictional scenario?" name="complaint-migraine-vomiting" answer={migraineComplaintAnswers.persistentVomiting} onChange={(answer) => updateMigraineComplaintAnswer('persistentVomiting', answer)} />
+                      </div>
+                    ) : (
+                      <div aria-describedby="request-complaint-triage-help">
+                        <ComplaintAnswerField legend="Does the fictional scenario include thoughts of self-harm or suicide?" name="complaint-sleep-self-harm" answer={sleepComplaintAnswers.selfHarmThoughts} onChange={(answer) => updateSleepComplaintAnswer('selfHarmThoughts', answer)} />
+                        {sleepComplaintAnswers.selfHarmThoughts === 'Yes' ? <p className="telehealth-inline-warning" role="alert"><strong>Call 911 for immediate danger, or call or text 988 for crisis support.</strong> This application has not contacted emergency or crisis services.</p> : null}
+                        <ComplaintAnswerField legend="Does the fictional scenario include possible mania or psychosis?" name="complaint-sleep-mania" answer={sleepComplaintAnswers.maniaOrPsychosis} onChange={(answer) => updateSleepComplaintAnswer('maniaOrPsychosis', answer)} />
+                        <ComplaintAnswerField legend="Could sleepiness make driving, work, or another activity unsafe in this fictional scenario?" name="complaint-sleep-somnolence" answer={sleepComplaintAnswers.dangerousSomnolence} onChange={(answer) => updateSleepComplaintAnswer('dangerousSomnolence', answer)} />
+                        <ComplaintAnswerField legend="Is withdrawal from alcohol, medication, or another substance a concern in this fictional scenario?" name="complaint-sleep-withdrawal" answer={sleepComplaintAnswers.withdrawalConcern} onChange={(answer) => updateSleepComplaintAnswer('withdrawalConcern', answer)} />
+                        <ComplaintAnswerField legend="Are breathing pauses or severe snoring reported in this fictional scenario?" name="complaint-sleep-breathing" answer={sleepComplaintAnswers.breathingPausesOrSevereSnoring} onChange={(answer) => updateSleepComplaintAnswer('breathingPausesOrSevereSnoring', answer)} />
+                        <ComplaintAnswerField legend="Does the fictional scenario include pregnancy or a complex medication concern?" name="complaint-sleep-pregnancy" answer={sleepComplaintAnswers.pregnantOrComplexMedicationConcern} onChange={(answer) => updateSleepComplaintAnswer('pregnantOrComplexMedicationConcern', answer)} />
+                        <ComplaintAnswerField legend="Is the fictional request specifically for a controlled sedative?" name="complaint-sleep-controlled" answer={sleepComplaintAnswers.controlledSedativeRequest} onChange={(answer) => updateSleepComplaintAnswer('controlledSedativeRequest', answer)} />
+                        <ComplaintAnswerField legend="Is uncomplicated sleep difficulty the only concern in this fictional scenario?" name="complaint-sleep-uncomplicated" answer={sleepComplaintAnswers.uncomplicatedSleepDifficulty} onChange={(answer) => updateSleepComplaintAnswer('uncomplicatedSleepDifficulty', answer)} />
+                      </div>
+                    )}
+                    <fieldset className="telehealth-fieldset">
+                      <legend>Required context confirmations</legend>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestComplaintTriageConfirmations.currentLocation} onChange={(event) => updateRequestComplaintTriageConfirmation('currentLocation', event.target.checked)} /><span>I confirm the displayed state remains the current physical location.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestComplaintTriageConfirmations.callbackNumber} onChange={(event) => updateRequestComplaintTriageConfirmation('callbackNumber', event.target.checked)} /><span>I confirm the displayed masked callback number remains correct.</span></label>
+                      <label className="telehealth-check"><input required type="checkbox" checked={requestComplaintTriageConfirmations.syntheticData} onChange={(event) => updateRequestComplaintTriageConfirmation('syntheticData', event.target.checked)} /><span>I confirm every answer is fictional synthetic demonstration data.</span></label>
+                    </fieldset>
+                    <ul>{requestComplaintTriage.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                    <button
+                      className="telehealth-button"
+                      type="submit"
+                      disabled={submitting
+                        || Object.values(requestComplaintTriage.complaintCategory === 'migraine' ? migraineComplaintAnswers : sleepComplaintAnswers).some((answer) => answer === '')
+                        || !Object.values(requestComplaintTriageConfirmations).every(Boolean)}
+                    >
+                      {submitting ? 'Evaluating complaint-specific triage…' : 'Evaluate synthetic complaint triage'}
+                    </button>
+                  </form>
+                ) : null}
+                {requestComplaintTriage?.assessmentCreated ? (
+                  <div className="telehealth-coverage-result" role="status" tabIndex={-1} ref={requestComplaintTriageResultRef}>
+                    <h3>{requestComplaintTriage.syntheticVideoEvaluationCandidate ? 'Synthetic fixture can demonstrate intake progression' : 'Complaint-specific triage stopped progression'}</h3>
+                    <dl className="telehealth-details">
+                      <div><dt>Request reference</dt><dd>{requestComplaintTriage.requestId}</dd></div>
+                      <div><dt>Request status</dt><dd>{requestComplaintTriage.requestStatus}</dd></div>
+                      <div><dt>Complaint category</dt><dd>{requestComplaintTriage.complaintCategory}</dd></div>
+                      <div><dt>Public disposition</dt><dd>{requestComplaintTriage.publicDisposition}</dd></div>
+                      <div><dt>Clinical content status</dt><dd>{requestComplaintTriage.clinicalContentStatus}</dd></div>
+                      <div><dt>Medical-director approval recorded</dt><dd>{requestComplaintTriage.medicalDirectorApprovalRecorded ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Clinical golden cases approved</dt><dd>{requestComplaintTriage.clinicalGoldenCasePackApproved ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Production publication allowed</dt><dd>{requestComplaintTriage.productionPublicationAllowed ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Clinical-review work item created</dt><dd>{requestComplaintTriage.clinicalReviewCreated ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Intake snapshot created</dt><dd>{requestComplaintTriage.intakeSnapshotCreated ? 'Yes' : 'No'}</dd></div>
+                      <div><dt>Doctor search or queue</dt><dd>{requestComplaintTriage.doctorSearchStarted || requestComplaintTriage.patientCareQueueEntered || requestComplaintTriage.clinicianQueueEntered ? 'Started' : 'Not started'}</dd></div>
+                      <div><dt>Evaluated</dt><dd>{requestComplaintTriage.evaluatedAt ? new Date(requestComplaintTriage.evaluatedAt).toLocaleString() : 'Recorded'}</dd></div>
+                    </dl>
+                    <p><strong>{requestComplaintTriage.direction}</strong></p>
+                    {requestComplaintTriage.outcome === 'Emergency' ? <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a> : null}
+                    {requestComplaintTriage.complaintCategory === 'sleep' && requestComplaintTriage.outcome === 'Emergency' ? <a className="telehealth-button telehealth-button-secondary" href="tel:988">Call 988</a> : null}
+                    <p>No submitted answer, answer fingerprint, fired rule, or reason code is returned. No clinical-review work item, intake snapshot, contact, doctor search, queue, appointment, encounter, consent, care, prescribing, financial, integration, or external action was created.</p>
+                    <ul>{requestComplaintTriage.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                   </div>
                 ) : null}
               </>

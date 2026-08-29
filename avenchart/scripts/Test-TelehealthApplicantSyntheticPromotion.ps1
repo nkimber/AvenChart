@@ -18,6 +18,7 @@ $resultPath = Join-Path $artifactsRoot 'latest-telehealth-applicant-synthetic-pr
 New-Item -ItemType Directory -Force $artifactsRoot | Out-Null
 $checks = [System.Collections.Generic.List[object]]::new()
 $passed = $true
+$testPurposeCategory = if ($env:AVENCHART_TELEHEALTH_TEST_PURPOSE_CATEGORY -eq 'sleep') { 'sleep' } else { 'migraine' }
 
 function Add-Check([string]$Name,[bool]$Result,[object]$Details=$null) {
     $script:checks.Add([ordered]@{name=$Name;status=$(if($Result){'passed'}else{'failed'});details=$Details})
@@ -108,7 +109,7 @@ function New-AuthorizedApplicant(
     }|ConvertTo-Json)
     $purpose=Invoke-RestMethod "$ApiBaseUrl/api/telehealth/v1/applicants/$($created.applicantId)/visit-purpose" -Method Post -Headers @{
         'X-AvenChart-Telehealth-Applicant-Key'=$secret;'X-Idempotency-Key'=(New-Key 'sp23-purpose')
-    } -ContentType 'application/json' -TimeoutSec 30 -Body (@{expectedVersion=$safety.applicantVersion;purposeCategory='migraine';syntheticDataConfirmed=$true}|ConvertTo-Json)
+    } -ContentType 'application/json' -TimeoutSec 30 -Body (@{expectedVersion=$safety.applicantVersion;purposeCategory=$testPurposeCategory;syntheticDataConfirmed=$true}|ConvertTo-Json)
     $precheck=Invoke-RestMethod "$ApiBaseUrl/api/telehealth/v1/applicants/$($created.applicantId)/practice-network-precheck" -Method Post -Headers @{
         'X-AvenChart-Telehealth-Applicant-Key'=$secret;'X-Idempotency-Key'=(New-Key 'sp23-precheck')
     } -ContentType 'application/json' -TimeoutSec 30 -Body (@{expectedVersion=$purpose.applicantVersion;planKey='harbor-mutual-hd';syntheticDataConfirmed=$true}|ConvertTo-Json)

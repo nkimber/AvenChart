@@ -1687,6 +1687,300 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
+  test('applicant completes sleep complaint triage with coded answers, stable retry, crisis direction, and a closed publication gate', async ({ page }) => {
+    await page.addInitScript((session) => {
+      sessionStorage.setItem('avenchart-ui.telehealthProspectiveApplicant', JSON.stringify(session))
+    }, { applicantId: prospectiveApplicant.applicantId, applicantAccessKey: 'q'.repeat(64) })
+    const requestCreatedApplicant = {
+      ...prospectiveApplicant,
+      status: 'SyntheticRequestCreated',
+      version: 26,
+      contactVerified: true,
+      identityAssurance: 'ContactControlOnly',
+      duplicateDisposition: 'NoCandidate',
+      canonicalPatientCreated: true,
+      verificationAttemptsRemaining: 0,
+      demonstrationVerificationCode: null,
+      nextAction: 'Complete the bounded synthetic complaint-specific triage screen.',
+    }
+    const requestReceipt = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      policyKey: 'SYNTHETIC_APPLICANT_TELEHEALTH_REQUEST_CREATION',
+      policyVersion: 1,
+      authorizationPolicyVersion: 1,
+      requestCreationReady: false,
+      requestCreated: true,
+      requestId: '43000000-0000-4000-8000-000000000043',
+      requestStatus: 'SafetyScreening',
+      requestVersion: 3,
+      complaintCategory: 'sleep',
+      createdAt: '2026-08-28T16:00:00Z',
+      telehealthRequestCreated: true,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Complaint-specific triage remains required.',
+      limitations: ['No queue or care exists.'],
+    }
+    const confirmedLocation = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 2,
+      requestStatus: 'LocationConfirmed',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_LOCATION_CONFIRMATION',
+      policyVersion: 1,
+      contextSnapshotFingerprint: '2'.repeat(64),
+      currentLocationStateCode: 'GA',
+      maskedCallbackPhone: '***-***-0199',
+      confirmationReady: false,
+      locationConfirmed: true,
+      confirmedAt: '2026-08-28T17:00:00Z',
+      triageAssessmentCreated: false,
+      clinicalReviewCreated: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Location and callback are confirmed.',
+      limitations: ['No triage, queue, appointment, encounter, consent, or care is created.'],
+    }
+    const universalPass = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 3,
+      requestStatus: 'SafetyScreening',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_UNIVERSAL_SAFETY_ASSESSMENT',
+      policyVersion: 1,
+      protocolKey: 'synthetic-universal-safety',
+      protocolVersion: 1,
+      contextSnapshotFingerprint: '3'.repeat(64),
+      contextExpiresAt: '2026-08-28T17:30:00Z',
+      currentLocationStateCode: 'GA',
+      maskedCallbackPhone: '***-***-0199',
+      assessmentReady: false,
+      assessmentCreated: true,
+      outcome: 'TelehealthEligible',
+      publicDisposition: 'UniversalSafetyPassed',
+      evaluatedAt: '2026-08-28T17:05:00Z',
+      universalSafetyPassed: true,
+      complaintSpecificTriageRequired: true,
+      complaintSpecificTriageCreated: false,
+      clinicalReviewRequired: false,
+      clinicalReviewCreated: false,
+      terminalForTelehealth: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Complaint-specific triage is still required.',
+      limitations: ['The universal result is not complete eligibility.'],
+    }
+    const readyComplaintTriage = {
+      applicantId: prospectiveApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      requestId: requestReceipt.requestId,
+      requestVersion: 3,
+      requestStatus: 'SafetyScreening',
+      complaintCategory: 'sleep',
+      policyKey: 'SYNTHETIC_APPLICANT_REQUEST_COMPLAINT_TRIAGE',
+      policyVersion: 1,
+      protocolKey: 'synthetic-sleep-complaint-triage',
+      protocolVersion: 1,
+      engineVersion: 'synthetic-complaint-triage-engine-v1',
+      clinicalContentStatus: 'UNAPPROVED_SYNTHETIC',
+      medicalDirectorApprovalRequired: true,
+      medicalDirectorApprovalRecorded: false,
+      clinicalGoldenCasePackApproved: false,
+      productionPublicationAllowed: false,
+      contextSnapshotFingerprint: '4'.repeat(64),
+      contextExpiresAt: '2026-08-28T17:30:00Z',
+      currentLocationStateCode: 'GA',
+      maskedCallbackPhone: '***-***-0199',
+      assessmentReady: true,
+      assessmentCreated: false,
+      outcome: null,
+      publicDisposition: null,
+      evaluatedAt: null,
+      syntheticVideoEvaluationCandidate: false,
+      clinicalReviewRequired: false,
+      clinicalReviewCreated: false,
+      terminalForTelehealth: false,
+      intakeSnapshotCreated: false,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'Answer every coded synthetic question.',
+      limitations: ['Medical-director approval and production publication remain closed.'],
+    }
+    const emergencyResult = {
+      ...readyComplaintTriage,
+      requestVersion: 4,
+      requestStatus: 'EmergencyRedirected',
+      assessmentReady: false,
+      assessmentCreated: true,
+      outcome: 'Emergency',
+      publicDisposition: 'EmergencyCareNow',
+      evaluatedAt: '2026-08-28T17:08:00Z',
+      terminalForTelehealth: true,
+      direction: 'Call 911 for immediate danger, or call or text 988 for crisis support. This application did not contact emergency or crisis services.',
+    }
+    let complaintLoadCalls = 0
+    let assessmentCalls = 0
+    const assessmentKeys: Array<string | undefined> = []
+    const assessmentBodies: Array<Record<string, unknown>> = []
+    await page.route('**/api/telehealth/v1/applicants/**', async (route) => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      expect(request.headers()['x-avenchart-telehealth-applicant-key']).toBe('q'.repeat(64))
+      if (path.endsWith('/telehealth-request/complaint-triage')) {
+        if (request.method() === 'POST') {
+          assessmentCalls += 1
+          assessmentKeys.push(request.headers()['x-idempotency-key'])
+          assessmentBodies.push(request.postDataJSON() as Record<string, unknown>)
+          if (assessmentCalls === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Complaint result unknown; retry unchanged.' }) })
+            return
+          }
+          await route.fulfill({ json: emergencyResult })
+          return
+        }
+        complaintLoadCalls += 1
+        if (complaintLoadCalls === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Complaint fixture temporarily unavailable.' }) })
+          return
+        }
+        await route.fulfill({ json: readyComplaintTriage })
+        return
+      }
+      if (path.endsWith('/telehealth-request/safety')) {
+        await route.fulfill({ json: universalPass })
+        return
+      }
+      if (path.endsWith('/telehealth-request/location')) {
+        await route.fulfill({ json: confirmedLocation })
+        return
+      }
+      if (path.endsWith('/telehealth-request')) {
+        await route.fulfill({ json: requestReceipt })
+        return
+      }
+      await route.fulfill({ json: requestCreatedApplicant })
+    })
+
+    await page.goto('/telehealth/new')
+    await expect(page.getByRole('alert')).toContainText('Complaint fixture temporarily unavailable.')
+    await page.getByRole('button', { name: 'Retry complaint-triage load' }).click()
+    const heading = page.getByRole('heading', { name: 'Sleep difficulty synthetic triage' })
+    await expect(heading).toBeVisible()
+    await expect(heading.locator('..')).toContainText('Server-owned categorysleep')
+    await expect(heading.locator('..')).toContainText('UNAPPROVED_SYNTHETIC')
+    await expect(heading.locator('..').locator('input[type="text"]')).toHaveCount(0)
+    await expect(heading.locator('..').locator('textarea')).toHaveCount(0)
+
+    await page.getByRole('group', { name: 'Does the fictional scenario include thoughts of self-harm or suicide?' }).getByLabel('Yes', { exact: true }).check()
+    await expect(page.getByRole('alert')).toContainText(/call 911.*988.*has not contacted/i)
+    await page.getByRole('group', { name: 'Does the fictional scenario include possible mania or psychosis?' }).getByLabel('No', { exact: true }).check()
+    await page.getByRole('group', { name: 'Could sleepiness make driving, work, or another activity unsafe in this fictional scenario?' }).getByLabel('No', { exact: true }).check()
+    await page.getByRole('group', { name: 'Is withdrawal from alcohol, medication, or another substance a concern in this fictional scenario?' }).getByLabel('No', { exact: true }).check()
+    await page.getByRole('group', { name: 'Are breathing pauses or severe snoring reported in this fictional scenario?' }).getByLabel('Not sure', { exact: true }).check()
+    await page.getByRole('group', { name: 'Does the fictional scenario include pregnancy or a complex medication concern?' }).getByLabel('No', { exact: true }).check()
+    await page.getByRole('group', { name: 'Is the fictional request specifically for a controlled sedative?' }).getByLabel('No', { exact: true }).check()
+    await page.getByRole('group', { name: 'Is uncomplicated sleep difficulty the only concern in this fictional scenario?' }).getByLabel('Yes', { exact: true }).check()
+    await page.getByLabel('I confirm the displayed state remains the current physical location.').check()
+    await page.getByLabel('I confirm the displayed masked callback number remains correct.').check()
+    await page.getByLabel('I confirm every answer is fictional synthetic demonstration data.').check()
+    const evaluate = page.getByRole('button', { name: 'Evaluate synthetic complaint triage' })
+    await evaluate.click()
+    await expect(page.getByRole('alert').filter({ hasText: 'Complaint result unknown; retry unchanged.' })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Does the fictional scenario include thoughts of self-harm or suicide?' }).getByLabel('Yes', { exact: true })).toBeChecked()
+    await evaluate.click()
+
+    const result = page.getByRole('heading', { name: 'Complaint-specific triage stopped progression' })
+    await expect(result).toBeVisible()
+    await expect(result.locator('..')).toContainText('Request statusEmergencyRedirected')
+    await expect(result.locator('..')).toContainText('Medical-director approval recordedNo')
+    await expect(result.locator('..')).toContainText('Clinical golden cases approvedNo')
+    await expect(result.locator('..')).toContainText('Production publication allowedNo')
+    await expect(result.locator('..')).toContainText('Doctor search or queueNot started')
+    await expect(result.locator('..')).toContainText(/No submitted answer, answer fingerprint, fired rule, or reason code is returned/i)
+    await expect(result.locator('..').getByRole('link', { name: 'Call 911' })).toHaveAttribute('href', 'tel:911')
+    await expect(result.locator('..').getByRole('link', { name: 'Call 988' })).toHaveAttribute('href', 'tel:988')
+    expect(assessmentKeys).toHaveLength(2)
+    expect(assessmentKeys[0]).toBe(assessmentKeys[1])
+    expect(assessmentBodies[0]).toEqual({
+      expectedRequestVersion: 3,
+      contextSnapshotFingerprint: '4'.repeat(64),
+      currentLocationStateCode: 'GA',
+      currentLocationConfirmed: true,
+      callbackNumberConfirmed: true,
+      syntheticDataConfirmed: true,
+      migraine: null,
+      sleep: {
+        selfHarmThoughts: 'Yes',
+        maniaOrPsychosis: 'No',
+        dangerousSomnolence: 'No',
+        withdrawalConcern: 'No',
+        breathingPausesOrSevereSnoring: 'NotSure',
+        pregnantOrComplexMedicationConcern: 'No',
+        controlledSedativeRequest: 'No',
+        uncomplicatedSleepDifficulty: 'Yes',
+      },
+    })
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toMatch(/contextSnapshotFingerprint|selfHarmThoughts|NotSure|answerFingerprint|firedRule|reasonCode|requestId/i)
+
+    await expectNoSeriousAccessibilityViolations(page)
+    await expectTelehealthReflow(page)
+  })
+
   test('promoted applicant completes bounded post-promotion confirmations through practice-review submission without implying acceptance, queueing, or care', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })

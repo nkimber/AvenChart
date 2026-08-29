@@ -401,6 +401,24 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/complaint-triage", GetApplicantTelehealthRequestComplaintTriageAsync)
+            .WithName("GetTelehealthApplicantRequestComplaintTriage")
+            .WithDescription("Returns the applicant owner's private complaint-specific synthetic triage state. The fixture is unapproved clinical content and the response returns no submitted answers, fired rules, or reason codes.")
+            .Produces<TelehealthApplicantRequestComplaintTriageResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/complaint-triage", AssessApplicantTelehealthRequestComplaintTriageAsync)
+            .WithName("AssessTelehealthApplicantRequestComplaintTriage")
+            .WithDescription("Evaluates one exact migraine or sleep coded answer set against an immutable unapproved synthetic fixture. It records ordered rule evidence but creates no clinical-review work item, intake snapshot, queue, appointment, encounter, care, integration, or external action.")
+            .Accepts<EvaluateTelehealthApplicantRequestComplaintTriage>("application/json")
+            .Produces<TelehealthApplicantRequestComplaintTriageResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
         patient.MapGet("/requests", ListPatientRequestsAsync)
@@ -1365,6 +1383,39 @@ public static class TelehealthEndpoints
         HttpContext context,
         Guid applicantId,
         EvaluateTelehealthApplicantRequestUniversalSafety request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.AssessAsync(
+                context,
+                applicantId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> GetApplicantTelehealthRequestComplaintTriageAsync(
+        TelehealthApplicantRequestComplaintTriageService service,
+        HttpContext context,
+        Guid applicantId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetAsync(
+                context,
+                applicantId,
+                ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> AssessApplicantTelehealthRequestComplaintTriageAsync(
+        TelehealthApplicantRequestComplaintTriageService service,
+        HttpContext context,
+        Guid applicantId,
+        EvaluateTelehealthApplicantRequestComplaintTriage request,
         CancellationToken cancellationToken) =>
         ExecuteAsync(async () =>
         {

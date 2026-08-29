@@ -1,13 +1,13 @@
 # Telehealth implementation backlog
 
-Status: Exact disabled synthetic Sprints 1–42 active only within Decisions 0003 and 0005–0045
+Status: Exact disabled synthetic Sprints 1–43 active only within Decisions 0003 and 0005–0046
 Decision baseline: [Decision 0001](../decisions/0001-g0-development-baseline.md)  
 Machine-readable source: [backlog.json](backlog.json)  
 First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 42 applicant request universal safety assessment](sprint-42-applicant-request-universal-safety-assessment.md); bounded automated implementation evidence is recorded in the [Sprint 42 evidence packet](sprint-42-evidence.md)
+Current increment: [Sprint 43 applicant request complaint triage](sprint-43-applicant-request-complaint-triage.md); bounded automated implementation evidence is recorded in the [Sprint 43 evidence packet](sprint-43-evidence.md)
 
 ## 1. Backlog contract
 
@@ -86,7 +86,7 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 - Telehealth G0 product baseline: **approved** by Decision 0001.
 - Backlog and wireframe preparation: **authorized**.
 - Planning-artifact validator and existing-CI invocation: **authorized and active under Decision 0002**.
-- Decisions 0003 and 0005–0045 authorize only their exact disabled synthetic Sprint 1–42 application/database/feature-test/runtime paths through 2026-10-31.
+- Decisions 0003 and 0005–0046 authorize only their exact disabled synthetic Sprint 1–43 application/database/feature-test/runtime paths through 2026-10-31.
 - All implementation outside those decisions remains **blocked by the existing Phase 2 exit gate** until explicit closure or another scoped override.
 - Real patient care: separately blocked until G4 regardless of implementation authorization.
 
@@ -94,4 +94,4 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 
 [Decision 0003](../decisions/0003-proposed-sprint-01-synthetic-foundation.md) authorizes the complete disabled, synthetic Sprint 1 vertical slice only on its listed paths and with its stop conditions. It does not authorize production enablement, real patient care, or any live integration.
 
-[Decisions 0005–0045](../decisions/0045-approved-sprint-42-applicant-request-universal-safety-assessment.md) add only the bounded synthetic increments documented for Sprints 2–42. Decisions 0038–0042 govern practice-review submission, inbox, claimant, packet, and positive operational authorization. Decision 0043 permits the access-key owner to separately create exactly one source-linked `Draft` request after that authorization. Decision 0044 permits the same owner to bind the exact prior supported current-location state and masked callback route to that request and advance it only to `LocationConfirmed` version 2. Decision 0045 permits one request-time universal safety assessment using the immutable non-production four-answer fixture. A pass advances only to `SafetyScreening` version 3 and still requires complaint-specific triage; the other outcomes stop at emergency redirect, in-person recommendation, or unassigned clinical-review state. No clinical-review work item, contact, doctor search, patient/clinician care-queue entry, queue position, appointment, encounter, consent, care, prescribing, billing, claim, integration, or external action is created.
+[Decisions 0005–0046](../decisions/0046-approved-sprint-43-applicant-request-complaint-triage.md) add only the bounded synthetic increments documented for Sprints 2–43. Decisions 0038–0042 govern practice-review submission, inbox, claimant, packet, and positive operational authorization. Decision 0043 permits the access-key owner to separately create exactly one source-linked `Draft` request after that authorization. Decision 0044 permits the same owner to bind the exact prior supported current-location state and masked callback route to that request and advance it only to `LocationConfirmed` version 2. Decision 0045 permits one request-time universal safety assessment using the immutable non-production four-answer fixture. Decision 0046 permits one fixed migraine or sleep coded complaint-triage assessment only after an exact universal pass. It records ordered rule evidence and maps the six bounded outcomes, but all content remains `UNAPPROVED_SYNTHETIC`; medical-director approval, approved clinical golden cases, and production publication remain explicitly false. No clinical-review work item, intake snapshot, contact, doctor search, patient/clinician care-queue entry, queue position, appointment, encounter, consent, care, prescribing, billing, claim, integration, or external action is created.

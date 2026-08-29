@@ -12,7 +12,7 @@ public sealed class TelehealthReadinessHealthCheck(
     IOptions<TelehealthOptions> options,
     ILogger<TelehealthReadinessHealthCheck> logger) : IHealthCheck
 {
-    private const int RequiredTableCount = 61;
+    private const int RequiredTableCount = 62;
 
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
@@ -82,6 +82,7 @@ public sealed class TelehealthReadinessHealthCheck(
                   'telehealth_applicant_request_creations',
                   'telehealth_applicant_request_location_confirmations',
                   'telehealth_applicant_request_universal_safety_assessments',
+                  'telehealth_applicant_request_complaint_triage_assessments',
                   'telehealth_video_sessions',
                   'telehealth_video_preflights',
                   'telehealth_video_participant_grants',

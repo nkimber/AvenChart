@@ -1609,6 +1609,91 @@ export type TelehealthApplicantRequestUniversalSafety = {
   limitations: string[]
 }
 
+export type TelehealthSyntheticComplaintAnswer = 'Yes' | 'No' | 'NotSure'
+
+export type TelehealthSyntheticMigraineComplaintTriageAnswers = {
+  suddenOrWorstOnset: TelehealthSyntheticComplaintAnswer
+  newNeurologicOrVisionChange: TelehealthSyntheticComplaintAnswer
+  feverOrStiffNeck: TelehealthSyntheticComplaintAnswer
+  recentHeadInjury: TelehealthSyntheticComplaintAnswer
+  pregnantOrPostpartum: TelehealthSyntheticComplaintAnswer
+  cancerOrImmunocompromised: TelehealthSyntheticComplaintAnswer
+  knownSimilarPattern: TelehealthSyntheticComplaintAnswer
+  persistentVomiting: TelehealthSyntheticComplaintAnswer
+}
+
+export type TelehealthSyntheticSleepComplaintTriageAnswers = {
+  selfHarmThoughts: TelehealthSyntheticComplaintAnswer
+  maniaOrPsychosis: TelehealthSyntheticComplaintAnswer
+  dangerousSomnolence: TelehealthSyntheticComplaintAnswer
+  withdrawalConcern: TelehealthSyntheticComplaintAnswer
+  breathingPausesOrSevereSnoring: TelehealthSyntheticComplaintAnswer
+  pregnantOrComplexMedicationConcern: TelehealthSyntheticComplaintAnswer
+  controlledSedativeRequest: TelehealthSyntheticComplaintAnswer
+  uncomplicatedSleepDifficulty: TelehealthSyntheticComplaintAnswer
+}
+
+export type TelehealthApplicantRequestComplaintTriageInput = {
+  expectedRequestVersion: number
+  contextSnapshotFingerprint: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  currentLocationConfirmed: true
+  callbackNumberConfirmed: true
+  syntheticDataConfirmed: true
+  migraine: TelehealthSyntheticMigraineComplaintTriageAnswers | null
+  sleep: TelehealthSyntheticSleepComplaintTriageAnswers | null
+}
+
+export type TelehealthApplicantRequestComplaintTriage = {
+  applicantId: string
+  applicantVersion: number
+  applicantStatus: 'SyntheticRequestCreated'
+  requestId: string
+  requestVersion: 3 | 4
+  requestStatus: 'SafetyScreening' | 'EmergencyRedirected' | 'InPersonRecommended' | 'Unsupported' | 'ClinicalReview' | 'Intake'
+  complaintCategory: 'migraine' | 'sleep'
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_COMPLAINT_TRIAGE'
+  policyVersion: 1
+  protocolKey: 'synthetic-migraine-complaint-triage' | 'synthetic-sleep-complaint-triage'
+  protocolVersion: 1
+  engineVersion: 'synthetic-complaint-triage-engine-v1'
+  clinicalContentStatus: 'UNAPPROVED_SYNTHETIC'
+  medicalDirectorApprovalRequired: true
+  medicalDirectorApprovalRecorded: false
+  clinicalGoldenCasePackApproved: false
+  productionPublicationAllowed: false
+  contextSnapshotFingerprint: string
+  contextExpiresAt: string
+  currentLocationStateCode: 'GA' | 'CA' | 'FL'
+  maskedCallbackPhone: string
+  assessmentReady: boolean
+  assessmentCreated: boolean
+  outcome: 'Emergency' | 'UrgentInPerson' | 'InPersonRequired' | 'Unsupported' | 'ClinicalReview' | 'TelehealthEligible' | null
+  publicDisposition: 'EmergencyCareNow' | 'PromptInPersonCare' | 'InPersonCareRequired' | 'TelehealthServiceUnsupported' | 'ClinicalReviewRequired' | 'SyntheticVideoEvaluationCandidate' | null
+  evaluatedAt: string | null
+  syntheticVideoEvaluationCandidate: boolean
+  clinicalReviewRequired: boolean
+  clinicalReviewCreated: false
+  terminalForTelehealth: boolean
+  intakeSnapshotCreated: false
+  patientContacted: false
+  patientCareQueueEntered: false
+  clinicianQueueEntered: false
+  doctorSearchStarted: false
+  queuePositionAssigned: false
+  appointmentCreated: false
+  encounterCreated: false
+  consentCreated: false
+  careAuthorized: false
+  prescribingEnabled: false
+  billingEnabled: false
+  claimCreated: false
+  integrationEnabled: false
+  externalCallPerformed: false
+  direction: string
+  limitations: string[]
+}
+
 export type TelehealthRequest = {
   requestId: string
   status: TelehealthRequestStatus
@@ -1623,7 +1708,7 @@ export type TelehealthRequest = {
   coverage: TelehealthCoverageStatus | null
 }
 
-export type TelehealthRequestStatus = 'Draft' | 'LocationConfirmed' | 'SafetyScreening' | 'EmergencyRedirected' | 'InPersonRecommended' | 'ClinicalReview' | 'Intake' | 'Verification' | 'OperationalReview' | 'Redirected' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp'
+export type TelehealthRequestStatus = 'Draft' | 'LocationConfirmed' | 'SafetyScreening' | 'EmergencyRedirected' | 'InPersonRecommended' | 'Unsupported' | 'ClinicalReview' | 'Intake' | 'Verification' | 'OperationalReview' | 'Redirected' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp'
 
 export type TelehealthPatientQueueStatus = {
   requestId: string
@@ -2865,6 +2950,41 @@ export function assessApplicantTelehealthRequestUniversalSafety(
 ) {
   return json<TelehealthApplicantRequestUniversalSafety>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/safety`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export function getApplicantTelehealthRequestComplaintTriage(
+  applicantId: string,
+  applicantAccessKey: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthApplicantRequestComplaintTriage>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/complaint-triage`,
+    {
+      headers: applicantHeaders(applicantAccessKey),
+      cache: 'no-store',
+      signal,
+    },
+  )
+}
+
+export function assessApplicantTelehealthRequestComplaintTriage(
+  applicantId: string,
+  applicantAccessKey: string,
+  input: TelehealthApplicantRequestComplaintTriageInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantRequestComplaintTriage>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/complaint-triage`,
     {
       method: 'POST',
       headers: applicantHeaders(applicantAccessKey, {

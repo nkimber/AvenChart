@@ -13,6 +13,7 @@ public enum TelehealthRequestStatus
     SafetyScreening,
     EmergencyRedirected,
     InPersonRecommended,
+    Unsupported,
     ClinicalReview,
     Intake,
     Verification,
@@ -31,7 +32,8 @@ public enum TelehealthTriageOutcome
     UrgentInPerson,
     InPersonRequired,
     ClinicalReview,
-    TelehealthEligible
+    TelehealthEligible,
+    Unsupported
 }
 
 public static class TelehealthRequestStateMachine
@@ -49,9 +51,17 @@ public static class TelehealthRequestStateMachine
                 TelehealthRequestStatus.Intake,
                 TelehealthRequestStatus.Redirected
             ],
-            [TelehealthRequestStatus.SafetyScreening] = [],
+            [TelehealthRequestStatus.SafetyScreening] =
+            [
+                TelehealthRequestStatus.EmergencyRedirected,
+                TelehealthRequestStatus.InPersonRecommended,
+                TelehealthRequestStatus.Unsupported,
+                TelehealthRequestStatus.ClinicalReview,
+                TelehealthRequestStatus.Intake
+            ],
             [TelehealthRequestStatus.EmergencyRedirected] = [],
             [TelehealthRequestStatus.InPersonRecommended] = [],
+            [TelehealthRequestStatus.Unsupported] = [],
             [TelehealthRequestStatus.ClinicalReview] = [],
             [TelehealthRequestStatus.Intake] = [TelehealthRequestStatus.Verification],
             [TelehealthRequestStatus.Verification] = [TelehealthRequestStatus.Verification, TelehealthRequestStatus.OperationalReview],

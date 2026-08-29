@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProspectivePatientTelehealthEntry from './ProspectivePatientTelehealthEntry.tsx'
-import { acknowledgeApplicantPreRequestReadiness, acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestUniversalSafety, confirmApplicantClinicalInformationSummary, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestLocation, createApplicantTelehealthRequest, createProspectiveApplicant, evaluateProspectiveSafetyTriage, getApplicantAllergyInformation, getApplicantClinicalInformationInventory, getApplicantClinicalInformationSummary, getApplicantCommunicationAccessReadiness, getApplicantDevicePreparation, getApplicantHealthHistoryInformation, getApplicantInsuranceHandoff, getApplicantMedicationInformation, getApplicantPracticeReviewSubmission, getApplicantPreRequestReadiness, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestUniversalSafety, getProspectiveApplicant, getProspectivePracticeNetworkOptions, recordApplicantAllergyInformation, recordApplicantClinicalInformationInventory, recordApplicantCommunicationAccessReadiness, recordApplicantDevicePreparation, recordApplicantHealthHistoryInformation, recordApplicantMedicationInformation, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, submitApplicantPracticeReview, verifyProspectiveApplicantContact, type TelehealthApplicantAllergyInformation, type TelehealthApplicantClinicalInformationInventory, type TelehealthApplicantClinicalInformationSummary, type TelehealthApplicantCommunicationAccessReadiness, type TelehealthApplicantDevicePreparation, type TelehealthApplicantHealthHistoryInformation, type TelehealthApplicantInsuranceHandoff, type TelehealthApplicantMedicationInformation, type TelehealthApplicantNotice, type TelehealthApplicantPracticeReview, type TelehealthApplicantPreRequestReadiness, type TelehealthApplicantRegistrationDetails, type TelehealthApplicantRequestCreation, type TelehealthApplicantRequestLocation, type TelehealthApplicantRequestUniversalSafety } from './api.ts'
+import { acknowledgeApplicantPreRequestReadiness, acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, confirmApplicantClinicalInformationSummary, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestLocation, createApplicantTelehealthRequest, createProspectiveApplicant, evaluateProspectiveSafetyTriage, getApplicantAllergyInformation, getApplicantClinicalInformationInventory, getApplicantClinicalInformationSummary, getApplicantCommunicationAccessReadiness, getApplicantDevicePreparation, getApplicantHealthHistoryInformation, getApplicantInsuranceHandoff, getApplicantMedicationInformation, getApplicantPracticeReviewSubmission, getApplicantPreRequestReadiness, getApplicantRegistrationDetails, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestUniversalSafety, getProspectiveApplicant, getProspectivePracticeNetworkOptions, recordApplicantAllergyInformation, recordApplicantClinicalInformationInventory, recordApplicantCommunicationAccessReadiness, recordApplicantDevicePreparation, recordApplicantHealthHistoryInformation, recordApplicantMedicationInformation, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, submitApplicantPracticeReview, verifyProspectiveApplicantContact, type TelehealthApplicantAllergyInformation, type TelehealthApplicantClinicalInformationInventory, type TelehealthApplicantClinicalInformationSummary, type TelehealthApplicantCommunicationAccessReadiness, type TelehealthApplicantDevicePreparation, type TelehealthApplicantHealthHistoryInformation, type TelehealthApplicantInsuranceHandoff, type TelehealthApplicantMedicationInformation, type TelehealthApplicantNotice, type TelehealthApplicantPracticeReview, type TelehealthApplicantPreRequestReadiness, type TelehealthApplicantRegistrationDetails, type TelehealthApplicantRequestComplaintTriage, type TelehealthApplicantRequestCreation, type TelehealthApplicantRequestLocation, type TelehealthApplicantRequestUniversalSafety } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 
 vi.mock('./api.ts', async (importOriginal) => {
@@ -14,6 +14,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     ...original,
     acknowledgeApplicantPreRequestReadiness: vi.fn(),
     acknowledgeApplicantTelehealthNotice: vi.fn(),
+    assessApplicantTelehealthRequestComplaintTriage: vi.fn(),
     assessApplicantTelehealthRequestUniversalSafety: vi.fn(),
     confirmApplicantClinicalInformationSummary: vi.fn(),
     confirmApplicantInsuranceHandoff: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     getApplicantPreRequestReadiness: vi.fn(),
     getApplicantTelehealthNotice: vi.fn(),
     getApplicantTelehealthRequest: vi.fn(),
+    getApplicantTelehealthRequestComplaintTriage: vi.fn(),
     getApplicantTelehealthRequestLocation: vi.fn(),
     getApplicantTelehealthRequestUniversalSafety: vi.fn(),
     getProspectiveApplicant: vi.fn(),
@@ -615,6 +617,56 @@ const requestSafetyFixture = {
   limitations: ['NON_PRODUCTION synthetic demonstration only.'],
 } satisfies TelehealthApplicantRequestUniversalSafety
 
+const requestComplaintTriageFixture = {
+  applicantId: approvedApplicant.applicantId,
+  applicantVersion: 26,
+  applicantStatus: 'SyntheticRequestCreated',
+  requestId: requestLocationFixture.requestId,
+  requestVersion: 3,
+  requestStatus: 'SafetyScreening',
+  complaintCategory: 'sleep',
+  policyKey: 'SYNTHETIC_APPLICANT_REQUEST_COMPLAINT_TRIAGE',
+  policyVersion: 1,
+  protocolKey: 'synthetic-sleep-complaint-triage',
+  protocolVersion: 1,
+  engineVersion: 'synthetic-complaint-triage-engine-v1',
+  clinicalContentStatus: 'UNAPPROVED_SYNTHETIC',
+  medicalDirectorApprovalRequired: true,
+  medicalDirectorApprovalRecorded: false,
+  clinicalGoldenCasePackApproved: false,
+  productionPublicationAllowed: false,
+  contextSnapshotFingerprint: '4'.repeat(64),
+  contextExpiresAt: '2026-08-28T17:30:00Z',
+  currentLocationStateCode: 'GA',
+  maskedCallbackPhone: '***-***-0199',
+  assessmentReady: true,
+  assessmentCreated: false,
+  outcome: null,
+  publicDisposition: null,
+  evaluatedAt: null,
+  syntheticVideoEvaluationCandidate: false,
+  clinicalReviewRequired: false,
+  clinicalReviewCreated: false,
+  terminalForTelehealth: false,
+  intakeSnapshotCreated: false,
+  patientContacted: false,
+  patientCareQueueEntered: false,
+  clinicianQueueEntered: false,
+  doctorSearchStarted: false,
+  queuePositionAssigned: false,
+  appointmentCreated: false,
+  encounterCreated: false,
+  consentCreated: false,
+  careAuthorized: false,
+  prescribingEnabled: false,
+  billingEnabled: false,
+  claimCreated: false,
+  integrationEnabled: false,
+  externalCallPerformed: false,
+  direction: 'Answer every complaint-specific question.',
+  limitations: ['NON_PRODUCTION unapproved synthetic clinical content.'],
+} satisfies TelehealthApplicantRequestComplaintTriage
+
 describe('ProspectivePatientTelehealthEntry safety triage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -637,6 +689,7 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
     vi.mocked(getApplicantPracticeReviewSubmission).mockResolvedValue(practiceReviewFixture)
     vi.mocked(getApplicantTelehealthRequestLocation).mockResolvedValue(requestLocationFixture)
     vi.mocked(getApplicantTelehealthRequestUniversalSafety).mockResolvedValue(requestSafetyFixture)
+    vi.mocked(getApplicantTelehealthRequestComplaintTriage).mockResolvedValue(requestComplaintTriageFixture)
     vi.mocked(runTelehealthDevicePreflight).mockResolvedValue({
       status: 'failed',
       message: 'This browser cannot run the secure telehealth device check.',
@@ -2832,5 +2885,156 @@ describe('ProspectivePatientTelehealthEntry safety triage', () => {
 
     const stored = `${sessionStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}${localStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}`
     expect(stored).not.toMatch(/contextSnapshotFingerprint|hasEmergencyWarning|severeOrWorsening|requiresHandsOnExam|answerFingerprint/i)
+  })
+
+  it('evaluates the server-owned sleep complaint fixture with explicit Not sure support and stable retry', async () => {
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('43000000-0000-4000-8000-000000000043')
+    const requestCreatedApplicant = {
+      ...approvedApplicant,
+      status: 'SyntheticRequestCreated',
+      version: 26,
+      canonicalPatientCreated: true,
+      nextAction: 'Complete complaint-specific synthetic triage.',
+    } as const
+    const requestCreationReceipt = {
+      applicantId: approvedApplicant.applicantId,
+      applicantVersion: 26,
+      applicantStatus: 'SyntheticRequestCreated',
+      policyKey: 'SYNTHETIC_APPLICANT_TELEHEALTH_REQUEST_CREATION',
+      policyVersion: 1,
+      authorizationPolicyVersion: 1,
+      requestCreationReady: false,
+      requestCreated: true,
+      requestId: requestLocationFixture.requestId,
+      requestStatus: 'Draft',
+      requestVersion: 1,
+      complaintCategory: 'sleep',
+      createdAt: '2026-08-28T16:00:00Z',
+      telehealthRequestCreated: true,
+      patientContacted: false,
+      patientCareQueueEntered: false,
+      clinicianQueueEntered: false,
+      doctorSearchStarted: false,
+      queuePositionAssigned: false,
+      appointmentCreated: false,
+      encounterCreated: false,
+      consentCreated: false,
+      careAuthorized: false,
+      prescribingEnabled: false,
+      billingEnabled: false,
+      claimCreated: false,
+      integrationEnabled: false,
+      externalCallPerformed: false,
+      direction: 'The Draft request was created.',
+      limitations: ['No queue or care exists.'],
+    } satisfies TelehealthApplicantRequestCreation
+    const confirmedLocation = {
+      ...requestLocationFixture,
+      requestVersion: 2,
+      requestStatus: 'LocationConfirmed',
+      confirmationReady: false,
+      locationConfirmed: true,
+      confirmedAt: '2026-08-28T17:00:00Z',
+    } satisfies TelehealthApplicantRequestLocation
+    const universalPass = {
+      ...requestSafetyFixture,
+      requestVersion: 3,
+      requestStatus: 'SafetyScreening',
+      assessmentReady: false,
+      assessmentCreated: true,
+      outcome: 'TelehealthEligible',
+      publicDisposition: 'UniversalSafetyPassed',
+      evaluatedAt: '2026-08-28T17:05:00Z',
+      universalSafetyPassed: true,
+      complaintSpecificTriageRequired: true,
+      direction: 'Complaint-specific triage is still required.',
+    } satisfies TelehealthApplicantRequestUniversalSafety
+    const emergencyResult = {
+      ...requestComplaintTriageFixture,
+      requestVersion: 4,
+      requestStatus: 'EmergencyRedirected',
+      assessmentReady: false,
+      assessmentCreated: true,
+      outcome: 'Emergency',
+      publicDisposition: 'EmergencyCareNow',
+      evaluatedAt: '2026-08-28T17:08:00Z',
+      terminalForTelehealth: true,
+      direction: 'Call 911 for immediate danger, or call or text 988 for crisis support.',
+    } satisfies TelehealthApplicantRequestComplaintTriage
+    vi.mocked(getProspectiveApplicant).mockResolvedValue(requestCreatedApplicant)
+    vi.mocked(getApplicantTelehealthRequest).mockResolvedValue(requestCreationReceipt)
+    vi.mocked(getApplicantTelehealthRequestLocation).mockResolvedValue(confirmedLocation)
+    vi.mocked(getApplicantTelehealthRequestUniversalSafety).mockResolvedValue(universalPass)
+    vi.mocked(getApplicantTelehealthRequestComplaintTriage)
+      .mockRejectedValueOnce(new Error('Complaint fixture temporarily unavailable.'))
+      .mockResolvedValue(requestComplaintTriageFixture)
+    vi.mocked(assessApplicantTelehealthRequestComplaintTriage)
+      .mockRejectedValueOnce(new Error('Complaint result unknown; retry unchanged.'))
+      .mockResolvedValue(emergencyResult)
+
+    render(<MemoryRouter><ProspectivePatientTelehealthEntry /></MemoryRouter>)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Complaint fixture temporarily unavailable.')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry complaint-triage load' }))
+    const heading = await screen.findByRole('heading', { name: 'Sleep difficulty synthetic triage' })
+    expect(heading.parentElement).toHaveTextContent('Server-owned categorysleep')
+    expect(heading.parentElement).toHaveTextContent('UNAPPROVED_SYNTHETIC')
+    expect(heading.parentElement?.querySelector('textarea')).toBeNull()
+    expect(heading.parentElement?.querySelector('input[type="text"]')).toBeNull()
+
+    const selfHarm = screen.getByRole('group', { name: 'Does the fictional scenario include thoughts of self-harm or suicide?' })
+    fireEvent.click(within(selfHarm).getByLabelText('Yes'))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/call 911.*988.*has not contacted/i)
+    fireEvent.click(within(screen.getByRole('group', { name: 'Does the fictional scenario include possible mania or psychosis?' })).getByLabelText('No'))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Could sleepiness make driving, work, or another activity unsafe in this fictional scenario?' })).getByLabelText('No'))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Is withdrawal from alcohol, medication, or another substance a concern in this fictional scenario?' })).getByLabelText('No'))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Are breathing pauses or severe snoring reported in this fictional scenario?' })).getByLabelText('Not sure'))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Does the fictional scenario include pregnancy or a complex medication concern?' })).getByLabelText('No'))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Is the fictional request specifically for a controlled sedative?' })).getByLabelText('No'))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Is uncomplicated sleep difficulty the only concern in this fictional scenario?' })).getByLabelText('Yes'))
+    fireEvent.click(screen.getByLabelText('I confirm the displayed state remains the current physical location.'))
+    fireEvent.click(screen.getByLabelText('I confirm the displayed masked callback number remains correct.'))
+    fireEvent.click(screen.getByLabelText('I confirm every answer is fictional synthetic demonstration data.'))
+    fireEvent.click(screen.getByRole('button', { name: 'Evaluate synthetic complaint triage' }))
+
+    const complaintFailure = await screen.findByText('Complaint result unknown; retry unchanged.')
+    expect(complaintFailure.closest('[role="alert"]')).toHaveTextContent('Complaint result unknown; retry unchanged.')
+    expect(within(selfHarm).getByLabelText('Yes')).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Evaluate synthetic complaint triage' }))
+
+    await waitFor(() => expect(assessApplicantTelehealthRequestComplaintTriage).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(assessApplicantTelehealthRequestComplaintTriage).mock.calls[0][3]).toBe('43000000-0000-4000-8000-000000000043')
+    expect(vi.mocked(assessApplicantTelehealthRequestComplaintTriage).mock.calls[1][3]).toBe('43000000-0000-4000-8000-000000000043')
+    expect(vi.mocked(assessApplicantTelehealthRequestComplaintTriage).mock.calls[0][2]).toEqual({
+      expectedRequestVersion: 3,
+      contextSnapshotFingerprint: '4'.repeat(64),
+      currentLocationStateCode: 'GA',
+      currentLocationConfirmed: true,
+      callbackNumberConfirmed: true,
+      syntheticDataConfirmed: true,
+      migraine: null,
+      sleep: {
+        selfHarmThoughts: 'Yes',
+        maniaOrPsychosis: 'No',
+        dangerousSomnolence: 'No',
+        withdrawalConcern: 'No',
+        breathingPausesOrSevereSnoring: 'NotSure',
+        pregnantOrComplexMedicationConcern: 'No',
+        controlledSedativeRequest: 'No',
+        uncomplicatedSleepDifficulty: 'Yes',
+      },
+    })
+
+    const result = await screen.findByRole('heading', { name: 'Complaint-specific triage stopped progression' })
+    expect(result.parentElement).toHaveTextContent('Request statusEmergencyRedirected')
+    expect(result.parentElement).toHaveTextContent('Medical-director approval recordedNo')
+    expect(result.parentElement).toHaveTextContent('Clinical golden cases approvedNo')
+    expect(result.parentElement).toHaveTextContent('Production publication allowedNo')
+    expect(result.parentElement).toHaveTextContent('Doctor search or queueNot started')
+    expect(result.parentElement).toHaveTextContent(/No submitted answer, answer fingerprint, fired rule, or reason code is returned/i)
+    await waitFor(() => expect(result.parentElement).toHaveFocus())
+
+    const stored = `${sessionStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}${localStorage.getItem('avenchart-ui.telehealthProspectiveApplicant') ?? ''}`
+    expect(stored).not.toMatch(/contextSnapshotFingerprint|selfHarmThoughts|NotSure|answerFingerprint|firedRule|reasonCode/i)
   })
 })

@@ -133,6 +133,8 @@ public static class TelehealthServiceRegistration
         services.AddScoped<TelehealthApplicantRequestLocationService>();
         services.AddScoped<TelehealthApplicantRequestUniversalSafetyRepository>();
         services.AddScoped<TelehealthApplicantRequestUniversalSafetyService>();
+        services.AddScoped<TelehealthApplicantRequestComplaintTriageRepository>();
+        services.AddScoped<TelehealthApplicantRequestComplaintTriageService>();
         services.AddScoped<TelehealthVideoRepository>();
         services.AddScoped<TelehealthVideoService>();
         services.AddScoped<TelehealthConsultationRepository>();
@@ -143,6 +145,8 @@ public static class TelehealthServiceRegistration
         services.AddScoped<TelehealthPrescriptionRepository>();
         services.AddScoped<TelehealthPrescriptionService>();
         services.AddSingleton<ITelehealthTriageEvaluator, SyntheticTelehealthTriageEvaluator>();
+        services.AddSingleton<ISyntheticTelehealthComplaintTriageEvaluator,
+            SyntheticTelehealthComplaintTriageEvaluator>();
         services.AddSingleton<SyntheticTelehealthProspectivePracticeNetworkCatalog>();
         services.AddSingleton<ITelehealthProspectiveEligibilityGateway, SyntheticTelehealthProspectiveEligibilityGateway>();
         services.AddSingleton<ITelehealthProspectivePracticeNetworkGateway, SyntheticTelehealthProspectivePracticeNetworkGateway>();

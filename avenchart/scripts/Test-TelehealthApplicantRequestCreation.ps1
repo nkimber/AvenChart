@@ -21,6 +21,7 @@ $artifactsRoot = Join-Path $solutionRoot 'artifacts/telehealth'
 $resultPath = Join-Path $artifactsRoot 'latest-telehealth-applicant-request-creation.json'
 $checks = [System.Collections.Generic.List[object]]::new()
 $passed = $true
+$testPurposeCategory = if ($env:AVENCHART_TELEHEALTH_TEST_PURPOSE_CATEGORY -eq 'sleep') { 'sleep' } else { 'migraine' }
 $patientEmailToRestore = $null
 $patientIdToRestore = $null
 
@@ -107,7 +108,7 @@ try {
         $gaReady.policyKey-eq'SYNTHETIC_APPLICANT_TELEHEALTH_REQUEST_CREATION' -and
         $gaReady.policyVersion-eq 1 -and $gaReady.authorizationPolicyVersion-eq 1 -and
         $gaReady.requestCreationReady -and -not$gaReady.requestCreated -and
-        $gaReady.complaintCategory-eq'migraine' -and -not$gaReady.requestId -and
+        $gaReady.complaintCategory-eq$testPurposeCategory -and -not$gaReady.requestId -and
         -not$gaReady.patientCareQueueEntered -and -not$gaReady.clinicianQueueEntered -and
         -not$gaReady.doctorSearchStarted -and -not$gaReady.queuePositionAssigned)
 
@@ -130,7 +131,7 @@ try {
         $gaCreated.applicantStatus-eq'SyntheticRequestCreated' -and
         $gaCreated.requestCreated -and $gaCreated.telehealthRequestCreated -and
         $gaCreated.requestStatus-eq'Draft' -and $gaCreated.requestVersion-eq 1 -and
-        $gaCreated.complaintCategory-eq'migraine' -and $gaCreated.requestId -and
+        $gaCreated.complaintCategory-eq$testPurposeCategory -and $gaCreated.requestId -and
         -not$gaCreated.patientContacted -and -not$gaCreated.patientCareQueueEntered -and
         -not$gaCreated.clinicianQueueEntered -and -not$gaCreated.doctorSearchStarted -and
         -not$gaCreated.queuePositionAssigned -and -not$gaCreated.appointmentCreated -and
@@ -177,7 +178,7 @@ try {
     $flCreated=Invoke-RequestCreation $flId $flSecret $flBody (New-Key 'sp40-fl')
     Add-RequestCreationCheck 'Copied patient-shell drift fails closed and restoration permits the Florida Draft request' (
         $driftStatus-eq 409 -and $flCreated.applicantStatus-eq'SyntheticRequestCreated' -and
-        $flCreated.complaintCategory-eq'migraine')
+        $flCreated.complaintCategory-eq$testPurposeCategory)
 
     Add-RequestCreationCheck 'Three receipts, request events, and applicant events preserve controlled evidence and false consequences' (
         [int](Invoke-Scalar @"
