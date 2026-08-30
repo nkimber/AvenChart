@@ -14,11 +14,11 @@
 - Requested: committed
 - Resolved: committed (source: cli)
 - Included files: 1133 · Candidates: 1562
-- Excluded: 9 untracked · 49902 ignored · 1 sensitive · 0 missing committed
+- Excluded: 9 untracked · 49903 ignored · 1 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `2488353`
+- Built from Git commit: `57ba212`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `AdministrationRepository` - 233 edges
