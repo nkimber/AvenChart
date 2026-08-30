@@ -1,0 +1,109 @@
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Synthetic-only Docker staging environment. This file is intentionally
+# separate from the local development Compose projects so it cannot reuse the
+# development database, ports, or Vite development server.
+
+x-api-build: &api-build
+  context: ./avenchart
+  dockerfile: backend/src/AvenChart.Api/Dockerfile
+
+x-api-environment: &api-environment
+  ASPNETCORE_ENVIRONMENT: Staging
+  ASPNETCORE_URLS: http://+:8080
+  ConnectionStrings__AvenChart: Host=postgres;Port=5432;Database=avenchart_staging;Username=avenchart_staging;Password=${AVENCHART_STAGING_POSTGRES_PASSWORD:?Set AVENCHART_STAGING_POSTGRES_PASSWORD in .env.staging before starting staging.}
+  DatabaseSchema__MigrationsPath: /app/database/migrations
+  AllowedHosts: localhost;127.0.0.1
+  RuntimeSafety__RequireHttps: "false"
+  RuntimeSafety__EnableSyntheticFinancialMutations: "false"
+  IdentityProvider__Mode: local
+  IdentityProvider__BrowserAllowedOrigins__0: http://127.0.0.1:${AVENCHART_STAGING_PORT:-8088}
+  IdentityProvider__BrowserAllowedOrigins__1: http://localhost:${AVENCHART_STAGING_PORT:-8088}
+  Telehealth__Enabled: "true"
+  Telehealth__Mode: Synthetic
+  Telehealth__PracticeId: avenchart-synthetic-practice
+  Telehealth__PracticeDisplayName: AvenChart Synthetic Practice
+  Telehealth__FacilityId: "10"
+  Telehealth__BrandedHosts__0: 127.0.0.1
+  Telehealth__BrandedHosts__1: localhost
+  Telehealth__SupportedStates__0: CA
+  Telehealth__SupportedStates__1: FL
+  Telehealth__SupportedStates__2: GA
+  Telehealth__ReservationLeaseSeconds: "120"
+  Telehealth__VideoAdapterMode: NON_PRODUCTION
+  Telehealth__PharmacyDirectoryAdapterMode: NON_PRODUCTION
+  Telehealth__ProfessionalClaimAdapterMode: NON_PRODUCTION
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: avenchart_staging
+      POSTGRES_USER: avenchart_staging
+      POSTGRES_PASSWORD: ${AVENCHART_STAGING_POSTGRES_PASSWORD:?Set AVENCHART_STAGING_POSTGRES_PASSWORD in .env.staging before starting staging.}
+    volumes:
+      - avenchart-staging-postgres:/var/lib/postgresql/data
+    networks: [staging]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avenchart_staging -d avenchart_staging"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrator:
+    image: avenchart-staging-api:local
+    command: ["--migrate-only"]
+    environment: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [staging]
+    restart: "no"
+
+  api:
+    image: avenchart-staging-api:local
+    build: *api-build
+    environment: *api-environment
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+        restart: true
+    networks: [staging]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  ui:
+    image: avenchart-staging-ui:local
+    build:
+      context: ./avenchart-ui
+      dockerfile: Dockerfile.staging
+      args:
+        VITE_API_BASE_URL: http://127.0.0.1:${AVENCHART_STAGING_PORT:-8088}
+    depends_on:
+      api:
+        condition: service_healthy
+        restart: true
+    ports:
+      - "127.0.0.1:${AVENCHART_STAGING_PORT:-8088}:8080"
+    networks: [staging, edge]
+    healthcheck:
+      # nginx:alpine's localhost resolves to IPv6 first, while this server is
+      # deliberately bound to its IPv4 loopback listener inside the container.
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:8080/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+networks:
+  staging:
+    internal: true
+  edge:
+
+volumes:
+  avenchart-staging-postgres:

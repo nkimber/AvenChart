@@ -93,6 +93,10 @@ On Windows, `scripts\status.cmd` and `scripts\stop-all.cmd` provide the same ope
 
 See [`scripts/README.md`](scripts/README.md) for every component-level script, optional parameter, Windows command-file launcher, and local endpoint.
 
+## Synthetic staging with Docker
+
+The isolated, loopback-only staging stack uses the production-built modern UI and synthetic-only telehealth adapters. It does not publish the API or database and must never receive protected information. Follow [the synthetic staging runbook](docs/telehealth/21-synthetic-staging.md) to create its ignored local environment file, start it, verify readiness, and stop it.
+
 ## Azure deployment operations
 
 Administrators can prepare, validate, plan, deploy, monitor, verify, and roll back
