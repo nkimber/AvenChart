@@ -1,24 +1,24 @@
 # Graph Report - .  (2026-08-30)
 
 ## Corpus Check
-- Large corpus: 1141 files · ~1,120,610 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- Large corpus: 1141 files · ~1,120,539 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
-- 10598 nodes · 23786 edges · 584 communities detected
+- 10599 nodes · 23789 edges · 584 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
-- Edge kinds: calls: 6213 · contains: 5044 · method: 3948 · MODIFIES: 3137 · imports: 2030 · ON_BRANCH: 855 · references: 742 · reads_from: 584 · imports_from: 540 · PARENT_OF: 445 · triggers: 140 · inherits: 102 · re_exports: 6
+- Edge kinds: calls: 6213 · contains: 5044 · method: 3948 · MODIFIES: 3138 · imports: 2030 · ON_BRANCH: 856 · references: 742 · reads_from: 584 · imports_from: 540 · PARENT_OF: 446 · triggers: 140 · inherits: 102 · re_exports: 6
 
 
 ## Input Scope
 - Requested: committed
 - Resolved: committed (source: cli)
 - Included files: 1141 · Candidates: 1579
-- Excluded: 0 untracked · 49957 ignored · 1 sensitive · 0 missing committed
+- Excluded: 2 untracked · 49958 ignored · 1 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `da22144`
+- Built from Git commit: `a234826`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `AdministrationRepository` - 233 edges
@@ -68,7 +68,7 @@ Nodes (153): codex/ef-data-access-modernization, main, 0220d35 fix(auth): scope 
 
 ### Community 5 - "Community 5"
 Cohesion: 0.03
-Nodes (92): 0035c04 chore: record sprint 41 evidence and code graph, 125e764 feat(telehealth): add synthetic participation evaluation, 173baf2 feat: confirm applicant telehealth request location, 2488353 docs(telehealth): govern synthetic encounter finalization, 31aea60 test(telehealth): align decision traceability, 32cb3f5 docs: finalize sprint 44 verification evidence, 3618e20 feat(telehealth): confirm participation prerequisite context, 38ec0f6 feat(telehealth): show applicant request queue status (+84 more)
+Nodes (93): 0035c04 chore: record sprint 41 evidence and code graph, 125e764 feat(telehealth): add synthetic participation evaluation, 173baf2 feat: confirm applicant telehealth request location, 2488353 docs(telehealth): govern synthetic encounter finalization, 31aea60 test(telehealth): align decision traceability, 32cb3f5 docs: finalize sprint 44 verification evidence, 3618e20 feat(telehealth): confirm participation prerequisite context, 38ec0f6 feat(telehealth): show applicant request queue status (+85 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.02
