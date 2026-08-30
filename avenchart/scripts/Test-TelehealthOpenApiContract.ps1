@@ -40,6 +40,7 @@ try {
       '/api/telehealth/v1/clinician/consultations/{consultationId}/prescription-preparation-draft',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/final-clinical-review',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/finalize',
+      '/api/telehealth/v1/clinician/consultations/{consultationId}/close',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/professional-claim-preparation',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/safety-disposition-draft',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/completion-prerequisites')
@@ -2121,6 +2122,15 @@ try {
       $finalizationJson-match'expectedDocumentationVersion' -and $finalizationJson-match'expectedDispositionVersion' -and $finalizationJson-match'expectedFinalClinicalReviewVersion' -and
       $finalizationJson-match'sourceReviewConfirmed' -and $finalizationJson-match'syntheticOnlyConfirmed' -and
       $finalizationJson-notmatch'patientId|encounterId|requestId|claimId|billingId|deliveryId|externalDestination')
+    $closure = Get-Operation $document '/api/telehealth/v1/clinician/consultations/{consultationId}/close' 'post'
+    $closureReference = Get-Property (Get-Property (Get-Property (Get-Property $closure 'requestBody') 'content') 'application/json').schema '$ref'
+    $closureSchemaName = ($closureReference -split '/')[-1]
+    $closureJson = ((Get-Property $document.components 'schemas').$closureSchemaName | ConvertTo-Json -Depth 12 -Compress)
+    Add-Check 'Synthetic visit closure is physician-scoped, idempotent, lock-bound, and accepts no appointment, billing, claim, delivery, or external input' (
+      (Has-Security $closure 'AvenChartLocalStaffSession') -and (Has-Header $closure 'X-AvenChart-Facility-Id') -and (Has-Header $closure 'X-AvenChart-Purpose-Of-Use') -and
+      (Has-Header $closure 'X-Idempotency-Key') -and $null-ne(Get-Property $closure 'requestBody') -and $null-ne(Get-Property $closure.responses '409') -and
+      $closureJson-match'expectedConsultationVersion' -and $closureJson-match'encounterLockReviewed' -and $closureJson-match'syntheticClosureConfirmed' -and
+      $closureJson-notmatch'patientId|encounterId|appointmentId|requestId|claimId|billingId|deliveryId|externalDestination')
     $claimPreparation = Get-Operation $document '/api/telehealth/v1/clinician/consultations/{consultationId}/professional-claim-preparation' 'get'
     $claimPreparationReference = Get-Property (Get-Property (Get-Property (Get-Property $claimPreparation.responses '200') 'content') 'application/json').schema '$ref'
     $claimPreparationSchemaName = ($claimPreparationReference -split '/')[-1]
@@ -2159,5 +2169,5 @@ try {
     Add-Check 'Public context has no protected security requirement and exposes only the public projection' ($null -eq $contextSecurity -or @($contextSecurity).Count -eq 0)
 }
 catch { Add-Check 'Telehealth OpenAPI contract execution' $false $_.Exception.Message }
-    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060','TH-DEC-0061','TH-DEC-0062');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
+    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060','TH-DEC-0061','TH-DEC-0062','TH-DEC-0063','TH-DEC-0064');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
 if(-not $passed){exit 1}

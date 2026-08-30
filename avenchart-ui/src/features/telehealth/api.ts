@@ -2856,6 +2856,23 @@ export type TelehealthEncounterFinalizationInput = {
   syntheticOnlyConfirmed: boolean
 }
 
+export type TelehealthSyntheticVisitClosure = {
+  consultationId: string
+  consultationVersion: number
+  requestVersion: number
+  closedAt: string
+  encounterLocked: boolean
+  clinicianAvailableForNewWork: boolean
+  appointmentCompleted: boolean
+  patientDeliveryCreated: boolean
+  billingCreated: boolean
+  claimCreated: boolean
+  externalDestinationContacted: boolean
+  limitations: string[]
+}
+
+export type TelehealthSyntheticVisitClosureInput = { expectedConsultationVersion: number, encounterLockReviewed: boolean, syntheticClosureConfirmed: boolean }
+
 export type TelehealthFinalClinicalReviewInput = {
   expectedDocumentationVersion: number
   expectedDispositionVersion: number
@@ -4644,6 +4661,13 @@ export function getTelehealthProfessionalClaimPreparation(consultationId: string
 export function finalizeTelehealthEncounter(consultationId: string, input: TelehealthEncounterFinalizationInput, signal?: AbortSignal) {
   return json<TelehealthEncounterFinalization>(
     `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/finalize`,
+    { method: 'POST', headers: clinicianHeaders({ 'X-Idempotency-Key': crypto.randomUUID() }), body: JSON.stringify(input), signal },
+  )
+}
+
+export function closeSyntheticTelehealthVisit(consultationId: string, input: TelehealthSyntheticVisitClosureInput, signal?: AbortSignal) {
+  return json<TelehealthSyntheticVisitClosure>(
+    `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/close`,
     { method: 'POST', headers: clinicianHeaders({ 'X-Idempotency-Key': crypto.randomUUID() }), body: JSON.stringify(input), signal },
   )
 }

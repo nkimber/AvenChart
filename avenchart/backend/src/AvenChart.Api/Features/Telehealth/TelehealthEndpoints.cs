@@ -906,6 +906,15 @@ public static class TelehealthEndpoints
             .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"))
             .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "view"))
             .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "write"));
+        clinician.MapPost("/consultations/{consultationId:guid}/close", CloseSyntheticTelehealthVisitAsync)
+            .WithName("CloseSyntheticTelehealthVisit")
+            .WithDescription("Closes only the synthetic consultation/request lifecycle after the governed encounter lock and returns the physician shift to availability. It does not complete the appointment or create patient delivery, billing, claims, integrations, or external action.")
+            .Accepts<CloseSyntheticTelehealthVisitRequest>("application/json")
+            .Produces<TelehealthSyntheticVisitClosureResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest).ProducesProblem(StatusCodes.Status403Forbidden).ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "write"));
         clinician.MapGet("/consultations/{consultationId:guid}/professional-claim-preparation", GetProfessionalClaimPreparationAsync)
             .WithName("GetTelehealthProfessionalClaimPreparation")
             .WithDescription("Returns the owning physician's private NON_PRODUCTION professional-claim preparation blockers. It creates no claim, billing record, X12 transaction, or external action.")
@@ -2537,6 +2546,20 @@ public static class TelehealthEndpoints
         return await ExecuteAsync(async () => Results.Ok(await service.FinalizeAsync(
             await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
             RequireStaffAccessContext(context), consultationId, request, cancellationToken)));
+    }
+
+    private static async Task<IResult> CloseSyntheticTelehealthVisitAsync(
+        TelehealthSyntheticVisitClosureService service,
+        AuthRepository authRepository,
+        HttpContext context,
+        Guid consultationId,
+        CloseSyntheticTelehealthVisitRequest request,
+        CancellationToken cancellationToken)
+    {
+        SetConsultationPrivateResponse(context, consultationId);
+        return await ExecuteAsync(async () => Results.Ok(await service.CloseAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context), consultationId, request, ReadIdempotencyKey(context), cancellationToken)));
     }
 
     private static async Task<IResult> GetProfessionalClaimPreparationAsync(

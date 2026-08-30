@@ -34,7 +34,7 @@ function Invoke-Scalar([string]$Sql) {
 try {
     if (-not $SkipBaseRehearsal) {
         & (Join-Path $PSScriptRoot 'Test-AvenChartMigrationResilience.ps1')
-        Add-Check 'Repository empty, populated, interruption, and recovery rehearsal includes V0282 through V0327' ($LASTEXITCODE -eq 0)
+        Add-Check 'Repository empty, populated, interruption, and recovery rehearsal includes V0282 through V0330' ($LASTEXITCODE -eq 0)
     }
     else {
         Add-Check 'Repository migration rehearsal supplied by the immediately preceding runtime-evidence step' $true
@@ -1105,6 +1105,17 @@ select count(*) from pg_trigger where not tgisinternal and tgname in (
 "@) -eq 2 -and
         [int](Invoke-Scalar "select count(*) from pg_proc where proname='enforce_th_app_request_queue_authorization';") -eq 1)
     Add-Check 'The applicant request queue-authorization table exists' ([int](Invoke-Scalar "select count(*) from information_schema.tables where table_schema='public' and table_name='telehealth_applicant_request_queue_authorizations';") -eq 1)
+    $syntheticVisitClosureMigration = Join-Path $solutionRoot 'database/migrations/V0330__telehealth_synthetic_visit_closure.sql'
+    $syntheticVisitClosureSource = Get-Content -Raw $syntheticVisitClosureMigration
+    Add-Check 'V0330 evolves only synthetic lifecycle constraints without destructive table or row operations' (
+        $syntheticVisitClosureSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
+        $syntheticVisitClosureSource -match "status='Closed'" -and
+        $syntheticVisitClosureSource -match 'closed_at' -and
+        $syntheticVisitClosureSource -match 'govern_telehealth_consultation_context_mutation')
+    Add-Check 'V0330 is recorded in the live migration ledger' ((Invoke-Scalar "select count(*) from schema_migrations where migration_id='V0330__telehealth_synthetic_visit_closure';") -eq '1')
+    Add-Check 'Synthetic closure state and timestamp constraints are database-enforced' (
+        [int](Invoke-Scalar "select count(*) from pg_constraint where conname='chk_telehealth_consultation_closure';") -eq 1 -and
+        [int](Invoke-Scalar "select count(*) from pg_trigger where not tgisinternal and tgname='trg_telehealth_consultation_contexts_append_only';") -eq 1)
     Add-Check 'All eight foundation tables exist' ([int](Invoke-Scalar @"
 select count(*) from information_schema.tables
 where table_schema='public' and table_name in (
@@ -1166,7 +1177,7 @@ where table_schema='public' and table_name in (
 'telehealth_consultation_prescription_draft_versions','telehealth_consultation_prescription_draft_events');
 "@) -eq 2)
     Add-Check 'The synthetic signed-prescription evidence table exists' ([int](Invoke-Scalar "select count(*) from information_schema.tables where table_schema='public' and table_name='telehealth_consultation_prescription_orders';") -eq 1)
-    Add-Check 'All telehealth append-only evidence triggers exist' ([int](Invoke-Scalar "select count(*) from pg_trigger where not tgisinternal and tgname like 'trg_telehealth_%_append_only';") -eq 54)
+    Add-Check 'All telehealth append-only evidence triggers exist' ([int](Invoke-Scalar "select count(*) from pg_trigger where not tgisinternal and tgname like 'trg_telehealth_%_append_only';") -eq 56)
     Add-Check 'Pre-request readiness route, acknowledgment, no-consequence, provenance, replay, and append-only constraints are database-enforced' (
         [int](Invoke-Scalar @"
 select count(*) from pg_constraint where conname in (
@@ -1491,9 +1502,10 @@ and contype='u' and conname in (
 "@) -eq 5 -and
         [int](Invoke-Scalar "select count(*) from pg_constraint where conrelid='telehealth_consultation_contexts'::regclass and contype='u' and conname='telehealth_consultation_contexts_shift_id_key';") -eq 0 -and
         [int](Invoke-Scalar "select count(*) from pg_indexes where schemaname='public' and indexname='ix_telehealth_consultation_contexts_shift';") -eq 1)
-    Add-Check 'Wrap-up timing and the single governed Started-to-MediaEnded context mutation are database-enforced' (
+    Add-Check 'Wrap-up timing and the governed Started-to-MediaEnded-to-Closed context lifecycle are database-enforced' (
         [int](Invoke-Scalar "select count(*) from information_schema.columns where table_schema='public' and table_name='telehealth_consultation_contexts' and column_name='media_ended_at' and data_type='timestamp with time zone';") -eq 1 -and
-        [int](Invoke-Scalar "select count(*) from pg_constraint where conrelid='telehealth_consultation_contexts'::regclass and conname in ('chk_telehealth_consultation_status','chk_telehealth_consultation_media_end');") -eq 2 -and
+        [int](Invoke-Scalar "select count(*) from information_schema.columns where table_schema='public' and table_name='telehealth_consultation_contexts' and column_name='closed_at' and data_type='timestamp with time zone';") -eq 1 -and
+        [int](Invoke-Scalar "select count(*) from pg_constraint where conrelid='telehealth_consultation_contexts'::regclass and conname in ('chk_telehealth_consultation_status','chk_telehealth_consultation_closure');") -eq 2 -and
         [int](Invoke-Scalar "select count(*) from pg_proc where proname='govern_telehealth_consultation_context_mutation';") -eq 1 -and
         [int](Invoke-Scalar "select count(*) from pg_trigger where not tgisinternal and tgname='trg_telehealth_consultation_contexts_append_only';") -eq 1)
     $activeBusyIndex = Invoke-Scalar "select indexdef from pg_indexes where schemaname='public' and indexname='uq_telehealth_active_shift_clinician';"

@@ -23,7 +23,8 @@ public enum TelehealthRequestStatus
     Reserved,
     Connecting,
     InConsultation,
-    WrapUp
+    WrapUp,
+    Closed
 }
 
 public enum TelehealthTriageOutcome
@@ -71,7 +72,8 @@ public static class TelehealthRequestStateMachine
             [TelehealthRequestStatus.Reserved] = [TelehealthRequestStatus.Queued, TelehealthRequestStatus.Connecting],
             [TelehealthRequestStatus.Connecting] = [TelehealthRequestStatus.Queued, TelehealthRequestStatus.InConsultation],
             [TelehealthRequestStatus.InConsultation] = [TelehealthRequestStatus.WrapUp],
-            [TelehealthRequestStatus.WrapUp] = []
+            [TelehealthRequestStatus.WrapUp] = [TelehealthRequestStatus.Closed],
+            [TelehealthRequestStatus.Closed] = []
         };
 
     public static bool CanTransition(TelehealthRequestStatus current, TelehealthRequestStatus next) =>

@@ -12,6 +12,7 @@ import TelehealthCompletionPrerequisitesPanel from './TelehealthCompletionPrereq
 import TelehealthFinalClinicalReviewPanel from './TelehealthFinalClinicalReviewPanel.tsx'
 import TelehealthProfessionalClaimPreparationPanel from './TelehealthProfessionalClaimPreparationPanel.tsx'
 import TelehealthEncounterFinalizationPanel from './TelehealthEncounterFinalizationPanel.tsx'
+import TelehealthSyntheticVisitClosurePanel from './TelehealthSyntheticVisitClosurePanel.tsx'
 import './telehealth.css'
 
 export default function ClinicianTelehealthQueue() {
@@ -28,6 +29,7 @@ export default function ClinicianTelehealthQueue() {
   const [waitingRoom, setWaitingRoom] = useState<{ expiresAt: string; message: string; limitations: string[] } | null>(null)
   const [consultation, setConsultation] = useState<{ consultationId: string; limitations: string[] } | null>(null)
   const [workspace, setWorkspace] = useState<TelehealthConsultationWorkspace | null>(null)
+  const [encounterLocked, setEncounterLocked] = useState(false)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [draft, setDraft] = useState<DraftFields>(emptyDraft)
@@ -94,7 +96,7 @@ export default function ClinicianTelehealthQueue() {
   async function reserve() {
     setWorking(true); setError(null)
     try {
-      setReservation(await reserveNextRequest()); setConsultation(null); setWorkspace(null); setWorkspaceError(null); resetDraft()
+      setReservation(await reserveNextRequest()); setConsultation(null); setWorkspace(null); setWorkspaceError(null); setEncounterLocked(false); resetDraft()
       setWrapUpChecks({ syntheticSessionEndedConfirmed: false, documentationStillIncompleteAcknowledged: false, wrapUpResponsibilityAcknowledged: false })
       setWrapUpStatus(null); setWrapUpError(null); wrapUpCommandKey.current = null
       await refresh()
@@ -364,7 +366,8 @@ export default function ClinicianTelehealthQueue() {
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthPrescriptionPreparationPanel consultationId={consultation.consultationId} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthSafetyDispositionPanel consultationId={consultation.consultationId} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthFinalClinicalReviewPanel consultationId={consultation.consultationId} /> : null}
-                {workspace.consultationStatus === 'WrapUp' ? <TelehealthEncounterFinalizationPanel consultationId={consultation.consultationId} /> : null}
+                {workspace.consultationStatus === 'WrapUp' ? <TelehealthEncounterFinalizationPanel consultationId={consultation.consultationId} onFinalized={() => setEncounterLocked(true)} /> : null}
+                {workspace.consultationStatus === 'WrapUp' && encounterLocked ? <TelehealthSyntheticVisitClosurePanel consultationId={consultation.consultationId} expectedVersion={workspace.consultationVersion} onClosed={() => { setReservation(null); setWorkspace(null); setEncounterLocked(false); void refresh() }} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthProfessionalClaimPreparationPanel consultationId={consultation.consultationId} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthCompletionPrerequisitesPanel consultationId={consultation.consultationId} /> : null}
                 <p><small>Projection as of {new Date(workspace.asOf).toLocaleString()}.</small></p>

@@ -32,7 +32,8 @@ public sealed class TelehealthStateMachineTests
         { TelehealthRequestStatus.Reserved, TelehealthRequestStatus.Connecting },
         { TelehealthRequestStatus.Connecting, TelehealthRequestStatus.Queued },
         { TelehealthRequestStatus.Connecting, TelehealthRequestStatus.InConsultation },
-        { TelehealthRequestStatus.InConsultation, TelehealthRequestStatus.WrapUp }
+        { TelehealthRequestStatus.InConsultation, TelehealthRequestStatus.WrapUp },
+        { TelehealthRequestStatus.WrapUp, TelehealthRequestStatus.Closed }
     };
 
     [Theory]

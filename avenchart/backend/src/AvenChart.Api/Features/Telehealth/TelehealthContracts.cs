@@ -1162,6 +1162,25 @@ public sealed record TelehealthEncounterFinalizationResponse(
     bool ExternalDestinationContacted,
     IReadOnlyList<string> Limitations);
 
+public sealed record CloseSyntheticTelehealthVisitRequest(
+    int ExpectedConsultationVersion,
+    bool EncounterLockReviewed,
+    bool SyntheticClosureConfirmed);
+
+public sealed record TelehealthSyntheticVisitClosureResponse(
+    Guid ConsultationId,
+    int ConsultationVersion,
+    int RequestVersion,
+    DateTimeOffset ClosedAt,
+    bool EncounterLocked,
+    bool ClinicianAvailableForNewWork,
+    bool AppointmentCompleted,
+    bool PatientDeliveryCreated,
+    bool BillingCreated,
+    bool ClaimCreated,
+    bool ExternalDestinationContacted,
+    IReadOnlyList<string> Limitations);
+
 public sealed record TelehealthCompletionPrerequisitesResponse(
     Guid ConsultationId,
     string ConsultationStatus,
