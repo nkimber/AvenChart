@@ -1,8 +1,8 @@
 # AvenChart immediate telehealth master specification
 
-Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–52 scopes active under Decisions 0003 and 0005–0055
+Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–62 scopes active under Decisions 0003 and 0005–0065
 Version: 0.1
-Last reviewed: 2026-08-29
+Last reviewed: 2026-08-30
 Initial jurisdictions: Georgia, California, and Florida  
 Initial delivery channel: a specific medical practice's branded site
 
@@ -137,6 +137,16 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Decision 0053](decisions/0053-approved-sprint-50-applicant-request-participation-evaluation.md) | Approved, time-bounded exception for one exact server-owned synthetic billing-entity/rendering-provider/network/location/service/modality/new-patient tuple evaluation; only the request advances from pending `Verification` version 10 to version 11, while every real authority, credentialing, payer/directory participation, assignment, coverage, financial, operational, queue, care, integration, external, and production consequence remains closed |
 | [Decision 0054](decisions/0054-approved-sprint-51-applicant-request-operational-review-submission.md) | Approved, time-bounded exception for the applicant to submit the exact current automated synthetic evidence for staff operational review; only the request advances from `Verification` version 11 to `OperationalReview` version 12, while practice acceptance, coverage, financial routing, contact, queueing, appointment, encounter, consent, care, integration, external, and production consequences remain closed |
 | [Decision 0055](decisions/0055-approved-sprint-52-applicant-request-queue-authorization.md) | Approved, time-bounded exception for a configured-practice administrator to accept one applicant-originated `OperationalReview` version 12 request into the disabled synthetic clinician queue, atomically creating one unassigned appointment and one ready queue entry and advancing the request to `Queued` version 13 without real coverage, financial clearance, clinician assignment, consent, encounter, care, integration, external, or production authority |
+| [Decision 0056](decisions/0056-approved-sprint-53-applicant-request-queue-status.md) | Approved, time-bounded exception for applicant-owned, private request-status polling with approximate queue context and no treatment, assignment, or completion assertion |
+| [Decision 0057](decisions/0057-approved-sprint-54-applicant-request-clinician-reservation.md) | Approved, time-bounded exception for exact candidate-owned clinician reservation with minimized applicant physician-preparing visibility and no care consequence |
+| [Decision 0058](decisions/0058-approved-sprint-55-applicant-request-connection-room.md) | Approved, time-bounded exception for applicant-owned local device preflight and a private synthetic waiting room with no media or communication capability |
+| [Decision 0059](decisions/0059-approved-sprint-56-applicant-consultation-start.md) | Approved, time-bounded exception for exact physician-owned synthetic consultation start into the bounded unsigned chart workspace |
+| [Decision 0060](decisions/0060-approved-sprint-57-applicant-wrap-up-planning.md) | Approved, time-bounded exception for an unfinished synthetic wrap-up state and planning-only workspace without signing, delivery, billing, claims, or integration |
+| [Decision 0061](decisions/0061-approved-sprint-58-synthetic-prescription-signing.md) | Approved, time-bounded exception for one safety-gated immutable synthetic non-controlled prescription and prepared-only NCPDP seam without transmission or external effect |
+| [Decision 0062](decisions/0062-approved-sprint-59-synthetic-final-clinical-review.md) | Approved, time-bounded exception for immutable source-bound synthetic final clinical-review evidence without legal signature, completion, delivery, billing, or claims |
+| [Decision 0063](decisions/0063-approved-sprint-60-synthetic-encounter-finalization.md) | Approved, time-bounded exception for a governed synthetic encounter lock without legal signature, completion, delivery, billing, claims, or external action |
+| [Decision 0064](decisions/0064-approved-sprint-61-synthetic-visit-closure.md) | Approved, time-bounded exception for closure of only the synthetic consultation/request lifecycle and a return to clinician availability while the appointment remains in progress |
+| [Decision 0065](decisions/0065-approved-sprint-62-synthetic-closure-status.md) | Approved, time-bounded exception for a private, neutral patient/applicant terminal closure-status projection that makes no completion or downstream assertion |
 | [Implementation backlog](backlog/README.md) | Delivery model for 20 epics and 60 stories, with every one of the 329 requirements assigned exactly once as a primary responsibility |
 | [Machine-readable backlog](backlog/backlog.json) | Structured epic, story, dependency, priority, gate and requirement-range source for planning and future traceability automation |
 | [Sprint 1 foundation plan](backlog/sprint-01-foundation.md) | Recommended synthetic vertical slice from branded entry through safety/triage, administrator authorization, queueing and atomic clinician reservation |
@@ -253,6 +263,18 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Sprint 55 evidence packet](backlog/sprint-55-evidence.md) | Implementation and bounded automated evidence for ownership, provenance, atomic connection-room creation, secret handling, track cleanup, status minimization, and preserved care/integration gates |
 | [Sprint 56 applicant consultation-start plan](backlog/sprint-56-applicant-consultation-start.md) | Exact reservation-owner physician entry and guarded applicant consultation-start handoff into the existing bounded chart workspace and unsigned SOAP draft |
 | [Sprint 56 evidence packet](backlog/sprint-56-evidence.md) | Implementation and bounded automated evidence for applicant financial-gate honesty, two-party grants, atomic consultation/encounter start, workspace minimization, and preserved downstream gates |
+| [Sprint 57 applicant wrap-up planning plan](backlog/sprint-57-applicant-wrap-up-planning.md) | Exact physician-owned unfinished synthetic wrap-up with planning-only documentation, pharmacy, prescription, disposition, and completion-prerequisite tools |
+| [Sprint 57 evidence packet](backlog/sprint-57-evidence.md) | Implementation and bounded automated evidence for synthetic wrap-up provenance, ownership, and preserved completion, delivery, billing, claim, integration, and production gates |
+| [Sprint 58 synthetic prescription-signing plan](backlog/sprint-58-synthetic-prescription-signing.md) | Safety-gated immutable synthetic non-controlled prescription and prepared-only NCPDP SCRIPT seam with no transmission or external consequence |
+| [Sprint 58 evidence packet](backlog/sprint-58-evidence.md) | Implementation and bounded automated evidence for prescription safety, immutability, idempotency, standards metadata, and preserved downstream gates |
+| [Sprint 59 synthetic final-clinical-review plan](backlog/sprint-59-synthetic-final-clinical-review.md) | Immutable source-bound final clinical-review evidence before a separately governed encounter lock |
+| [Sprint 59 evidence packet](backlog/sprint-59-evidence.md) | Implementation and bounded automated evidence for source binding, ownership, idempotency, and preserved completion/downstream gates |
+| [Sprint 60 synthetic encounter-finalization plan](backlog/sprint-60-synthetic-encounter-finalization.md) | Existing governed synthetic encounter lock after final review, without legal signature, completion, billing, claim, or external effect |
+| [Sprint 60 evidence packet](backlog/sprint-60-evidence.md) | Implementation and bounded automated evidence for lock provenance, atomicity, immutability, and preserved downstream gates |
+| [Sprint 61 synthetic visit-closure plan](backlog/sprint-61-synthetic-visit-closure.md) | Synthetic consultation/request closure after its governed encounter lock with the appointment kept in progress |
+| [Sprint 61 evidence packet](backlog/sprint-61-evidence.md) | Implementation and bounded automated evidence for closure provenance, atomicity, replay, recovery, and preserved appointment/downstream gates |
+| [Sprint 62 synthetic closure-status plan](backlog/sprint-62-synthetic-closure-status.md) | Neutral established-patient and applicant terminal closure status after full lineage validation, without a completion or downstream assertion |
+| [Sprint 62 evidence packet](backlog/sprint-62-evidence.md) | Implementation and bounded automated evidence for terminal-status truthfulness, privacy, polling termination, and preserved production gates |
 | [Engineering safeguards](backlog/engineering-safeguards.md) | Approved merge-gate design and activation conditions |
 | [Safeguard manifest](backlog/safeguards.json) | Machine-readable safeguard triggers, commands, required paths and evidence expectations |
 | [Planning validation](backlog/validation-report.md) | Structural evidence for requirement coverage, identifiers, dependencies, links and static wireframe integrity |

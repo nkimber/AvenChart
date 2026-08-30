@@ -1,13 +1,13 @@
 # Telehealth implementation backlog
 
-Status: Exact disabled synthetic Sprints 1–58 active only within Decisions 0003 and 0005–0061
+Status: Exact disabled synthetic Sprints 1–62 active only within Decisions 0003 and 0005–0065
 Decision baseline: [Decision 0001](../decisions/0001-g0-development-baseline.md)  
 Machine-readable source: [backlog.json](backlog.json)  
 First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 58 synthetic prescription safety gate and signing](sprint-58-synthetic-prescription-signing.md); bounded automated implementation evidence is being recorded in the [Sprint 58 evidence packet](sprint-58-evidence.md)
+Current increment: [Sprint 62 synthetic closure-status projection](sprint-62-synthetic-closure-status.md); bounded automated implementation evidence is recorded in the [Sprint 62 evidence packet](sprint-62-evidence.md)
 
 ## 1. Backlog contract
 
@@ -86,7 +86,7 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 - Telehealth G0 product baseline: **approved** by Decision 0001.
 - Backlog and wireframe preparation: **authorized**.
 - Planning-artifact validator and existing-CI invocation: **authorized and active under Decision 0002**.
-- Decisions 0003 and 0005–0061 authorize only their exact disabled synthetic Sprint 1–58 application/database/feature-test/runtime paths through 2026-10-31.
+- Decisions 0003 and 0005–0065 authorize only their exact disabled synthetic Sprint 1–62 application/database/feature-test/runtime paths through 2026-10-31.
 - All implementation outside those decisions remains **blocked by the existing Phase 2 exit gate** until explicit closure or another scoped override.
 - Real patient care: separately blocked until G4 regardless of implementation authorization.
 
@@ -103,3 +103,11 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 [Decision 0060](../decisions/0060-approved-sprint-57-applicant-wrap-up-planning.md) permits only the exact consultation-owning physician to end the applicant-originated synthetic lifecycle into unfinished `WrapUp` and reuse the existing unsigned SOAP, neutral pharmacy-destination, non-controlled prescription-preparation, safety-disposition, and structural completion-prerequisite planning tools. Applicant polling gains only a minimized terminal `WrapUp` projection. Signing, canonical prescribing, transmission, patient delivery, completion/release, billing, claims, integrations, external action, and production remain closed.
 
 [Decision 0061](../decisions/0061-approved-sprint-58-synthetic-prescription-signing.md) permits only the exact consultation-owning physician to run a conservative zero-active-medication/zero-active-allergy safety gate and atomically create one immutable signed synthetic prescription plus an uncertified, prepared-only NCPDP SCRIPT 2023011 `NewRx` seam. It has no legal effect and contacts no pharmacy, network, drug-knowledge service, payer, or other external destination. Transmission, patient delivery, completion/release, billing, claims, and production remain closed.
+
+[Decision 0062](../decisions/0062-approved-sprint-59-synthetic-final-clinical-review.md) permits only the exact consultation-owning physician to append one immutable source-bound synthetic final clinical-review record before a separately governed encounter lock. It is not a legal signature, completion, patient delivery, billing, claim, integration, or external action.
+
+[Decision 0063](../decisions/0063-approved-sprint-60-synthetic-encounter-finalization.md) permits only the exact consultation-owning physician to create the existing governed synthetic encounter lock after exact final-review and source verification. It is not a legal signature, completed visit, patient delivery, billing, claim, integration, or external action.
+
+[Decision 0064](../decisions/0064-approved-sprint-61-synthetic-visit-closure.md) permits only the exact consultation-owning physician to close the synthetic consultation/request lifecycle after that encounter lock and return the shift to `Active`. The appointment stays in progress; encounter completion, patient delivery, billing, claims, integrations, and external action remain closed.
+
+[Decision 0065](../decisions/0065-approved-sprint-62-synthetic-closure-status.md) permits the established-patient and exact applicant owner to read a neutral terminal `Closed` lifecycle projection after full lineage validation. The projection says the appointment and encounter remain incomplete and exposes no care-completion, prescription, billing, claim, integration, or external assertion.
