@@ -13,6 +13,7 @@ import TelehealthFinalClinicalReviewPanel from './TelehealthFinalClinicalReviewP
 import TelehealthProfessionalClaimPreparationPanel from './TelehealthProfessionalClaimPreparationPanel.tsx'
 import TelehealthEncounterFinalizationPanel from './TelehealthEncounterFinalizationPanel.tsx'
 import TelehealthSyntheticVisitClosurePanel from './TelehealthSyntheticVisitClosurePanel.tsx'
+import ClinicianIdleShiftEndControl, { type ClinicianIdleShiftEndConfirmations } from './ClinicianIdleShiftEndControl.tsx'
 import './telehealth.css'
 
 export default function ClinicianTelehealthQueue() {
@@ -31,7 +32,6 @@ export default function ClinicianTelehealthQueue() {
   const [workspace, setWorkspace] = useState<TelehealthConsultationWorkspace | null>(null)
   const [encounterLocked, setEncounterLocked] = useState(false)
   const [closureStatus, setClosureStatus] = useState<string | null>(null)
-  const [shiftEndChecks, setShiftEndChecks] = useState({ noActiveWorkConfirmed: false, syntheticEndConfirmed: false })
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [draft, setDraft] = useState<DraftFields>(emptyDraft)
@@ -98,7 +98,7 @@ export default function ClinicianTelehealthQueue() {
   async function reserve() {
     setWorking(true); setError(null)
     try {
-      setReservation(await reserveNextRequest()); setConsultation(null); setWorkspace(null); setWorkspaceError(null); setEncounterLocked(false); setClosureStatus(null); setShiftEndChecks({ noActiveWorkConfirmed: false, syntheticEndConfirmed: false }); resetDraft()
+      setReservation(await reserveNextRequest()); setConsultation(null); setWorkspace(null); setWorkspaceError(null); setEncounterLocked(false); setClosureStatus(null); resetDraft()
       setWrapUpChecks({ syntheticSessionEndedConfirmed: false, documentationStillIncompleteAcknowledged: false, wrapUpResponsibilityAcknowledged: false })
       setWrapUpStatus(null); setWrapUpError(null); wrapUpCommandKey.current = null
       await refresh()
@@ -107,10 +107,10 @@ export default function ClinicianTelehealthQueue() {
     finally { setWorking(false) }
   }
 
-  async function endShift() {
-    if (!shift || reservation || consultation || working || !shiftEndChecks.noActiveWorkConfirmed || !shiftEndChecks.syntheticEndConfirmed) return
+  async function endShift(confirmations: ClinicianIdleShiftEndConfirmations) {
+    if (!shift || reservation || consultation || working || !confirmations.noActiveWorkConfirmed || !confirmations.syntheticEndConfirmed) return
     setWorking(true); setError(null)
-    try { await endIdleClinicianShift(shift.shiftId, shift.version, shiftEndChecks.noActiveWorkConfirmed, shiftEndChecks.syntheticEndConfirmed); setShift(null); setShiftEndChecks({ noActiveWorkConfirmed: false, syntheticEndConfirmed: false }); setClosureStatus('Synthetic telehealth shift ended. No patient, appointment, encounter, clinical, billing, claim, media, integration, or external state changed.') }
+    try { await endIdleClinicianShift(shift.shiftId, shift.version, confirmations.noActiveWorkConfirmed, confirmations.syntheticEndConfirmed); setShift(null); setClosureStatus('Synthetic telehealth shift ended. No patient, appointment, encounter, clinical, billing, claim, media, integration, or external state changed.') }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'The idle shift could not be ended.') }
     finally { setWorking(false) }
   }
@@ -279,8 +279,9 @@ export default function ClinicianTelehealthQueue() {
         <div><h2>Telehealth shift</h2><p>{shift ? `${shift.status} at facility ${shift.facilityId}` : 'Start a shift before reserving a request.'}</p></div>
         <button className="telehealth-button" type="button" disabled={working || shift !== null} onClick={() => void start()}>{shift ? 'Shift active' : 'Start telehealth shift'}</button>
         <button className="telehealth-button" type="button" disabled={working || shift === null || reservation !== null} onClick={() => void reserve()}>Reserve next request</button>
-        {shift?.status === 'Active' && !reservation && !consultation ? <div><label className="telehealth-check"><input type="checkbox" checked={shiftEndChecks.noActiveWorkConfirmed} onChange={(event) => setShiftEndChecks((current) => ({ ...current, noActiveWorkConfirmed: event.target.checked }))} />I confirm I hold no active telehealth reservation or consultation work.</label><label className="telehealth-check"><input type="checkbox" checked={shiftEndChecks.syntheticEndConfirmed} onChange={(event) => setShiftEndChecks((current) => ({ ...current, syntheticEndConfirmed: event.target.checked }))} />I understand this ends only my synthetic shift and changes no patient-care or downstream state.</label><button className="telehealth-button telehealth-button-secondary" type="button" disabled={working || !shiftEndChecks.noActiveWorkConfirmed || !shiftEndChecks.syntheticEndConfirmed} onClick={() => void endShift()}>End idle telehealth shift</button></div> : null}
+        {shift ? <ClinicianIdleShiftEndControl shift={shift} reservationActive={reservation !== null} consultationActive={consultation !== null} working={working} onEnd={(confirmations) => void endShift(confirmations)} /> : null}
       </section>
+      {closureStatus ? <p role="status">{closureStatus}</p> : null}
       {reservation ? (
         <section className="telehealth-card" aria-labelledby="reserved-title">
           <h2 id="reserved-title">Reserved synthetic request</h2>
@@ -318,7 +319,6 @@ export default function ClinicianTelehealthQueue() {
               <button className="telehealth-button" type="submit" disabled={connectionWorking || !startReady}>Start synthetic lifecycle</button>
             </form>
           ) : null}
-          {closureStatus ? <p role="status">{closureStatus}</p> : null}
           {consultation ? <section className="telehealth-consultation-started" role="status"><h3>Synthetic consultation lifecycle started</h3><p>Opaque consultation {consultation.consultationId.slice(0, 8)}. The sequential encounter key is not exposed.</p><ul>{consultation.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></section> : null}
           {consultation ? (
             <section className="telehealth-consultation-workspace" aria-labelledby="consultation-workspace-title" aria-busy={workspaceLoading}>
