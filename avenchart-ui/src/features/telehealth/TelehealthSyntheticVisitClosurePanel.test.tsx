@@ -22,7 +22,7 @@ describe('TelehealthSyntheticVisitClosurePanel', () => {
     expect(button).toBeEnabled()
     fireEvent.click(button)
     await waitFor(() => expect(closeSyntheticTelehealthVisit).toHaveBeenCalledWith('consultation-1', { expectedConsultationVersion: 5, encounterLockReviewed: true, syntheticClosureConfirmed: true }))
-    expect(onClosed).toHaveBeenCalledTimes(1)
+    expect(onClosed).toHaveBeenCalledWith(expect.objectContaining({ consultationId: 'consultation-1', clinicianAvailableForNewWork: true, appointmentCompleted: false }))
     expect(await screen.findByText(/appointment, delivery, billing, claims, and integrations remain unchanged/i)).toBeInTheDocument()
   })
 })

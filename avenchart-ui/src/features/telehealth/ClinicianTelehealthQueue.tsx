@@ -30,6 +30,7 @@ export default function ClinicianTelehealthQueue() {
   const [consultation, setConsultation] = useState<{ consultationId: string; limitations: string[] } | null>(null)
   const [workspace, setWorkspace] = useState<TelehealthConsultationWorkspace | null>(null)
   const [encounterLocked, setEncounterLocked] = useState(false)
+  const [closureStatus, setClosureStatus] = useState<string | null>(null)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [draft, setDraft] = useState<DraftFields>(emptyDraft)
@@ -96,7 +97,7 @@ export default function ClinicianTelehealthQueue() {
   async function reserve() {
     setWorking(true); setError(null)
     try {
-      setReservation(await reserveNextRequest()); setConsultation(null); setWorkspace(null); setWorkspaceError(null); setEncounterLocked(false); resetDraft()
+      setReservation(await reserveNextRequest()); setConsultation(null); setWorkspace(null); setWorkspaceError(null); setEncounterLocked(false); setClosureStatus(null); resetDraft()
       setWrapUpChecks({ syntheticSessionEndedConfirmed: false, documentationStillIncompleteAcknowledged: false, wrapUpResponsibilityAcknowledged: false })
       setWrapUpStatus(null); setWrapUpError(null); wrapUpCommandKey.current = null
       await refresh()
@@ -307,6 +308,7 @@ export default function ClinicianTelehealthQueue() {
               <button className="telehealth-button" type="submit" disabled={connectionWorking || !startReady}>Start synthetic lifecycle</button>
             </form>
           ) : null}
+          {closureStatus ? <p role="status">{closureStatus}</p> : null}
           {consultation ? <section className="telehealth-consultation-started" role="status"><h3>Synthetic consultation lifecycle started</h3><p>Opaque consultation {consultation.consultationId.slice(0, 8)}. The sequential encounter key is not exposed.</p><ul>{consultation.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></section> : null}
           {consultation ? (
             <section className="telehealth-consultation-workspace" aria-labelledby="consultation-workspace-title" aria-busy={workspaceLoading}>
@@ -367,7 +369,14 @@ export default function ClinicianTelehealthQueue() {
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthSafetyDispositionPanel consultationId={consultation.consultationId} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthFinalClinicalReviewPanel consultationId={consultation.consultationId} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthEncounterFinalizationPanel consultationId={consultation.consultationId} onFinalized={() => setEncounterLocked(true)} /> : null}
-                {workspace.consultationStatus === 'WrapUp' && encounterLocked ? <TelehealthSyntheticVisitClosurePanel consultationId={consultation.consultationId} expectedVersion={workspace.consultationVersion} onClosed={() => { setReservation(null); setWorkspace(null); setEncounterLocked(false); void refresh() }} /> : null}
+                {workspace.consultationStatus === 'WrapUp' && encounterLocked ? <TelehealthSyntheticVisitClosurePanel consultationId={consultation.consultationId} expectedVersion={workspace.consultationVersion} onClosed={(result) => {
+                  setReservation(null); setConsultation(null); setWorkspace(null); setEncounterLocked(false); setDeviceEvidence(null); setWaitingRoom(null); resetDraft()
+                  setShift((current) => current ? { ...current, status: result.clinicianAvailableForNewWork ? 'Active' : current.status } : current)
+                  setClosureStatus(result.clinicianAvailableForNewWork
+                    ? 'Synthetic visit lifecycle closed. You are available for new work; the appointment and encounter remain incomplete, and no delivery, billing, claim, integration, or external action was created.'
+                    : 'Synthetic visit lifecycle closed. The appointment and encounter remain incomplete, and no delivery, billing, claim, integration, or external action was created.')
+                  void refresh()
+                }} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthProfessionalClaimPreparationPanel consultationId={consultation.consultationId} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthCompletionPrerequisitesPanel consultationId={consultation.consultationId} /> : null}
                 <p><small>Projection as of {new Date(workspace.asOf).toLocaleString()}.</small></p>
