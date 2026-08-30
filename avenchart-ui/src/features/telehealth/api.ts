@@ -4438,8 +4438,8 @@ export function startClinicianShift() {
   return json<TelehealthShift>('/api/telehealth/v1/clinician/shifts', commandInit(undefined, 'clinician'))
 }
 
-export function endIdleClinicianShift(shiftId: string, expectedVersion: number) {
-  return json<TelehealthShift>(`/api/telehealth/v1/clinician/shifts/${shiftId}/end`, commandInit({ expectedVersion, noActiveWorkConfirmed: true, syntheticEndConfirmed: true }, 'clinician'))
+export function endIdleClinicianShift(shiftId: string, expectedVersion: number, noActiveWorkConfirmed: boolean, syntheticEndConfirmed: boolean) {
+  return json<TelehealthShift>(`/api/telehealth/v1/clinician/shifts/${shiftId}/end`, commandInit({ expectedVersion, noActiveWorkConfirmed, syntheticEndConfirmed }, 'clinician'))
 }
 
 export async function reserveNextRequest() {

@@ -588,7 +588,7 @@ describe('telehealth transport boundaries', () => {
   it('ends only an idle clinician shift with confirmations, version, and idempotency context', async () => {
     sessionStorage.setItem('avenchart-ui.clinicianSession', JSON.stringify({ sessionId: 'physician-session', username: 'doctor', displayName: 'Doctor', role: 'provider', facilityId: 10, purposeOfUse: 'treatment' }))
     fetchMock.mockResolvedValue(jsonResponse({ shiftId: 'shift-63', status: 'Ended', version: 3 }))
-    await endIdleClinicianShift('shift-63', 2)
+    await endIdleClinicianShift('shift-63', 2, true, true)
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toContain('/clinician/shifts/shift-63/end')
     expect(init?.method).toBe('POST')
