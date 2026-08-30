@@ -24,6 +24,7 @@ describe('telehealth patient queue polling', () => {
     expect(shouldPollPatientQueueStatus('Reserved')).toBe(true)
     expect(shouldPollPatientQueueStatus('InConsultation')).toBe(true)
     expect(shouldPollPatientQueueStatus('WrapUp')).toBe(false)
+    expect(shouldPollPatientQueueStatus('Closed')).toBe(false)
     expect(shouldPollPatientQueueStatus('Redirected')).toBe(false)
     expect(shouldPollPatientQueueStatus('Verification')).toBe(false)
   })

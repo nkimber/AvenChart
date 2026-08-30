@@ -70,6 +70,10 @@ public static class TelehealthPatientQueueStatusProjector
             "WrapUp",
             "Your physician is finishing the synthetic visit record",
             "This visit is not complete. No signed record, after-visit summary, prescription, or claim is available. Follow the practice guidance you received, and use the emergency action below if needed."),
+        TelehealthRequestStatus.Closed => new(
+            "SyntheticLifecycleClosed",
+            "The synthetic visit lifecycle has closed",
+            "The physician's synthetic workflow has ended. This does not mean the appointment or encounter is complete and does not create a signed record, after-visit summary, prescription delivery, bill, claim, or external action."),
         TelehealthRequestStatus.Redirected => new(
             "Redirected",
             "This request cannot enter the telehealth queue",

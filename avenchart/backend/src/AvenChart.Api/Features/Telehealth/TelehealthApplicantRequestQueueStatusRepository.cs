@@ -310,6 +310,7 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                            where request_event.request_id=r.request_id
                              and request_event.aggregate_version=case
                                when r.status='WrapUp' then r.version-1
+                               when r.status='Closed' then r.version-2
                                else r.version
                              end
                              and request_event.action='consultation-started'
@@ -342,6 +343,31 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                                 and request_event.action='consultation-wrap-up-entered'
                                 and request_event.from_status='InConsultation'
                                 and request_event.to_status='WrapUp'
+                                and request_event.actor_type='physician'))
+                          or
+                          (r.status='Closed'
+                           and consultation.status='Closed'
+                           and consultation.version=3
+                           and consultation.media_ended_at is not null
+                           and consultation.closed_at is not null
+                           and shift.status='Active'
+                           and exists(
+                             select 1 from encounter_signatures signature
+                              where signature.encounter=encounter.encounter and signature.is_lock)
+                           and exists(
+                             select 1 from telehealth_consultation_events consultation_event
+                              where consultation_event.consultation_id=consultation.consultation_id
+                                and consultation_event.request_id=r.request_id
+                                and consultation_event.aggregate_version=3
+                                and consultation_event.action='synthetic-visit-closed'
+                                and consultation_event.actor_type='physician')
+                           and exists(
+                             select 1 from telehealth_request_events request_event
+                              where request_event.request_id=r.request_id
+                                and request_event.aggregate_version=r.version
+                                and request_event.action='synthetic-visit-closed'
+                                and request_event.from_status='WrapUp'
+                                and request_event.to_status='Closed'
                                 and request_event.actor_type='physician')))),
                    case
                      when r.status='Queued' and current_queue.status='Ready' then (
@@ -481,6 +507,14 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                 && source.ConsultationCount == 1
                 && source.ConsultationValid,
             TelehealthRequestStatus.WrapUp => source.RequestVersion >= 17
+                && source.QueueStatus == "Removed"
+                && source.ActiveReservationCount == 0
+                && source.AppointmentStatus == ">"
+                && source.ConnectionSessionCount == 1
+                && source.ActiveApplicantGrantCount == 0
+                && source.ConsultationCount == 1
+                && source.ConsultationValid,
+            TelehealthRequestStatus.Closed => source.RequestVersion >= 18
                 && source.QueueStatus == "Removed"
                 && source.ActiveReservationCount == 0
                 && source.AppointmentStatus == ">"

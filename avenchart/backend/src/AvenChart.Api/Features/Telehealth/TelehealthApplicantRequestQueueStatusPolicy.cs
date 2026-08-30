@@ -17,7 +17,8 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
         or TelehealthRequestStatus.Reserved
         or TelehealthRequestStatus.Connecting
         or TelehealthRequestStatus.InConsultation
-        or TelehealthRequestStatus.WrapUp;
+        or TelehealthRequestStatus.WrapUp
+        or TelehealthRequestStatus.Closed;
 
     public static TelehealthApplicantRequestQueueStatusResponse Create(
         TelehealthApplicantRequestQueueStatusRecord record)
@@ -78,6 +79,7 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
                 "A connection-room state means only that the owner entered a private NON_PRODUCTION waiting room with a short-lived participant grant; no media or communication is connected.",
                 "A consultation state means only that the exact physician started the bounded synthetic lifecycle and encounter; it is not proof of media, legal consent, real coverage, diagnosis, treatment, or completed care.",
                 "A wrap-up state means only that the synthetic session ended and the owning physician may finish unsigned planning drafts; it is not proof of a signature, prescription, patient delivery, claim, or completed visit.",
+                "A closed state means only that the synthetic consultation/request lifecycle was closed after the governed encounter lock and the physician returned to availability. The appointment and encounter remain incomplete; no patient delivery, billing, claim, integration, or external action was created.",
                 "No consent, care authorization, prescription, claim, integration, or external action is created by reading this status."
             ]);
     }

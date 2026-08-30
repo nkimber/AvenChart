@@ -108,6 +108,17 @@ const wrapUpStatus: TelehealthApplicantRequestQueueStatus = {
   detail: 'This visit is not complete. No signed record, after-visit summary, prescription, or claim is available.',
 }
 
+const closedStatus: TelehealthApplicantRequestQueueStatus = {
+  ...wrapUpStatus,
+  requestStatus: 'Closed',
+  requestVersion: 18,
+  phase: 'SyntheticLifecycleClosed',
+  headline: 'The synthetic visit lifecycle has closed',
+  detail: 'The appointment and encounter remain incomplete. No patient delivery, billing, claim, integration, or external action was created.',
+  renderingPhysicianAssigned: false,
+  syntheticRenderingCandidateMatched: false,
+}
+
 describe('ApplicantTelehealthQueueStatus', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -244,6 +255,18 @@ describe('ApplicantTelehealthQueueStatus', () => {
 
     expect(await screen.findByRole('heading', { name: 'Your physician is finishing the synthetic visit record' })).toBeVisible()
     expect(screen.getByText(/No signed record, after-visit summary, prescription, or claim/)).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Refresh queue status now' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/provider|NPI|prescription ID/i)).not.toBeInTheDocument()
+  })
+
+  it('shows synthetic lifecycle closure without claiming an appointment or encounter completion', async () => {
+    vi.mocked(getApplicantTelehealthRequestQueueStatus).mockResolvedValue(closedStatus)
+
+    render(<ApplicantTelehealthQueueStatus applicantId="applicant-61" applicantAccessKey="secret-key" enabled />)
+
+    expect(await screen.findByRole('heading', { name: 'The synthetic visit lifecycle has closed' })).toBeVisible()
+    expect(screen.getByText(/appointment and encounter remain incomplete/i)).toBeVisible()
+    expect(screen.getByText(/Physician assigned/).parentElement).toHaveTextContent('No')
     expect(screen.queryByRole('button', { name: 'Refresh queue status now' })).not.toBeInTheDocument()
     expect(screen.queryByText(/provider|NPI|prescription ID/i)).not.toBeInTheDocument()
   })

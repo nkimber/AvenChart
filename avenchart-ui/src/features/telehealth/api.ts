@@ -2276,12 +2276,12 @@ export type TelehealthApplicantRequestOperationalReviewSubmission = {
 
 export type TelehealthApplicantRequestQueueStatus = {
   requestId: string
-  requestStatus: 'OperationalReview' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp'
+  requestStatus: 'OperationalReview' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp' | 'Closed'
   requestVersion: number
   policyKey: 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_STATUS'
   policyVersion: 1
   sourceMode: 'NON_PRODUCTION'
-  phase: 'Reviewing' | 'InQueue' | 'PhysicianPreparing' | 'ConnectionRoom' | 'Consultation' | 'WrapUp'
+  phase: 'Reviewing' | 'InQueue' | 'PhysicianPreparing' | 'ConnectionRoom' | 'Consultation' | 'WrapUp' | 'SyntheticLifecycleClosed'
   headline: string
   detail: string
   approximateRequestsAhead: number | null
@@ -2326,7 +2326,7 @@ export type TelehealthRequest = {
   coverage: TelehealthCoverageStatus | null
 }
 
-export type TelehealthRequestStatus = 'Draft' | 'LocationConfirmed' | 'SafetyScreening' | 'EmergencyRedirected' | 'InPersonRecommended' | 'Unsupported' | 'ClinicalReview' | 'Intake' | 'Verification' | 'OperationalReview' | 'Redirected' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp'
+export type TelehealthRequestStatus = 'Draft' | 'LocationConfirmed' | 'SafetyScreening' | 'EmergencyRedirected' | 'InPersonRecommended' | 'Unsupported' | 'ClinicalReview' | 'Intake' | 'Verification' | 'OperationalReview' | 'Redirected' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp' | 'Closed'
 
 export type TelehealthPatientQueueStatus = {
   requestId: string

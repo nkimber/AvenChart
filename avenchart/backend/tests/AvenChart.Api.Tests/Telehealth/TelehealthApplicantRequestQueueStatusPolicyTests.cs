@@ -16,6 +16,7 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
     [InlineData(TelehealthRequestStatus.Connecting, true)]
     [InlineData(TelehealthRequestStatus.InConsultation, true)]
     [InlineData(TelehealthRequestStatus.WrapUp, true)]
+    [InlineData(TelehealthRequestStatus.Closed, true)]
     [InlineData(TelehealthRequestStatus.Verification, false)]
     [InlineData(TelehealthRequestStatus.Redirected, false)]
     public void VisibleStatusesAreExplicitlyBounded(TelehealthRequestStatus status, bool expected)
@@ -119,6 +120,22 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
         Assert.False(result.ConnectionRoomCreated);
         Assert.False(result.PatientWaitingRoomEntered);
         Assert.Contains(result.Limitations, limitation => limitation.Contains("unsigned planning drafts", StringComparison.Ordinal));
+        AssertClosedConsequences(result);
+    }
+
+    [Fact]
+    public void ClosedDisclosesOnlyLifecycleClosureWithoutEncounterCompletionOrDownstreamClaims()
+    {
+        var result = Create(TelehealthRequestStatus.Closed, 18, null);
+
+        Assert.Equal("SyntheticLifecycleClosed", result.Phase);
+        Assert.True(result.PracticeAccepted);
+        Assert.True(result.DoctorSearchStarted);
+        Assert.False(result.RenderingPhysicianAssigned);
+        Assert.False(result.SyntheticRenderingCandidateMatched);
+        Assert.False(result.ConnectionRoomCreated);
+        Assert.False(result.PatientWaitingRoomEntered);
+        Assert.Contains(result.Limitations, limitation => limitation.Contains("appointment and encounter remain incomplete", StringComparison.Ordinal));
         AssertClosedConsequences(result);
     }
 

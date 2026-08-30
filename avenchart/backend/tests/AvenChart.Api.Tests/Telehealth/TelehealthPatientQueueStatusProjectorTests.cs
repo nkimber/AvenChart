@@ -42,6 +42,7 @@ public sealed class TelehealthPatientQueueStatusProjectorTests
     [InlineData(TelehealthRequestStatus.Reserved, "PhysicianPreparing", "A physician is getting ready")]
     [InlineData(TelehealthRequestStatus.Connecting, "ConnectionRoom", "connection room is ready")]
     [InlineData(TelehealthRequestStatus.InConsultation, "Consultation", "consultation has started")]
+    [InlineData(TelehealthRequestStatus.Closed, "SyntheticLifecycleClosed", "lifecycle has closed")]
     [InlineData(TelehealthRequestStatus.Redirected, "Redirected", "cannot enter the telehealth queue")]
     [InlineData(TelehealthRequestStatus.EmergencyRedirected, "EmergencyRedirected", "Call 911 now")]
     [InlineData(TelehealthRequestStatus.InPersonRecommended, "InPersonRecommended", "In-person evaluation")]
