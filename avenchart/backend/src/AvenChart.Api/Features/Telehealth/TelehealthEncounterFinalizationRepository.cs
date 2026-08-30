@@ -74,9 +74,11 @@ public sealed class TelehealthEncounterFinalizationRepository(NpgsqlDataSource d
             join telehealth_video_sessions session on session.session_id=context.session_id
             join appointments appointment on appointment.id=context.appointment_id
             join encounters encounter on encounter.encounter=context.encounter_id
+            left join telehealth_consultation_prescription_orders prescription
+              on prescription.consultation_id=context.consultation_id
             left join lateral (select version,subjective,objective,assessment,plan from clinical_notes where encounter=context.encounter_id order by version desc,id desc limit 1) note on true
             left join lateral (select version from telehealth_consultation_disposition_draft_versions where consultation_id=context.consultation_id order by version desc limit 1) disposition on true
-            left join lateral (select review.version from telehealth_consultation_final_clinical_review_versions review where review.consultation_id=context.consultation_id and review.documentation_version=coalesce(note.version,0) and review.disposition_version=disposition.version order by review.version desc limit 1) review on true
+            left join lateral (select review.version from telehealth_consultation_final_clinical_review_versions review where review.consultation_id=context.consultation_id and review.documentation_version=coalesce(note.version,0) and review.disposition_version=disposition.version and review.prescription_order_id is not distinct from prescription.order_id order by review.version desc limit 1) review on true
             where context.consultation_id=@consultationId and context.practice_id=@practiceId and context.facility_id=@facilityId and context.physician_staff_id=@physician and context.status='MediaEnded'
               and request.practice_id=@practiceId and request.facility_id=@facilityId and request.status='WrapUp' and reservation.clinician_staff_id=@physician and reservation.status='Released'
               and shift.clinician_staff_id=@physician and shift.status='WrapUp' and session.status='Ended' and appointment.status='>' and encounter.provider_id=@physician and encounter.facility_id=@facilityId

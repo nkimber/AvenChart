@@ -1258,6 +1258,7 @@ try {
         $finalizationRepositorySource -match 'encounters\.SignAsync' -and
         $finalizationRepositorySource -match 'ReadAndLockSourceAsync' -and
         $finalizationRepositorySource -match 'for update of context,request,reservation,shift,session,appointment,encounter' -and
+        $finalizationRepositorySource -match 'review\.prescription_order_id is not distinct from prescription\.order_id' -and
         $finalizationRepositorySource -match 'ExpectedFinalClinicalReviewVersion' -and
         $finalizationRepositorySource -match 'LegalEffect: false' -and
         $finalizationRepositorySource -match 'CompletionCreated: false' -and
