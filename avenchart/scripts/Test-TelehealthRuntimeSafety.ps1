@@ -1219,6 +1219,7 @@ try {
     $prescriptionSigningMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0328__telehealth_synthetic_prescription_signing.sql')
     $finalClinicalReviewRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthFinalClinicalReviewRepository.cs')
     $finalClinicalReviewMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0329__telehealth_synthetic_final_clinical_review.sql')
+    $finalizationRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthEncounterFinalizationRepository.cs')
     Add-Check 'Prescription preparation remains a non-controlled synthetic draft until the bounded signing command' (
         $prescriptionRepositorySource -match 'public const string AdapterMode = "NON_PRODUCTION"' -and
         $prescriptionRepositorySource -match 'public const string IntendedStandard = "NCPDP_SCRIPT_2017071"' -and
@@ -1253,6 +1254,18 @@ try {
         $finalClinicalReviewMigrationSource -match 'not billing_created and not claim_created' -and
         $finalClinicalReviewMigrationSource -match 'not external_destination_contacted' -and
         $endpointSource -match 'consultations/\{consultationId:guid\}/final-clinical-review')
+    Add-Check 'Synthetic encounter finalization validates current owner and source versions inside the governed lock transaction and creates no completion, financial, delivery, or external consequence' (
+        $finalizationRepositorySource -match 'encounters\.SignAsync' -and
+        $finalizationRepositorySource -match 'ReadAndLockSourceAsync' -and
+        $finalizationRepositorySource -match 'for update of context,request,reservation,shift,session,appointment,encounter' -and
+        $finalizationRepositorySource -match 'ExpectedFinalClinicalReviewVersion' -and
+        $finalizationRepositorySource -match 'LegalEffect: false' -and
+        $finalizationRepositorySource -match 'CompletionCreated: false' -and
+        $finalizationRepositorySource -match 'BillingCreated: false' -and
+        $finalizationRepositorySource -match 'ClaimCreated: false' -and
+        $finalizationRepositorySource -match 'ExternalDestinationContacted: false' -and
+        $finalizationRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|WebRequest|SendAsync' -and
+        $endpointSource -match 'consultations/\{consultationId:guid\}/finalize')
     $dispositionRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthDispositionRepository.cs')
     $dispositionMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0289__telehealth_synthetic_safety_disposition_draft.sql')
     Add-Check 'Safety disposition remains an unsigned, undelivered, versioned physician draft with no lifecycle, downstream, advice, or outbound path' (

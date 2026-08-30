@@ -2832,6 +2832,30 @@ export type TelehealthProfessionalClaimPreparationWorkspace = {
   limitations: string[]
 }
 
+export type TelehealthEncounterFinalization = {
+  encounterSignatureId: number
+  signedAt: string
+  documentationVersion: number
+  dispositionVersion: number
+  finalClinicalReviewVersion: number
+  encounterLocked: boolean
+  legalEffect: boolean
+  completionCreated: boolean
+  patientDeliveryCreated: boolean
+  billingCreated: boolean
+  claimCreated: boolean
+  externalDestinationContacted: boolean
+  limitations: string[]
+}
+
+export type TelehealthEncounterFinalizationInput = {
+  expectedDocumentationVersion: number
+  expectedDispositionVersion: number
+  expectedFinalClinicalReviewVersion: number
+  sourceReviewConfirmed: boolean
+  syntheticOnlyConfirmed: boolean
+}
+
 export type TelehealthFinalClinicalReviewInput = {
   expectedDocumentationVersion: number
   expectedDispositionVersion: number
@@ -4614,6 +4638,13 @@ export function getTelehealthProfessionalClaimPreparation(consultationId: string
   return json<TelehealthProfessionalClaimPreparationWorkspace>(
     `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/professional-claim-preparation`,
     { headers: clinicianHeaders(), signal },
+  )
+}
+
+export function finalizeTelehealthEncounter(consultationId: string, input: TelehealthEncounterFinalizationInput, signal?: AbortSignal) {
+  return json<TelehealthEncounterFinalization>(
+    `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/finalize`,
+    { method: 'POST', headers: clinicianHeaders({ 'X-Idempotency-Key': crypto.randomUUID() }), body: JSON.stringify(input), signal },
   )
 }
 

@@ -671,7 +671,8 @@ public sealed class EncounterRepository(
         int encounter,
         EncounterSignRequest request,
         string actor,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task>? validateBeforeSignature = null)
     {
         var signerUsername = NormalizeText(actor);
         if (signerUsername is null)
@@ -695,6 +696,10 @@ public sealed class EncounterRepository(
             }
 
             encounterVersion = Convert.ToInt64(result);
+        }
+        if (validateBeforeSignature is not null)
+        {
+            await validateBeforeSignature(connection, transaction, cancellationToken);
         }
         var contentSnapshot = await CaptureSignatureContentSnapshotAsync(
             connection,

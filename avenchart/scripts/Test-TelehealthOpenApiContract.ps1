@@ -39,6 +39,7 @@ try {
       '/api/telehealth/v1/clinician/consultations/{consultationId}/pharmacy-choice',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/prescription-preparation-draft',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/final-clinical-review',
+      '/api/telehealth/v1/clinician/consultations/{consultationId}/finalize',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/professional-claim-preparation',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/safety-disposition-draft',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/completion-prerequisites')
@@ -2110,6 +2111,16 @@ try {
       $finalClinicalReviewRequestJson-match'documentationReviewed' -and $finalClinicalReviewRequestJson-match'physicianResponsibilityConfirmed' -and
       $finalClinicalReviewRequestJson-match'noAutomaticClaimOrDeliveryConfirmed' -and $finalClinicalReviewRequestJson-match'syntheticDataConfirmed' -and
       $finalClinicalReviewRequestJson-notmatch'patientId|encounterId|appointmentId|requestId|signatureId|claimId|billingId|deliveryId|externalDestination')
+    $finalization = Get-Operation $document '/api/telehealth/v1/clinician/consultations/{consultationId}/finalize' 'post'
+    $finalizationReference = Get-Property (Get-Property (Get-Property (Get-Property $finalization 'requestBody') 'content') 'application/json').schema '$ref'
+    $finalizationSchemaName = ($finalizationReference -split '/')[-1]
+    $finalizationJson = ((Get-Property $document.components 'schemas').$finalizationSchemaName | ConvertTo-Json -Depth 12 -Compress)
+    Add-Check 'Synthetic encounter finalization is physician-scoped, source-version-bound, idempotent, and accepts no billing, claim, delivery, or external input' (
+      (Has-Security $finalization 'AvenChartLocalStaffSession') -and (Has-Header $finalization 'X-AvenChart-Facility-Id') -and (Has-Header $finalization 'X-AvenChart-Purpose-Of-Use') -and
+      (Has-Header $finalization 'X-Idempotency-Key') -and $null-ne(Get-Property $finalization 'requestBody') -and $null-ne(Get-Property $finalization.responses '409') -and
+      $finalizationJson-match'expectedDocumentationVersion' -and $finalizationJson-match'expectedDispositionVersion' -and $finalizationJson-match'expectedFinalClinicalReviewVersion' -and
+      $finalizationJson-match'sourceReviewConfirmed' -and $finalizationJson-match'syntheticOnlyConfirmed' -and
+      $finalizationJson-notmatch'patientId|encounterId|requestId|claimId|billingId|deliveryId|externalDestination')
     $claimPreparation = Get-Operation $document '/api/telehealth/v1/clinician/consultations/{consultationId}/professional-claim-preparation' 'get'
     $claimPreparationReference = Get-Property (Get-Property (Get-Property (Get-Property $claimPreparation.responses '200') 'content') 'application/json').schema '$ref'
     $claimPreparationSchemaName = ($claimPreparationReference -split '/')[-1]

@@ -166,6 +166,8 @@ public static class TelehealthServiceRegistration
         services.AddScoped<TelehealthCompletionReviewRepository>();
         services.AddScoped<TelehealthFinalClinicalReviewRepository>();
         services.AddScoped<TelehealthFinalClinicalReviewService>();
+        services.AddScoped<TelehealthEncounterFinalizationRepository>();
+        services.AddScoped<TelehealthEncounterFinalizationService>();
         services.AddScoped<TelehealthProfessionalClaimPreparationRepository>();
         services.AddScoped<TelehealthProfessionalClaimPreparationService>();
         services.AddScoped<TelehealthPrescriptionRepository>();

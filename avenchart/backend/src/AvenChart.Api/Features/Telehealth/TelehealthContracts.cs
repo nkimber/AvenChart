@@ -1140,6 +1140,28 @@ public sealed record TelehealthProfessionalClaimPreparationWorkspaceResponse(
     IReadOnlyList<string> Blockers,
     IReadOnlyList<string> Limitations);
 
+public sealed record FinalizeTelehealthEncounterRequest(
+    int ExpectedDocumentationVersion,
+    int ExpectedDispositionVersion,
+    int ExpectedFinalClinicalReviewVersion,
+    bool SourceReviewConfirmed,
+    bool SyntheticOnlyConfirmed);
+
+public sealed record TelehealthEncounterFinalizationResponse(
+    int EncounterSignatureId,
+    DateTimeOffset SignedAt,
+    int DocumentationVersion,
+    int DispositionVersion,
+    int FinalClinicalReviewVersion,
+    bool EncounterLocked,
+    bool LegalEffect,
+    bool CompletionCreated,
+    bool PatientDeliveryCreated,
+    bool BillingCreated,
+    bool ClaimCreated,
+    bool ExternalDestinationContacted,
+    IReadOnlyList<string> Limitations);
+
 public sealed record TelehealthCompletionPrerequisitesResponse(
     Guid ConsultationId,
     string ConsultationStatus,
