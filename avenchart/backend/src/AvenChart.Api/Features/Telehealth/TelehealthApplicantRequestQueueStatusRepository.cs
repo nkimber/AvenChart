@@ -38,6 +38,8 @@ internal sealed record TelehealthApplicantRequestQueueStatusSource(
     int ConnectionSessionCount,
     int ActiveApplicantGrantCount,
     bool ConnectionValid,
+    int ConsultationCount,
+    bool ConsultationValid,
     int? ApproximateRequestsAhead);
 
 public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSource dataSource)
@@ -220,6 +222,100 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                              and video_event.actor_subject_hash=@participantSubjectHash
                              and video_event.idempotency_key=grant_record.idempotency_key
                              and video_event.command_fingerprint=grant_record.command_fingerprint)),
+                   (select count(*)::int
+                      from telehealth_consultation_contexts consultation
+                     where consultation.request_id=r.request_id),
+                   exists(
+                     select 1
+                       from telehealth_consultation_contexts consultation
+                       join telehealth_reservations reservation
+                         on reservation.reservation_id=consultation.reservation_id
+                        and reservation.request_id=consultation.request_id
+                       join telehealth_clinician_shifts shift
+                         on shift.shift_id=consultation.shift_id
+                        and shift.clinician_staff_id=consultation.physician_staff_id
+                       join telehealth_video_sessions session
+                         on session.session_id=consultation.session_id
+                        and session.request_id=consultation.request_id
+                       join appointments appointment
+                         on appointment.id=consultation.appointment_id
+                       join encounters encounter
+                         on encounter.encounter=consultation.encounter_id
+                       join telehealth_applicant_request_queue_authorizations queue_authorization
+                         on queue_authorization.request_id=consultation.request_id
+                        and queue_authorization.applicant_id=a.applicant_id
+                        and queue_authorization.candidate_staff_id=consultation.physician_staff_id
+                      where consultation.request_id=r.request_id
+                        and consultation.practice_id=r.practice_id
+                        and consultation.facility_id=r.facility_id
+                        and consultation.status='Started'
+                        and consultation.modality='SYNTHETIC_VIDEO'
+                        and consultation.version=1
+                        and consultation.patient_location_state in ('GA','CA','FL')
+                        and consultation.patient_identity_discussed
+                        and consultation.callback_confirmed
+                        and consultation.privacy_confirmed
+                        and consultation.consent_discussed
+                        and consultation.no_concerning_symptom_change
+                        and consultation.emergency_plan_confirmed
+                        and consultation.communication_sufficient
+                        and consultation.synthetic_data_confirmed
+                        and not consultation.legal_effect
+                        and reservation.status='Released'
+                        and reservation.clinician_staff_id=consultation.physician_staff_id
+                        and shift.status='Busy'
+                        and shift.practice_id=r.practice_id
+                        and shift.facility_id=r.facility_id
+                        and session.status='Ended'
+                        and session.adapter_mode='NON_PRODUCTION'
+                        and not session.recording_enabled
+                        and not session.transcription_enabled
+                        and not session.media_transport_enabled
+                        and appointment.patient_id=r.patient_id
+                        and appointment.facility_id=r.facility_id
+                        and appointment.provider_id=consultation.physician_staff_id
+                        and appointment.status='>'
+                        and encounter.patient_id=r.patient_id
+                        and encounter.provider_id=consultation.physician_staff_id
+                        and encounter.facility_id=r.facility_id
+                        and encounter.source_appointment_id=consultation.appointment_id
+                        and current_queue.status='Removed'
+                        and (select count(*) from telehealth_video_participant_grants grant_record
+                              where grant_record.session_id=session.session_id)>=2
+                        and not exists(
+                          select 1 from telehealth_video_participant_grants grant_record
+                           where grant_record.session_id=session.session_id
+                             and grant_record.participant_role not in ('patient','physician'))
+                        and not exists(
+                          select 1 from telehealth_video_participant_grants grant_record
+                           where grant_record.session_id=session.session_id
+                             and grant_record.status='Issued')
+                        and exists(
+                          select 1 from telehealth_video_participant_grants grant_record
+                           where grant_record.session_id=session.session_id
+                             and grant_record.participant_role='patient'
+                             and grant_record.participant_subject_hash=@participantSubjectHash
+                             and grant_record.status='Revoked')
+                        and exists(
+                          select 1 from telehealth_video_participant_grants grant_record
+                           where grant_record.session_id=session.session_id
+                             and grant_record.participant_role='physician'
+                             and grant_record.status='Revoked')
+                        and exists(
+                          select 1 from telehealth_consultation_events consultation_event
+                           where consultation_event.consultation_id=consultation.consultation_id
+                             and consultation_event.request_id=r.request_id
+                             and consultation_event.aggregate_version=1
+                             and consultation_event.action='consultation-started'
+                             and consultation_event.actor_type='physician')
+                        and exists(
+                          select 1 from telehealth_request_events request_event
+                           where request_event.request_id=r.request_id
+                             and request_event.aggregate_version=r.version
+                             and request_event.action='consultation-started'
+                             and request_event.from_status='Connecting'
+                             and request_event.to_status='InConsultation'
+                             and request_event.actor_type='physician')),
                    case
                      when r.status='Queued' and current_queue.status='Ready' then (
                        select count(*)
@@ -269,8 +365,8 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
             reader.GetInt32(15), reader.IsDBNull(16) ? null : reader.GetString(16),
             reader.GetBoolean(17), reader.GetInt32(18), reader.GetBoolean(19),
             reader.IsDBNull(20) ? null : reader.GetString(20), reader.GetInt32(21),
-            reader.GetInt32(22), reader.GetBoolean(23),
-            reader.IsDBNull(24) ? null : checked((int?)reader.GetInt64(24)));
+            reader.GetInt32(22), reader.GetBoolean(23), reader.GetInt32(24),
+            reader.GetBoolean(25), reader.IsDBNull(26) ? null : checked((int?)reader.GetInt64(26)));
         RequireAccess(source, accessKeyHash);
         RequireApplicant(source);
         RequireVisibleState(source);
@@ -349,6 +445,14 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                 && source.ConnectionSessionCount == 1
                 && source.ActiveApplicantGrantCount == 1
                 && source.ConnectionValid,
+            TelehealthRequestStatus.InConsultation => source.RequestVersion >= 16
+                && source.QueueStatus == "Removed"
+                && source.ActiveReservationCount == 0
+                && source.AppointmentStatus == ">"
+                && source.ConnectionSessionCount == 1
+                && source.ActiveApplicantGrantCount == 0
+                && source.ConsultationCount == 1
+                && source.ConsultationValid,
             _ => false
         };
         var downstreamValid = source.AuthorizationCount == 1

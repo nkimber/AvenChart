@@ -6169,6 +6169,7 @@ test.describe('telehealth accessibility', () => {
     await expect(page.getByRole('heading', { name: 'Physician grant ready' })).toBeVisible()
     await expect(page.getByText(connectionGrant.joinCredential)).toHaveCount(0)
     await expect(page.getByText(/does not start a consultation/i)).toBeVisible()
+    await expect(page.getByRole('note').filter({ hasText: 'New-patient financial evidence' })).toContainText(/not real coverage verification or a payment guarantee/i)
 
     await page.getByLabel('Reconfirmed patient state').selectOption('CA')
     await page.getByLabel('Patient identity discussion completed').check()

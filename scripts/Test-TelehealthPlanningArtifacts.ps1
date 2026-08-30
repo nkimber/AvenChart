@@ -27,7 +27,7 @@ if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
     $RepositoryRoot = Split-Path -Parent (Split-Path -Parent $scriptPath)
 }
 
-$validatorVersion = '3.22.0'
+$validatorVersion = '3.23.0'
 $startedAt = [DateTime]::UtcNow
 $checks = [System.Collections.Generic.List[object]]::new()
 $failures = [System.Collections.Generic.List[string]]::new()
@@ -155,6 +155,7 @@ $decisionFiftyFivePath = Join-Path $telehealthRoot 'decisions/0055-approved-spri
 $decisionFiftySixPath = Join-Path $telehealthRoot 'decisions/0056-approved-sprint-53-applicant-request-queue-status.md'
 $decisionFiftySevenPath = Join-Path $telehealthRoot 'decisions/0057-approved-sprint-54-applicant-request-clinician-reservation.md'
 $decisionFiftyEightPath = Join-Path $telehealthRoot 'decisions/0058-approved-sprint-55-applicant-request-connection-room.md'
+$decisionFiftyNinePath = Join-Path $telehealthRoot 'decisions/0059-approved-sprint-56-applicant-consultation-start.md'
 $sprintTwentyNinePath = Join-Path $telehealthRoot 'backlog/sprint-29-synthetic-clinical-information-inventory.md'
 $sprintTwentyNineEvidencePath = Join-Path $telehealthRoot 'backlog/sprint-29-evidence.md'
 $sprintThirtyPath = Join-Path $telehealthRoot 'backlog/sprint-30-synthetic-medication-information.md'
@@ -209,6 +210,8 @@ $sprintFiftyFourPath = Join-Path $telehealthRoot 'backlog/sprint-54-applicant-re
 $sprintFiftyFourEvidencePath = Join-Path $telehealthRoot 'backlog/sprint-54-evidence.md'
 $sprintFiftyFivePath = Join-Path $telehealthRoot 'backlog/sprint-55-applicant-request-connection-room.md'
 $sprintFiftyFiveEvidencePath = Join-Path $telehealthRoot 'backlog/sprint-55-evidence.md'
+$sprintFiftySixPath = Join-Path $telehealthRoot 'backlog/sprint-56-applicant-consultation-start.md'
+$sprintFiftySixEvidencePath = Join-Path $telehealthRoot 'backlog/sprint-56-evidence.md'
 $workflowPath = Join-Path $resolvedRoot '.github/workflows/verify.yml'
 
 Add-ValidationCheck -Name 'Telehealth planning root exists' -Passed (Test-Path -LiteralPath $telehealthRoot -PathType Container) -Details 'docs/telehealth'
@@ -275,6 +278,7 @@ $requiredFiles = @(
     $decisionFiftySixPath,
     $decisionFiftySevenPath,
     $decisionFiftyEightPath,
+    $decisionFiftyNinePath,
     $sprintTwentyNinePath,
     $sprintTwentyNineEvidencePath,
     $sprintThirtyPath,
@@ -329,6 +333,8 @@ $requiredFiles = @(
     $sprintFiftyFourEvidencePath,
     $sprintFiftyFivePath,
     $sprintFiftyFiveEvidencePath,
+    $sprintFiftySixPath,
+    $sprintFiftySixEvidencePath,
     $workflowPath
 )
 $missingRequiredFiles = @($requiredFiles | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) } | ForEach-Object {
@@ -411,7 +417,7 @@ if ($null -ne $backlog) {
     Add-ValidationCheck -Name 'Backlog schema and baseline decision are current' -Passed (
         (Get-PropertyValue -Object $backlog -Name 'schemaVersion') -eq 1 -and
         (Get-PropertyValue -Object $backlog -Name 'baselineDecision') -eq 'TH-DEC-0001' -and
-        (Get-PropertyValue -Object $backlog -Name 'implementationAuthorization') -eq 'disabled-synthetic-sprints-01-through-55-authorized-by-th-dec-0003-and-th-dec-0005-through-th-dec-0058-through-2026-10-31; all-other-feature-code-blocked-by-phase-2-exit-gate'
+        (Get-PropertyValue -Object $backlog -Name 'implementationAuthorization') -eq 'disabled-synthetic-sprints-01-through-56-authorized-by-th-dec-0003-and-th-dec-0005-through-th-dec-0059-through-2026-10-31; all-other-feature-code-blocked-by-phase-2-exit-gate'
     ) -Details @{ baselineDecision = Get-PropertyValue -Object $backlog -Name 'baselineDecision'; implementationAuthorization = Get-PropertyValue -Object $backlog -Name 'implementationAuthorization' }
     Add-ValidationCheck -Name 'Backlog declares the permitted status vocabulary' -Passed (Test-ExactSet -Actual $declaredStatuses -Expected $allowedStatuses) -Details @{ statuses = $declaredStatuses }
 
@@ -549,7 +555,7 @@ catch {
 if ($null -ne $safeguards) {
     $safeguardItems = @(Get-PropertyValue -Object $safeguards -Name 'safeguards')
     $safeguardIds = @($safeguardItems | ForEach-Object { Get-PropertyValue -Object $_ -Name 'id' })
-    $expectedSafeguardIds = @(1..60 | ForEach-Object { 'TH-SG-{0:D3}' -f $_ })
+    $expectedSafeguardIds = @(1..61 | ForEach-Object { 'TH-SG-{0:D3}' -f $_ })
     $activeSafeguards = @(Get-PropertyValue -Object $safeguards -Name 'activeSafeguards')
     $requiredPaths = @($safeguardItems | ForEach-Object { [string](Get-PropertyValue -Object $_ -Name 'requiredPath') })
     $invalidSafeguards = @($safeguardItems | Where-Object {
@@ -563,18 +569,18 @@ if ($null -ne $safeguards) {
         -not (Test-Path -LiteralPath (Join-Path $resolvedRoot ([string](Get-PropertyValue -Object $_ -Name 'requiredPath'))) -PathType Leaf)
     } | ForEach-Object { Get-PropertyValue -Object $_ -Name 'requiredPath' })
 
-    Add-ValidationCheck -Name 'Safeguard manifest records the scoped Decision 0002, 0003, 0005 through 0058 activation' -Passed (
+    Add-ValidationCheck -Name 'Safeguard manifest records the scoped Decision 0002, 0003, 0005 through 0059 activation' -Passed (
         (Get-PropertyValue -Object $safeguards -Name 'schemaVersion') -eq 1 -and
-        (Get-PropertyValue -Object $safeguards -Name 'status') -eq 'active-for-decisions-0003-0005-through-0058-synthetic-sprints-01-through-55' -and
-        (Get-PropertyValue -Object $safeguards -Name 'activationPrerequisite') -eq 'Active only for the exact disabled synthetic Sprints 1 through 55 scopes and paths in TH-DEC-0003 and TH-DEC-0005 through TH-DEC-0058 through 2026-10-31' -and
-        (Test-ExactSet -Actual @(Get-PropertyValue -Object $safeguards -Name 'authorizationDecisions') -Expected @('TH-DEC-0002', 'TH-DEC-0003', 'TH-DEC-0005', 'TH-DEC-0006', 'TH-DEC-0007', 'TH-DEC-0008', 'TH-DEC-0009', 'TH-DEC-0010', 'TH-DEC-0011', 'TH-DEC-0012', 'TH-DEC-0013', 'TH-DEC-0014', 'TH-DEC-0015', 'TH-DEC-0016', 'TH-DEC-0017', 'TH-DEC-0018', 'TH-DEC-0019', 'TH-DEC-0020', 'TH-DEC-0021', 'TH-DEC-0022', 'TH-DEC-0023', 'TH-DEC-0024', 'TH-DEC-0025', 'TH-DEC-0026', 'TH-DEC-0027', 'TH-DEC-0028', 'TH-DEC-0029', 'TH-DEC-0030', 'TH-DEC-0031', 'TH-DEC-0032', 'TH-DEC-0033', 'TH-DEC-0034', 'TH-DEC-0035', 'TH-DEC-0036', 'TH-DEC-0037', 'TH-DEC-0038', 'TH-DEC-0039', 'TH-DEC-0040', 'TH-DEC-0041', 'TH-DEC-0042', 'TH-DEC-0043', 'TH-DEC-0044', 'TH-DEC-0045', 'TH-DEC-0046', 'TH-DEC-0047', 'TH-DEC-0048', 'TH-DEC-0049', 'TH-DEC-0050', 'TH-DEC-0051', 'TH-DEC-0052', 'TH-DEC-0053', 'TH-DEC-0054', 'TH-DEC-0055', 'TH-DEC-0056', 'TH-DEC-0057', 'TH-DEC-0058')) -and
+        (Get-PropertyValue -Object $safeguards -Name 'status') -eq 'active-for-decisions-0003-0005-through-0059-synthetic-sprints-01-through-56' -and
+        (Get-PropertyValue -Object $safeguards -Name 'activationPrerequisite') -eq 'Active only for the exact disabled synthetic Sprints 1 through 56 scopes and paths in TH-DEC-0003 and TH-DEC-0005 through TH-DEC-0059 through 2026-10-31' -and
+        (Test-ExactSet -Actual @(Get-PropertyValue -Object $safeguards -Name 'authorizationDecisions') -Expected @('TH-DEC-0002', 'TH-DEC-0003', 'TH-DEC-0005', 'TH-DEC-0006', 'TH-DEC-0007', 'TH-DEC-0008', 'TH-DEC-0009', 'TH-DEC-0010', 'TH-DEC-0011', 'TH-DEC-0012', 'TH-DEC-0013', 'TH-DEC-0014', 'TH-DEC-0015', 'TH-DEC-0016', 'TH-DEC-0017', 'TH-DEC-0018', 'TH-DEC-0019', 'TH-DEC-0020', 'TH-DEC-0021', 'TH-DEC-0022', 'TH-DEC-0023', 'TH-DEC-0024', 'TH-DEC-0025', 'TH-DEC-0026', 'TH-DEC-0027', 'TH-DEC-0028', 'TH-DEC-0029', 'TH-DEC-0030', 'TH-DEC-0031', 'TH-DEC-0032', 'TH-DEC-0033', 'TH-DEC-0034', 'TH-DEC-0035', 'TH-DEC-0036', 'TH-DEC-0037', 'TH-DEC-0038', 'TH-DEC-0039', 'TH-DEC-0040', 'TH-DEC-0041', 'TH-DEC-0042', 'TH-DEC-0043', 'TH-DEC-0044', 'TH-DEC-0045', 'TH-DEC-0046', 'TH-DEC-0047', 'TH-DEC-0048', 'TH-DEC-0049', 'TH-DEC-0050', 'TH-DEC-0051', 'TH-DEC-0052', 'TH-DEC-0053', 'TH-DEC-0054', 'TH-DEC-0055', 'TH-DEC-0056', 'TH-DEC-0057', 'TH-DEC-0058', 'TH-DEC-0059')) -and
         (Test-ExactSet -Actual $activeSafeguards -Expected $expectedSafeguardIds)
     ) -Details @{ status = Get-PropertyValue -Object $safeguards -Name 'status'; active = $activeSafeguards }
-    Add-ValidationCheck -Name 'Sixty safeguards have unique complete identifiers and complete definitions' -Passed (
-        $safeguardIds.Count -eq 60 -and
-        @($safeguardIds | Sort-Object -Unique).Count -eq 60 -and
+    Add-ValidationCheck -Name 'Sixty-one safeguards have unique complete identifiers and complete definitions' -Passed (
+        $safeguardIds.Count -eq 61 -and
+        @($safeguardIds | Sort-Object -Unique).Count -eq 61 -and
         (Test-ExactSet -Actual $safeguardIds -Expected $expectedSafeguardIds) -and
-        @($requiredPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq 60 -and
+        @($requiredPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq 61 -and
         $invalidSafeguards.Count -eq 0
     ) -Details @{ identifiers = $safeguardIds; invalid = $invalidSafeguards }
     Add-ValidationCheck -Name 'Every active safeguard implementation path exists' -Passed ($missingActivePaths.Count -eq 0) -Details @{ missing = $missingActivePaths }
@@ -703,6 +709,7 @@ $decisionFiftyFive = if (Test-Path -LiteralPath $decisionFiftyFivePath -PathType
 $decisionFiftySix = if (Test-Path -LiteralPath $decisionFiftySixPath -PathType Leaf) { Get-Content -Raw -LiteralPath $decisionFiftySixPath } else { '' }
 $decisionFiftySeven = if (Test-Path -LiteralPath $decisionFiftySevenPath -PathType Leaf) { Get-Content -Raw -LiteralPath $decisionFiftySevenPath } else { '' }
 $decisionFiftyEight = if (Test-Path -LiteralPath $decisionFiftyEightPath -PathType Leaf) { Get-Content -Raw -LiteralPath $decisionFiftyEightPath } else { '' }
+$decisionFiftyNine = if (Test-Path -LiteralPath $decisionFiftyNinePath -PathType Leaf) { Get-Content -Raw -LiteralPath $decisionFiftyNinePath } else { '' }
 $expiryMatch = [regex]::Match($decisionTwo, '(?m)^Review/expiry:\s*(\d{4}-\d{2}-\d{2})')
 $expiryDate = if ($expiryMatch.Success) { [DateTime]::ParseExact($expiryMatch.Groups[1].Value, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture) } else { [DateTime]::MinValue }
 $decisionThreeExpiryMatch = [regex]::Match($decisionThree, '(?m)^Review/expiry:\s*(\d{4}-\d{2}-\d{2})')
@@ -815,6 +822,8 @@ $decisionFiftySevenExpiryMatch = [regex]::Match($decisionFiftySeven, '(?m)^Revie
 $decisionFiftySevenExpiryDate = if ($decisionFiftySevenExpiryMatch.Success) { [DateTime]::ParseExact($decisionFiftySevenExpiryMatch.Groups[1].Value, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture) } else { [DateTime]::MinValue }
 $decisionFiftyEightExpiryMatch = [regex]::Match($decisionFiftyEight, '(?m)^Review/expiry:\s*(\d{4}-\d{2}-\d{2})')
 $decisionFiftyEightExpiryDate = if ($decisionFiftyEightExpiryMatch.Success) { [DateTime]::ParseExact($decisionFiftyEightExpiryMatch.Groups[1].Value, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture) } else { [DateTime]::MinValue }
+$decisionFiftyNineExpiryMatch = [regex]::Match($decisionFiftyNine, '(?m)^Review/expiry:\s*(\d{4}-\d{2}-\d{2})')
+$decisionFiftyNineExpiryDate = if ($decisionFiftyNineExpiryMatch.Success) { [DateTime]::ParseExact($decisionFiftyNineExpiryMatch.Groups[1].Value, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture) } else { [DateTime]::MinValue }
 if ($TestMutation -eq 'ExpireDecision') {
     $expiryDate = [DateTime]::MinValue
     $decisionThreeExpiryDate = [DateTime]::MinValue
@@ -872,6 +881,7 @@ if ($TestMutation -eq 'ExpireDecision') {
     $decisionFiftySixExpiryDate = [DateTime]::MinValue
     $decisionFiftySevenExpiryDate = [DateTime]::MinValue
     $decisionFiftyEightExpiryDate = [DateTime]::MinValue
+    $decisionFiftyNineExpiryDate = [DateTime]::MinValue
 }
 Add-ValidationCheck -Name 'G0 planning baseline remains approved' -Passed ($decisionOne -match '(?m)^Status: Approved for development planning\s*$') -Details 'TH-DEC-0001'
 Add-ValidationCheck -Name 'Decision 0002 is approved, bounded, owned, and unexpired' -Passed (
@@ -1509,6 +1519,19 @@ Add-ValidationCheck -Name 'Decision 0058 approves only applicant-owned private s
     $decisionFiftyEight -match 'This decision does not authorize' -and
     $decisionFiftyEightExpiryMatch.Success -and [DateTime]::UtcNow.Date -le $decisionFiftyEightExpiryDate.Date
 ) -Details @{ decision = 'TH-DEC-0058'; expires = if ($decisionFiftyEightExpiryMatch.Success) { $decisionFiftyEightExpiryMatch.Groups[1].Value } else { $null } }
+Add-ValidationCheck -Name 'Decision 0059 approves exact-owner applicant clinician connection and bounded consultation start while real media, consent, coverage, treatment, and downstream gates remain closed' -Passed (
+    $decisionFiftyNine -match '(?m)^Status: Approved — active for the exact disabled synthetic slice below\s*$' -and
+    $decisionFiftyNine -match '(?m)^Approved date: 2026-08-29\s*$' -and
+    $decisionFiftyNine -match 'SYNTHETIC_APPLICANT_CONSULTATION_START' -and
+    $decisionFiftyNine -match '`Connecting` to `InConsultation`' -and
+    $decisionFiftyNine -match 'exact Sprint 52 queue authorization' -and
+    $decisionFiftyNine -match 'no-coverage-guarantee' -and
+    $decisionFiftyNine -match 'active, unmerged, living adult patient state' -and
+    $decisionFiftyNine -match 'both short-lived participant grants' -and
+    $decisionFiftyNine -match 'bounded workspace' -and
+    $decisionFiftyNine -match 'This decision does not authorize' -and
+    $decisionFiftyNineExpiryMatch.Success -and [DateTime]::UtcNow.Date -le $decisionFiftyNineExpiryDate.Date
+) -Details @{ decision = 'TH-DEC-0059'; expires = if ($decisionFiftyNineExpiryMatch.Success) { $decisionFiftyNineExpiryMatch.Groups[1].Value } else { $null } }
 
 $workflow = if (Test-Path -LiteralPath $workflowPath -PathType Leaf) { Get-Content -Raw -LiteralPath $workflowPath } else { '' }
 $workflowInvocationPattern = '(?m)^\s*run:\s*pwsh\s+-NoProfile\s+-File\s+\./scripts/Test-TelehealthPlanningArtifacts\.ps1\s*$'
@@ -1576,6 +1599,7 @@ $artifactPaths = @($specificationFiles.FullName) + @(
     $decisionFiftySixPath,
     $decisionFiftySevenPath,
     $decisionFiftyEightPath,
+    $decisionFiftyNinePath,
     $sprintTwentyNinePath,
     $sprintTwentyNineEvidencePath,
     $sprintThirtyPath,
@@ -1630,6 +1654,8 @@ $artifactPaths = @($specificationFiles.FullName) + @(
     $sprintFiftyFourEvidencePath,
     $sprintFiftyFivePath,
     $sprintFiftyFiveEvidencePath,
+    $sprintFiftySixPath,
+    $sprintFiftySixEvidencePath,
     (Join-Path $telehealthRoot 'README.md'),
     (Join-Path $telehealthRoot 'backlog/validation-report.md')
 )

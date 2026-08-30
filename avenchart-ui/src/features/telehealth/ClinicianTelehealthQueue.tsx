@@ -287,6 +287,7 @@ export default function ClinicianTelehealthQueue() {
               <fieldset>
                 <legend>Synthetic consultation-start checklist</legend>
                 <p>This records coarse lifecycle evidence only. It is not identity proofing, legal consent, a clinical assessment, or proof that media is connected.</p>
+                {reservation.applicantOriginated ? <p role="note"><strong>New-patient financial evidence:</strong> start requires the still-current exact synthetic eligibility and rendering-candidate chain. This is not real coverage verification or a payment guarantee.</p> : null}
                 <label>Reconfirmed patient state<select value={startChecklist.patientLocationState} onChange={(event) => setStartCheck('patientLocationState', event.target.value as 'GA' | 'CA' | 'FL')}><option value="GA">Georgia</option><option value="CA">California</option><option value="FL">Florida</option></select></label>
                 {([
                   ['patientIdentityDiscussed', 'Patient identity discussion completed'],

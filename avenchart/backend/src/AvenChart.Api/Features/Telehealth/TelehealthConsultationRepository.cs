@@ -724,11 +724,11 @@ public sealed class TelehealthConsultationRepository(
                 "telehealth_consultation_presence_stale",
                 "The active reservation and both participant grants must remain current at consultation start.");
         }
-        if (!context.CoverageCurrent)
+        if (!context.FinancialEvidenceCurrent)
         {
             throw TelehealthProblem.Conflict(
                 "telehealth_consultation_financial_gate_stale",
-                "The synthetic eligibility and exact-network evidence expired before consultation start.");
+                "The synthetic eligibility and exact rendering-candidate network evidence expired before consultation start.");
         }
         if (!string.Equals(context.AppointmentStatus, "@", StringComparison.Ordinal))
         {
@@ -867,6 +867,7 @@ public sealed class TelehealthConsultationRepository(
             "SYNTHETIC_VIDEO",
             context.DatabaseNow,
             false,
+            context.ApplicantOriginated,
             commandFingerprint));
     }
 
@@ -882,7 +883,7 @@ public sealed class TelehealthConsultationRepository(
         command.CommandText = """
             select context.consultation_id,context.request_id,request.version,request.status,
                    coalesce(appointment.status,'-'),context.modality,context.started_at,
-                   context.legal_effect,context.command_fingerprint
+                   context.legal_effect,request.source_applicant_id is not null,context.command_fingerprint
             from telehealth_consultation_contexts context
             join telehealth_requests request on request.request_id=context.request_id
             join appointments appointment on appointment.id=context.appointment_id
@@ -900,7 +901,7 @@ public sealed class TelehealthConsultationRepository(
         var record = new ConsultationRecord(
             reader.GetGuid(0), reader.GetGuid(1), checked((int)reader.GetInt64(2)), reader.GetString(3),
             reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6),
-            reader.GetBoolean(7), reader.GetString(8));
+            reader.GetBoolean(7), reader.GetBoolean(8), reader.GetString(9));
         return (record, record.CommandFingerprint);
     }
 
@@ -926,17 +927,74 @@ public sealed class TelehealthConsultationRepository(
                    exists(select 1 from telehealth_video_participant_grants grant_row
                           where grant_row.session_id=session.session_id and grant_row.participant_role='physician'
                             and grant_row.status='Issued' and grant_row.expires_at>now()),
-                   exists(select 1 from telehealth_coverage_verifications verification
-                          where verification.request_id=request.request_id
-                            and verification.eligibility_status='Active'
-                            and verification.network_status='ConfirmedInNetwork'
-                            and verification.expires_at>now()),
+                   ((request.source_applicant_id is null
+                     and exists(select 1 from telehealth_coverage_verifications verification
+                                where verification.request_id=request.request_id
+                                  and verification.eligibility_status='Active'
+                                  and verification.network_status='ConfirmedInNetwork'
+                                  and verification.expires_at>now()))
+                    or (request.source_applicant_id is not null and exists(
+                      select 1
+                      from telehealth_applicant_request_queue_authorizations queue_authorization
+                      join telehealth_prospective_applicants applicant
+                        on applicant.applicant_id=queue_authorization.applicant_id
+                       and applicant.practice_id=queue_authorization.practice_id
+                       and applicant.facility_id=queue_authorization.facility_id
+                      where queue_authorization.request_id=request.request_id
+                        and queue_authorization.applicant_id=request.source_applicant_id
+                        and queue_authorization.practice_id=request.practice_id
+                        and queue_authorization.facility_id=request.facility_id
+                        and queue_authorization.canonical_patient_id=request.patient_id
+                        and queue_authorization.candidate_staff_id=@physician
+                        and queue_authorization.resulting_request_status='Queued'
+                        and queue_authorization.resulting_request_version=13
+                        and queue_authorization.result_valid_through>now()
+                        and queue_authorization.source_mode='NON_PRODUCTION'
+                        and queue_authorization.compatibility_target='AVENCHART_SYNTHETIC_QUEUE_AUTHORIZATION_V1'
+                        and queue_authorization.business_outcome='SyntheticRequestAuthorizedToQueue'
+                        and queue_authorization.policy_key='SYNTHETIC_APPLICANT_REQUEST_QUEUE_AUTHORIZATION'
+                        and queue_authorization.policy_version=1
+                        and queue_authorization.evidence_type='APPLICANT_REQUEST_QUEUE_AUTHORIZATION'
+                        and queue_authorization.synthetic_evidence_reviewed
+                        and queue_authorization.no_coverage_guarantee_acknowledged
+                        and queue_authorization.practice_accepts_for_queue_acknowledged
+                        and queue_authorization.queue_not_care_acknowledged
+                        and queue_authorization.practice_accepted
+                        and queue_authorization.patient_care_queue_entered
+                        and queue_authorization.clinician_queue_entered
+                        and queue_authorization.doctor_search_started
+                        and queue_authorization.appointment_created
+                        and not queue_authorization.real_state_authority_verified
+                        and not queue_authorization.real_credentialing_verified
+                        and not queue_authorization.rendering_physician_network_checked
+                        and not queue_authorization.exact_network_confirmed
+                        and not queue_authorization.canonical_coverage_created
+                        and not queue_authorization.coverage_verified
+                        and not queue_authorization.financial_route_created
+                        and not queue_authorization.consent_created
+                        and not queue_authorization.care_authorized
+                        and not queue_authorization.prescribing_enabled
+                        and not queue_authorization.billing_enabled
+                        and not queue_authorization.claim_created
+                        and not queue_authorization.integration_enabled
+                        and not queue_authorization.external_call_performed
+                        and applicant.status='SyntheticRequestCreated'
+                        and applicant.version=26
+                        and applicant.expires_at>now()
+                    ))),
+                   request.source_applicant_id is not null,
                    existing.consultation_id
             from telehealth_reservations reservation
             join telehealth_requests request on request.request_id=reservation.request_id
             join telehealth_clinician_shifts shift on shift.shift_id=reservation.shift_id
             join telehealth_video_sessions session on session.reservation_id=reservation.reservation_id
-            join appointments appointment on appointment.id=request.appointment_id
+            join appointments appointment
+              on appointment.id=request.appointment_id
+             and appointment.patient_id=request.patient_id
+             and appointment.facility_id=request.facility_id
+             and appointment.provider_id=@physician
+            join patients patient
+              on patient.canonical_id=request.patient_id and patient.facility_id=request.facility_id
             join lateral (
               select state_code,attested_at from telehealth_patient_locations
               where request_id=request.request_id order by attested_at desc,location_id desc limit 1
@@ -947,6 +1005,11 @@ public sealed class TelehealthConsultationRepository(
               and shift.clinician_staff_id=@physician
               and request.practice_id=@practiceId and request.facility_id=@facilityId
               and session.status='WaitingRoom'
+              and patient.merged_into_patient_id is null
+              and coalesce(lower(patient.lifecycle_status),'active')='active'
+              and patient.deceased_date is null
+              and patient.date_of_birth between current_date - interval '120 years'
+                                                and current_date - interval '18 years'
             for update of request,reservation,shift,session,appointment;
             """;
         command.Parameters.AddWithValue("reservationId", reservationId);
@@ -960,7 +1023,8 @@ public sealed class TelehealthConsultationRepository(
                 reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetGuid(7),
                 reader.GetFieldValue<DateTimeOffset>(8), reader.GetGuid(9), reader.GetFieldValue<DateTimeOffset>(10),
                 reader.GetFieldValue<DateTimeOffset>(11), reader.GetString(12), reader.GetBoolean(13),
-                reader.GetBoolean(14), reader.GetBoolean(15), reader.IsDBNull(16) ? null : reader.GetGuid(16))
+                reader.GetBoolean(14), reader.GetBoolean(15), reader.GetBoolean(16),
+                reader.IsDBNull(17) ? null : reader.GetGuid(17))
             : null;
     }
 
@@ -977,13 +1041,24 @@ public sealed class TelehealthConsultationRepository(
         DocumentationEnabled: true,
         PrescribingEnabled: false,
         ClaimsEnabled: false,
-        Limitations:
+        Limitations: StartLimitations(record.ApplicantOriginated));
+
+    private static IReadOnlyList<string> StartLimitations(bool applicantOriginated) => applicantOriginated
+        ?
+        [
+            "Synthetic lifecycle evidence only; no real consultation or media occurred.",
+            "The new-patient financial gate uses current synthetic eligibility and exact rendering-candidate evidence only; it is not real coverage verification or a payment guarantee.",
+            "This confirmation has no legal consent or identity-proofing effect.",
+            "Only the separately audited, bounded chart projection and explicit unsigned SOAP draft are available; general chart access is not enabled.",
+            "Diagnosis, orders, signing, prescribing, claims, and completion are unavailable in this slice."
+        ]
+        :
         [
             "Synthetic lifecycle evidence only; no real consultation or media occurred.",
             "This confirmation has no legal consent or identity-proofing effect.",
             "Only the separately audited, bounded chart projection and explicit unsigned SOAP draft are available; general chart access is not enabled.",
             "Diagnosis, orders, signing, prescribing, claims, and completion are unavailable in this slice."
-        ]);
+        ];
 
     private sealed record StartContext(
         Guid RequestId,
@@ -1001,7 +1076,8 @@ public sealed class TelehealthConsultationRepository(
         string PatientLocationState,
         bool PatientGrantCurrent,
         bool PhysicianGrantCurrent,
-        bool CoverageCurrent,
+        bool FinancialEvidenceCurrent,
+        bool ApplicantOriginated,
         Guid? ExistingConsultationId);
 
     private sealed record ConsultationRecord(
@@ -1013,6 +1089,7 @@ public sealed class TelehealthConsultationRepository(
         string Modality,
         DateTimeOffset StartedAt,
         bool LegalEffect,
+        bool ApplicantOriginated,
         string CommandFingerprint);
 
     private sealed record WorkspaceContext(

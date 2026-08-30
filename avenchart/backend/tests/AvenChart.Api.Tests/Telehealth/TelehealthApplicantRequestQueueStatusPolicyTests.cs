@@ -14,7 +14,7 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
     [InlineData(TelehealthRequestStatus.Queued, true)]
     [InlineData(TelehealthRequestStatus.Reserved, true)]
     [InlineData(TelehealthRequestStatus.Connecting, true)]
-    [InlineData(TelehealthRequestStatus.InConsultation, false)]
+    [InlineData(TelehealthRequestStatus.InConsultation, true)]
     [InlineData(TelehealthRequestStatus.Verification, false)]
     [InlineData(TelehealthRequestStatus.Redirected, false)]
     public void VisibleStatusesAreExplicitlyBounded(TelehealthRequestStatus status, bool expected)
@@ -88,6 +88,21 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
         Assert.True(result.PatientWaitingRoomEntered);
         Assert.False(result.MediaSessionCreated);
         Assert.False(result.CommunicationStarted);
+        AssertClosedConsequences(result);
+    }
+
+    [Fact]
+    public void InConsultationDisclosesOnlyBoundedSyntheticLifecycleWithoutCareOrCoverageClaims()
+    {
+        var result = Create(TelehealthRequestStatus.InConsultation, 16, null);
+
+        Assert.Equal("Consultation", result.Phase);
+        Assert.True(result.RenderingPhysicianAssigned);
+        Assert.True(result.SyntheticRenderingCandidateMatched);
+        Assert.False(result.RenderingPhysicianIdentityDisclosed);
+        Assert.False(result.ConnectionRoomCreated);
+        Assert.False(result.PatientWaitingRoomEntered);
+        Assert.Contains(result.Limitations, limitation => limitation.Contains("bounded synthetic lifecycle", StringComparison.Ordinal));
         AssertClosedConsequences(result);
     }
 

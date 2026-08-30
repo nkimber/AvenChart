@@ -1163,6 +1163,23 @@ try {
         $consultationRepositorySource -notmatch 'HttpClient|ClientWebSocket|HubConnection|RTCPeerConnection|MediaStream' -and
         $consultationMigrationSource -match 'legal_effect boolean not null default false' -and
         $consultationMigrationSource -match "modality = 'SYNTHETIC_VIDEO'")
+    Add-Check 'Applicant consultation start requires the exact current synthetic queue authorization while real coverage, care, and downstream gates remain closed' (
+        $consultationRepositorySource -match 'request\.source_applicant_id is null[\s\S]{0,500}telehealth_coverage_verifications' -and
+        $consultationRepositorySource -match 'request\.source_applicant_id is not null and exists\([\s\S]{0,250}telehealth_applicant_request_queue_authorizations' -and
+        $consultationRepositorySource -match 'from telehealth_applicant_request_queue_authorizations queue_authorization' -and
+        $consultationRepositorySource -match 'queue_authorization\.applicant_id=request\.source_applicant_id' -and
+        $consultationRepositorySource -match 'queue_authorization\.canonical_patient_id=request\.patient_id' -and
+        $consultationRepositorySource -match 'queue_authorization\.candidate_staff_id=@physician' -and
+        $consultationRepositorySource -match 'queue_authorization\.result_valid_through>now\(\)' -and
+        $consultationRepositorySource -match 'not queue_authorization\.coverage_verified' -and
+        $consultationRepositorySource -match 'not queue_authorization\.consent_created' -and
+        $consultationRepositorySource -match 'not queue_authorization\.care_authorized' -and
+        $consultationRepositorySource -match 'not queue_authorization\.prescribing_enabled' -and
+        $consultationRepositorySource -match 'not queue_authorization\.billing_enabled' -and
+        $consultationRepositorySource -match 'not queue_authorization\.claim_created' -and
+        $consultationRepositorySource -match 'not queue_authorization\.integration_enabled' -and
+        $consultationRepositorySource -match 'not queue_authorization\.external_call_performed' -and
+        $consultationRepositorySource -match 'not real coverage verification or a payment guarantee')
     Add-Check 'Consultation workspace and draft are bounded without general-chart, signing, prescribing, or financial access' (
         $consultationRepositorySource -match 'GetWorkspaceAsync' -and
         $consultationRepositorySource -match 'limit 20' -and
@@ -1253,7 +1270,7 @@ finally {
     $result = [ordered]@{
         status=$(if ($passed) { 'passed' } else { 'failed' })
         generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O')
-        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058')
+        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059')
         checks=$checks
     }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8

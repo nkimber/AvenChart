@@ -15,7 +15,8 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
         TelehealthRequestStatus.OperationalReview
         or TelehealthRequestStatus.Queued
         or TelehealthRequestStatus.Reserved
-        or TelehealthRequestStatus.Connecting;
+        or TelehealthRequestStatus.Connecting
+        or TelehealthRequestStatus.InConsultation;
 
     public static TelehealthApplicantRequestQueueStatusResponse Create(
         TelehealthApplicantRequestQueueStatusRecord record)
@@ -28,7 +29,9 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
             record.SnapshotAt,
             record.ApproximateRequestsAhead);
         var accepted = record.RequestStatus != TelehealthRequestStatus.OperationalReview;
-        var assigned = record.RequestStatus is TelehealthRequestStatus.Reserved or TelehealthRequestStatus.Connecting;
+        var assigned = record.RequestStatus is TelehealthRequestStatus.Reserved
+            or TelehealthRequestStatus.Connecting
+            or TelehealthRequestStatus.InConsultation;
         var connectionRoomCreated = record.RequestStatus == TelehealthRequestStatus.Connecting;
 
         return new(
@@ -71,7 +74,7 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
                 "Any requests-ahead count is an approximate same-practice snapshot, not an assigned position or wait-time promise.",
                 "A physician-preparing state means only that the exact synthetic rendering candidate owns an active lease; physician identity and real network confirmation are not disclosed.",
                 "A connection-room state means only that the owner entered a private NON_PRODUCTION waiting room with a short-lived participant grant; no media or communication is connected.",
-                "This slice does not authorize consultation, consent, encounter, care, or completion states.",
+                "A consultation state means only that the exact physician started the bounded synthetic lifecycle and encounter; it is not proof of media, legal consent, real coverage, diagnosis, treatment, or completed care.",
                 "No consent, care authorization, prescription, claim, integration, or external action is created by reading this status."
             ]);
     }
