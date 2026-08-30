@@ -626,6 +626,15 @@ public static class TelehealthEndpoints
             .Accepts<VerifyTelehealthCoverageRequest>("application/json")
             .Produces<TelehealthRequestResponse>()
             .ProducesProblem(StatusCodes.Status409Conflict);
+        patient.MapPost("/requests/{requestId:guid}/cancel", CancelPatientRequestAsync)
+            .WithName("CancelPatientTelehealthRequest")
+            .WithDescription("Cancels the authenticated patient's synthetic request before queue authorization. It is versioned and idempotent, and creates no appointment, reservation, consultation, clinical, billing, claim, integration, or external action.")
+            .Accepts<CancelTelehealthRequest>("application/json")
+            .Produces<TelehealthRequestResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
         patient.MapPost("/requests/{requestId:guid}/connection-grants", PreparePatientConnectionAsync)
             .WithName("PreparePatientTelehealthConnection")
             .WithDescription("Runs a coarse synthetic device preflight and issues a short-lived participant-scoped NON_PRODUCTION waiting-room grant. No media or consultation is started.")
@@ -2079,6 +2088,15 @@ public static class TelehealthEndpoints
         VerifyTelehealthCoverageRequest request,
         CancellationToken cancellationToken) =>
         ExecuteAsync(async () => Results.Ok(await service.VerifyCoverageAsync(
+            context, requestId, request, ReadIdempotencyKey(context), cancellationToken)));
+
+    private static Task<IResult> CancelPatientRequestAsync(
+        TelehealthService service,
+        HttpContext context,
+        Guid requestId,
+        CancelTelehealthRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () => Results.Ok(await service.CancelRequestAsync(
             context, requestId, request, ReadIdempotencyKey(context), cancellationToken)));
 
     private static Task<IResult> PreparePatientConnectionAsync(

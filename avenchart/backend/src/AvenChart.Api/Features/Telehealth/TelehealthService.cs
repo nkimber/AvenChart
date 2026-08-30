@@ -260,6 +260,36 @@ public sealed class TelehealthService(
             cancellationToken);
     }
 
+    public async Task<TelehealthRequestResponse> CancelRequestAsync(
+        HttpContext httpContext,
+        Guid requestId,
+        CancelTelehealthRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        RequireConfiguredHost(httpContext.Request.Host);
+        var patient = await RequirePatientAsync(httpContext, cancellationToken);
+        RequirePositiveVersion(request.ExpectedVersion);
+        if (!request.SyntheticCancellationConfirmed)
+        {
+            throw TelehealthProblem.BadRequest(
+                "telehealth_synthetic_cancellation_confirmation_required",
+                "Confirm that this is a synthetic request cancellation.");
+        }
+
+        var key = TelehealthCommandFingerprint.RequireIdempotencyKey(idempotencyKey);
+        var fingerprint = TelehealthCommandFingerprint.Create(
+            "cancel-synthetic-request", requestId, request.ExpectedVersion, request.SyntheticCancellationConfirmed);
+        return await repository.CancelRequestAsync(
+            _options.PracticeId,
+            patient.CanonicalId,
+            requestId,
+            request.ExpectedVersion,
+            key,
+            fingerprint,
+            cancellationToken);
+    }
+
     public async Task<TelehealthOperationalReviewResponse> ListOperationalReviewAsync(
         AuthSessionResponse session,
         StaffAccessContext accessContext,

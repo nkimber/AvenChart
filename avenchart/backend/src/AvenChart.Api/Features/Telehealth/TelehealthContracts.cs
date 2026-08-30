@@ -650,6 +650,9 @@ public sealed record CompleteTelehealthReadinessRequest(
     string AcknowledgmentContentHash,
     bool AcknowledgmentAccepted);
 public sealed record VerifyTelehealthCoverageRequest(int ExpectedVersion);
+public sealed record CancelTelehealthRequest(
+    int ExpectedVersion,
+    bool SyntheticCancellationConfirmed);
 public sealed record PrepareTelehealthConnectionRequest(
     int ExpectedVersion,
     bool BrowserSupported,

@@ -353,6 +353,35 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             cancellationToken);
     }
 
+    public Task<TelehealthRequestResponse> CancelRequestAsync(
+        string practiceId,
+        string patientId,
+        Guid requestId,
+        int expectedVersion,
+        string idempotencyKey,
+        string fingerprint,
+        CancellationToken cancellationToken) =>
+        MutatePatientRequestAsync(
+            practiceId,
+            patientId,
+            requestId,
+            expectedVersion,
+            idempotencyKey,
+            fingerprint,
+            [
+                TelehealthRequestStatus.Draft,
+                TelehealthRequestStatus.LocationConfirmed,
+                TelehealthRequestStatus.SafetyScreening,
+                TelehealthRequestStatus.Intake,
+                TelehealthRequestStatus.Verification,
+                TelehealthRequestStatus.OperationalReview
+            ],
+            TelehealthRequestStatus.Cancelled,
+            "synthetic-request-cancelled",
+            static (_, _, _, _, _) => Task.CompletedTask,
+            triageOutcome: null,
+            cancellationToken);
+
     public async Task<TelehealthRequestResponse> AuthorizeToQueueAsync(
         string practiceId,
         int facilityId,
@@ -1483,6 +1512,7 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         TelehealthRequestStatus.Intake => ["complete-readiness"],
         TelehealthRequestStatus.Verification => ["verify-coverage"],
         TelehealthRequestStatus.OperationalReview => ["await-operational-review", "refresh-coverage"],
+        TelehealthRequestStatus.Cancelled => ["request-cancelled"],
         TelehealthRequestStatus.Queued => ["await-clinician"],
         TelehealthRequestStatus.Reserved => ["clinician-reserved"],
         TelehealthRequestStatus.Redirected => ["follow-redirect-guidance"],

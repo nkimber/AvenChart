@@ -24,7 +24,8 @@ public enum TelehealthRequestStatus
     Connecting,
     InConsultation,
     WrapUp,
-    Closed
+    Closed,
+    Cancelled
 }
 
 public enum TelehealthTriageOutcome
@@ -42,7 +43,7 @@ public static class TelehealthRequestStateMachine
     private static readonly IReadOnlyDictionary<TelehealthRequestStatus, TelehealthRequestStatus[]> Allowed =
         new Dictionary<TelehealthRequestStatus, TelehealthRequestStatus[]>
         {
-            [TelehealthRequestStatus.Draft] = [TelehealthRequestStatus.LocationConfirmed],
+            [TelehealthRequestStatus.Draft] = [TelehealthRequestStatus.LocationConfirmed, TelehealthRequestStatus.Cancelled],
             [TelehealthRequestStatus.LocationConfirmed] =
             [
                 TelehealthRequestStatus.SafetyScreening,
@@ -50,7 +51,8 @@ public static class TelehealthRequestStateMachine
                 TelehealthRequestStatus.InPersonRecommended,
                 TelehealthRequestStatus.ClinicalReview,
                 TelehealthRequestStatus.Intake,
-                TelehealthRequestStatus.Redirected
+                TelehealthRequestStatus.Redirected,
+                TelehealthRequestStatus.Cancelled
             ],
             [TelehealthRequestStatus.SafetyScreening] =
             [
@@ -58,22 +60,24 @@ public static class TelehealthRequestStateMachine
                 TelehealthRequestStatus.InPersonRecommended,
                 TelehealthRequestStatus.Unsupported,
                 TelehealthRequestStatus.ClinicalReview,
-                TelehealthRequestStatus.Intake
+                TelehealthRequestStatus.Intake,
+                TelehealthRequestStatus.Cancelled
             ],
             [TelehealthRequestStatus.EmergencyRedirected] = [],
             [TelehealthRequestStatus.InPersonRecommended] = [],
             [TelehealthRequestStatus.Unsupported] = [],
             [TelehealthRequestStatus.ClinicalReview] = [],
-            [TelehealthRequestStatus.Intake] = [TelehealthRequestStatus.Verification],
-            [TelehealthRequestStatus.Verification] = [TelehealthRequestStatus.Verification, TelehealthRequestStatus.OperationalReview],
-            [TelehealthRequestStatus.OperationalReview] = [TelehealthRequestStatus.Verification, TelehealthRequestStatus.OperationalReview, TelehealthRequestStatus.Queued],
+            [TelehealthRequestStatus.Intake] = [TelehealthRequestStatus.Verification, TelehealthRequestStatus.Cancelled],
+            [TelehealthRequestStatus.Verification] = [TelehealthRequestStatus.Verification, TelehealthRequestStatus.OperationalReview, TelehealthRequestStatus.Cancelled],
+            [TelehealthRequestStatus.OperationalReview] = [TelehealthRequestStatus.Verification, TelehealthRequestStatus.OperationalReview, TelehealthRequestStatus.Queued, TelehealthRequestStatus.Cancelled],
             [TelehealthRequestStatus.Queued] = [TelehealthRequestStatus.Reserved],
             [TelehealthRequestStatus.Redirected] = [],
             [TelehealthRequestStatus.Reserved] = [TelehealthRequestStatus.Queued, TelehealthRequestStatus.Connecting],
             [TelehealthRequestStatus.Connecting] = [TelehealthRequestStatus.Queued, TelehealthRequestStatus.InConsultation],
             [TelehealthRequestStatus.InConsultation] = [TelehealthRequestStatus.WrapUp],
             [TelehealthRequestStatus.WrapUp] = [TelehealthRequestStatus.Closed],
-            [TelehealthRequestStatus.Closed] = []
+            [TelehealthRequestStatus.Closed] = [],
+            [TelehealthRequestStatus.Cancelled] = []
         };
 
     public static bool CanTransition(TelehealthRequestStatus current, TelehealthRequestStatus next) =>

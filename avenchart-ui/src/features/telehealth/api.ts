@@ -2326,7 +2326,7 @@ export type TelehealthRequest = {
   coverage: TelehealthCoverageStatus | null
 }
 
-export type TelehealthRequestStatus = 'Draft' | 'LocationConfirmed' | 'SafetyScreening' | 'EmergencyRedirected' | 'InPersonRecommended' | 'Unsupported' | 'ClinicalReview' | 'Intake' | 'Verification' | 'OperationalReview' | 'Redirected' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp' | 'Closed'
+export type TelehealthRequestStatus = 'Draft' | 'LocationConfirmed' | 'SafetyScreening' | 'EmergencyRedirected' | 'InPersonRecommended' | 'Unsupported' | 'ClinicalReview' | 'Intake' | 'Verification' | 'OperationalReview' | 'Redirected' | 'Cancelled' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp' | 'Closed'
 
 export type TelehealthPatientQueueStatus = {
   requestId: string
@@ -4225,6 +4225,13 @@ export function verifyPatientCoverage(requestId: string, expectedVersion: number
   return json<TelehealthRequest>(
     `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/coverage/verify`,
     commandInit({ expectedVersion }),
+  )
+}
+
+export function cancelPatientTelehealthRequest(requestId: string, expectedVersion: number) {
+  return json<TelehealthRequest>(
+    `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/cancel`,
+    commandInit({ expectedVersion, syntheticCancellationConfirmed: true }),
   )
 }
 
