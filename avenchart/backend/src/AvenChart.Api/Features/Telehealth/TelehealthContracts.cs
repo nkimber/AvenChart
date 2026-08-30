@@ -1086,6 +1086,44 @@ public sealed record TelehealthPharmacyChoicePresenceResponse(
     int Version,
     bool PatientChoiceConfirmed);
 
+public sealed record TelehealthFinalClinicalReviewResponse(
+    Guid ReviewId,
+    int Version,
+    int DocumentationVersion,
+    int DispositionVersion,
+    Guid? PrescriptionOrderId,
+    DateTimeOffset ReviewedAt,
+    string ContentHash,
+    bool LegalEffect,
+    bool EncounterSignatureCreated,
+    bool CompletionCreated,
+    bool PatientDeliveryCreated,
+    bool BillingCreated,
+    bool ClaimCreated,
+    bool ExternalDestinationContacted);
+
+public sealed record RecordTelehealthFinalClinicalReviewRequest(
+    int ExpectedDocumentationVersion,
+    int ExpectedDispositionVersion,
+    bool DocumentationReviewed,
+    bool PhysicianResponsibilityConfirmed,
+    bool NoAutomaticClaimOrDeliveryConfirmed,
+    bool SyntheticDataConfirmed);
+
+public sealed record TelehealthFinalClinicalReviewWorkspaceResponse(
+    Guid ConsultationId,
+    DateTimeOffset AsOf,
+    TelehealthDocumentationPresenceResponse Documentation,
+    TelehealthDispositionPresenceResponse? SafetyDisposition,
+    Guid? CurrentPrescriptionOrderId,
+    TelehealthFinalClinicalReviewResponse? CurrentReview,
+    bool ReviewEnabled,
+    bool EncounterSignatureEnabled,
+    bool CompletionEnabled,
+    bool ClaimCreationEnabled,
+    bool ClaimSubmissionEnabled,
+    IReadOnlyList<string> Limitations);
+
 public sealed record TelehealthCompletionPrerequisitesResponse(
     Guid ConsultationId,
     string ConsultationStatus,
@@ -1096,6 +1134,7 @@ public sealed record TelehealthCompletionPrerequisitesResponse(
     TelehealthDocumentationPresenceResponse Documentation,
     TelehealthDispositionPresenceResponse? SafetyDisposition,
     TelehealthPharmacyChoicePresenceResponse? PharmacyChoice,
+    TelehealthFinalClinicalReviewResponse? CurrentFinalClinicalReview,
     bool StructuralEvidencePresent,
     IReadOnlyList<string> ProductBlockers,
     bool SigningEnabled,

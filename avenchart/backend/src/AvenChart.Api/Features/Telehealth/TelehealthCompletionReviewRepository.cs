@@ -46,7 +46,8 @@ public sealed class TelehealthCompletionReviewRepository(NpgsqlDataSource dataSo
                    disposition.emergency_instruction_provided,
                    length(trim(coalesce(disposition.emergency_handoff_status,''))) > 0,
                    length(trim(coalesce(disposition.contact_attempt_summary,''))) > 0,
-                   pharmacy.version,pharmacy.patient_choice_confirmed
+                   pharmacy.version,pharmacy.patient_choice_confirmed,
+                   prescription.order_id
             from telehealth_consultation_contexts context
             join telehealth_requests request on request.request_id=context.request_id
             join telehealth_reservations reservation on reservation.reservation_id=context.reservation_id
@@ -76,6 +77,8 @@ public sealed class TelehealthCompletionReviewRepository(NpgsqlDataSource dataSo
               where consultation_id=context.consultation_id
               order by version desc limit 1
             ) pharmacy on true
+            left join telehealth_consultation_prescription_orders prescription
+              on prescription.consultation_id=context.consultation_id
             where context.consultation_id=@consultationId
               and context.practice_id=@practiceId and context.facility_id=@facilityId
               and context.physician_staff_id=@physician and context.status='MediaEnded'
@@ -132,6 +135,11 @@ public sealed class TelehealthCompletionReviewRepository(NpgsqlDataSource dataSo
         var pharmacy = reader.IsDBNull(23)
             ? null
             : new TelehealthPharmacyChoicePresenceResponse(reader.GetInt32(23), reader.GetBoolean(24));
+        Guid? prescriptionOrderId = reader.IsDBNull(25) ? null : reader.GetGuid(25);
+        var finalReview = disposition is null || documentation.Version < 1
+            ? null
+            : await ReadCurrentFinalClinicalReviewAsync(
+                connection, transaction, consultationId, documentation.Version, disposition.Version, prescriptionOrderId, cancellationToken);
         var blockers = new List<string>();
         if (!documentation.HasAnyContent)
         {
@@ -141,7 +149,11 @@ public sealed class TelehealthCompletionReviewRepository(NpgsqlDataSource dataSo
         {
             blockers.Add("SAFETY_DISPOSITION_DRAFT_MISSING");
         }
-        blockers.AddRange(PermanentProductBlockers);
+        if (finalReview is null)
+        {
+            blockers.Add(PermanentProductBlockers[0]);
+        }
+        blockers.AddRange(PermanentProductBlockers.Skip(1));
 
         var response = new TelehealthCompletionPrerequisitesResponse(
             consultationId,
@@ -153,6 +165,7 @@ public sealed class TelehealthCompletionReviewRepository(NpgsqlDataSource dataSo
             documentation,
             disposition,
             pharmacy,
+            finalReview,
             documentation.HasAnyContent && disposition is not null,
             blockers,
             SigningEnabled: false,
@@ -168,5 +181,39 @@ public sealed class TelehealthCompletionReviewRepository(NpgsqlDataSource dataSo
         await reader.DisposeAsync();
         await transaction.CommitAsync(cancellationToken);
         return response;
+    }
+
+    private static async Task<TelehealthFinalClinicalReviewResponse?> ReadCurrentFinalClinicalReviewAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid consultationId,
+        int documentationVersion,
+        int dispositionVersion,
+        Guid? prescriptionOrderId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select final_clinical_review_version_id,version,documentation_version,disposition_version,
+                   prescription_order_id,reviewed_at,content_hash,legal_effect,encounter_signature_created,
+                   completion_created,patient_delivery_created,billing_created,claim_created,external_destination_contacted
+            from telehealth_consultation_final_clinical_review_versions
+            where consultation_id=@consultationId and documentation_version=@documentationVersion
+              and disposition_version=@dispositionVersion
+              and prescription_order_id is not distinct from @prescriptionOrderId
+            order by version desc limit 1;
+            """;
+        command.Parameters.AddWithValue("consultationId", consultationId);
+        command.Parameters.AddWithValue("documentationVersion", documentationVersion);
+        command.Parameters.AddWithValue("dispositionVersion", dispositionVersion);
+        command.Parameters.Add("prescriptionOrderId", NpgsqlTypes.NpgsqlDbType.Uuid).Value = prescriptionOrderId is { } id ? id : DBNull.Value;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        return new TelehealthFinalClinicalReviewResponse(
+            reader.GetGuid(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3),
+            reader.IsDBNull(4) ? null : reader.GetGuid(4), reader.GetFieldValue<DateTimeOffset>(5), reader.GetString(6),
+            reader.GetBoolean(7), reader.GetBoolean(8), reader.GetBoolean(9), reader.GetBoolean(10), reader.GetBoolean(11),
+            reader.GetBoolean(12), reader.GetBoolean(13));
     }
 }

@@ -9,6 +9,7 @@ import TelehealthPharmacyChoicePanel from './TelehealthPharmacyChoicePanel.tsx'
 import TelehealthPrescriptionPreparationPanel from './TelehealthPrescriptionPreparationPanel.tsx'
 import TelehealthSafetyDispositionPanel from './TelehealthSafetyDispositionPanel.tsx'
 import TelehealthCompletionPrerequisitesPanel from './TelehealthCompletionPrerequisitesPanel.tsx'
+import TelehealthFinalClinicalReviewPanel from './TelehealthFinalClinicalReviewPanel.tsx'
 import './telehealth.css'
 
 export default function ClinicianTelehealthQueue() {
@@ -360,6 +361,7 @@ export default function ClinicianTelehealthQueue() {
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthPharmacyChoicePanel consultationId={consultation.consultationId} patientState={workspace.visit.patientLocationState} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthPrescriptionPreparationPanel consultationId={consultation.consultationId} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthSafetyDispositionPanel consultationId={consultation.consultationId} /> : null}
+                {workspace.consultationStatus === 'WrapUp' ? <TelehealthFinalClinicalReviewPanel consultationId={consultation.consultationId} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthCompletionPrerequisitesPanel consultationId={consultation.consultationId} /> : null}
                 <p><small>Projection as of {new Date(workspace.asOf).toLocaleString()}.</small></p>
                 <ul>{workspace.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>

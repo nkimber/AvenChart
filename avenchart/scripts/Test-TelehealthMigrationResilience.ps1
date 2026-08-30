@@ -1555,12 +1555,25 @@ select count(*) from pg_trigger where not tgisinternal and tgname in (
         [int](Invoke-Scalar "select count(*) from pg_trigger where not tgisinternal and tgname in ('trg_telehealth_prescription_orders_append_only','trg_prescriptions_reject_signed_telehealth_mutation');") -eq 2 -and
         [int](Invoke-Scalar "select count(*) from pg_proc where proname='reject_signed_telehealth_prescription_mutation';") -eq 1)
     Add-Check 'V0328 is recorded in the live migration ledger' ((Invoke-Scalar "select count(*) from schema_migrations where migration_id='V0328__telehealth_synthetic_prescription_signing';") -eq '1')
+    $finalClinicalReviewMigration = Join-Path $solutionRoot 'database/migrations/V0329__telehealth_synthetic_final_clinical_review.sql'
+    $finalClinicalReviewSource = Get-Content -Raw $finalClinicalReviewMigration
+    Add-Check 'V0329 adds immutable final clinical-review evidence without signature, completion, billing, claim, or outbound SQL' (
+        $finalClinicalReviewSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
+        $finalClinicalReviewSource -match 'telehealth_consultation_final_clinical_review_versions' -and
+        $finalClinicalReviewSource -match 'documentation_reviewed and physician_responsibility_confirmed' -and
+        $finalClinicalReviewSource -match 'not legal_effect and not encounter_signature_created' -and
+        $finalClinicalReviewSource -match 'not billing_created and not claim_created' -and
+        $finalClinicalReviewSource -match 'not external_destination_contacted')
+    Add-Check 'V0329 final clinical-review source snapshots, idempotency, and append-only evidence are database-enforced' (
+        [int](Invoke-Scalar "select count(*) from pg_constraint where conname in ('uq_telehealth_final_clinical_review_version','chk_telehealth_final_clinical_review_version','chk_telehealth_final_clinical_review_attestations','chk_telehealth_final_clinical_review_hash','chk_telehealth_final_clinical_review_no_effect','uq_telehealth_final_clinical_review_event_version','uq_telehealth_final_clinical_review_event_idempotency','chk_telehealth_final_clinical_review_event');") -eq 8 -and
+        [int](Invoke-Scalar "select count(*) from pg_trigger where not tgisinternal and tgname in ('trg_telehealth_final_clinical_review_versions_append_only','trg_telehealth_final_clinical_review_events_append_only');") -eq 2)
+    Add-Check 'V0329 is recorded in the live migration ledger' ((Invoke-Scalar "select count(*) from schema_migrations where migration_id='V0329__telehealth_synthetic_final_clinical_review';") -eq '1')
 }
 catch {
     Add-Check 'Telehealth migration resilience execution' $false $_.Exception.Message
 }
 finally {
-    $result = [ordered]@{ status=$(if ($passed) { 'passed' } else { 'failed' }); generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O'); decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060','TH-DEC-0061'); checks=$checks }
+    $result = [ordered]@{ status=$(if ($passed) { 'passed' } else { 'failed' }); generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O'); decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060','TH-DEC-0061','TH-DEC-0062'); checks=$checks }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8
     $result | ConvertTo-Json -Depth 8
 }

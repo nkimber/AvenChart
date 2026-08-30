@@ -874,6 +874,26 @@ public static class TelehealthEndpoints
             .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"))
             .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "view"))
             .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "write"));
+        clinician.MapGet("/consultations/{consultationId:guid}/final-clinical-review", GetConsultationFinalClinicalReviewAsync)
+            .WithName("GetTelehealthConsultationFinalClinicalReview")
+            .WithDescription("Returns the owning physician's source-version-bound NON_PRODUCTION final clinical-review evidence. It is not a legal signature, completion, claim, or delivery.")
+            .Produces<TelehealthFinalClinicalReviewWorkspaceResponse>()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "view"));
+        clinician.MapPost("/consultations/{consultationId:guid}/final-clinical-review", RecordConsultationFinalClinicalReviewAsync)
+            .WithName("RecordTelehealthConsultationFinalClinicalReview")
+            .WithDescription("Appends immutable synthetic clinical-review evidence for current SOAP and safety-disposition drafts. It creates no encounter signature, completion, delivery, bill, claim, or external action.")
+            .Accepts<RecordTelehealthFinalClinicalReviewRequest>("application/json")
+            .Produces<TelehealthFinalClinicalReviewResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "write"));
         clinician.MapGet("/consultations/{consultationId:guid}/safety-disposition-draft", GetConsultationSafetyDispositionDraftAsync)
             .WithName("GetTelehealthConsultationSafetyDispositionDraft")
             .WithDescription("Returns only the owning physician's current unsigned, undelivered synthetic safety-disposition draft and bounded physician-selected vocabularies during unfinished wrap-up.")
@@ -2456,6 +2476,33 @@ public static class TelehealthEndpoints
             request,
             ReadIdempotencyKey(context),
             cancellationToken)));
+    }
+
+    private static async Task<IResult> GetConsultationFinalClinicalReviewAsync(
+        TelehealthFinalClinicalReviewService service,
+        AuthRepository authRepository,
+        HttpContext context,
+        Guid consultationId,
+        CancellationToken cancellationToken)
+    {
+        SetConsultationPrivateResponse(context, consultationId);
+        return await ExecuteAsync(async () => Results.Ok(await service.GetWorkspaceAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context), consultationId, cancellationToken)));
+    }
+
+    private static async Task<IResult> RecordConsultationFinalClinicalReviewAsync(
+        TelehealthFinalClinicalReviewService service,
+        AuthRepository authRepository,
+        HttpContext context,
+        Guid consultationId,
+        RecordTelehealthFinalClinicalReviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        SetConsultationPrivateResponse(context, consultationId);
+        return await ExecuteAsync(async () => Results.Ok(await service.RecordAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context), consultationId, request, ReadIdempotencyKey(context), cancellationToken)));
     }
 
     private static async Task<IResult> RecordConsultationSafetyDispositionDraftAsync(

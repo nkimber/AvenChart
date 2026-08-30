@@ -2773,6 +2773,7 @@ export type TelehealthCompletionPrerequisites = {
     version: number
     patientChoiceConfirmed: boolean
   }
+  currentFinalClinicalReview: TelehealthFinalClinicalReview | null
   structuralEvidencePresent: boolean
   productBlockers: string[]
   signingEnabled: false
@@ -2780,6 +2781,47 @@ export type TelehealthCompletionPrerequisites = {
   patientDeliveryEnabled: false
   downstreamCreationEnabled: false
   limitations: string[]
+}
+
+export type TelehealthFinalClinicalReview = {
+  reviewId: string
+  version: number
+  documentationVersion: number
+  dispositionVersion: number
+  prescriptionOrderId: string | null
+  reviewedAt: string
+  contentHash: string
+  legalEffect: false
+  encounterSignatureCreated: false
+  completionCreated: false
+  patientDeliveryCreated: false
+  billingCreated: false
+  claimCreated: false
+  externalDestinationContacted: false
+}
+
+export type TelehealthFinalClinicalReviewWorkspace = {
+  consultationId: string
+  asOf: string
+  documentation: TelehealthCompletionPrerequisites['documentation']
+  safetyDisposition: TelehealthCompletionPrerequisites['safetyDisposition']
+  currentPrescriptionOrderId: string | null
+  currentReview: TelehealthFinalClinicalReview | null
+  reviewEnabled: boolean
+  encounterSignatureEnabled: false
+  completionEnabled: false
+  claimCreationEnabled: false
+  claimSubmissionEnabled: false
+  limitations: string[]
+}
+
+export type TelehealthFinalClinicalReviewInput = {
+  expectedDocumentationVersion: number
+  expectedDispositionVersion: number
+  documentationReviewed: true
+  physicianResponsibilityConfirmed: true
+  noAutomaticClaimOrDeliveryConfirmed: true
+  syntheticDataConfirmed: true
 }
 
 export type TelehealthPrescriptionCatalogItem = {
@@ -4525,6 +4567,29 @@ export function getTelehealthCompletionPrerequisites(
   return json<TelehealthCompletionPrerequisites>(
     `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/completion-prerequisites`,
     { headers: clinicianHeaders(), cache: 'no-store', signal },
+  )
+}
+
+export function getTelehealthFinalClinicalReview(consultationId: string, signal?: AbortSignal) {
+  return json<TelehealthFinalClinicalReviewWorkspace>(
+    `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/final-clinical-review`,
+    { headers: clinicianHeaders(), cache: 'no-store', signal },
+  )
+}
+
+export function recordTelehealthFinalClinicalReview(
+  consultationId: string,
+  input: TelehealthFinalClinicalReviewInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthFinalClinicalReview>(
+    `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/final-clinical-review`,
+    {
+      method: 'POST',
+      headers: clinicianHeaders({ 'Content-Type': 'application/json', 'X-Idempotency-Key': idempotencyKey }),
+      body: JSON.stringify(input),
+      cache: 'no-store',
+    },
   )
 }
 

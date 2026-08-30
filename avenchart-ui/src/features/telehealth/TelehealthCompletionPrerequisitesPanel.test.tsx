@@ -28,6 +28,7 @@ const review: TelehealthCompletionPrerequisites = {
   },
   safetyDisposition: null,
   pharmacyChoice: null,
+  currentFinalClinicalReview: null,
   structuralEvidencePresent: false,
   productBlockers: [
     'DOCUMENTATION_DRAFT_MISSING',

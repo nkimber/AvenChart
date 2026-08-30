@@ -81,12 +81,18 @@ export default function TelehealthCompletionPrerequisitesPanel({ consultationId 
               ? <p>Patient-confirmed destination draft version {review.pharmacyChoice.version} is recorded. This is not a prescription.</p>
               : <p>None recorded — this is optional and is not a blocker.</p>}
           </section>
+          <section aria-labelledby={`${headingId}-review`}>
+            <h5 id={`${headingId}-review`}>Synthetic final clinical review</h5>
+            {review.currentFinalClinicalReview
+              ? <p>Current source-bound review version {review.currentFinalClinicalReview.version} is recorded. It is not a signature, completion, bill, or claim.</p>
+              : <p>No current source-bound final clinical-review evidence is recorded.</p>}
+          </section>
           <section aria-labelledby={`${headingId}-blockers`}>
             <h5 id={`${headingId}-blockers`}>Product blockers</h5>
             <ul className="telehealth-blocker-list">{review.productBlockers.map((blocker) => <li key={blocker}>{humanize(blocker)}</li>)}</ul>
           </section>
         </div>
-        <p className="telehealth-capability-stop"><strong>Unavailable:</strong> signing, encounter completion, patient delivery, and downstream creation. All four capabilities remain disabled even when structural drafts are present.</p>
+        <p className="telehealth-capability-stop"><strong>Unavailable:</strong> signing, encounter completion, patient delivery, and downstream creation. All four capabilities remain disabled even when structural drafts or synthetic review evidence are present.</p>
         <p><small>Structural drafts recorded: {review.structuralEvidencePresent ? 'yes' : 'no'}. This is not a clinical readiness result. Projection as of {new Date(review.asOf).toLocaleString()}.</small></p>
         <ul>{review.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
       </> : null}
