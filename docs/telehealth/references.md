@@ -1,6 +1,16 @@
 # Authoritative references
 
-Retrieved/verified: 2026-08-26. These sources inform the design baseline; they do not replace legal advice, medical-director protocol approval, payer companion guides, vendor contracts/certification, or current code-set licenses. Effective law, board guidance, standards and payer policy must be rechecked before implementation approval and production enablement.
+Retrieved/verified: 2026-08-30. These sources inform the design baseline; they do not replace legal advice, medical-director protocol approval, payer companion guides, vendor contracts/certification, or current code-set licenses. Effective law, board guidance, standards and payer policy must be rechecked before implementation approval and production enablement.
+
+## 2026-08-30 state-source audit
+
+This limited source audit reconfirmed that production routing must follow the patient's physical location at service time and that all three state launch paths remain gated. It did not authorize care, change the synthetic implementation, or substitute for state counsel, the medical director, credentialing, billing, or privacy approval.
+
+- Georgia's Board rule continues to require Georgia-licensed practitioners for treatment/consultation, available history, documented evaluation/treatment and practitioner identity, provider credentials/emergency information, emergent-care follow-up instructions, and diligent annual in-person efforts where applicable. New-patient use must meet the rule's examination/technology condition and the applicable standard of care.
+- California Business and Professions Code § 2290.5 continues to define the patient location as the originating site, requires the initiating provider to inform the patient and obtain/document verbal or written telehealth consent before delivery, and preserves applicable confidentiality, professional-responsibility, and scope-of-practice law.
+- Florida Statutes § 456.47 continues to make the patient's location the venue for the act, apply the prevailing in-person standard, require equivalent record documentation, limit Schedule II prescribing to enumerated cases, and require out-of-state providers to hold an applicable registration unless a statutory exemption applies.
+
+The resulting release controls are unchanged: location is reconfirmed at service time; state/provider authority is verified before a consultation; consent is rendered, accepted, and retained before care; controlled substances remain disabled; and a state launch requires a counsel-approved rule pack plus clinical, credentialing, billing, privacy, security, accessibility, and operational sign-off.
 
 ## Georgia
 
@@ -11,6 +21,7 @@ Retrieved/verified: 2026-08-26. These sources inform the design baseline; they d
 ## California
 
 - [Medical Board of California: Telehealth](https://www.mbc.ca.gov/Resources/Medical-Resources/telehealth.aspx) — California license, same standard of care, consent documentation and privacy guidance.
+- [California Business and Professions Code § 2290.5](https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=BPC&sectionNum=2290.5.) — official telehealth definitions, originating-site location, informed/recorded consent, confidentiality, professional responsibility, and scope-of-practice provisions.
 - [Medical Board of California: Practice Information / Corporate Practice of Medicine](https://mbc.ca.gov/Licensing/Physicians-and-Surgeons/Practice-Information/) — physician/practice control over medical decisions and limits on management-service organizations.
 - [Medical Board of California: Medical Records FAQ](https://mbc.ca.gov/FAQs/?cat=Consumer&topic=Complaint%3A+Medical+Records) — current physician record-retention baseline and notice of other longer rules.
 - [Medical Board of California: Internet Prescribing FAQ](https://www.mbc.ca.gov/FAQs/?cat=Consumer&topic=Complaint%3A+Internet+Prescribing) — appropriate examination and medical-indication expectations.
@@ -63,4 +74,3 @@ These public-health sources support safety-content review but do not constitute 
 ## Repository implementation references
 
 The design was checked against the current repository's .NET 10 Minimal API composition, patient portal identity/session and profile/appointment request APIs, staff-only patient creation/duplicate handling, patient insurance records, versioned clinical form engine, encounter/signing/document lifecycle, medication/prescription foundations, billing/claim simulation, FHIR R4 surface, PHI audit controls, and integration inbox/outbox/lease/idempotency patterns. These are reuse inputs, not evidence that the new telehealth requirements are already implemented.
-

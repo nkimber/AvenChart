@@ -4,7 +4,7 @@
 
 The patient's confirmed physical location at the time of care drives state routing. Home address, practice address, clinician address, IP geolocation, and phone area code are supporting signals only. The patient attests location during intake and the physician reconfirms it before consultation start. A material location change invalidates licensure, protocol, payer, consent, and claim-place-of-service checks.
 
-This matrix is a design baseline as of 2026-08-26. Qualified counsel and the practice medical director must validate it before production and after any legal/policy change.
+This matrix is a design baseline as of 2026-08-30. Qualified counsel and the practice medical director must validate it before production and after any legal/policy change.
 
 ## 2. State matrix
 
@@ -86,4 +86,3 @@ Acceptance stores rendered content checksum, semantic version, language, modalit
 - Privacy/security officer: HIPAA roles, BAAs, identity, risk analysis, data handling, and incident process.
 
 Sources are listed in [references.md](references.md).
-
