@@ -16,7 +16,8 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
         or TelehealthRequestStatus.Queued
         or TelehealthRequestStatus.Reserved
         or TelehealthRequestStatus.Connecting
-        or TelehealthRequestStatus.InConsultation;
+        or TelehealthRequestStatus.InConsultation
+        or TelehealthRequestStatus.WrapUp;
 
     public static TelehealthApplicantRequestQueueStatusResponse Create(
         TelehealthApplicantRequestQueueStatusRecord record)
@@ -31,7 +32,8 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
         var accepted = record.RequestStatus != TelehealthRequestStatus.OperationalReview;
         var assigned = record.RequestStatus is TelehealthRequestStatus.Reserved
             or TelehealthRequestStatus.Connecting
-            or TelehealthRequestStatus.InConsultation;
+            or TelehealthRequestStatus.InConsultation
+            or TelehealthRequestStatus.WrapUp;
         var connectionRoomCreated = record.RequestStatus == TelehealthRequestStatus.Connecting;
 
         return new(
@@ -75,6 +77,7 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
                 "A physician-preparing state means only that the exact synthetic rendering candidate owns an active lease; physician identity and real network confirmation are not disclosed.",
                 "A connection-room state means only that the owner entered a private NON_PRODUCTION waiting room with a short-lived participant grant; no media or communication is connected.",
                 "A consultation state means only that the exact physician started the bounded synthetic lifecycle and encounter; it is not proof of media, legal consent, real coverage, diagnosis, treatment, or completed care.",
+                "A wrap-up state means only that the synthetic session ended and the owning physician may finish unsigned planning drafts; it is not proof of a signature, prescription, patient delivery, claim, or completed visit.",
                 "No consent, care authorization, prescription, claim, integration, or external action is created by reading this status."
             ]);
     }

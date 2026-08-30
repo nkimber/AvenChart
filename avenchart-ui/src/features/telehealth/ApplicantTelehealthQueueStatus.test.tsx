@@ -90,6 +90,24 @@ const connectingStatus: TelehealthApplicantRequestQueueStatus = {
   patientWaitingRoomEntered: true,
 }
 
+const inConsultationStatus: TelehealthApplicantRequestQueueStatus = {
+  ...reservedStatus,
+  requestStatus: 'InConsultation',
+  requestVersion: 16,
+  phase: 'Consultation',
+  headline: 'Your synthetic consultation has started',
+  detail: 'This is lifecycle demonstration data only.',
+}
+
+const wrapUpStatus: TelehealthApplicantRequestQueueStatus = {
+  ...inConsultationStatus,
+  requestStatus: 'WrapUp',
+  requestVersion: 17,
+  phase: 'WrapUp',
+  headline: 'Your physician is finishing the synthetic visit record',
+  detail: 'This visit is not complete. No signed record, after-visit summary, prescription, or claim is available.',
+}
+
 describe('ApplicantTelehealthQueueStatus', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -212,6 +230,22 @@ describe('ApplicantTelehealthQueueStatus', () => {
     expect(screen.getByText(/Private synthetic waiting room entered/).parentElement).toHaveTextContent('Yes')
     expect(screen.getByText(/Media session created/).parentElement).toHaveTextContent('No')
     expect(screen.getByText(/Communication started/).parentElement).toHaveTextContent('No')
+  })
+
+  it('continues polling during consultation and stops at minimized wrap-up status', async () => {
+    vi.mocked(getApplicantTelehealthRequestQueueStatus)
+      .mockResolvedValueOnce(inConsultationStatus)
+      .mockResolvedValueOnce(wrapUpStatus)
+
+    render(<ApplicantTelehealthQueueStatus applicantId="applicant-57" applicantAccessKey="secret-key" enabled />)
+
+    await screen.findByRole('heading', { name: 'Your synthetic consultation has started' })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh queue status now' }))
+
+    expect(await screen.findByRole('heading', { name: 'Your physician is finishing the synthetic visit record' })).toBeVisible()
+    expect(screen.getByText(/No signed record, after-visit summary, prescription, or claim/)).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Refresh queue status now' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/provider|NPI|prescription ID/i)).not.toBeInTheDocument()
   })
 
   it('stays silent while the owned request has not reached operational review', async () => {

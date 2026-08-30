@@ -1,17 +1,17 @@
 # Sprint 1 synthetic telehealth runbook
 
-Scope: local deterministic evidence only under Decisions 0003 and 0005–0054, most recently [Decision 0054](../decisions/0054-approved-sprint-51-applicant-request-operational-review-submission.md). Never use live data, credentials, destinations or a production-like host.
+Scope: local deterministic evidence only under Decisions 0003 and 0005–0060, most recently [Decision 0060](../decisions/0060-approved-sprint-57-applicant-wrap-up-planning.md). Never use live data, credentials, destinations or a production-like host.
 
 ## Preconditions
 
-- PostgreSQL contains the deterministic AvenChart gold dataset and migrations `V0282` through `V0326`.
+- PostgreSQL contains the deterministic AvenChart gold dataset and migrations `V0282` through `V0327`.
 - ASP.NET Core environment is `Development` or `Testing`.
 - `Telehealth:Enabled` is false in committed base and Development settings.
 - Only `127.0.0.1`, `localhost` and the configured `.example.test` branded host are used.
 
 ## Local activation
 
-Start an isolated API process/container with only `Telehealth__Enabled=true`. Do not edit committed configuration to enable the feature. Readiness must report `details.telehealth.data.enabled=true`, `mode=Synthetic`, and 69 present tables before tests begin.
+Start an isolated API process/container with only `Telehealth__Enabled=true`. Do not edit committed configuration to enable the feature. Readiness must report `details.telehealth.data.enabled=true`, `mode=Synthetic`, and 71 present tables before tests begin.
 
 Run, in order:
 
@@ -57,6 +57,11 @@ pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestRenderingCandidat
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestParticipationContext.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestParticipationEvaluation.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestOperationalReviewSubmission.ps1
+pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestQueueAuthorization.ps1
+pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestClinicianReservation.ps1
+pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestConnectionRoom.ps1
+pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestConsultationStart.ps1
+pwsh -NoProfile -File ./scripts/Test-TelehealthApplicantRequestWrapUpPlanning.ps1
 pwsh -NoProfile -File ./scripts/Test-TelehealthQueueConcurrency.ps1 -CallerCount 20
 ```
 

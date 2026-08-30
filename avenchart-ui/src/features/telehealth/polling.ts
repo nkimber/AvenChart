@@ -8,7 +8,7 @@ const MAXIMUM_DELAY_SECONDS = 30
 const JITTER_FRACTION = 0.1
 
 export function shouldPollPatientQueueStatus(status: TelehealthRequestStatus) {
-  return ['OperationalReview', 'Queued', 'Reserved', 'Connecting'].includes(status)
+  return ['OperationalReview', 'Queued', 'Reserved', 'Connecting', 'InConsultation'].includes(status)
 }
 
 export function queuePollDelayMilliseconds(

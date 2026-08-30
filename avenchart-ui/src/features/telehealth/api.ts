@@ -2276,12 +2276,12 @@ export type TelehealthApplicantRequestOperationalReviewSubmission = {
 
 export type TelehealthApplicantRequestQueueStatus = {
   requestId: string
-  requestStatus: 'OperationalReview' | 'Queued' | 'Reserved' | 'Connecting'
+  requestStatus: 'OperationalReview' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp'
   requestVersion: number
   policyKey: 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_STATUS'
   policyVersion: 1
   sourceMode: 'NON_PRODUCTION'
-  phase: 'Reviewing' | 'InQueue' | 'PhysicianPreparing' | 'ConnectionRoom'
+  phase: 'Reviewing' | 'InQueue' | 'PhysicianPreparing' | 'ConnectionRoom' | 'Consultation' | 'WrapUp'
   headline: string
   detail: string
   approximateRequestsAhead: number | null

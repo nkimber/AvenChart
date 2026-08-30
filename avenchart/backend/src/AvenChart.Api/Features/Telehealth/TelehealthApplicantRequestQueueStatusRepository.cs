@@ -248,9 +248,7 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                       where consultation.request_id=r.request_id
                         and consultation.practice_id=r.practice_id
                         and consultation.facility_id=r.facility_id
-                        and consultation.status='Started'
                         and consultation.modality='SYNTHETIC_VIDEO'
-                        and consultation.version=1
                         and consultation.patient_location_state in ('GA','CA','FL')
                         and consultation.patient_identity_discussed
                         and consultation.callback_confirmed
@@ -263,7 +261,6 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                         and not consultation.legal_effect
                         and reservation.status='Released'
                         and reservation.clinician_staff_id=consultation.physician_staff_id
-                        and shift.status='Busy'
                         and shift.practice_id=r.practice_id
                         and shift.facility_id=r.facility_id
                         and session.status='Ended'
@@ -311,11 +308,41 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                         and exists(
                           select 1 from telehealth_request_events request_event
                            where request_event.request_id=r.request_id
-                             and request_event.aggregate_version=r.version
+                             and request_event.aggregate_version=case
+                               when r.status='WrapUp' then r.version-1
+                               else r.version
+                             end
                              and request_event.action='consultation-started'
                              and request_event.from_status='Connecting'
                              and request_event.to_status='InConsultation'
-                             and request_event.actor_type='physician')),
+                             and request_event.actor_type='physician')
+                        and (
+                          (r.status='InConsultation'
+                           and consultation.status='Started'
+                           and consultation.version=1
+                           and consultation.media_ended_at is null
+                           and shift.status='Busy')
+                          or
+                          (r.status='WrapUp'
+                           and consultation.status='MediaEnded'
+                           and consultation.version=2
+                           and consultation.media_ended_at is not null
+                           and shift.status='WrapUp'
+                           and exists(
+                             select 1 from telehealth_consultation_events consultation_event
+                              where consultation_event.consultation_id=consultation.consultation_id
+                                and consultation_event.request_id=r.request_id
+                                and consultation_event.aggregate_version=2
+                                and consultation_event.action='consultation-wrap-up-entered'
+                                and consultation_event.actor_type='physician')
+                           and exists(
+                             select 1 from telehealth_request_events request_event
+                              where request_event.request_id=r.request_id
+                                and request_event.aggregate_version=r.version
+                                and request_event.action='consultation-wrap-up-entered'
+                                and request_event.from_status='InConsultation'
+                                and request_event.to_status='WrapUp'
+                                and request_event.actor_type='physician')))),
                    case
                      when r.status='Queued' and current_queue.status='Ready' then (
                        select count(*)
@@ -446,6 +473,14 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                 && source.ActiveApplicantGrantCount == 1
                 && source.ConnectionValid,
             TelehealthRequestStatus.InConsultation => source.RequestVersion >= 16
+                && source.QueueStatus == "Removed"
+                && source.ActiveReservationCount == 0
+                && source.AppointmentStatus == ">"
+                && source.ConnectionSessionCount == 1
+                && source.ActiveApplicantGrantCount == 0
+                && source.ConsultationCount == 1
+                && source.ConsultationValid,
+            TelehealthRequestStatus.WrapUp => source.RequestVersion >= 17
                 && source.QueueStatus == "Removed"
                 && source.ActiveReservationCount == 0
                 && source.AppointmentStatus == ">"
