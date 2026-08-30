@@ -1124,6 +1124,22 @@ public sealed record TelehealthFinalClinicalReviewWorkspaceResponse(
     bool ClaimSubmissionEnabled,
     IReadOnlyList<string> Limitations);
 
+public sealed record TelehealthProfessionalClaimPreparationWorkspaceResponse(
+    Guid ConsultationId,
+    DateTimeOffset EvaluatedAt,
+    bool CurrentFinalClinicalReviewRecorded,
+    bool EncounterSignatureRecorded,
+    bool CodingEvidenceRecorded,
+    bool BillingProviderEvidenceRecorded,
+    bool FeeScheduleEvidenceRecorded,
+    bool HumanBillingApprovalRecorded,
+    string AdapterMode,
+    string TargetStandard,
+    bool ClaimPreparationEnabled,
+    bool ClaimSubmissionEnabled,
+    IReadOnlyList<string> Blockers,
+    IReadOnlyList<string> Limitations);
+
 public sealed record TelehealthCompletionPrerequisitesResponse(
     Guid ConsultationId,
     string ConsultationStatus,

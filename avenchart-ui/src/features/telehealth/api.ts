@@ -2815,6 +2815,23 @@ export type TelehealthFinalClinicalReviewWorkspace = {
   limitations: string[]
 }
 
+export type TelehealthProfessionalClaimPreparationWorkspace = {
+  consultationId: string
+  evaluatedAt: string
+  currentFinalClinicalReviewRecorded: boolean
+  encounterSignatureRecorded: boolean
+  codingEvidenceRecorded: boolean
+  billingProviderEvidenceRecorded: boolean
+  feeScheduleEvidenceRecorded: boolean
+  humanBillingApprovalRecorded: boolean
+  adapterMode: string
+  targetStandard: string
+  claimPreparationEnabled: boolean
+  claimSubmissionEnabled: boolean
+  blockers: string[]
+  limitations: string[]
+}
+
 export type TelehealthFinalClinicalReviewInput = {
   expectedDocumentationVersion: number
   expectedDispositionVersion: number
@@ -4590,6 +4607,13 @@ export function recordTelehealthFinalClinicalReview(
       body: JSON.stringify(input),
       cache: 'no-store',
     },
+  )
+}
+
+export function getTelehealthProfessionalClaimPreparation(consultationId: string, signal?: AbortSignal) {
+  return json<TelehealthProfessionalClaimPreparationWorkspace>(
+    `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/professional-claim-preparation`,
+    { headers: clinicianHeaders(), signal },
   )
 }
 

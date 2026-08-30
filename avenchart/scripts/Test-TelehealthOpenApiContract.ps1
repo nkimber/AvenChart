@@ -39,6 +39,7 @@ try {
       '/api/telehealth/v1/clinician/consultations/{consultationId}/pharmacy-choice',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/prescription-preparation-draft',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/final-clinical-review',
+      '/api/telehealth/v1/clinician/consultations/{consultationId}/professional-claim-preparation',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/safety-disposition-draft',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/completion-prerequisites')
     $paths = @($document.paths.PSObject.Properties.Name)
@@ -2109,6 +2110,19 @@ try {
       $finalClinicalReviewRequestJson-match'documentationReviewed' -and $finalClinicalReviewRequestJson-match'physicianResponsibilityConfirmed' -and
       $finalClinicalReviewRequestJson-match'noAutomaticClaimOrDeliveryConfirmed' -and $finalClinicalReviewRequestJson-match'syntheticDataConfirmed' -and
       $finalClinicalReviewRequestJson-notmatch'patientId|encounterId|appointmentId|requestId|signatureId|claimId|billingId|deliveryId|externalDestination')
+    $claimPreparation = Get-Operation $document '/api/telehealth/v1/clinician/consultations/{consultationId}/professional-claim-preparation' 'get'
+    $claimPreparationReference = Get-Property (Get-Property (Get-Property (Get-Property $claimPreparation.responses '200') 'content') 'application/json').schema '$ref'
+    $claimPreparationSchemaName = ($claimPreparationReference -split '/')[-1]
+    $claimPreparationJson = ((Get-Property $document.components 'schemas').$claimPreparationSchemaName | ConvertTo-Json -Depth 20 -Compress)
+    Add-Check 'Professional-claim preparation is a physician-scoped typed read with no mutation, no idempotency key, and hard-disabled preparation/submission states' (
+      (Has-Security $claimPreparation 'AvenChartLocalStaffSession') -and -not (Has-Security $claimPreparation 'AvenChartPatientPortalSession') -and
+      (Has-Header $claimPreparation 'X-AvenChart-Facility-Id') -and (Has-Header $claimPreparation 'X-AvenChart-Purpose-Of-Use') -and
+      -not (Has-Header $claimPreparation 'X-Idempotency-Key') -and $null-eq(Get-Property $claimPreparation 'requestBody') -and
+      $null-ne(Get-Property $claimPreparation.responses '200') -and $null-ne(Get-Property $claimPreparation.responses '403') -and
+      $null-ne(Get-Property $claimPreparation.responses '404') -and
+      $claimPreparationJson-match'claimPreparationEnabled' -and $claimPreparationJson-match'claimSubmissionEnabled' -and
+      $claimPreparationJson-match'adapterMode' -and $claimPreparationJson-match'targetStandard' -and $claimPreparationJson-match'blockers' -and
+      $claimPreparationJson-notmatch'patientId|encounterId|appointmentId|requestId|claimId|billingId|submittedClaim|x12Payload')
     $completionReview = Get-Operation $document '/api/telehealth/v1/clinician/consultations/{consultationId}/completion-prerequisites' 'get'
     $completionResponseReference = Get-Property (Get-Property (Get-Property (Get-Property $completionReview.responses '200') 'content') 'application/json').schema '$ref'
     $completionResponseSchemaName = ($completionResponseReference -split '/')[-1]
