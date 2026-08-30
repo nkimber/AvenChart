@@ -25,4 +25,14 @@ describe('TelehealthSyntheticVisitClosurePanel', () => {
     expect(onClosed).toHaveBeenCalledWith(expect.objectContaining({ consultationId: 'consultation-1', clinicianAvailableForNewWork: true, appointmentCompleted: false }))
     expect(await screen.findByText(/appointment, delivery, billing, claims, and integrations remain unchanged/i)).toBeInTheDocument()
   })
+
+  it('does not claim that the doctor is available when the closure result does not confirm it', async () => {
+    const onClosed = vi.fn()
+    vi.mocked(closeSyntheticTelehealthVisit).mockResolvedValue({ consultationId: 'consultation-2', consultationVersion: 6, requestVersion: 9, closedAt: '2026-08-30T17:00:00Z', encounterLocked: true, clinicianAvailableForNewWork: false, appointmentCompleted: false, patientDeliveryCreated: false, billingCreated: false, claimCreated: false, externalDestinationContacted: false, limitations: [] })
+    render(<TelehealthSyntheticVisitClosurePanel consultationId="consultation-2" expectedVersion={5} onClosed={onClosed} />)
+    screen.getAllByRole('checkbox').forEach((checkbox) => fireEvent.click(checkbox))
+    fireEvent.click(screen.getByRole('button', { name: /close synthetic visit and return to availability/i }))
+    expect(await screen.findByText(/confirm the doctor's current availability before assigning new work/i)).toBeInTheDocument()
+    expect(onClosed).toHaveBeenCalledWith(expect.objectContaining({ clinicianAvailableForNewWork: false }))
+  })
 })
