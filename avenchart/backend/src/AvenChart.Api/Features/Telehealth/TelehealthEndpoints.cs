@@ -635,6 +635,20 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
+        patient.MapGet("/requests/{requestId:guid}/conversation", GetPatientConversationAsync)
+            .WithName("GetPatientTelehealthConversation")
+            .WithDescription("Returns the authenticated request owner's plain-text synthetic consultation transcript only while the exact synthetic lifecycle is active. It enables no realtime delivery, media, notification, care, or external messaging.")
+            .Produces<TelehealthConversationResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+        patient.MapPost("/requests/{requestId:guid}/conversation", AddPatientConversationMessageAsync)
+            .WithName("AddPatientTelehealthConversationMessage")
+            .WithDescription("Appends one confirmed-synthetic plain-text message to the active synthetic consultation transcript. It has no legal or clinical effect and creates no external communication.")
+            .Accepts<TelehealthConversationMessageRequest>("application/json")
+            .Produces<TelehealthConversationResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound);
 
         var admin = root.MapGroup("/admin");
         admin.MapGet("/applicant-practice-review", ListApplicantPracticeReviewInboxAsync)
@@ -802,6 +816,25 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"))
             .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "view"));
+        clinician.MapGet("/consultations/{consultationId:guid}/conversation", GetPhysicianConversationAsync)
+            .WithName("GetPhysicianTelehealthConversation")
+            .WithDescription("Returns the assigned physician's plain-text synthetic consultation transcript only while the exact synthetic lifecycle is active. It enables no realtime delivery, media, notification, care, or external messaging.")
+            .Produces<TelehealthConversationResponse>()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "view"));
+        clinician.MapPost("/consultations/{consultationId:guid}/conversation", AddPhysicianConversationMessageAsync)
+            .WithName("AddPhysicianTelehealthConversationMessage")
+            .WithDescription("Appends one confirmed-synthetic plain-text physician message to the active synthetic consultation transcript. It has no legal or clinical effect and creates no external communication.")
+            .Accepts<TelehealthConversationMessageRequest>("application/json")
+            .Produces<TelehealthConversationResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "write"));
         clinician.MapPut("/consultations/{consultationId:guid}/documentation/draft", SaveConsultationDocumentationDraftAsync)
             .WithName("SaveTelehealthConsultationDocumentationDraft")
             .WithDescription("Explicitly appends one unsigned SOAP draft version to the owning physician's active synthetic encounter. No autosave, signing, diagnosis, prescription, claim, completion, or patient delivery occurs.")
@@ -2061,6 +2094,21 @@ public static class TelehealthEndpoints
             ReadIdempotencyKey(context),
             cancellationToken)));
 
+    private static async Task<IResult> GetPatientConversationAsync(
+        TelehealthConversationService service, HttpContext context, Guid requestId, CancellationToken cancellationToken)
+    {
+        SetConversationPrivateResponse(context, requestId);
+        return await ExecuteAsync(async () => Results.Ok(await service.GetForPatientAsync(context, requestId, cancellationToken)));
+    }
+
+    private static async Task<IResult> AddPatientConversationMessageAsync(
+        TelehealthConversationService service, HttpContext context, Guid requestId,
+        TelehealthConversationMessageRequest request, CancellationToken cancellationToken)
+    {
+        SetConversationPrivateResponse(context, requestId);
+        return await ExecuteAsync(async () => Results.Ok(await service.AddForPatientAsync(context, requestId, request, cancellationToken)));
+    }
+
     private static async Task<IResult> ListOperationalReviewAsync(
         TelehealthService service,
         AuthRepository authRepository,
@@ -2369,6 +2417,26 @@ public static class TelehealthEndpoints
             cancellationToken)));
     }
 
+    private static async Task<IResult> GetPhysicianConversationAsync(
+        TelehealthConversationService service, AuthRepository authRepository, HttpContext context,
+        Guid consultationId, CancellationToken cancellationToken)
+    {
+        SetConsultationPrivateResponse(context, consultationId);
+        return await ExecuteAsync(async () => Results.Ok(await service.GetForPhysicianAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context), consultationId, cancellationToken)));
+    }
+
+    private static async Task<IResult> AddPhysicianConversationMessageAsync(
+        TelehealthConversationService service, AuthRepository authRepository, HttpContext context,
+        Guid consultationId, TelehealthConversationMessageRequest request, CancellationToken cancellationToken)
+    {
+        SetConsultationPrivateResponse(context, consultationId);
+        return await ExecuteAsync(async () => Results.Ok(await service.AddForPhysicianAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context), consultationId, request, cancellationToken)));
+    }
+
     private static async Task<IResult> SaveConsultationDocumentationDraftAsync(
         TelehealthConsultationService service,
         AuthRepository authRepository,
@@ -2630,6 +2698,14 @@ public static class TelehealthEndpoints
         context.Response.Headers.Pragma = "no-cache";
         context.Response.Headers.Expires = "0";
         PhiAuditResourceContext.Set(context, "TelehealthConsultation", consultationId.ToString("D"));
+    }
+
+    private static void SetConversationPrivateResponse(HttpContext context, Guid requestId)
+    {
+        context.Response.Headers.CacheControl = "no-store, private";
+        context.Response.Headers.Pragma = "no-cache";
+        context.Response.Headers.Expires = "0";
+        PhiAuditResourceContext.Set(context, "TelehealthConversation", requestId.ToString("D"));
     }
 
     private static void SetApplicantIdentityReviewPrivateResponse(HttpContext context, string resourceId)

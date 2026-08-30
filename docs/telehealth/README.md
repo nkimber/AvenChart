@@ -1,6 +1,6 @@
 # AvenChart immediate telehealth master specification
 
-Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–63 scopes active under Decisions 0003 and 0005–0066
+Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–64 scopes active under Decisions 0003 and 0005–0067
 Version: 0.1
 Last reviewed: 2026-08-30
 Initial jurisdictions: Georgia, California, and Florida  
@@ -148,6 +148,7 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Decision 0064](decisions/0064-approved-sprint-61-synthetic-visit-closure.md) | Approved, time-bounded exception for closure of only the synthetic consultation/request lifecycle and a return to clinician availability while the appointment remains in progress |
 | [Decision 0065](decisions/0065-approved-sprint-62-synthetic-closure-status.md) | Approved, time-bounded exception for a private, neutral patient/applicant terminal closure-status projection that makes no completion or downstream assertion |
 | [Decision 0066](decisions/0066-approved-sprint-63-synthetic-idle-shift-end.md) | Approved, time-bounded exception for an exact physician to end only an idle synthetic shift, without changing patient, appointment, encounter, clinical, financial, media, integration, or external state |
+| [Decision 0067](decisions/0067-approved-poc-synthetic-consultation-transcript.md) | Approved, time-bounded POC exception for exact patient/physician synthetic plain-text transcript messages during an active synthetic consultation, with no realtime, media, care, delivery, or external effect |
 | [Implementation backlog](backlog/README.md) | Delivery model for 20 epics and 60 stories, with every one of the 329 requirements assigned exactly once as a primary responsibility |
 | [Machine-readable backlog](backlog/backlog.json) | Structured epic, story, dependency, priority, gate and requirement-range source for planning and future traceability automation |
 | [Sprint 1 foundation plan](backlog/sprint-01-foundation.md) | Recommended synthetic vertical slice from branded entry through safety/triage, administrator authorization, queueing and atomic clinician reservation |
@@ -278,6 +279,7 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Sprint 62 evidence packet](backlog/sprint-62-evidence.md) | Implementation and bounded automated evidence for terminal-status truthfulness, privacy, polling termination, and preserved production gates |
 | [Sprint 63 synthetic idle-shift-end plan](backlog/sprint-63-synthetic-idle-shift-end.md) | Exact physician-only end of an idle synthetic shift after server proof that no reservation or consultation work remains |
 | [Sprint 63 evidence packet](backlog/sprint-63-evidence.md) | Implementation and automated evidence for exact idle-shift ending with all patient-care and downstream gates preserved |
+| [Sprint 64 POC synthetic transcript plan](backlog/sprint-64-poc-synthetic-consultation-transcript.md) | Exact active-consultation patient/physician plain-text synthetic transcript with short polling and no external delivery |
 | [Engineering safeguards](backlog/engineering-safeguards.md) | Approved merge-gate design and activation conditions |
 | [Safeguard manifest](backlog/safeguards.json) | Machine-readable safeguard triggers, commands, required paths and evidence expectations |
 | [Planning validation](backlog/validation-report.md) | Structural evidence for requirement coverage, identifiers, dependencies, links and static wireframe integrity |

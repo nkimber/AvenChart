@@ -27,7 +27,7 @@ if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
     $RepositoryRoot = Split-Path -Parent (Split-Path -Parent $scriptPath)
 }
 
-$validatorVersion = '3.28.0'
+$validatorVersion = '3.29.0'
 $startedAt = [DateTime]::UtcNow
 $checks = [System.Collections.Generic.List[object]]::new()
 $failures = [System.Collections.Generic.List[string]]::new()
@@ -163,6 +163,7 @@ $decisionSixtyThreePath = Join-Path $telehealthRoot 'decisions/0063-approved-spr
 $decisionSixtyFourPath = Join-Path $telehealthRoot 'decisions/0064-approved-sprint-61-synthetic-visit-closure.md'
 $decisionSixtyFivePath = Join-Path $telehealthRoot 'decisions/0065-approved-sprint-62-synthetic-closure-status.md'
 $decisionSixtySixPath = Join-Path $telehealthRoot 'decisions/0066-approved-sprint-63-synthetic-idle-shift-end.md'
+$decisionSixtySevenPath = Join-Path $telehealthRoot 'decisions/0067-approved-poc-synthetic-consultation-transcript.md'
 $sprintTwentyNinePath = Join-Path $telehealthRoot 'backlog/sprint-29-synthetic-clinical-information-inventory.md'
 $sprintTwentyNineEvidencePath = Join-Path $telehealthRoot 'backlog/sprint-29-evidence.md'
 $sprintThirtyPath = Join-Path $telehealthRoot 'backlog/sprint-30-synthetic-medication-information.md'
@@ -233,6 +234,7 @@ $sprintSixtyTwoPath = Join-Path $telehealthRoot 'backlog/sprint-62-synthetic-clo
 $sprintSixtyTwoEvidencePath = Join-Path $telehealthRoot 'backlog/sprint-62-evidence.md'
 $sprintSixtyThreePath = Join-Path $telehealthRoot 'backlog/sprint-63-synthetic-idle-shift-end.md'
 $sprintSixtyThreeEvidencePath = Join-Path $telehealthRoot 'backlog/sprint-63-evidence.md'
+$sprintSixtyFourPath = Join-Path $telehealthRoot 'backlog/sprint-64-poc-synthetic-consultation-transcript.md'
 $workflowPath = Join-Path $resolvedRoot '.github/workflows/verify.yml'
 
 Add-ValidationCheck -Name 'Telehealth planning root exists' -Passed (Test-Path -LiteralPath $telehealthRoot -PathType Container) -Details 'docs/telehealth'
@@ -408,7 +410,7 @@ $expectedFamilies = [ordered]@{
 }
 
 $specificationFiles = @(Get-ChildItem -LiteralPath $telehealthRoot -File -Filter '*.md' | Where-Object {
-    $_.Name -match '^\d{2}-'
+    $_.Name -match '^(0[1-9]|1\d|20)-'
 } | Sort-Object Name)
 $specificationNumbers = @($specificationFiles | ForEach-Object { [int]$_.Name.Substring(0, 2) })
 Add-ValidationCheck -Name 'Twenty numbered specifications are present' -Passed (
@@ -459,7 +461,7 @@ if ($null -ne $backlog) {
     Add-ValidationCheck -Name 'Backlog schema and baseline decision are current' -Passed (
         (Get-PropertyValue -Object $backlog -Name 'schemaVersion') -eq 1 -and
         (Get-PropertyValue -Object $backlog -Name 'baselineDecision') -eq 'TH-DEC-0001' -and
-        (Get-PropertyValue -Object $backlog -Name 'implementationAuthorization') -eq 'disabled-synthetic-sprints-01-through-63-authorized-by-th-dec-0003-and-th-dec-0005-through-th-dec-0066-through-2026-10-31; all-other-feature-code-blocked-by-phase-2-exit-gate'
+        (Get-PropertyValue -Object $backlog -Name 'implementationAuthorization') -eq 'disabled-synthetic-sprints-01-through-64-authorized-by-th-dec-0003-and-th-dec-0005-through-th-dec-0067-through-2026-10-31; all-other-feature-code-blocked-by-phase-2-exit-gate'
     ) -Details @{ baselineDecision = Get-PropertyValue -Object $backlog -Name 'baselineDecision'; implementationAuthorization = Get-PropertyValue -Object $backlog -Name 'implementationAuthorization' }
     Add-ValidationCheck -Name 'Backlog declares the permitted status vocabulary' -Passed (Test-ExactSet -Actual $declaredStatuses -Expected $allowedStatuses) -Details @{ statuses = $declaredStatuses }
 

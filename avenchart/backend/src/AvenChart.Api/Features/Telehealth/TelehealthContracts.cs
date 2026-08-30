@@ -903,6 +903,26 @@ public sealed record TelehealthConsultationDocumentationDraftResponse(
     string? Assessment,
     string? Plan);
 
+public sealed record TelehealthConversationMessageRequest(
+    string? Body,
+    bool SyntheticDataConfirmed);
+
+public sealed record TelehealthConversationMessageResponse(
+    Guid MessageId,
+    string SenderRole,
+    string Body,
+    DateTimeOffset SentAt,
+    bool LegalEffect);
+
+public sealed record TelehealthConversationResponse(
+    Guid ConsultationId,
+    Guid RequestId,
+    string ConsultationStatus,
+    bool CanSend,
+    bool RealtimeDeliveryEnabled,
+    IReadOnlyList<TelehealthConversationMessageResponse> Messages,
+    IReadOnlyList<string> Limitations);
+
 public sealed record EnterTelehealthConsultationWrapUpRequest(
     int ExpectedVersion,
     bool SyntheticSessionEndedConfirmed,

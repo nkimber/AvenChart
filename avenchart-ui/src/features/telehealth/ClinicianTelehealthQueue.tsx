@@ -9,6 +9,7 @@ import TelehealthPharmacyChoicePanel from './TelehealthPharmacyChoicePanel.tsx'
 import TelehealthPrescriptionPreparationPanel from './TelehealthPrescriptionPreparationPanel.tsx'
 import TelehealthSafetyDispositionPanel from './TelehealthSafetyDispositionPanel.tsx'
 import TelehealthCompletionPrerequisitesPanel from './TelehealthCompletionPrerequisitesPanel.tsx'
+import TelehealthConversationPanel from './TelehealthConversationPanel.tsx'
 import TelehealthFinalClinicalReviewPanel from './TelehealthFinalClinicalReviewPanel.tsx'
 import TelehealthProfessionalClaimPreparationPanel from './TelehealthProfessionalClaimPreparationPanel.tsx'
 import TelehealthEncounterFinalizationPanel from './TelehealthEncounterFinalizationPanel.tsx'
@@ -337,6 +338,7 @@ export default function ClinicianTelehealthQueue() {
                   <section aria-labelledby="workspace-medications-title"><h4 id="workspace-medications-title">Active medications</h4>{workspace.medications.length ? <ul>{workspace.medications.map((item) => <li key={item.title}>{item.title}</li>)}</ul> : <p>No active entry returned — verify verbally.</p>}</section>
                   <section aria-labelledby="workspace-problems-title"><h4 id="workspace-problems-title">Active problems</h4>{workspace.problems.length ? <ul>{workspace.problems.map((item) => <li key={`${item.title}-${item.diagnosis ?? ''}`}><strong>{item.title}</strong>{item.diagnosis && item.diagnosis !== item.title ? ` — ${item.diagnosis}` : ''}</li>)}</ul> : <p>No active entry returned — verify verbally.</p>}</section>
                 </div>
+                {workspace.consultationStatus === 'InConsultation' ? <TelehealthConversationPanel participant="physician" consultationId={consultation.consultationId} /> : null}
                 <form className="telehealth-documentation-draft" aria-labelledby="documentation-draft-title" onSubmit={(event) => { event.preventDefault(); void saveDraft() }}>
                   <div><p className="telehealth-kicker">Explicit save only</p><h4 id="documentation-draft-title">Unsigned SOAP draft</h4></div>
                   <p role="note">Synthetic and incomplete. Nothing is saved automatically. Enter only facts you actually obtained; blank fields make no clinical assertion. This draft is not signed, final, coded, prescribed, billed, or patient-visible.</p>

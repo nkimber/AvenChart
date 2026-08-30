@@ -20,6 +20,7 @@ import {
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import { isRequestCancellation } from '../../api/transport.ts'
 import { queuePollDelayMilliseconds, shouldPollPatientQueueStatus } from './polling.ts'
+import TelehealthConversationPanel from './TelehealthConversationPanel.tsx'
 import './telehealth.css'
 
 export default function PatientTelehealthWorkspace() {
@@ -449,7 +450,7 @@ export default function PatientTelehealthWorkspace() {
                   ) : null}
                 </section>
               ) : null}
-              {selected.status === 'InConsultation' ? <section className="telehealth-consultation-started" role="status"><h3>Synthetic consultation lifecycle started</h3><p>This is lifecycle demonstration data only. No real media, clinician identity, chart, diagnosis, prescription, completion, or claim is available.</p><ul className="telehealth-safety-actions"><li>If symptoms worsen or you are unsure it is safe to continue, contact the practice or seek in-person care.</li><li>Call 911 now for an emergency.</li></ul></section> : null}
+              {selected.status === 'InConsultation' ? <section className="telehealth-consultation-started" role="status"><h3>Synthetic consultation lifecycle started</h3><p>This is lifecycle demonstration data only. No real media, clinician identity, chart, diagnosis, prescription, completion, or claim is available.</p><TelehealthConversationPanel participant="patient" requestId={selected.requestId} /><ul className="telehealth-safety-actions"><li>If symptoms worsen or you are unsure it is safe to continue, contact the practice or seek in-person care.</li><li>Call 911 now for an emergency.</li></ul></section> : null}
               {selected.status === 'WrapUp' ? <section className="telehealth-consultation-started" role="status"><h3>Your physician is finishing the synthetic visit record</h3><p>This visit is not complete. No signed record, after-visit summary, prescription, or claim is available. Follow the practice guidance you received.</p><ul className="telehealth-safety-actions"><li>If symptoms worsen or you are unsure it is safe to wait, contact the practice or seek in-person care.</li><li>Call 911 now for an emergency.</li></ul></section> : null}
               {selected.status === 'Redirected' ? <p>This request cannot enter the telehealth queue. Follow urgent or in-person guidance.</p> : null}
             </div>

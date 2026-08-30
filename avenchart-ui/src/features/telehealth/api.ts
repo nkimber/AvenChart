@@ -2589,6 +2589,24 @@ export type TelehealthConsultationDocumentationDraft = {
   plan: string | null
 }
 
+export type TelehealthConversationMessage = {
+  messageId: string
+  senderRole: 'patient' | 'physician'
+  body: string
+  sentAt: string
+  legalEffect: false
+}
+
+export type TelehealthConversation = {
+  consultationId: string
+  requestId: string
+  consultationStatus: 'InConsultation'
+  canSend: true
+  realtimeDeliveryEnabled: false
+  messages: TelehealthConversationMessage[]
+  limitations: string[]
+}
+
 export type EnterTelehealthConsultationWrapUpInput = {
   expectedVersion: number
   syntheticSessionEndedConfirmed: true
@@ -4121,6 +4139,20 @@ export function getPatientQueueStatus(requestId: string, signal?: AbortSignal) {
   )
 }
 
+export function getPatientTelehealthConversation(requestId: string, signal?: AbortSignal) {
+  return json<TelehealthConversation>(
+    `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/conversation`,
+    { headers: portalHeaders(), cache: 'no-store', signal },
+  )
+}
+
+export function addPatientTelehealthConversationMessage(requestId: string, body: string) {
+  return json<TelehealthConversation>(
+    `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/conversation`,
+    { method: 'POST', headers: portalHeaders({ 'Content-Type': 'application/json' }), cache: 'no-store', body: JSON.stringify({ body, syntheticDataConfirmed: true }) },
+  )
+}
+
 export function createPatientRequest(complaintCategory: 'migraine' | 'sleep') {
   return json<TelehealthRequest>('/api/telehealth/v1/patient/requests', commandInit({ complaintCategory }))
 }
@@ -4532,6 +4564,20 @@ export function getTelehealthConsultationWorkspace(consultationId: string, signa
   return json<TelehealthConsultationWorkspace>(
     `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/workspace`,
     { headers: clinicianHeaders(), cache: 'no-store', signal },
+  )
+}
+
+export function getPhysicianTelehealthConversation(consultationId: string, signal?: AbortSignal) {
+  return json<TelehealthConversation>(
+    `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/conversation`,
+    { headers: clinicianHeaders(), cache: 'no-store', signal },
+  )
+}
+
+export function addPhysicianTelehealthConversationMessage(consultationId: string, body: string) {
+  return json<TelehealthConversation>(
+    `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/conversation`,
+    { method: 'POST', headers: clinicianHeaders({ 'Content-Type': 'application/json' }), cache: 'no-store', body: JSON.stringify({ body, syntheticDataConfirmed: true }) },
   )
 }
 
