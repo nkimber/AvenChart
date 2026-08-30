@@ -1158,6 +1158,43 @@ public sealed record TelehealthPrescriptionPreparationDraftResponse(
     bool Transmitted,
     bool PatientDelivered);
 
+public sealed record SignTelehealthPrescriptionRequest(
+    int ExpectedDraftVersion,
+    bool NoCurrentMedicationsConfirmed,
+    bool NoKnownAllergiesConfirmed,
+    bool AdequateEvaluationConfirmed,
+    bool SyntheticDataConfirmed);
+
+public sealed record TelehealthSignedPrescriptionResponse(
+    Guid OrderId,
+    string PrescriptionId,
+    int DraftVersion,
+    int PharmacyChoiceVersion,
+    string DrugName,
+    string RxNormCode,
+    string Directions,
+    string PharmacyName,
+    string PharmacyStateCode,
+    string SafetyOutcome,
+    string SafetyRulesetVersion,
+    int ActiveMedicationCount,
+    int ActiveAllergyCount,
+    DateTimeOffset SignedAt,
+    string ContentHash,
+    string AdapterMode,
+    string CanonicalModelVersion,
+    string TargetStandard,
+    string TransitionStandard,
+    string TransactionType,
+    string TransmissionState,
+    bool SafetyChecked,
+    bool Signed,
+    bool CanonicalPrescriptionCreated,
+    bool Certified,
+    bool ExternalDestinationContacted,
+    bool LegalEffect,
+    bool PatientDelivered);
+
 public sealed record TelehealthPrescriptionPreparationWorkspaceResponse(
     Guid ConsultationId,
     string ConsultationStatus,
@@ -1171,6 +1208,7 @@ public sealed record TelehealthPrescriptionPreparationWorkspaceResponse(
     int? CurrentPharmacyChoiceVersion,
     IReadOnlyList<TelehealthPrescriptionCatalogItemResponse> CatalogResults,
     TelehealthPrescriptionPreparationDraftResponse? CurrentDraft,
+    TelehealthSignedPrescriptionResponse? CurrentSignedPrescription,
     bool SafetyCheckEnabled,
     bool SigningEnabled,
     bool PrescriptionCreationEnabled,

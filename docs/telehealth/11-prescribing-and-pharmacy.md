@@ -46,7 +46,7 @@ Rejected -> CorrectedAndResigned | ManualFollowUp
 
 ## 5. Standards-oriented adapter
 
-`IEPrescriptionGateway` uses a canonical model mapped to the currently required NCPDP SCRIPT transaction version selected by destination/payer policy. The baseline targets SCRIPT 2017071 and preserves an upgrade path to SCRIPT 2023011, which CMS identifies for Medicare Part D use beginning January 1, 2028. Supported transaction families must be explicitly certified, such as NewRx, CancelRx, RxChange, RxRenewal, status/error, medication history, and real-time prescription benefit where separately contracted.
+`IEPrescriptionGateway` uses a canonical model mapped to the NCPDP SCRIPT transaction version selected by destination/payer policy. New adapter work targets SCRIPT 2023011. CMS permits either SCRIPT 2017071 or 2023011 during the transition through December 31, 2027 and requires exclusive SCRIPT 2023011 use for Part D e-prescribing beginning January 1, 2028; 2017071 is therefore transition compatibility, not AvenChart's forward target. Supported transaction families must be explicitly certified, such as NewRx, CancelRx, RxChange, RxRenewal, status/error, medication history, and real-time prescription benefit where separately contracted.
 
 The development stub generates deterministic accept, reject, duplicate, delayed, change-request, cancellation, and outage scenarios. It is not a fax or live prescription service and must be marked `NON_PRODUCTION`.
 
@@ -74,4 +74,3 @@ The development stub generates deterministic accept, reject, duplicate, delayed,
 ## 7. Clarification about insurance information
 
 The e-prescription may include the patient, prescriber, medication, pharmacy, and permitted coverage identifiers needed for prescription routing/benefit transactions. It must not include or transmit the professional consultation's CMS-1500/837P claim. The dispensing pharmacy independently submits its pharmacy claim through pharmacy benefit channels.
-

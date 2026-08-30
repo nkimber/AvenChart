@@ -2047,6 +2047,33 @@ try {
       $prescriptionResponseJson-match'legalEffect' -and $prescriptionResponseJson-match'safetyChecked' -and
       $prescriptionResponseJson-match'signed' -and $prescriptionResponseJson-match'transmissionQueued' -and
       $prescriptionResponseJson-notmatch'patientId|encounterId|appointmentId|requestId|signatureId|claimId')
+    $prescriptionSign = Get-Operation $document '/api/telehealth/v1/clinician/consultations/{consultationId}/prescription' 'post'
+    $prescriptionSignRequestReference = Get-Property (Get-Property (Get-Property (Get-Property $prescriptionSign 'requestBody') 'content') 'application/json').schema '$ref'
+    $prescriptionSignRequestSchemaName = ($prescriptionSignRequestReference -split '/')[-1]
+    $prescriptionSignRequestSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') $prescriptionSignRequestSchemaName
+    $prescriptionSignRequestJson = $prescriptionSignRequestSchema | ConvertTo-Json -Depth 30 -Compress
+    $prescriptionSignResponseReference = Get-Property (Get-Property (Get-Property (Get-Property $prescriptionSign.responses '200') 'content') 'application/json').schema '$ref'
+    $prescriptionSignResponseSchemaName = ($prescriptionSignResponseReference -split '/')[-1]
+    $prescriptionSignResponseSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') $prescriptionSignResponseSchemaName
+    $prescriptionSignResponseJson = $prescriptionSignResponseSchema | ConvertTo-Json -Depth 30 -Compress
+    Add-Check 'Prescription signing publishes the physician-only safety attestations, idempotency, immutable result, and no destination payload' (
+      (Has-Security $prescriptionSign 'AvenChartLocalStaffSession') -and -not (Has-Security $prescriptionSign 'AvenChartPatientPortalSession') -and
+      (Has-Header $prescriptionSign 'X-AvenChart-Facility-Id') -and (Has-Header $prescriptionSign 'X-AvenChart-Purpose-Of-Use') -and
+      (Has-Header $prescriptionSign 'X-Idempotency-Key') -and $null-ne(Get-Property $prescriptionSign 'requestBody') -and
+      $null-ne(Get-Property $prescriptionSign.responses '200') -and $null-ne(Get-Property $prescriptionSign.responses '400') -and
+      $null-ne(Get-Property $prescriptionSign.responses '403') -and $null-ne(Get-Property $prescriptionSign.responses '404') -and
+      $null-ne(Get-Property $prescriptionSign.responses '409') -and
+      $prescriptionSignRequestJson-match'expectedDraftVersion' -and
+      $prescriptionSignRequestJson-match'noCurrentMedicationsConfirmed' -and
+      $prescriptionSignRequestJson-match'noKnownAllergiesConfirmed' -and
+      $prescriptionSignRequestJson-match'adequateEvaluationConfirmed' -and
+      $prescriptionSignRequestJson-match'syntheticDataConfirmed' -and
+      $prescriptionSignRequestJson-notmatch'patientId|encounterId|appointmentId|requestId|pharmacyId|claim' -and
+      $prescriptionSignResponseJson-match'prescriptionId' -and $prescriptionSignResponseJson-match'contentHash' -and
+      $prescriptionSignResponseJson-match'targetStandard' -and $prescriptionSignResponseJson-match'transmissionState' -and
+      $prescriptionSignResponseJson-match'certified' -and $prescriptionSignResponseJson-match'externalDestinationContacted' -and
+      $prescriptionSignResponseJson-match'legalEffect' -and $prescriptionSignResponseJson-match'patientDelivered' -and
+      $prescriptionSignResponseJson-notmatch'patientId|encounterId|appointmentId|requestId|claimId')
     $dispositionRead = Get-Operation $document '/api/telehealth/v1/clinician/consultations/{consultationId}/safety-disposition-draft' 'get'
     $dispositionWrite = Get-Operation $document '/api/telehealth/v1/clinician/consultations/{consultationId}/safety-disposition-draft' 'put'
     $dispositionRequestReference = Get-Property (Get-Property (Get-Property (Get-Property $dispositionWrite 'requestBody') 'content') 'application/json').schema '$ref'
@@ -2095,5 +2122,5 @@ try {
     Add-Check 'Public context has no protected security requirement and exposes only the public projection' ($null -eq $contextSecurity -or @($contextSecurity).Count -eq 0)
 }
 catch { Add-Check 'Telehealth OpenAPI contract execution' $false $_.Exception.Message }
-    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
+    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060','TH-DEC-0061');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
 if(-not $passed){exit 1}

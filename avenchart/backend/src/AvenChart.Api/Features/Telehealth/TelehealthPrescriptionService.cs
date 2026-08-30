@@ -89,6 +89,65 @@ public sealed class TelehealthPrescriptionService(
         }
     }
 
+    public async Task<TelehealthSignedPrescriptionResponse> SignAsync(
+        AuthSessionResponse session,
+        StaffAccessContext accessContext,
+        Guid consultationId,
+        SignTelehealthPrescriptionRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        var physicianStaffId = RequirePhysician(session, accessContext, "sign a synthetic telehealth prescription");
+        try
+        {
+            if (request.ExpectedDraftVersion < 1)
+            {
+                throw new ArgumentException("ExpectedDraftVersion must identify an existing draft version.");
+            }
+            if (!request.NoCurrentMedicationsConfirmed
+                || !request.NoKnownAllergiesConfirmed
+                || !request.AdequateEvaluationConfirmed
+                || !request.SyntheticDataConfirmed)
+            {
+                throw new ArgumentException(
+                    "Confirm the empty current medication list, empty known-allergy list, adequate evaluation, and synthetic-only effect before signing.");
+            }
+
+            var key = TelehealthCommandFingerprint.RequireIdempotencyKey(idempotencyKey);
+            var fingerprint = TelehealthCommandFingerprint.Create(
+                "sign-synthetic-telehealth-prescription",
+                consultationId,
+                request.ExpectedDraftVersion,
+                request.NoCurrentMedicationsConfirmed,
+                request.NoKnownAllergiesConfirmed,
+                request.AdequateEvaluationConfirmed,
+                request.SyntheticDataConfirmed);
+            return await repository.SignAsync(
+                _options.PracticeId,
+                _options.FacilityId,
+                physicianStaffId,
+                consultationId,
+                request,
+                session.Username,
+                key,
+                fingerprint,
+                cancellationToken)
+                ?? throw TelehealthProblem.NotFound();
+        }
+        catch (TelehealthPrescriptionDraftConflictException exception)
+        {
+            throw TelehealthProblem.Conflict(
+                "telehealth_prescription_signing_conflict",
+                exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            throw TelehealthProblem.BadRequest(
+                "telehealth_prescription_signing_invalid",
+                exception.Message);
+        }
+    }
+
     private int RequirePhysician(
         AuthSessionResponse session,
         StaffAccessContext accessContext,

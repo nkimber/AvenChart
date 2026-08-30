@@ -174,6 +174,8 @@ public static class TelehealthServiceRegistration
         services.AddSingleton<ITelehealthCoverageGateway, SyntheticTelehealthCoverageGateway>();
         services.AddSingleton<ITelehealthVideoProvider, SyntheticTelehealthVideoProvider>();
         services.AddSingleton<IPharmacyDirectory, SyntheticTelehealthPharmacyDirectory>();
+        services.AddSingleton<ITelehealthPrescriptionSafetyGateway, SyntheticTelehealthPrescriptionSafetyGateway>();
+        services.AddSingleton<IEPrescriptionGateway, SyntheticEPrescriptionGateway>();
         services.AddHealthChecks()
             .AddCheck<TelehealthReadinessHealthCheck>("telehealth", tags: ["ready"]);
         return services;

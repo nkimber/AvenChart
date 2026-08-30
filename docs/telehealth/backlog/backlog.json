@@ -3,7 +3,7 @@
   "baselineDecision": "TH-DEC-0001",
   "baselineDate": "2026-08-26",
   "decisionOwner": "Project owner",
-  "implementationAuthorization": "disabled-synthetic-sprints-01-through-57-authorized-by-th-dec-0003-and-th-dec-0005-through-th-dec-0060-through-2026-10-31; all-other-feature-code-blocked-by-phase-2-exit-gate",
+  "implementationAuthorization": "disabled-synthetic-sprints-01-through-58-authorized-by-th-dec-0003-and-th-dec-0005-through-th-dec-0061-through-2026-10-31; all-other-feature-code-blocked-by-phase-2-exit-gate",
   "allowedStatuses": [
     "planned",
     "ready",
@@ -353,7 +353,7 @@
         {
           "id": "TH-E11-S01",
           "title": "Prescriber authority and medication safety",
-          "status": "planned",
+          "status": "in_progress",
           "priority": "critical",
           "primaryRequirements": { "from": "TEL-RX-001", "to": "TEL-RX-006" },
           "acceptance": "Authorize prescriber, fail closed for controlled/unknown drugs, require complete safety review and preserve neutral pharmacy choice."
@@ -361,7 +361,7 @@
         {
           "id": "TH-E11-S02",
           "title": "Pharmacy identity, lifecycle and SCRIPT mapping",
-          "status": "planned",
+          "status": "in_progress",
           "priority": "critical",
           "primaryRequirements": { "from": "TEL-RX-007", "to": "TEL-RX-011" },
           "acceptance": "Protect proximity search, snapshot pharmacy, separate states, map canonical NCPDP SCRIPT and version signed corrections."
@@ -369,7 +369,7 @@
         {
           "id": "TH-E11-S03",
           "title": "Delivery recovery, patient status and production certification",
-          "status": "planned",
+          "status": "in_progress",
           "priority": "high",
           "primaryRequirements": { "from": "TEL-RX-012", "to": "TEL-RX-016" },
           "acceptance": "Prevent duplicate prescriptions, own rejected/cancel work, communicate accurate AVS status, approve vendors and block uncertified/stub production delivery."

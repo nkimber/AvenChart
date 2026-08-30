@@ -840,7 +840,7 @@ public static class TelehealthEndpoints
             .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "write"));
         clinician.MapGet("/consultations/{consultationId:guid}/prescription-preparation-draft", GetConsultationPrescriptionPreparationDraftAsync)
             .WithName("GetTelehealthConsultationPrescriptionPreparationDraft")
-            .WithDescription("Returns a neutral non-controlled synthetic medication-catalog search and the owning physician's current unsigned, unchecked preparation draft. It is not a prescription or recommendation and enables no signing, transmission, delivery, completion, or external call.")
+            .WithDescription("Returns a neutral non-controlled synthetic medication-catalog search, the owning physician's current preparation draft, and any immutable signed synthetic result. An eligible draft may be safety-gated into a canonical synthetic record, but no transmission, delivery, completion, or external call is enabled.")
             .Produces<TelehealthPrescriptionPreparationWorkspaceResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -853,6 +853,19 @@ public static class TelehealthEndpoints
             .WithDescription("Appends a physician-authored NON_PRODUCTION preparation draft for one catalog-selected non-controlled medication. It creates no canonical medication or prescription, signature, transmission, AVS, bill, claim, lifecycle transition, or external call.")
             .Accepts<RecordTelehealthPrescriptionPreparationDraftRequest>("application/json")
             .Produces<TelehealthPrescriptionPreparationDraftResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "write"));
+        clinician.MapPost("/consultations/{consultationId:guid}/prescription", SignConsultationPrescriptionAsync)
+            .WithName("SignTelehealthConsultationPrescription")
+            .WithDescription("Runs the conservative zero-list NON_PRODUCTION safety gate and atomically creates one immutable signed synthetic prescription plus an uncertified NCPDP SCRIPT 2023011 NewRx preparation. It has no legal effect, contacts no pharmacy, and performs no transmission, delivery, or visit completion.")
+            .Accepts<SignTelehealthPrescriptionRequest>("application/json")
+            .Produces<TelehealthSignedPrescriptionResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -2419,6 +2432,24 @@ public static class TelehealthEndpoints
     {
         SetConsultationPrivateResponse(context, consultationId);
         return await ExecuteAsync(async () => Results.Ok(await service.RecordAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context),
+            consultationId,
+            request,
+            ReadIdempotencyKey(context),
+            cancellationToken)));
+    }
+
+    private static async Task<IResult> SignConsultationPrescriptionAsync(
+        TelehealthPrescriptionService service,
+        AuthRepository authRepository,
+        HttpContext context,
+        Guid consultationId,
+        SignTelehealthPrescriptionRequest request,
+        CancellationToken cancellationToken)
+    {
+        SetConsultationPrivateResponse(context, consultationId);
+        return await ExecuteAsync(async () => Results.Ok(await service.SignAsync(
             await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
             RequireStaffAccessContext(context),
             consultationId,

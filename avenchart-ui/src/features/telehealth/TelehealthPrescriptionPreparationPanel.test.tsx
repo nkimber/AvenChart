@@ -7,6 +7,7 @@ import TelehealthPrescriptionPreparationPanel from './TelehealthPrescriptionPrep
 import {
   getTelehealthPrescriptionPreparationDraft,
   recordTelehealthPrescriptionPreparationDraft,
+  signTelehealthPrescription,
   type TelehealthPrescriptionPreparationDraft,
   type TelehealthPrescriptionPreparationWorkspace,
 } from './api.ts'
@@ -17,6 +18,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     ...original,
     getTelehealthPrescriptionPreparationDraft: vi.fn(),
     recordTelehealthPrescriptionPreparationDraft: vi.fn(),
+    signTelehealthPrescription: vi.fn(),
   }
 })
 
@@ -42,6 +44,7 @@ const workspace: TelehealthPrescriptionPreparationWorkspace = {
   currentPharmacyChoiceVersion: 1,
   catalogResults: [],
   currentDraft: null,
+  currentSignedPrescription: null,
   safetyCheckEnabled: false,
   signingEnabled: false,
   prescriptionCreationEnabled: false,
@@ -92,7 +95,7 @@ describe('TelehealthPrescriptionPreparationPanel', () => {
     )).toBeInTheDocument()
     expect(screen.getByLabelText('Dose amount')).toHaveValue('')
     expect(screen.getByLabelText('Frequency')).toHaveValue('')
-    expect(screen.getByText(/interaction\/contraindication checking, signing, canonical prescription creation/i)).toBeInTheDocument()
+    expect(screen.getByText(/certified drug-interaction adjudication, pharmacy transmission/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /sign|send|transmit|prescribe/i })).not.toBeInTheDocument()
   })
 
@@ -151,6 +154,62 @@ describe('TelehealthPrescriptionPreparationPanel', () => {
       vi.mocked(recordTelehealthPrescriptionPreparationDraft).mock.calls[1][2],
     )
     expect(await screen.findByText(/version 1 recorded.*not safety checked, signed/i)).toBeInTheDocument()
+  })
+
+  it('requires every conservative safety attestation before creating a prepared-only signed record', async () => {
+    vi.mocked(getTelehealthPrescriptionPreparationDraft).mockResolvedValue({
+      ...workspace,
+      currentDraft: savedDraft,
+      safetyCheckEnabled: true,
+      signingEnabled: true,
+      prescriptionCreationEnabled: true,
+    })
+    vi.mocked(signTelehealthPrescription).mockResolvedValue({
+      orderId: '00000000-0000-4000-8000-000000000061',
+      prescriptionId: 'RX-TELEHEALTH-SYNTHETIC',
+      draftVersion: 1,
+      pharmacyChoiceVersion: 1,
+      drugName: 'Metformin',
+      rxNormCode: '860975',
+      directions: 'Physician-entered synthetic directions.',
+      pharmacyName: 'Atlanta Synthetic Community Pharmacy',
+      pharmacyStateCode: 'GA',
+      safetyOutcome: 'SYNTHETIC_ZERO_LIST_GATE_PASSED',
+      safetyRulesetVersion: 'AVENCHART_SYNTHETIC_ZERO_LIST_GATE_V1',
+      activeMedicationCount: 0,
+      activeAllergyCount: 0,
+      signedAt: '2026-08-29T12:00:00Z',
+      contentHash: 'a'.repeat(64),
+      adapterMode: 'NON_PRODUCTION',
+      canonicalModelVersion: 'AVENCHART_ERX_CANONICAL_V1',
+      targetStandard: 'NCPDP_SCRIPT_2023011',
+      transitionStandard: 'NCPDP_SCRIPT_2017071_THROUGH_2027_12_31',
+      transactionType: 'NewRx',
+      transmissionState: 'PreparedOnly',
+      safetyChecked: true,
+      signed: true,
+      canonicalPrescriptionCreated: true,
+      certified: false,
+      externalDestinationContacted: false,
+      legalEffect: false,
+      patientDelivered: false,
+    })
+    render(<TelehealthPrescriptionPreparationPanel consultationId="consultation-1" />)
+    await screen.findByText(/Unsigned prescription-preparation draft version 1 loaded/i)
+
+    const signButton = screen.getByRole('button', { name: /Run safety gate and sign/i })
+    expect(signButton).toBeDisabled()
+    for (const name of [
+      /currently reports no medications/i,
+      /currently reports no known allergies/i,
+      /completed an adequate evaluation/i,
+      /immutable NON_PRODUCTION record/i,
+    ]) fireEvent.click(screen.getByRole('checkbox', { name }))
+    expect(signButton).toBeEnabled()
+    fireEvent.click(signButton)
+
+    expect(await screen.findByText(/Signed synthetic prescription RX-TELEHEALTH-SYNTHETIC created/i)).toBeInTheDocument()
+    expect(screen.getByText(/SCRIPT 2023011.*prepared only.*pharmacy contacted: no/i)).toBeInTheDocument()
   })
 })
 

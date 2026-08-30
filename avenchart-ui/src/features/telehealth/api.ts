@@ -2839,6 +2839,45 @@ export type TelehealthPrescriptionPreparationDraft = {
   patientDelivered: false
 }
 
+export type TelehealthPrescriptionSigningInput = {
+  expectedDraftVersion: number
+  noCurrentMedicationsConfirmed: true
+  noKnownAllergiesConfirmed: true
+  adequateEvaluationConfirmed: true
+  syntheticDataConfirmed: true
+}
+
+export type TelehealthSignedPrescription = {
+  orderId: string
+  prescriptionId: string
+  draftVersion: number
+  pharmacyChoiceVersion: number
+  drugName: string
+  rxNormCode: string
+  directions: string
+  pharmacyName: string
+  pharmacyStateCode: 'GA' | 'CA' | 'FL'
+  safetyOutcome: 'SYNTHETIC_ZERO_LIST_GATE_PASSED'
+  safetyRulesetVersion: 'AVENCHART_SYNTHETIC_ZERO_LIST_GATE_V1'
+  activeMedicationCount: 0
+  activeAllergyCount: 0
+  signedAt: string
+  contentHash: string
+  adapterMode: 'NON_PRODUCTION'
+  canonicalModelVersion: 'AVENCHART_ERX_CANONICAL_V1'
+  targetStandard: 'NCPDP_SCRIPT_2023011'
+  transitionStandard: 'NCPDP_SCRIPT_2017071_THROUGH_2027_12_31'
+  transactionType: 'NewRx'
+  transmissionState: 'PreparedOnly'
+  safetyChecked: true
+  signed: true
+  canonicalPrescriptionCreated: true
+  certified: false
+  externalDestinationContacted: false
+  legalEffect: false
+  patientDelivered: false
+}
+
 export type TelehealthPrescriptionPreparationWorkspace = {
   consultationId: string
   consultationStatus: 'MediaEnded'
@@ -2852,9 +2891,10 @@ export type TelehealthPrescriptionPreparationWorkspace = {
   currentPharmacyChoiceVersion: number | null
   catalogResults: TelehealthPrescriptionCatalogItem[]
   currentDraft: TelehealthPrescriptionPreparationDraft | null
-  safetyCheckEnabled: false
-  signingEnabled: false
-  prescriptionCreationEnabled: false
+  currentSignedPrescription: TelehealthSignedPrescription | null
+  safetyCheckEnabled: boolean
+  signingEnabled: boolean
+  prescriptionCreationEnabled: boolean
   transmissionEnabled: false
   patientDeliveryEnabled: false
   completionEnabled: false
@@ -4511,6 +4551,25 @@ export function recordTelehealthPrescriptionPreparationDraft(
     `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/prescription-preparation-draft`,
     {
       method: 'PUT',
+      headers: clinicianHeaders({
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      body: JSON.stringify(input),
+      cache: 'no-store',
+    },
+  )
+}
+
+export function signTelehealthPrescription(
+  consultationId: string,
+  input: TelehealthPrescriptionSigningInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthSignedPrescription>(
+    `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/prescription`,
+    {
+      method: 'POST',
       headers: clinicianHeaders({
         'Content-Type': 'application/json',
         'X-Idempotency-Key': idempotencyKey,

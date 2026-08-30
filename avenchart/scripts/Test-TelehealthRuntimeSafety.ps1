@@ -1213,19 +1213,34 @@ try {
         $pharmacyMigrationSource -match "electronic_routing_capability='NON_PRODUCTION_ONLY'" -and
         $endpointSource -match 'consultations/\{consultationId:guid\}/pharmacy-choice')
     $prescriptionRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthPrescriptionRepository.cs')
+    $prescriptionGatewaySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthPrescriptionGateways.cs')
     $prescriptionMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0290__telehealth_synthetic_prescription_preparation_draft.sql')
-    Add-Check 'Prescription preparation remains an unchecked, unsigned, non-controlled synthetic draft with no canonical, lifecycle, downstream, or outbound path' (
+    $prescriptionSigningMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0328__telehealth_synthetic_prescription_signing.sql')
+    Add-Check 'Prescription preparation remains a non-controlled synthetic draft until the bounded signing command' (
         $prescriptionRepositorySource -match 'public const string AdapterMode = "NON_PRODUCTION"' -and
         $prescriptionRepositorySource -match 'public const string IntendedStandard = "NCPDP_SCRIPT_2017071"' -and
-        $prescriptionRepositorySource -match 'SafetyCheckEnabled: false' -and
-        $prescriptionRepositorySource -match 'PrescriptionCreationEnabled: false' -and
         $prescriptionRepositorySource -match 'TransmissionEnabled: false' -and
-        $prescriptionRepositorySource -notmatch '(?i)insert\s+into\s+(prescriptions|medications|encounter_signatures|claims|billing|orders|diagnoses|messages|integration_outbox)' -and
+        $prescriptionRepositorySource -notmatch '(?i)insert\s+into\s+(medications|encounter_signatures|claims|billing|orders|diagnoses|messages|integration_outbox)' -and
         $prescriptionRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|WebRequest|SendAsync' -and
         $prescriptionMigrationSource -match 'controlled_substance_schedule_snapshot is null' -and
         $prescriptionMigrationSource -match 'not legal_effect and not safety_checked and not signed and not transmission_queued' -and
         $prescriptionMigrationSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
         $endpointSource -match 'consultations/\{consultationId:guid\}/prescription-preparation-draft')
+    Add-Check 'Synthetic prescription signing is zero-list gated, immutable, prepared-only, and cannot contact an external destination' (
+        $prescriptionGatewaySource -match 'ActiveMedicationCount != 0' -and
+        $prescriptionGatewaySource -match 'ActiveAllergyCount != 0' -and
+        $prescriptionGatewaySource -match 'public const string TargetStandard = "NCPDP_SCRIPT_2023011"' -and
+        $prescriptionGatewaySource -match 'ExternalDestinationContacted: false' -and
+        $prescriptionRepositorySource -match '(?i)insert\s+into\s+prescriptions' -and
+        $prescriptionRepositorySource -match 'IsolationLevel\.Serializable' -and
+        $prescriptionRepositorySource -match 'TransmissionEnabled: false' -and
+        $prescriptionRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|WebRequest|SendAsync' -and
+        $prescriptionSigningMigrationSource -match "message='signed_telehealth_prescription_is_immutable'" -and
+        $prescriptionSigningMigrationSource -match 'not certified' -and
+        $prescriptionSigningMigrationSource -match 'not external_destination_contacted' -and
+        $prescriptionSigningMigrationSource -match 'not legal_effect' -and
+        $prescriptionSigningMigrationSource -notmatch '(?im)^\s*(drop\s+table|truncate\s+|delete\s+from)' -and
+        $endpointSource -match 'consultations/\{consultationId:guid\}/prescription')
     $dispositionRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthDispositionRepository.cs')
     $dispositionMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0289__telehealth_synthetic_safety_disposition_draft.sql')
     Add-Check 'Safety disposition remains an unsigned, undelivered, versioned physician draft with no lifecycle, downstream, advice, or outbound path' (
@@ -1270,7 +1285,7 @@ finally {
     $result = [ordered]@{
         status=$(if ($passed) { 'passed' } else { 'failed' })
         generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O')
-        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060')
+        decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060','TH-DEC-0061')
         checks=$checks
     }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding utf8

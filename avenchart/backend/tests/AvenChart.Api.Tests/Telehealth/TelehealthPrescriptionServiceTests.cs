@@ -73,6 +73,54 @@ public sealed class TelehealthPrescriptionServiceTests
         Assert.Equal("telehealth_prescription_draft_invalid", problem.Code);
     }
 
+    [Fact]
+    public async Task SigningRequiresEveryFailClosedAttestationBeforeRepositoryAccess()
+    {
+        var problem = await Assert.ThrowsAsync<TelehealthProblem>(() => Service().SignAsync(
+            Session(), Access(), Guid.NewGuid(), new SignTelehealthPrescriptionRequest(
+                ExpectedDraftVersion: 1,
+                NoCurrentMedicationsConfirmed: true,
+                NoKnownAllergiesConfirmed: false,
+                AdequateEvaluationConfirmed: true,
+                SyntheticDataConfirmed: true),
+            "prescription-signing-key", CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status400BadRequest, problem.StatusCode);
+        Assert.Equal("telehealth_prescription_signing_invalid", problem.Code);
+    }
+
+    [Theory]
+    [InlineData(0, 0, true)]
+    [InlineData(1, 0, false)]
+    [InlineData(0, 1, false)]
+    public void ConservativeSafetyGatewayPassesOnlyForConfirmedEmptyCanonicalLists(
+        int activeMedications,
+        int activeAllergies,
+        bool expected)
+    {
+        var result = new SyntheticTelehealthPrescriptionSafetyGateway().Evaluate(
+            new TelehealthPrescriptionSafetyInput(
+                activeMedications,
+                activeAllergies,
+                NoCurrentMedicationsConfirmed: true,
+                NoKnownAllergiesConfirmed: true));
+
+        Assert.Equal(expected, result.Passed);
+        Assert.False(result.ExternalSourceContacted);
+    }
+
+    [Fact]
+    public void EPrescriptionGatewayPreparesTheCurrentTargetWithoutExternalCapability()
+    {
+        var result = new SyntheticEPrescriptionGateway().PrepareNewRx();
+
+        Assert.Equal("NCPDP_SCRIPT_2023011", result.TargetStandard);
+        Assert.Equal("NCPDP_SCRIPT_2017071_THROUGH_2027_12_31", result.TransitionStandard);
+        Assert.Equal("PreparedOnly", result.TransmissionState);
+        Assert.False(result.Certified);
+        Assert.False(result.ExternalDestinationContacted);
+    }
+
     private static TelehealthPrescriptionService Service() => new(
         null!,
         Options.Create(new TelehealthOptions
