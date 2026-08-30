@@ -7,7 +7,7 @@ First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 63 synthetic idle-shift end](sprint-63-synthetic-idle-shift-end.md); implementation and automated evidence are pending
+Current increment: [Sprint 63 synthetic idle-shift end](sprint-63-synthetic-idle-shift-end.md); implementation and automated evidence are complete
 
 ## 1. Backlog contract
 

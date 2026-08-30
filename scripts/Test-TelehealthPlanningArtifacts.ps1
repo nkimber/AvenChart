@@ -162,6 +162,7 @@ $decisionSixtyTwoPath = Join-Path $telehealthRoot 'decisions/0062-approved-sprin
 $decisionSixtyThreePath = Join-Path $telehealthRoot 'decisions/0063-approved-sprint-60-synthetic-encounter-finalization.md'
 $decisionSixtyFourPath = Join-Path $telehealthRoot 'decisions/0064-approved-sprint-61-synthetic-visit-closure.md'
 $decisionSixtyFivePath = Join-Path $telehealthRoot 'decisions/0065-approved-sprint-62-synthetic-closure-status.md'
+$decisionSixtySixPath = Join-Path $telehealthRoot 'decisions/0066-approved-sprint-63-synthetic-idle-shift-end.md'
 $sprintTwentyNinePath = Join-Path $telehealthRoot 'backlog/sprint-29-synthetic-clinical-information-inventory.md'
 $sprintTwentyNineEvidencePath = Join-Path $telehealthRoot 'backlog/sprint-29-evidence.md'
 $sprintThirtyPath = Join-Path $telehealthRoot 'backlog/sprint-30-synthetic-medication-information.md'
@@ -230,6 +231,8 @@ $sprintSixtyOnePath = Join-Path $telehealthRoot 'backlog/sprint-61-synthetic-vis
 $sprintSixtyOneEvidencePath = Join-Path $telehealthRoot 'backlog/sprint-61-evidence.md'
 $sprintSixtyTwoPath = Join-Path $telehealthRoot 'backlog/sprint-62-synthetic-closure-status.md'
 $sprintSixtyTwoEvidencePath = Join-Path $telehealthRoot 'backlog/sprint-62-evidence.md'
+$sprintSixtyThreePath = Join-Path $telehealthRoot 'backlog/sprint-63-synthetic-idle-shift-end.md'
+$sprintSixtyThreeEvidencePath = Join-Path $telehealthRoot 'backlog/sprint-63-evidence.md'
 $workflowPath = Join-Path $resolvedRoot '.github/workflows/verify.yml'
 
 Add-ValidationCheck -Name 'Telehealth planning root exists' -Passed (Test-Path -LiteralPath $telehealthRoot -PathType Container) -Details 'docs/telehealth'
@@ -303,6 +306,7 @@ $requiredFiles = @(
     $decisionSixtyThreePath,
     $decisionSixtyFourPath,
     $decisionSixtyFivePath,
+    $decisionSixtySixPath,
     $sprintTwentyNinePath,
     $sprintTwentyNineEvidencePath,
     $sprintThirtyPath,
@@ -371,6 +375,8 @@ $requiredFiles = @(
     $sprintSixtyOneEvidencePath,
     $sprintSixtyTwoPath,
     $sprintSixtyTwoEvidencePath,
+    $sprintSixtyThreePath,
+    $sprintSixtyThreeEvidencePath,
     $workflowPath
 )
 $missingRequiredFiles = @($requiredFiles | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) } | ForEach-Object {
@@ -752,6 +758,7 @@ $decisionSixtyTwo = if (Test-Path -LiteralPath $decisionSixtyTwoPath -PathType L
 $decisionSixtyThree = if (Test-Path -LiteralPath $decisionSixtyThreePath -PathType Leaf) { Get-Content -Raw -LiteralPath $decisionSixtyThreePath } else { '' }
 $decisionSixtyFour = if (Test-Path -LiteralPath $decisionSixtyFourPath -PathType Leaf) { Get-Content -Raw -LiteralPath $decisionSixtyFourPath } else { '' }
 $decisionSixtyFive = if (Test-Path -LiteralPath $decisionSixtyFivePath -PathType Leaf) { Get-Content -Raw -LiteralPath $decisionSixtyFivePath } else { '' }
+$decisionSixtySix = if (Test-Path -LiteralPath $decisionSixtySixPath -PathType Leaf) { Get-Content -Raw -LiteralPath $decisionSixtySixPath } else { '' }
 $expiryMatch = [regex]::Match($decisionTwo, '(?m)^Review/expiry:\s*(\d{4}-\d{2}-\d{2})')
 $expiryDate = if ($expiryMatch.Success) { [DateTime]::ParseExact($expiryMatch.Groups[1].Value, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture) } else { [DateTime]::MinValue }
 $decisionThreeExpiryMatch = [regex]::Match($decisionThree, '(?m)^Review/expiry:\s*(\d{4}-\d{2}-\d{2})')
@@ -878,6 +885,8 @@ $decisionSixtyFourExpiryMatch = [regex]::Match($decisionSixtyFour, '(?m)^Review/
 $decisionSixtyFourExpiryDate = if ($decisionSixtyFourExpiryMatch.Success) { [DateTime]::ParseExact($decisionSixtyFourExpiryMatch.Groups[1].Value, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture) } else { [DateTime]::MinValue }
 $decisionSixtyFiveExpiryMatch = [regex]::Match($decisionSixtyFive, '(?m)^Review/expiry:\s*(\d{4}-\d{2}-\d{2})')
 $decisionSixtyFiveExpiryDate = if ($decisionSixtyFiveExpiryMatch.Success) { [DateTime]::ParseExact($decisionSixtyFiveExpiryMatch.Groups[1].Value, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture) } else { [DateTime]::MinValue }
+$decisionSixtySixExpiryMatch = [regex]::Match($decisionSixtySix, '(?m)^Review/expiry:\s*(\d{4}-\d{2}-\d{2})')
+$decisionSixtySixExpiryDate = if ($decisionSixtySixExpiryMatch.Success) { [DateTime]::ParseExact($decisionSixtySixExpiryMatch.Groups[1].Value, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture) } else { [DateTime]::MinValue }
 if ($TestMutation -eq 'ExpireDecision') {
     $expiryDate = [DateTime]::MinValue
     $decisionThreeExpiryDate = [DateTime]::MinValue
@@ -942,6 +951,7 @@ if ($TestMutation -eq 'ExpireDecision') {
     $decisionSixtyThreeExpiryDate = [DateTime]::MinValue
     $decisionSixtyFourExpiryDate = [DateTime]::MinValue
     $decisionSixtyFiveExpiryDate = [DateTime]::MinValue
+    $decisionSixtySixExpiryDate = [DateTime]::MinValue
 }
 Add-ValidationCheck -Name 'G0 planning baseline remains approved' -Passed ($decisionOne -match '(?m)^Status: Approved for development planning\s*$') -Details 'TH-DEC-0001'
 Add-ValidationCheck -Name 'Decision 0002 is approved, bounded, owned, and unexpired' -Passed (
@@ -1656,6 +1666,14 @@ Add-ValidationCheck -Name 'Decision 0065 approves owner-scoped synthetic closure
     $decisionSixtyFive -match 'This decision does not authorize' -and
     $decisionSixtyFiveExpiryMatch.Success -and [DateTime]::UtcNow.Date -le $decisionSixtyFiveExpiryDate.Date
 ) -Details @{ decision = 'TH-DEC-0065'; expires = if ($decisionSixtyFiveExpiryMatch.Success) { $decisionSixtyFiveExpiryMatch.Groups[1].Value } else { $null } }
+Add-ValidationCheck -Name 'Decision 0066 approves exact-owner synthetic idle-shift end while patient, appointment, encounter, clinical, billing, claims, media, and external state remain unchanged' -Passed (
+    $decisionSixtySix -match '(?m)^Status: Approved — active for the exact disabled synthetic slice below\s*$' -and
+    $decisionSixtySix -match '(?m)^Approved date: 2026-08-30\s*$' -and
+    $decisionSixtySix -match 'no active reservation and no active or wrap-up consultation context' -and
+    $decisionSixtySix -match 'semantic-idempotent' -and
+    $decisionSixtySix -match 'This decision does not authorize' -and
+    $decisionSixtySixExpiryMatch.Success -and [DateTime]::UtcNow.Date -le $decisionSixtySixExpiryDate.Date
+) -Details @{ decision = 'TH-DEC-0066'; expires = if ($decisionSixtySixExpiryMatch.Success) { $decisionSixtySixExpiryMatch.Groups[1].Value } else { $null } }
 
 $workflow = if (Test-Path -LiteralPath $workflowPath -PathType Leaf) { Get-Content -Raw -LiteralPath $workflowPath } else { '' }
 $workflowInvocationPattern = '(?m)^\s*run:\s*pwsh\s+-NoProfile\s+-File\s+\./scripts/Test-TelehealthPlanningArtifacts\.ps1\s*$'
@@ -1730,6 +1748,7 @@ $artifactPaths = @($specificationFiles.FullName) + @(
     $decisionSixtyThreePath,
     $decisionSixtyFourPath,
     $decisionSixtyFivePath,
+    $decisionSixtySixPath,
     $sprintTwentyNinePath,
     $sprintTwentyNineEvidencePath,
     $sprintThirtyPath,
@@ -1798,6 +1817,8 @@ $artifactPaths = @($specificationFiles.FullName) + @(
     $sprintSixtyOneEvidencePath,
     $sprintSixtyTwoPath,
     $sprintSixtyTwoEvidencePath,
+    $sprintSixtyThreePath,
+    $sprintSixtyThreeEvidencePath,
     (Join-Path $telehealthRoot 'README.md'),
     (Join-Path $telehealthRoot 'backlog/validation-report.md')
 )

@@ -1,6 +1,6 @@
 # Telehealth planning-artifact validation report
 
-Validation date: 2026-08-29
+Validation date: 2026-08-30
 
 Scope: Planning/backlog structure and authorization links; implementation evidence is reported separately
 
@@ -23,19 +23,19 @@ Result: Pass
 | Unknown requirements | 0 |
 | Invalid story ranges, statuses or priorities | 0 |
 | Invalid epic dependencies | 0 |
-| Approved safeguard definitions | 61 |
-| Unique safeguard identifiers | 61 |
-| Markdown files checked | 198 |
-| Relative Markdown links checked | 680 |
+| Approved safeguard definitions | 67 |
+| Unique safeguard identifiers | 67 |
+| Markdown files checked | 219 |
+| Relative Markdown links checked | 756 |
 | Broken relative links | 0 |
 | Wireframe screen frames | 12 |
 | Duplicate HTML identifiers | 0 |
 | Labels with missing control targets | 0 |
 | Local links with missing targets | 0 |
 | Inline event handlers | 0 |
-| Automated validator checks | 101 passed, 0 failed |
+| Automated validator checks | 108 passed, 0 failed |
 | Controlled negative mutations | 3 rejected, 0 missed |
-| Active safeguards | `TH-SG-001` through `TH-SG-061` |
+| Active safeguards | `TH-SG-001` through `TH-SG-067` |
 | Existing verification workflow invocation | Present and mandatory |
 
 ## Method
