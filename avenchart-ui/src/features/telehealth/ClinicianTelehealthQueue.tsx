@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { enterTelehealthConsultationWrapUp, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
+import { endIdleClinicianShift, enterTelehealthConsultationWrapUp, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
 import { isRequestCancellation } from '../../api/transport.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import TelehealthPharmacyChoicePanel from './TelehealthPharmacyChoicePanel.tsx'
@@ -103,6 +103,14 @@ export default function ClinicianTelehealthQueue() {
       await refresh()
     }
     catch (caught) { setReservation(null); setItems([]); setError(caught instanceof Error ? caught.message : 'The next request could not be reserved.') }
+    finally { setWorking(false) }
+  }
+
+  async function endShift() {
+    if (!shift || reservation || consultation || working) return
+    setWorking(true); setError(null)
+    try { await endIdleClinicianShift(shift.shiftId, shift.version); setShift(null); setClosureStatus('Synthetic telehealth shift ended. No patient, appointment, encounter, clinical, billing, claim, media, integration, or external state changed.') }
+    catch (caught) { setError(caught instanceof Error ? caught.message : 'The idle shift could not be ended.') }
     finally { setWorking(false) }
   }
 
@@ -270,6 +278,7 @@ export default function ClinicianTelehealthQueue() {
         <div><h2>Telehealth shift</h2><p>{shift ? `${shift.status} at facility ${shift.facilityId}` : 'Start a shift before reserving a request.'}</p></div>
         <button className="telehealth-button" type="button" disabled={working || shift !== null} onClick={() => void start()}>{shift ? 'Shift active' : 'Start telehealth shift'}</button>
         <button className="telehealth-button" type="button" disabled={working || shift === null || reservation !== null} onClick={() => void reserve()}>Reserve next request</button>
+        <button className="telehealth-button telehealth-button-secondary" type="button" disabled={working || shift?.status !== 'Active' || reservation !== null || consultation !== null} onClick={() => void endShift()}>End idle telehealth shift</button>
       </section>
       {reservation ? (
         <section className="telehealth-card" aria-labelledby="reserved-title">

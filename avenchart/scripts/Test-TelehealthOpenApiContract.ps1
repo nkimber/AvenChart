@@ -29,7 +29,7 @@ try {
       '/api/telehealth/v1/admin/applicant-promotion-authorization','/api/telehealth/v1/admin/applicants/{applicantId}/promotion-authorization-decision',
       '/api/telehealth/v1/admin/applicant-synthetic-promotion','/api/telehealth/v1/admin/applicants/{applicantId}/synthetic-promotion',
       '/api/telehealth/v1/admin/operational-review','/api/telehealth/v1/admin/applicant-requests/{requestId}/queue-authorization','/api/telehealth/v1/admin/requests/{requestId}/authorize',
-      '/api/telehealth/v1/clinician/queue','/api/telehealth/v1/clinician/shifts','/api/telehealth/v1/clinician/reservations/reserve-next',
+      '/api/telehealth/v1/clinician/queue','/api/telehealth/v1/clinician/shifts','/api/telehealth/v1/clinician/shifts/{shiftId}/end','/api/telehealth/v1/clinician/reservations/reserve-next',
       '/api/telehealth/v1/clinician/reservations/{reservationId}/connection-grants',
       '/api/telehealth/v1/clinician/reservations/{reservationId}/consultations/start',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/workspace',

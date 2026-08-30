@@ -759,6 +759,15 @@ public static class TelehealthEndpoints
             .WithName("StartTelehealthClinicianShift")
             .Produces<TelehealthShiftResponse>(StatusCodes.Status201Created)
             .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
+        clinician.MapPost("/shifts/{shiftId:guid}/end", EndIdleShiftAsync)
+            .WithName("EndIdleTelehealthClinicianShift")
+            .WithDescription("Ends only the owning physician's idle NON_PRODUCTION synthetic shift. It refuses active reservation or consultation work and changes no patient, appointment, encounter, clinical, billing, claim, media, integration, or external state.")
+            .Accepts<EndTelehealthShiftRequest>("application/json")
+            .Produces<TelehealthShiftResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
         clinician.MapPost("/reservations/reserve-next", ReserveNextAsync)
             .WithName("ReserveNextTelehealthRequest")
             .Produces<TelehealthReservationResponse>()
@@ -2289,6 +2298,13 @@ public static class TelehealthEndpoints
                 RequireStaffAccessContext(context),
                 ReadIdempotencyKey(context),
                 cancellationToken)));
+
+    private static async Task<IResult> EndIdleShiftAsync(
+        TelehealthService service, AuthRepository authRepository, HttpContext context, Guid shiftId,
+        EndTelehealthShiftRequest request, CancellationToken cancellationToken) =>
+        await ExecuteAsync(async () => Results.Ok(await service.EndIdleShiftAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken), RequireStaffAccessContext(context),
+            shiftId, request, ReadIdempotencyKey(context), cancellationToken)));
 
     private static async Task<IResult> ReserveNextAsync(
         TelehealthService service,

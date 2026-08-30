@@ -534,6 +534,50 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         }
     }
 
+    public async Task<TelehealthShiftResponse> EndIdleShiftAsync(
+        string practiceId, int facilityId, int clinicianStaffId, Guid shiftId, int expectedVersion,
+        string idempotencyKey, string fingerprint, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await using (var replay = connection.CreateCommand())
+        {
+            replay.Transaction = transaction;
+            replay.CommandText = """
+                select shift_id,status,facility_id,clinician_staff_id,started_at,version,ended_at,end_fingerprint
+                from telehealth_clinician_shifts where practice_id=@practice and facility_id=@facility and clinician_staff_id=@clinician
+                  and shift_id=@shift and end_idempotency_key=@key for update;
+                """;
+            replay.Parameters.AddWithValue("practice", practiceId); replay.Parameters.AddWithValue("facility", facilityId);
+            replay.Parameters.AddWithValue("clinician", clinicianStaffId); replay.Parameters.AddWithValue("shift", shiftId); replay.Parameters.AddWithValue("key", idempotencyKey);
+            await using var reader = await replay.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                if (!string.Equals(reader.GetString(7), fingerprint, StringComparison.Ordinal)) throw TelehealthProblem.Conflict("telehealth_idempotency_conflict", "The shift-end idempotency key was reused with different content.");
+                var result = new TelehealthShiftResponse(reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetFieldValue<DateTimeOffset>(4), checked((int)reader.GetInt64(5)), reader.GetFieldValue<DateTimeOffset>(6));
+                await transaction.CommitAsync(cancellationToken); return result;
+            }
+        }
+        await using (var end = connection.CreateCommand())
+        {
+            end.Transaction = transaction;
+            end.CommandText = """
+                update telehealth_clinician_shifts shift set status='Ended',ended_at=now(),end_idempotency_key=@key,end_fingerprint=@fingerprint,version=version+1
+                where shift.shift_id=@shift and shift.practice_id=@practice and shift.facility_id=@facility and shift.clinician_staff_id=@clinician
+                  and shift.status='Active' and shift.version=@expected
+                  and not exists(select 1 from telehealth_reservations reservation where reservation.shift_id=shift.shift_id and reservation.status='Active')
+                  and not exists(select 1 from telehealth_consultation_contexts context where context.shift_id=shift.shift_id and context.status in ('Started','MediaEnded'))
+                returning shift_id,status,facility_id,clinician_staff_id,started_at,version,ended_at;
+                """;
+            end.Parameters.AddWithValue("shift", shiftId); end.Parameters.AddWithValue("practice", practiceId); end.Parameters.AddWithValue("facility", facilityId); end.Parameters.AddWithValue("clinician", clinicianStaffId);
+            end.Parameters.AddWithValue("expected", expectedVersion); end.Parameters.AddWithValue("key", idempotencyKey); end.Parameters.AddWithValue("fingerprint", fingerprint);
+            await using var reader = await end.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) throw TelehealthProblem.Conflict("telehealth_shift_end_unavailable", "The shift is stale, no longer idle, or cannot be ended.");
+            var result = new TelehealthShiftResponse(reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetFieldValue<DateTimeOffset>(4), checked((int)reader.GetInt64(5)), reader.GetFieldValue<DateTimeOffset>(6));
+            await transaction.CommitAsync(cancellationToken); return result;
+        }
+    }
+
     public async Task<TelehealthReservationResponse?> ReserveNextAsync(
         string practiceId,
         int facilityId,

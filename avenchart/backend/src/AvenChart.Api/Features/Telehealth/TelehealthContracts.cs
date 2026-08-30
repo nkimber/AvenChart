@@ -809,7 +809,10 @@ public sealed record TelehealthShiftResponse(
     int FacilityId,
     int ClinicianStaffId,
     DateTimeOffset StartedAt,
-    int Version);
+    int Version,
+    DateTimeOffset? EndedAt = null);
+
+public sealed record EndTelehealthShiftRequest(int ExpectedVersion, bool NoActiveWorkConfirmed, bool SyntheticEndConfirmed);
 
 public sealed record TelehealthReservationResponse(
     Guid ReservationId,

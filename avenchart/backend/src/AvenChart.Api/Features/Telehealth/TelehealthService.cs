@@ -313,6 +313,15 @@ public sealed class TelehealthService(
             cancellationToken);
     }
 
+    public async Task<TelehealthShiftResponse> EndIdleShiftAsync(AuthSessionResponse session, StaffAccessContext accessContext, Guid shiftId, EndTelehealthShiftRequest request, string idempotencyKey, CancellationToken cancellationToken)
+    {
+        RequirePhysician(session); RequireConfiguredFacility(accessContext);
+        if (request.ExpectedVersion < 1 || !request.NoActiveWorkConfirmed || !request.SyntheticEndConfirmed) throw TelehealthProblem.BadRequest("telehealth_shift_end_invalid", "Confirm no active work and the synthetic-only end effect with a current shift version.");
+        var staffId = RequireStaffId(session); var key = TelehealthCommandFingerprint.RequireIdempotencyKey(idempotencyKey);
+        return await repository.EndIdleShiftAsync(_options.PracticeId, accessContext.FacilityId, staffId, shiftId, request.ExpectedVersion, key,
+            TelehealthCommandFingerprint.Create("end-idle-shift", _options.PracticeId, accessContext.FacilityId, staffId, shiftId, request.ExpectedVersion), cancellationToken);
+    }
+
     public async Task<TelehealthQueueResponse> ListClinicianQueueAsync(
         AuthSessionResponse session,
         StaffAccessContext accessContext,

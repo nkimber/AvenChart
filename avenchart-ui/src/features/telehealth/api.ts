@@ -2463,6 +2463,7 @@ export type TelehealthShift = {
   clinicianStaffId: number
   startedAt: string
   version: number
+  endedAt?: string | null
 }
 
 export type TelehealthReservation = {
@@ -4435,6 +4436,10 @@ export async function listClinicianQueue(signal?: AbortSignal) {
 
 export function startClinicianShift() {
   return json<TelehealthShift>('/api/telehealth/v1/clinician/shifts', commandInit(undefined, 'clinician'))
+}
+
+export function endIdleClinicianShift(shiftId: string, expectedVersion: number) {
+  return json<TelehealthShift>(`/api/telehealth/v1/clinician/shifts/${shiftId}/end`, commandInit({ expectedVersion, noActiveWorkConfirmed: true, syntheticEndConfirmed: true }, 'clinician'))
 }
 
 export async function reserveNextRequest() {

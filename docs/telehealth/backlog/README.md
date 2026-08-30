@@ -1,13 +1,13 @@
 # Telehealth implementation backlog
 
-Status: Exact disabled synthetic Sprints 1–62 active only within Decisions 0003 and 0005–0065
+Status: Exact disabled synthetic Sprints 1–63 active only within Decisions 0003 and 0005–0066
 Decision baseline: [Decision 0001](../decisions/0001-g0-development-baseline.md)  
 Machine-readable source: [backlog.json](backlog.json)  
 First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 62 synthetic closure-status projection](sprint-62-synthetic-closure-status.md); bounded automated implementation evidence is recorded in the [Sprint 62 evidence packet](sprint-62-evidence.md)
+Current increment: [Sprint 63 synthetic idle-shift end](sprint-63-synthetic-idle-shift-end.md); implementation and automated evidence are pending
 
 ## 1. Backlog contract
 
@@ -86,7 +86,7 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 - Telehealth G0 product baseline: **approved** by Decision 0001.
 - Backlog and wireframe preparation: **authorized**.
 - Planning-artifact validator and existing-CI invocation: **authorized and active under Decision 0002**.
-- Decisions 0003 and 0005–0065 authorize only their exact disabled synthetic Sprint 1–62 application/database/feature-test/runtime paths through 2026-10-31.
+- Decisions 0003 and 0005–0066 authorize only their exact disabled synthetic Sprint 1–63 application/database/feature-test/runtime paths through 2026-10-31.
 - All implementation outside those decisions remains **blocked by the existing Phase 2 exit gate** until explicit closure or another scoped override.
 - Real patient care: separately blocked until G4 regardless of implementation authorization.
 
@@ -111,3 +111,5 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 [Decision 0064](../decisions/0064-approved-sprint-61-synthetic-visit-closure.md) permits only the exact consultation-owning physician to close the synthetic consultation/request lifecycle after that encounter lock and return the shift to `Active`. The appointment stays in progress; encounter completion, patient delivery, billing, claims, integrations, and external action remain closed.
 
 [Decision 0065](../decisions/0065-approved-sprint-62-synthetic-closure-status.md) permits the established-patient and exact applicant owner to read a neutral terminal `Closed` lifecycle projection after full lineage validation. The projection says the appointment and encounter remain incomplete and exposes no care-completion, prescription, billing, claim, integration, or external assertion.
+
+[Decision 0066](../decisions/0066-approved-sprint-63-synthetic-idle-shift-end.md) permits the exact physician to end only an idle `Active` synthetic shift after server proof that no active reservation, active consultation, or wrap-up work remains. It creates no patient, queue, appointment, encounter, clinical, financial, media, integration, external, or production consequence.
