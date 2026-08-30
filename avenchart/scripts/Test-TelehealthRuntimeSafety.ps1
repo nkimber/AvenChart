@@ -39,7 +39,8 @@ try {
         $featureSource -match '!environment\.IsProduction\(\)' -and
         $featureSource -match 'string\.Equals\(options\.Mode, "Synthetic"' -and
         $featureSource -match 'SyntheticTelehealthVideoProvider\.AdapterMode' -and
-        $featureSource -match 'SyntheticTelehealthPharmacyDirectory\.Mode')
+        $featureSource -match 'SyntheticTelehealthPharmacyDirectory\.Mode' -and
+        $featureSource -match 'SyntheticProfessionalClaimGateway\.AdapterMode')
     $applicantServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthProspectiveApplicantService.cs')
     $applicantRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthProspectiveApplicantRepository.cs')
     Add-Check 'Prospective identity shell has no delivery integration or canonical-patient mutation' (

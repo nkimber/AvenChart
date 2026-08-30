@@ -47,7 +47,8 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
             ["Telehealth:SupportedStates:2"] = "FL",
             ["Telehealth:ReservationLeaseSeconds"] = "120",
             ["Telehealth:VideoAdapterMode"] = "NON_PRODUCTION",
-            ["Telehealth:PharmacyDirectoryAdapterMode"] = "NON_PRODUCTION"
+            ["Telehealth:PharmacyDirectoryAdapterMode"] = "NON_PRODUCTION",
+            ["Telehealth:ProfessionalClaimAdapterMode"] = "NON_PRODUCTION"
         });
         builder.Services.AddTelehealth(builder.Configuration, builder.Environment);
         using var host = builder.Build();
@@ -87,6 +88,13 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         Assert.False(TelehealthRuntimeSafetyPolicy.IsSafe(options, Environment(Environments.Development)));
     }
 
+    [Fact]
+    public void EnabledFeatureRejectsAnyNonSyntheticProfessionalClaimAdapter()
+    {
+        Assert.False(TelehealthRuntimeSafetyPolicy.IsSafe(
+            WithProfessionalClaimAdapter(ValidEnabledOptions(), "ClearinghouseVendor"), Environment(Environments.Development)));
+    }
+
     private static TelehealthOptions ValidEnabledOptions(string[]? hosts = null) => new()
     {
         Enabled = true,
@@ -97,7 +105,8 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         SupportedStates = ["GA", "CA", "FL"],
         ReservationLeaseSeconds = 120,
         VideoAdapterMode = "NON_PRODUCTION",
-        PharmacyDirectoryAdapterMode = "NON_PRODUCTION"
+        PharmacyDirectoryAdapterMode = "NON_PRODUCTION",
+        ProfessionalClaimAdapterMode = "NON_PRODUCTION"
     };
 
     private static TelehealthOptions WithVideoAdapter(TelehealthOptions options, string mode) => new()
@@ -111,7 +120,8 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         SupportedStates = options.SupportedStates,
         ReservationLeaseSeconds = options.ReservationLeaseSeconds,
         VideoAdapterMode = mode,
-        PharmacyDirectoryAdapterMode = options.PharmacyDirectoryAdapterMode
+        PharmacyDirectoryAdapterMode = options.PharmacyDirectoryAdapterMode,
+        ProfessionalClaimAdapterMode = options.ProfessionalClaimAdapterMode
     };
 
     private static TelehealthOptions WithPharmacyDirectoryAdapter(TelehealthOptions options, string mode) => new()
@@ -125,7 +135,23 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         SupportedStates = options.SupportedStates,
         ReservationLeaseSeconds = options.ReservationLeaseSeconds,
         VideoAdapterMode = options.VideoAdapterMode,
-        PharmacyDirectoryAdapterMode = mode
+        PharmacyDirectoryAdapterMode = mode,
+        ProfessionalClaimAdapterMode = options.ProfessionalClaimAdapterMode
+    };
+
+    private static TelehealthOptions WithProfessionalClaimAdapter(TelehealthOptions options, string mode) => new()
+    {
+        Enabled = options.Enabled,
+        Mode = options.Mode,
+        PracticeId = options.PracticeId,
+        PracticeDisplayName = options.PracticeDisplayName,
+        FacilityId = options.FacilityId,
+        BrandedHosts = options.BrandedHosts,
+        SupportedStates = options.SupportedStates,
+        ReservationLeaseSeconds = options.ReservationLeaseSeconds,
+        VideoAdapterMode = options.VideoAdapterMode,
+        PharmacyDirectoryAdapterMode = options.PharmacyDirectoryAdapterMode,
+        ProfessionalClaimAdapterMode = mode
     };
 
     private static IHostEnvironment Environment(string environmentName) => new TestHostEnvironment

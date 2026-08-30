@@ -23,6 +23,7 @@ public sealed class TelehealthOptions
     public int ReservationLeaseSeconds { get; init; } = 120;
     public string VideoAdapterMode { get; init; } = "NON_PRODUCTION";
     public string PharmacyDirectoryAdapterMode { get; init; } = "NON_PRODUCTION";
+    public string ProfessionalClaimAdapterMode { get; init; } = "NON_PRODUCTION";
 }
 
 public static partial class TelehealthRuntimeSafetyPolicy
@@ -44,6 +45,7 @@ public static partial class TelehealthRuntimeSafetyPolicy
             && options.ReservationLeaseSeconds is >= 30 and <= 600
             && string.Equals(options.VideoAdapterMode, SyntheticTelehealthVideoProvider.AdapterMode, StringComparison.Ordinal)
             && string.Equals(options.PharmacyDirectoryAdapterMode, SyntheticTelehealthPharmacyDirectory.Mode, StringComparison.Ordinal)
+            && string.Equals(options.ProfessionalClaimAdapterMode, SyntheticProfessionalClaimGateway.AdapterMode, StringComparison.Ordinal)
             && options.BrandedHosts.Length > 0
             && options.BrandedHosts.Distinct(StringComparer.OrdinalIgnoreCase).Count() == options.BrandedHosts.Length
             && options.BrandedHosts.All(IsExplicitHost)
@@ -178,6 +180,7 @@ public static class TelehealthServiceRegistration
         services.AddSingleton<IPharmacyDirectory, SyntheticTelehealthPharmacyDirectory>();
         services.AddSingleton<ITelehealthPrescriptionSafetyGateway, SyntheticTelehealthPrescriptionSafetyGateway>();
         services.AddSingleton<IEPrescriptionGateway, SyntheticEPrescriptionGateway>();
+        services.AddSingleton<IProfessionalClaimGateway, SyntheticProfessionalClaimGateway>();
         services.AddHealthChecks()
             .AddCheck<TelehealthReadinessHealthCheck>("telehealth", tags: ["ready"]);
         return services;
