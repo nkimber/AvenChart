@@ -284,6 +284,7 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Sprint 64 POC synthetic transcript plan](backlog/sprint-64-poc-synthetic-consultation-transcript.md) | Exact active-consultation patient/physician plain-text synthetic transcript with short polling and no external delivery |
 | [Sprint 65 POC synthetic request cancellation plan](backlog/sprint-65-poc-synthetic-patient-request-cancellation.md) | Owner-confirmed cancellation of an incomplete synthetic request before practice queue authorization |
 | [Sprint 66 POC synthetic request history plan](backlog/sprint-66-poc-synthetic-request-history.md) | Owner-only minimized synthetic lifecycle history drawn from the existing append-only request-event ledger |
+| [Sprint 67 POC synthetic professional-claim preparation plan](backlog/sprint-67-poc-synthetic-professional-claim-preparation.md) | Physician-owned, durable source-bound `PreparedOnly` synthetic professional-claim receipt through the existing non-transmitting 837P-labelled adapter seam |
 | [Engineering safeguards](backlog/engineering-safeguards.md) | Approved merge-gate design and activation conditions |
 | [Safeguard manifest](backlog/safeguards.json) | Machine-readable safeguard triggers, commands, required paths and evidence expectations |
 | [Planning validation](backlog/validation-report.md) | Structural evidence for requirement coverage, identifiers, dependencies, links and static wireframe integrity |

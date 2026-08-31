@@ -1163,6 +1163,9 @@ public sealed record TelehealthFinalClinicalReviewWorkspaceResponse(
 public sealed record TelehealthProfessionalClaimPreparationWorkspaceResponse(
     Guid ConsultationId,
     DateTimeOffset EvaluatedAt,
+    int? CurrentDocumentationVersion,
+    int? CurrentDispositionVersion,
+    int? CurrentFinalClinicalReviewVersion,
     bool CurrentFinalClinicalReviewRecorded,
     bool EncounterSignatureRecorded,
     bool CodingEvidenceRecorded,
@@ -1173,7 +1176,33 @@ public sealed record TelehealthProfessionalClaimPreparationWorkspaceResponse(
     string TargetStandard,
     bool ClaimPreparationEnabled,
     bool ClaimSubmissionEnabled,
+    TelehealthProfessionalClaimPreparationResponse? CurrentPreparation,
     IReadOnlyList<string> Blockers,
+    IReadOnlyList<string> Limitations);
+
+public sealed record PrepareTelehealthProfessionalClaimRequest(
+    int ExpectedDocumentationVersion,
+    int ExpectedDispositionVersion,
+    int ExpectedFinalClinicalReviewVersion,
+    bool SourceEvidenceReviewed,
+    bool SyntheticOnlyConfirmed,
+    bool NoSubmissionConfirmed);
+
+public sealed record TelehealthProfessionalClaimPreparationResponse(
+    Guid ClaimPreparationId,
+    Guid ConsultationId,
+    DateTimeOffset PreparedAt,
+    int DocumentationVersion,
+    int DispositionVersion,
+    int FinalClinicalReviewVersion,
+    string AdapterMode,
+    string AdapterName,
+    string TargetStandard,
+    string ClaimState,
+    string CorrelationReference,
+    bool TransactionCreated,
+    bool ExternalDestinationContacted,
+    bool SubmissionAccepted,
     IReadOnlyList<string> Limitations);
 
 public sealed record FinalizeTelehealthEncounterRequest(

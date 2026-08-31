@@ -2849,6 +2849,9 @@ export type TelehealthFinalClinicalReviewWorkspace = {
 export type TelehealthProfessionalClaimPreparationWorkspace = {
   consultationId: string
   evaluatedAt: string
+  currentDocumentationVersion: number | null
+  currentDispositionVersion: number | null
+  currentFinalClinicalReviewVersion: number | null
   currentFinalClinicalReviewRecorded: boolean
   encounterSignatureRecorded: boolean
   codingEvidenceRecorded: boolean
@@ -2859,7 +2862,35 @@ export type TelehealthProfessionalClaimPreparationWorkspace = {
   targetStandard: string
   claimPreparationEnabled: boolean
   claimSubmissionEnabled: boolean
+  currentPreparation: TelehealthProfessionalClaimPreparation | null
   blockers: string[]
+  limitations: string[]
+}
+
+export type TelehealthProfessionalClaimPreparationInput = {
+  expectedDocumentationVersion: number
+  expectedDispositionVersion: number
+  expectedFinalClinicalReviewVersion: number
+  sourceEvidenceReviewed: boolean
+  syntheticOnlyConfirmed: boolean
+  noSubmissionConfirmed: boolean
+}
+
+export type TelehealthProfessionalClaimPreparation = {
+  claimPreparationId: string
+  consultationId: string
+  preparedAt: string
+  documentationVersion: number
+  dispositionVersion: number
+  finalClinicalReviewVersion: number
+  adapterMode: string
+  adapterName: string
+  targetStandard: string
+  claimState: string
+  correlationReference: string
+  transactionCreated: false
+  externalDestinationContacted: false
+  submissionAccepted: false
   limitations: string[]
 }
 
@@ -4729,6 +4760,22 @@ export function getTelehealthProfessionalClaimPreparation(consultationId: string
   return json<TelehealthProfessionalClaimPreparationWorkspace>(
     `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/professional-claim-preparation`,
     { headers: clinicianHeaders(), signal },
+  )
+}
+
+export function prepareTelehealthProfessionalClaim(
+  consultationId: string,
+  input: TelehealthProfessionalClaimPreparationInput,
+  idempotencyKey: string,
+) {
+  return json<TelehealthProfessionalClaimPreparation>(
+    `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/professional-claim-preparation`,
+    {
+      method: 'POST',
+      headers: clinicianHeaders({ 'Content-Type': 'application/json', 'X-Idempotency-Key': idempotencyKey }),
+      body: JSON.stringify(input),
+      cache: 'no-store',
+    },
   )
 }
 

@@ -980,6 +980,18 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"))
             .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "view"));
+        clinician.MapPost("/consultations/{consultationId:guid}/professional-claim-preparation", PrepareProfessionalClaimAsync)
+            .WithName("PrepareTelehealthProfessionalClaim")
+            .WithDescription("Creates one physician-owned, source-bound, NON_PRODUCTION PreparedOnly receipt through the synthetic 837P adapter seam. It creates no claim payload, billing record, X12 transaction, submission, or external action.")
+            .Accepts<PrepareTelehealthProfessionalClaimRequest>("application/json")
+            .Produces<TelehealthProfessionalClaimPreparationResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "view"))
+            .AddEndpointFilter(AccessPermissionFilter("encounters", "auth", "write"));
         clinician.MapGet("/consultations/{consultationId:guid}/safety-disposition-draft", GetConsultationSafetyDispositionDraftAsync)
             .WithName("GetTelehealthConsultationSafetyDispositionDraft")
             .WithDescription("Returns only the owning physician's current unsigned, undelivered synthetic safety-disposition draft and bounded physician-selected vocabularies during unfinished wrap-up.")
@@ -2689,6 +2701,20 @@ public static class TelehealthEndpoints
         return await ExecuteAsync(async () => Results.Ok(await service.GetWorkspaceAsync(
             await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
             RequireStaffAccessContext(context), consultationId, cancellationToken)));
+    }
+
+    private static async Task<IResult> PrepareProfessionalClaimAsync(
+        TelehealthProfessionalClaimPreparationService service,
+        AuthRepository authRepository,
+        HttpContext context,
+        Guid consultationId,
+        PrepareTelehealthProfessionalClaimRequest request,
+        CancellationToken cancellationToken)
+    {
+        SetConsultationPrivateResponse(context, consultationId);
+        return await ExecuteAsync(async () => Results.Ok(await service.PrepareAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context), consultationId, request, ReadIdempotencyKey(context), cancellationToken)));
     }
 
     private static async Task<IResult> RecordConsultationSafetyDispositionDraftAsync(
