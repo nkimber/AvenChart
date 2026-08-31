@@ -1,24 +1,24 @@
 # Graph Report - .  (2026-08-31)
 
 ## Corpus Check
-- Large corpus: 1169 files · ~1,134,631 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- Large corpus: 1170 files · ~1,134,849 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
-- 10833 nodes · 24378 edges · 580 communities detected
+- 10840 nodes · 24395 edges · 580 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
-- Edge kinds: calls: 6369 · contains: 5131 · method: 4047 · MODIFIES: 3250 · imports: 2082 · ON_BRANCH: 876 · references: 760 · reads_from: 584 · imports_from: 560 · PARENT_OF: 466 · triggers: 144 · inherits: 103 · re_exports: 6
+- Edge kinds: calls: 6371 · contains: 5132 · method: 4050 · MODIFIES: 3256 · imports: 2082 · ON_BRANCH: 878 · references: 760 · reads_from: 584 · imports_from: 560 · PARENT_OF: 468 · triggers: 144 · inherits: 104 · re_exports: 6
 
 
 ## Input Scope
 - Requested: committed
 - Resolved: committed (source: cli)
-- Included files: 1169 · Candidates: 1627
-- Excluded: 0 untracked · 50084 ignored · 1 sensitive · 0 missing committed
+- Included files: 1170 · Candidates: 1630
+- Excluded: 0 untracked · 50089 ignored · 1 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `7cbcccb`
+- Built from Git commit: `9187c9a`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `AdministrationRepository` - 233 edges
@@ -36,11 +36,11 @@
 - `createClinicalFormRevision()` --calls--> `headers()`  [EXTRACTED]
   avenchart-ui/src/api/clinicalForms.ts → avenchart-ui/src/api/clinicalForms.ts  _Bridges community 11 → community 3_
 - `access_user_memberships` --references--> `staff`  [EXTRACTED]
-  avenchart/database/bootstrap/base-schema.sql → avenchart/database/bootstrap/base-schema.sql  _Bridges community 495 → community 184_
+  avenchart/database/bootstrap/base-schema.sql → avenchart/database/bootstrap/base-schema.sql  _Bridges community 496 → community 184_
 - `appointments` --references--> `patients`  [EXTRACTED]
   avenchart/database/bootstrap/base-schema.sql → avenchart/database/bootstrap/base-schema.sql  _Bridges community 184 → community 115_
 - `inventory_lots` --references--> `facilities`  [EXTRACTED]
-  avenchart/database/bootstrap/base-schema.sql → avenchart/database/bootstrap/base-schema.sql  _Bridges community 450 → community 184_
+  avenchart/database/bootstrap/base-schema.sql → avenchart/database/bootstrap/base-schema.sql  _Bridges community 451 → community 184_
 - `lab_orders` --references--> `patients`  [EXTRACTED]
   avenchart/database/bootstrap/base-schema.sql → avenchart/database/bootstrap/base-schema.sql  _Bridges community 320 → community 115_
 
@@ -71,8 +71,8 @@ Cohesion: 0.04
 Nodes (152): codex/ef-data-access-modernization, main, 0220d35 fix(auth): scope scheduling and encounter workflows to facility, 0239c9f fix(labs): invalidate stale critical result queue, 05beda1 refactor(api): isolate encounter endpoints, 05fa4fb fix(patients): make administration updates atomic, 06f5d60 chore(graph): refresh code index, 07e8fdd fix(sdoh): anchor generated goals to assessment date (+144 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.04
-Nodes (90): 0035c04 chore: record sprint 41 evidence and code graph, 125e764 feat(telehealth): add synthetic participation evaluation, 173baf2 feat: confirm applicant telehealth request location, 2269bb4 feat(telehealth): add local WebRTC POC, 2488353 docs(telehealth): govern synthetic encounter finalization, 24e99a7 feat(telehealth): add synthetic consultation transcript, 31aea60 test(telehealth): align decision traceability, 32cb3f5 docs: finalize sprint 44 verification evidence (+82 more)
+Cohesion: 0.03
+Nodes (92): 0035c04 chore: record sprint 41 evidence and code graph, 125e764 feat(telehealth): add synthetic participation evaluation, 173baf2 feat: confirm applicant telehealth request location, 2269bb4 feat(telehealth): add local WebRTC POC, 2488353 docs(telehealth): govern synthetic encounter finalization, 24e99a7 feat(telehealth): add synthetic consultation transcript, 31aea60 test(telehealth): align decision traceability, 32cb3f5 docs: finalize sprint 44 verification evidence (+84 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.05
@@ -175,12 +175,12 @@ Cohesion: 0.09
 Nodes (1): ClinicalFormRepository
 
 ### Community 32 - "Community 32"
-Cohesion: 0.07
-Nodes (1): AdministrationRepository
-
-### Community 33 - "Community 33"
 Cohesion: 0.08
 Nodes (1): TelehealthRepository
+
+### Community 33 - "Community 33"
+Cohesion: 0.07
+Nodes (1): AdministrationRepository
 
 ### Community 34 - "Community 34"
 Cohesion: 0.09
@@ -687,32 +687,32 @@ Cohesion: 0.23
 Nodes (1): TelehealthConsultationService
 
 ### Community 175 - "Community 175"
+Cohesion: 0.28
+Nodes (1): TelehealthRuntimeSafetyPolicyTests
+
+### Community 176 - "Community 176"
 Cohesion: 0.27
 Nodes (1): InventoryValuationRepository
 
-### Community 176 - "Community 176"
+### Community 177 - "Community 177"
 Cohesion: 0.26
 Nodes (14): facilities, managed_record_intake_events, managed_record_intakes, patient_document_archive_events, patient_document_content_events, patient_document_metadata_events, patient_document_ocr_events, patient_document_ocr_tasks (+6 more)
 
-### Community 177 - "Community 177"
+### Community 178 - "Community 178"
 Cohesion: 0.27
 Nodes (1): TelehealthApplicantInsuranceHandoffRepository
 
-### Community 178 - "Community 178"
+### Community 179 - "Community 179"
 Cohesion: 0.36
 Nodes (1): TelehealthApplicantRequestInsuranceSourceRepository
 
-### Community 179 - "Community 179"
+### Community 180 - "Community 180"
 Cohesion: 0.33
 Nodes (1): TelehealthApplicantRequestOperationalReviewSubmissionRepository
 
-### Community 180 - "Community 180"
+### Community 181 - "Community 181"
 Cohesion: 0.14
 Nodes (3): TelehealthCommandFingerprint, TelehealthProblem, TelehealthRequestStateMachine
-
-### Community 181 - "Community 181"
-Cohesion: 0.30
-Nodes (1): TelehealthRuntimeSafetyPolicyTests
 
 ### Community 182 - "Community 182"
 Cohesion: 0.29
@@ -1492,555 +1492,555 @@ Nodes (1): TelehealthProspectiveVisitPurposeRepository
 
 ### Community 389 - "Community 389"
 Cohesion: 0.33
-Nodes (2): getPatientMessages(), PatientMessagesResponse
+Nodes (3): BackgroundService, TelehealthReservationLeaseReaper, ReportExecutionWorker
 
 ### Community 390 - "Community 390"
-Cohesion: 0.67
-Nodes (1): PatientRecordRequestRepository
+Cohesion: 0.33
+Nodes (2): getPatientMessages(), PatientMessagesResponse
 
 ### Community 391 - "Community 391"
 Cohesion: 0.67
-Nodes (1): AzureOperationsEndpoints
+Nodes (1): PatientRecordRequestRepository
 
 ### Community 392 - "Community 392"
 Cohesion: 0.67
-Nodes (5): encounter_track_reading_values, encounter_track_readings, encounter_track_records, encounters, track_anything_types
+Nodes (1): AzureOperationsEndpoints
 
 ### Community 393 - "Community 393"
+Cohesion: 0.67
+Nodes (5): encounter_track_reading_values, encounter_track_readings, encounter_track_records, encounters, track_anything_types
+
+### Community 394 - "Community 394"
 Cohesion: 0.60
 Nodes (5): encounters, inventory_lots, inventory_patient_sales, inventory_transactions, patients
 
-### Community 394 - "Community 394"
+### Community 395 - "Community 395"
 Cohesion: 0.53
 Nodes (5): facilities, inventory_controlled_item_classification_events, inventory_controlled_location_events, inventory_controlled_locations, inventory_items
 
-### Community 395 - "Community 395"
+### Community 396 - "Community 396"
 Cohesion: 0.67
 Nodes (5): encounters, inventory_controlled_custody_events, inventory_controlled_locations, inventory_lots, patients
 
-### Community 396 - "Community 396"
+### Community 397 - "Community 397"
 Cohesion: 0.67
 Nodes (5): patient_disclosure_authorities, patient_disclosure_authority_events, patient_disclosure_request_events, patient_disclosure_requests, patients
 
-### Community 397 - "Community 397"
+### Community 398 - "Community 398"
 Cohesion: 0.60
 Nodes (5): auth_accounts, facilities, practice_setting_delegation_events, practice_setting_delegations, practice_settings
 
-### Community 398 - "Community 398"
+### Community 399 - "Community 399"
 Cohesion: 0.33
 Nodes (5): operations.audit_events, operations.operator_credentials, operations.runtime_state, operations.sessions, operations.usage_events
 
-### Community 399 - "Community 399"
+### Community 400 - "Community 400"
 Cohesion: 0.47
 Nodes (5): auth_sessions, azure_operations_access_audit, azure_operations_access_config, azure_operations_access_grants, azure_operations_unlock_attempts
 
-### Community 400 - "Community 400"
+### Community 401 - "Community 401"
 Cohesion: 0.67
 Nodes (5): auth_access_context_grant_events, auth_accounts, auth_principal_facility_grants, auth_principal_purpose_of_use_grants, facilities
 
-### Community 401 - "Community 401"
+### Community 402 - "Community 402"
 Cohesion: 0.47
 Nodes (4): prescription_audit_events, prescriptions, trg_prescription_audit_events_immutable, trg_prescriptions_retained
 
-### Community 402 - "Community 402"
+### Community 403 - "Community 403"
 Cohesion: 0.53
 Nodes (5): avenchart_require_active_patient_for_prescription_continuation(), patient_record, patients, prescriptions, trg_prescriptions_require_active_patient_for_continuation
 
-### Community 403 - "Community 403"
+### Community 404 - "Community 404"
 Cohesion: 0.53
 Nodes (4): auth_accounts, auth_external_identity_mapping_events, auth_external_identity_mappings, trg_auth_external_identity_mapping_events_immutable
 
-### Community 404 - "Community 404"
+### Community 405 - "Community 405"
 Cohesion: 0.53
 Nodes (4): patient_portal_external_identity_mapping_events, patient_portal_external_identity_mappings, patients, trg_patient_portal_external_identity_mapping_events_immutable
 
-### Community 405 - "Community 405"
+### Community 406 - "Community 406"
 Cohesion: 0.53
 Nodes (4): critical_lab_result_follow_up_events, critical_lab_result_follow_ups, lab_results, trg_critical_follow_up_events_append_only
 
-### Community 406 - "Community 406"
+### Community 407 - "Community 407"
 Cohesion: 0.40
 Nodes (2): Invoke-Api(), Start-TestApi()
 
-### Community 407 - "Community 407"
+### Community 408 - "Community 408"
 Cohesion: 0.47
 Nodes (3): Get-Packet(), Get-PacketStatus(), Packet-Path()
 
-### Community 409 - "Community 409"
+### Community 410 - "Community 410"
 Cohesion: 0.53
 Nodes (1): TestIdentityProviderService
 
-### Community 410 - "Community 410"
+### Community 411 - "Community 411"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantAllergyInformationService
 
-### Community 411 - "Community 411"
+### Community 412 - "Community 412"
 Cohesion: 0.47
 Nodes (1): TelehealthApplicantClinicalInformationInventoryPolicy
 
-### Community 412 - "Community 412"
+### Community 413 - "Community 413"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantClinicalInformationInventoryService
 
-### Community 413 - "Community 413"
+### Community 414 - "Community 414"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantClinicalInformationSummaryService
 
-### Community 414 - "Community 414"
+### Community 415 - "Community 415"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantCommunicationAccessService
 
-### Community 415 - "Community 415"
+### Community 416 - "Community 416"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantDevicePreparationService
 
-### Community 416 - "Community 416"
+### Community 417 - "Community 417"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantHealthHistoryInformationService
 
-### Community 417 - "Community 417"
+### Community 418 - "Community 418"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantInsuranceHandoffService
 
-### Community 418 - "Community 418"
+### Community 419 - "Community 419"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantMedicationInformationService
 
-### Community 419 - "Community 419"
+### Community 420 - "Community 420"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantNoticeService
 
-### Community 420 - "Community 420"
+### Community 421 - "Community 421"
 Cohesion: 0.33
 Nodes (1): TelehealthApplicantPracticeReviewAuthorizationPolicyTests
 
-### Community 421 - "Community 421"
+### Community 422 - "Community 422"
 Cohesion: 0.53
 Nodes (1): TelehealthApplicantPracticeReviewAuthorizationRepository
 
-### Community 422 - "Community 422"
+### Community 423 - "Community 423"
 Cohesion: 0.33
 Nodes (1): TelehealthApplicantPreRequestReadinessPolicy
 
-### Community 423 - "Community 423"
+### Community 424 - "Community 424"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantPreRequestReadinessService
 
-### Community 424 - "Community 424"
+### Community 425 - "Community 425"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantRegistrationDetailsService
 
-### Community 425 - "Community 425"
+### Community 426 - "Community 426"
 Cohesion: 0.33
 Nodes (1): TelehealthApplicantRequestCreationPolicyTests
 
-### Community 426 - "Community 426"
+### Community 427 - "Community 427"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantRequestCreationService
 
-### Community 427 - "Community 427"
+### Community 428 - "Community 428"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantRequestInsuranceSourceService
 
-### Community 428 - "Community 428"
+### Community 429 - "Community 429"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantRequestIntakeService
 
-### Community 429 - "Community 429"
+### Community 430 - "Community 430"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantRequestLocationService
 
-### Community 430 - "Community 430"
+### Community 431 - "Community 431"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantRequestOperationalReviewSubmissionService
 
-### Community 431 - "Community 431"
+### Community 432 - "Community 432"
 Cohesion: 0.47
 Nodes (1): TelehealthApplicantRequestParticipationContextPolicy
 
-### Community 432 - "Community 432"
+### Community 433 - "Community 433"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantRequestParticipationContextService
 
-### Community 433 - "Community 433"
+### Community 434 - "Community 434"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantRequestParticipationEvaluationService
 
-### Community 434 - "Community 434"
+### Community 435 - "Community 435"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantRequestQueueAuthorizationService
 
-### Community 435 - "Community 435"
+### Community 436 - "Community 436"
 Cohesion: 0.47
 Nodes (1): TelehealthApplicantRequestRenderingCandidatePolicy
 
-### Community 436 - "Community 436"
+### Community 437 - "Community 437"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantRequestRenderingCandidateService
 
-### Community 437 - "Community 437"
+### Community 438 - "Community 438"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantRequestUniversalSafetyService
 
-### Community 438 - "Community 438"
+### Community 439 - "Community 439"
 Cohesion: 0.33
 Nodes (1): TelehealthApplicantSyntheticPromotionPolicy
 
-### Community 439 - "Community 439"
+### Community 440 - "Community 440"
 Cohesion: 0.47
 Nodes (2): SessionSignals, TelehealthLocalWebRtcPocRelay
 
-### Community 440 - "Community 440"
+### Community 441 - "Community 441"
 Cohesion: 0.40
 Nodes (2): TelehealthRuntimeSafetyPolicy, TelehealthServiceRegistration
 
-### Community 441 - "Community 441"
+### Community 442 - "Community 442"
 Cohesion: 0.47
 Nodes (2): ITelehealthProspectiveEligibilityGateway, SyntheticTelehealthProspectiveEligibilityGateway
 
-### Community 442 - "Community 442"
+### Community 443 - "Community 443"
 Cohesion: 0.47
 Nodes (2): ITelehealthProspectiveIdentityProofingGateway, SyntheticTelehealthProspectiveIdentityProofingGateway
 
-### Community 443 - "Community 443"
+### Community 444 - "Community 444"
 Cohesion: 0.33
 Nodes (1): TelehealthProspectiveSafetyTriagePolicy
 
-### Community 444 - "Community 444"
+### Community 445 - "Community 445"
 Cohesion: 0.33
 Nodes (1): TelehealthProspectiveVisitPurposePolicyTests
 
-### Community 445 - "Community 445"
+### Community 446 - "Community 446"
 Cohesion: 0.53
 Nodes (1): TelehealthSyntheticAfterVisitPlanPreviewRepository
 
-### Community 446 - "Community 446"
+### Community 447 - "Community 447"
 Cohesion: 0.53
 Nodes (1): TelehealthSyntheticAfterVisitPlanPreviewService
 
-### Community 447 - "Community 447"
+### Community 448 - "Community 448"
 Cohesion: 0.53
 Nodes (1): TelehealthSyntheticPostVisitReceiptRepository
 
-### Community 448 - "Community 448"
+### Community 449 - "Community 449"
 Cohesion: 0.53
 Nodes (1): TelehealthSyntheticPostVisitReceiptService
 
-### Community 449 - "Community 449"
+### Community 450 - "Community 450"
 Cohesion: 0.47
 Nodes (2): ITelehealthVideoProvider, SyntheticTelehealthVideoProvider
 
-### Community 450 - "Community 450"
+### Community 451 - "Community 451"
 Cohesion: 0.40
 Nodes (5): inventory_items, inventory_lots, inventory_purchase_receipts, inventory_transactions, inventory_vendors
 
-### Community 451 - "Community 451"
+### Community 452 - "Community 452"
 Cohesion: 0.70
 Nodes (1): FlowBoardRepository
 
-### Community 452 - "Community 452"
+### Community 453 - "Community 453"
 Cohesion: 0.60
 Nodes (1): PhiAuditRepository
 
-### Community 453 - "Community 453"
+### Community 454 - "Community 454"
 Cohesion: 0.60
 Nodes (1): DevelopmentTestIdentityProviderEndpoints
 
-### Community 454 - "Community 454"
+### Community 455 - "Community 455"
 Cohesion: 0.60
 Nodes (1): FhirR4Endpoints
 
-### Community 455 - "Community 455"
+### Community 456 - "Community 456"
 Cohesion: 0.80
 Nodes (1): FhirR4ValidationService
 
-### Community 456 - "Community 456"
+### Community 457 - "Community 457"
 Cohesion: 0.60
 Nodes (1): PatientEndpoints
 
-### Community 457 - "Community 457"
+### Community 458 - "Community 458"
 Cohesion: 0.70
 Nodes (4): facilities, inventory_items, inventory_lots, inventory_transactions
 
-### Community 458 - "Community 458"
+### Community 459 - "Community 459"
 Cohesion: 0.70
 Nodes (4): patient_merge_audit_plans, patient_merge_execution_manifest_rows, patient_merge_executions, patients
 
-### Community 459 - "Community 459"
+### Community 460 - "Community 460"
 Cohesion: 0.70
 Nodes (4): facilities, patients, recalls, staff
 
-### Community 460 - "Community 460"
+### Community 461 - "Community 461"
 Cohesion: 0.70
 Nodes (4): chart_tracker_events, chart_tracker_locations, patients, staff
 
-### Community 461 - "Community 461"
+### Community 462 - "Community 462"
 Cohesion: 0.70
 Nodes (4): encounters, inventory_items, inventory_patient_sale_batches, patients
 
-### Community 462 - "Community 462"
+### Community 463 - "Community 463"
 Cohesion: 0.80
 Nodes (4): inventory_item_medication_link_audits, inventory_item_medication_links, inventory_items, medication_vocabulary
 
-### Community 463 - "Community 463"
+### Community 464 - "Community 464"
 Cohesion: 0.70
 Nodes (4): inventory_purchase_receipts, inventory_purchase_requisition_lines, inventory_purchase_requisition_receipts, inventory_purchase_requisitions
 
-### Community 464 - "Community 464"
+### Community 465 - "Community 465"
 Cohesion: 0.70
 Nodes (4): inventory_lot_destructions, inventory_lot_expiry_dispositions, inventory_lots, inventory_transactions
 
-### Community 465 - "Community 465"
+### Community 466 - "Community 466"
 Cohesion: 0.70
 Nodes (4): authorizations, clinical_workflow_events, patients, referrals
 
-### Community 466 - "Community 466"
+### Community 467 - "Community 467"
 Cohesion: 0.90
 Nodes (4): saved_report_definition_events, saved_report_definition_revisions, saved_report_definitions, saved_report_runs
 
-### Community 467 - "Community 467"
+### Community 468 - "Community 468"
 Cohesion: 0.70
 Nodes (4): azure_deployment_execution_events, azure_deployment_executions, azure_deployment_profile_revisions, azure_deployment_profiles
 
-### Community 468 - "Community 468"
+### Community 469 - "Community 469"
 Cohesion: 0.60
 Nodes (4): lab_orders, lab_results, procedure_order_events, procedure_result_events
 
-### Community 469 - "Community 469"
+### Community 470 - "Community 470"
 Cohesion: 0.60
 Nodes (3): integration_outbox, integration_outbox_provenance_events, trg_integration_outbox_provenance_events_immutable
 
-### Community 471 - "Community 471"
+### Community 472 - "Community 472"
 Cohesion: 0.50
 Nodes (2): Invoke-FixtureSql(), Set-FixturePortalState()
 
-### Community 472 - "Community 472"
+### Community 473 - "Community 473"
 Cohesion: 0.50
 Nodes (1): AuthorizationPolicyCatalog
 
-### Community 473 - "Community 473"
+### Community 474 - "Community 474"
 Cohesion: 0.50
 Nodes (2): IStaffIdentityAdapter, LocalDevelopmentStaffIdentityAdapter
 
-### Community 474 - "Community 474"
+### Community 475 - "Community 475"
 Cohesion: 0.60
 Nodes (1): SyntheticProfessionalClaimGatewayTests
 
-### Community 475 - "Community 475"
+### Community 476 - "Community 476"
 Cohesion: 0.50
 Nodes (2): ITelehealthTriageEvaluator, SyntheticTelehealthTriageEvaluator
 
-### Community 476 - "Community 476"
+### Community 477 - "Community 477"
 Cohesion: 0.40
 Nodes (1): TelehealthApplicantIdentityReviewPolicy
 
-### Community 477 - "Community 477"
+### Community 478 - "Community 478"
 Cohesion: 0.50
 Nodes (1): TelehealthApplicantInsuranceHandoffPolicy
 
-### Community 478 - "Community 478"
+### Community 479 - "Community 479"
 Cohesion: 0.40
 Nodes (1): TelehealthApplicantPracticeReviewClaimPolicyTests
 
-### Community 479 - "Community 479"
+### Community 480 - "Community 480"
 Cohesion: 0.60
 Nodes (1): TelehealthApplicantPracticeReviewInboxService
 
-### Community 480 - "Community 480"
+### Community 481 - "Community 481"
 Cohesion: 0.80
 Nodes (1): TelehealthApplicantRequestComplaintTriageService
 
-### Community 481 - "Community 481"
+### Community 482 - "Community 482"
 Cohesion: 0.50
 Nodes (1): TelehealthApplicantRequestIntakePolicy
 
-### Community 482 - "Community 482"
+### Community 483 - "Community 483"
 Cohesion: 0.40
 Nodes (1): TelehealthApplicantRequestParticipationEvaluationPolicy
 
-### Community 483 - "Community 483"
+### Community 484 - "Community 484"
 Cohesion: 0.70
 Nodes (1): TelehealthApplicantRequestQueueStatusRepository
 
-### Community 484 - "Community 484"
+### Community 485 - "Community 485"
 Cohesion: 0.40
 Nodes (1): TelehealthAuthorizationTests
 
-### Community 485 - "Community 485"
+### Community 486 - "Community 486"
 Cohesion: 0.70
 Nodes (1): TelehealthEncounterFinalizationRepository
 
-### Community 486 - "Community 486"
+### Community 487 - "Community 487"
 Cohesion: 0.60
 Nodes (1): TelehealthFinalClinicalReviewService
 
-### Community 487 - "Community 487"
+### Community 488 - "Community 488"
 Cohesion: 0.70
 Nodes (1): TelehealthPatientQueueStatusProjectorTests
 
-### Community 488 - "Community 488"
+### Community 489 - "Community 489"
 Cohesion: 0.50
 Nodes (2): IProfessionalClaimGateway, SyntheticProfessionalClaimGateway
 
-### Community 489 - "Community 489"
+### Community 490 - "Community 490"
 Cohesion: 0.50
 Nodes (1): TelehealthProspectiveMemberInsuranceDetailsProtector
 
-### Community 490 - "Community 490"
+### Community 491 - "Community 491"
 Cohesion: 0.60
 Nodes (1): TelehealthProspectiveMemberInsuranceDetailsService
 
-### Community 491 - "Community 491"
+### Community 492 - "Community 492"
 Cohesion: 0.60
 Nodes (1): TelehealthProspectiveSafetyTriageService
 
-### Community 492 - "Community 492"
+### Community 493 - "Community 493"
 Cohesion: 0.60
 Nodes (1): TelehealthProspectiveVisitPurposeService
 
-### Community 493 - "Community 493"
+### Community 494 - "Community 494"
 Cohesion: 0.70
 Nodes (1): TelehealthSyntheticVisitClosureRepository
 
-### Community 494 - "Community 494"
+### Community 495 - "Community 495"
 Cohesion: 0.50
 Nodes (1): StaffAccessContextServiceTests
 
-### Community 495 - "Community 495"
+### Community 496 - "Community 496"
 Cohesion: 0.67
 Nodes (4): access_group_permissions, access_groups, access_permissions, access_user_memberships
 
-### Community 496 - "Community 496"
+### Community 497 - "Community 497"
 Cohesion: 0.50
 Nodes (4): patient_disclosure_authorities, patient_disclosure_authority_events, patient_disclosure_request_events, patient_disclosure_requests
 
-### Community 497 - "Community 497"
+### Community 498 - "Community 498"
 Cohesion: 0.50
 Nodes (4): 17a6a49 feat(staging): add synthetic telehealth stack, 4aa9f70 chore(graph): index synthetic staging, 700da5b docs(telehealth): refresh state-source audit, 9ce877a chore(graph): refresh telehealth index
 
-### Community 498 - "Community 498"
+### Community 499 - "Community 499"
 Cohesion: 0.50
 Nodes (3): 1b2ad1b docs(phase-2): record Graphify index evidence, c3a55ee chore(tooling): add Graphify code-navigation index, ccb790f docs(phase-2): record Graphify supply-chain residual
 
-### Community 499 - "Community 499"
+### Community 500 - "Community 500"
 Cohesion: 0.67
 Nodes (1): ExternalLaboratoryFhirIntakeEndpoints
 
-### Community 500 - "Community 500"
+### Community 501 - "Community 501"
 Cohesion: 0.67
 Nodes (1): IntegrationEndpoints
 
-### Community 501 - "Community 501"
+### Community 502 - "Community 502"
 Cohesion: 0.83
 Nodes (3): form_layout_fields, form_layout_groups, form_layouts
 
-### Community 502 - "Community 502"
+### Community 503 - "Community 503"
 Cohesion: 0.83
 Nodes (3): encounter_layout_form_records, encounter_layout_form_values, form_layouts
 
-### Community 503 - "Community 503"
+### Community 504 - "Community 504"
 Cohesion: 0.83
 Nodes (3): batch_communication_campaigns, batch_communication_recipients, patients
 
-### Community 504 - "Community 504"
+### Community 505 - "Community 505"
 Cohesion: 0.83
 Nodes (3): facilities, inventory_purchase_receipts, inventory_vendors
 
-### Community 505 - "Community 505"
+### Community 506 - "Community 506"
 Cohesion: 0.83
 Nodes (3): practice_setting_change_request_events, practice_setting_change_requests, practice_settings
 
-### Community 506 - "Community 506"
+### Community 507 - "Community 507"
 Cohesion: 0.83
 Nodes (3): document_template_binary_versions, document_template_events, document_templates
 
-### Community 507 - "Community 507"
+### Community 508 - "Community 508"
 Cohesion: 0.83
 Nodes (3): inventory_cost_policies, inventory_cost_policy_change_request_events, inventory_cost_policy_change_requests
 
-### Community 508 - "Community 508"
+### Community 509 - "Community 509"
 Cohesion: 0.83
 Nodes (3): inventory_costing_exceptions, inventory_lots, inventory_transactions
 
-### Community 509 - "Community 509"
+### Community 510 - "Community 510"
 Cohesion: 0.83
 Nodes (3): inventory_accounting_integration_change_request_events, inventory_accounting_integration_change_requests, inventory_accounting_integration_decisions
 
-### Community 510 - "Community 510"
+### Community 511 - "Community 511"
 Cohesion: 0.83
 Nodes (3): facilities, practice_setting_facility_overrides, practice_settings
 
-### Community 511 - "Community 511"
+### Community 512 - "Community 512"
 Cohesion: 0.83
 Nodes (3): practice_setting_change_requests, practice_setting_facility_override_revisions, practice_setting_facility_overrides
 
-### Community 512 - "Community 512"
+### Community 513 - "Community 513"
 Cohesion: 0.83
 Nodes (3): encounters, legacy_clinical_form_snapshots, patients
 
-### Community 513 - "Community 513"
+### Community 514 - "Community 514"
 Cohesion: 0.83
 Nodes (3): message_assignment_events, messages, patients
 
-### Community 514 - "Community 514"
+### Community 515 - "Community 515"
 Cohesion: 0.83
 Nodes (3): messages, patients, staff_message_attachments
 
-### Community 515 - "Community 515"
+### Community 516 - "Community 516"
 Cohesion: 0.83
 Nodes (3): message_correction_events, messages, patients
 
-### Community 516 - "Community 516"
+### Community 517 - "Community 517"
 Cohesion: 0.83
 Nodes (3): message_retention_events, messages, patients
 
-### Community 517 - "Community 517"
+### Community 518 - "Community 518"
 Cohesion: 0.83
 Nodes (3): integration_idempotency_conflicts, integration_inbox, integration_outbox
 
-### Community 518 - "Community 518"
+### Community 519 - "Community 519"
 Cohesion: 0.50
 Nodes (1): TelehealthApplicantRequestEligibilityPolicy
 
-### Community 519 - "Community 519"
+### Community 520 - "Community 520"
 Cohesion: 0.50
 Nodes (1): TelehealthApplicantRequestInsuranceSourcePolicy
 
-### Community 520 - "Community 520"
+### Community 521 - "Community 521"
 Cohesion: 0.50
 Nodes (1): TelehealthApplicantRequestLocationPolicy
 
-### Community 521 - "Community 521"
+### Community 522 - "Community 522"
 Cohesion: 0.50
 Nodes (1): TelehealthApplicantRequestOperationalReviewSubmissionPolicy
 
-### Community 522 - "Community 522"
+### Community 523 - "Community 523"
 Cohesion: 0.50
 Nodes (1): TelehealthApplicantRequestPracticeNetworkPolicy
 
-### Community 523 - "Community 523"
+### Community 524 - "Community 524"
 Cohesion: 0.50
 Nodes (1): TelehealthApplicantRequestQueueAuthorizationPolicy
 
-### Community 524 - "Community 524"
+### Community 525 - "Community 525"
 Cohesion: 0.67
 Nodes (1): TelehealthCompletionReviewRepository
 
-### Community 525 - "Community 525"
+### Community 526 - "Community 526"
 Cohesion: 0.50
 Nodes (1): TelehealthAuthorizationPolicy
 
-### Community 526 - "Community 526"
+### Community 527 - "Community 527"
 Cohesion: 0.50
 Nodes (1): TelehealthLocalWebRtcPocRelayTests
 
-### Community 527 - "Community 527"
+### Community 528 - "Community 528"
 Cohesion: 0.50
 Nodes (1): TelehealthRequestStateMachineTests
-
-### Community 528 - "Community 528"
-Cohesion: 0.67
-Nodes (2): BackgroundService, ReportExecutionWorker
 
 ### Community 529 - "Community 529"
 Cohesion: 0.67
@@ -2387,9 +2387,9 @@ Nodes (1): AvenChart.Api.csproj
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 31`** (1 nodes): `ClinicalFormRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 32`** (1 nodes): `AdministrationRepository`
+- **Thin community `Community 32`** (1 nodes): `TelehealthRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 33`** (1 nodes): `TelehealthRepository`
+- **Thin community `Community 33`** (1 nodes): `AdministrationRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 34`** (1 nodes): `ClinicalFormRuntime`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -2505,15 +2505,15 @@ Nodes (1): AvenChart.Api.csproj
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 174`** (1 nodes): `TelehealthConsultationService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 175`** (1 nodes): `InventoryValuationRepository`
+- **Thin community `Community 175`** (1 nodes): `TelehealthRuntimeSafetyPolicyTests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 177`** (1 nodes): `TelehealthApplicantInsuranceHandoffRepository`
+- **Thin community `Community 176`** (1 nodes): `InventoryValuationRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 178`** (1 nodes): `TelehealthApplicantRequestInsuranceSourceRepository`
+- **Thin community `Community 178`** (1 nodes): `TelehealthApplicantInsuranceHandoffRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 179`** (1 nodes): `TelehealthApplicantRequestOperationalReviewSubmissionRepository`
+- **Thin community `Community 179`** (1 nodes): `TelehealthApplicantRequestInsuranceSourceRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 181`** (1 nodes): `TelehealthRuntimeSafetyPolicyTests`
+- **Thin community `Community 180`** (1 nodes): `TelehealthApplicantRequestOperationalReviewSubmissionRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 188`** (1 nodes): `PatientSdohRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -2761,181 +2761,179 @@ Nodes (1): AvenChart.Api.csproj
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 388`** (1 nodes): `TelehealthProspectiveVisitPurposeRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 389`** (2 nodes): `getPatientMessages()`, `PatientMessagesResponse`
+- **Thin community `Community 390`** (2 nodes): `getPatientMessages()`, `PatientMessagesResponse`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 390`** (1 nodes): `PatientRecordRequestRepository`
+- **Thin community `Community 391`** (1 nodes): `PatientRecordRequestRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 391`** (1 nodes): `AzureOperationsEndpoints`
+- **Thin community `Community 392`** (1 nodes): `AzureOperationsEndpoints`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 406`** (2 nodes): `Invoke-Api()`, `Start-TestApi()`
+- **Thin community `Community 407`** (2 nodes): `Invoke-Api()`, `Start-TestApi()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 409`** (1 nodes): `TestIdentityProviderService`
+- **Thin community `Community 410`** (1 nodes): `TestIdentityProviderService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 410`** (1 nodes): `TelehealthApplicantAllergyInformationService`
+- **Thin community `Community 411`** (1 nodes): `TelehealthApplicantAllergyInformationService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 411`** (1 nodes): `TelehealthApplicantClinicalInformationInventoryPolicy`
+- **Thin community `Community 412`** (1 nodes): `TelehealthApplicantClinicalInformationInventoryPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 412`** (1 nodes): `TelehealthApplicantClinicalInformationInventoryService`
+- **Thin community `Community 413`** (1 nodes): `TelehealthApplicantClinicalInformationInventoryService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 413`** (1 nodes): `TelehealthApplicantClinicalInformationSummaryService`
+- **Thin community `Community 414`** (1 nodes): `TelehealthApplicantClinicalInformationSummaryService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 414`** (1 nodes): `TelehealthApplicantCommunicationAccessService`
+- **Thin community `Community 415`** (1 nodes): `TelehealthApplicantCommunicationAccessService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 415`** (1 nodes): `TelehealthApplicantDevicePreparationService`
+- **Thin community `Community 416`** (1 nodes): `TelehealthApplicantDevicePreparationService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 416`** (1 nodes): `TelehealthApplicantHealthHistoryInformationService`
+- **Thin community `Community 417`** (1 nodes): `TelehealthApplicantHealthHistoryInformationService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 417`** (1 nodes): `TelehealthApplicantInsuranceHandoffService`
+- **Thin community `Community 418`** (1 nodes): `TelehealthApplicantInsuranceHandoffService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 418`** (1 nodes): `TelehealthApplicantMedicationInformationService`
+- **Thin community `Community 419`** (1 nodes): `TelehealthApplicantMedicationInformationService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 419`** (1 nodes): `TelehealthApplicantNoticeService`
+- **Thin community `Community 420`** (1 nodes): `TelehealthApplicantNoticeService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 420`** (1 nodes): `TelehealthApplicantPracticeReviewAuthorizationPolicyTests`
+- **Thin community `Community 421`** (1 nodes): `TelehealthApplicantPracticeReviewAuthorizationPolicyTests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 421`** (1 nodes): `TelehealthApplicantPracticeReviewAuthorizationRepository`
+- **Thin community `Community 422`** (1 nodes): `TelehealthApplicantPracticeReviewAuthorizationRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 422`** (1 nodes): `TelehealthApplicantPreRequestReadinessPolicy`
+- **Thin community `Community 423`** (1 nodes): `TelehealthApplicantPreRequestReadinessPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 423`** (1 nodes): `TelehealthApplicantPreRequestReadinessService`
+- **Thin community `Community 424`** (1 nodes): `TelehealthApplicantPreRequestReadinessService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 424`** (1 nodes): `TelehealthApplicantRegistrationDetailsService`
+- **Thin community `Community 425`** (1 nodes): `TelehealthApplicantRegistrationDetailsService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 425`** (1 nodes): `TelehealthApplicantRequestCreationPolicyTests`
+- **Thin community `Community 426`** (1 nodes): `TelehealthApplicantRequestCreationPolicyTests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 426`** (1 nodes): `TelehealthApplicantRequestCreationService`
+- **Thin community `Community 427`** (1 nodes): `TelehealthApplicantRequestCreationService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 427`** (1 nodes): `TelehealthApplicantRequestInsuranceSourceService`
+- **Thin community `Community 428`** (1 nodes): `TelehealthApplicantRequestInsuranceSourceService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 428`** (1 nodes): `TelehealthApplicantRequestIntakeService`
+- **Thin community `Community 429`** (1 nodes): `TelehealthApplicantRequestIntakeService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 429`** (1 nodes): `TelehealthApplicantRequestLocationService`
+- **Thin community `Community 430`** (1 nodes): `TelehealthApplicantRequestLocationService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 430`** (1 nodes): `TelehealthApplicantRequestOperationalReviewSubmissionService`
+- **Thin community `Community 431`** (1 nodes): `TelehealthApplicantRequestOperationalReviewSubmissionService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 431`** (1 nodes): `TelehealthApplicantRequestParticipationContextPolicy`
+- **Thin community `Community 432`** (1 nodes): `TelehealthApplicantRequestParticipationContextPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 432`** (1 nodes): `TelehealthApplicantRequestParticipationContextService`
+- **Thin community `Community 433`** (1 nodes): `TelehealthApplicantRequestParticipationContextService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 433`** (1 nodes): `TelehealthApplicantRequestParticipationEvaluationService`
+- **Thin community `Community 434`** (1 nodes): `TelehealthApplicantRequestParticipationEvaluationService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 434`** (1 nodes): `TelehealthApplicantRequestQueueAuthorizationService`
+- **Thin community `Community 435`** (1 nodes): `TelehealthApplicantRequestQueueAuthorizationService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 435`** (1 nodes): `TelehealthApplicantRequestRenderingCandidatePolicy`
+- **Thin community `Community 436`** (1 nodes): `TelehealthApplicantRequestRenderingCandidatePolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 436`** (1 nodes): `TelehealthApplicantRequestRenderingCandidateService`
+- **Thin community `Community 437`** (1 nodes): `TelehealthApplicantRequestRenderingCandidateService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 437`** (1 nodes): `TelehealthApplicantRequestUniversalSafetyService`
+- **Thin community `Community 438`** (1 nodes): `TelehealthApplicantRequestUniversalSafetyService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 438`** (1 nodes): `TelehealthApplicantSyntheticPromotionPolicy`
+- **Thin community `Community 439`** (1 nodes): `TelehealthApplicantSyntheticPromotionPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 439`** (2 nodes): `SessionSignals`, `TelehealthLocalWebRtcPocRelay`
+- **Thin community `Community 440`** (2 nodes): `SessionSignals`, `TelehealthLocalWebRtcPocRelay`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 440`** (2 nodes): `TelehealthRuntimeSafetyPolicy`, `TelehealthServiceRegistration`
+- **Thin community `Community 441`** (2 nodes): `TelehealthRuntimeSafetyPolicy`, `TelehealthServiceRegistration`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 441`** (2 nodes): `ITelehealthProspectiveEligibilityGateway`, `SyntheticTelehealthProspectiveEligibilityGateway`
+- **Thin community `Community 442`** (2 nodes): `ITelehealthProspectiveEligibilityGateway`, `SyntheticTelehealthProspectiveEligibilityGateway`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 442`** (2 nodes): `ITelehealthProspectiveIdentityProofingGateway`, `SyntheticTelehealthProspectiveIdentityProofingGateway`
+- **Thin community `Community 443`** (2 nodes): `ITelehealthProspectiveIdentityProofingGateway`, `SyntheticTelehealthProspectiveIdentityProofingGateway`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 443`** (1 nodes): `TelehealthProspectiveSafetyTriagePolicy`
+- **Thin community `Community 444`** (1 nodes): `TelehealthProspectiveSafetyTriagePolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 444`** (1 nodes): `TelehealthProspectiveVisitPurposePolicyTests`
+- **Thin community `Community 445`** (1 nodes): `TelehealthProspectiveVisitPurposePolicyTests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 445`** (1 nodes): `TelehealthSyntheticAfterVisitPlanPreviewRepository`
+- **Thin community `Community 446`** (1 nodes): `TelehealthSyntheticAfterVisitPlanPreviewRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 446`** (1 nodes): `TelehealthSyntheticAfterVisitPlanPreviewService`
+- **Thin community `Community 447`** (1 nodes): `TelehealthSyntheticAfterVisitPlanPreviewService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 447`** (1 nodes): `TelehealthSyntheticPostVisitReceiptRepository`
+- **Thin community `Community 448`** (1 nodes): `TelehealthSyntheticPostVisitReceiptRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 448`** (1 nodes): `TelehealthSyntheticPostVisitReceiptService`
+- **Thin community `Community 449`** (1 nodes): `TelehealthSyntheticPostVisitReceiptService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 449`** (2 nodes): `ITelehealthVideoProvider`, `SyntheticTelehealthVideoProvider`
+- **Thin community `Community 450`** (2 nodes): `ITelehealthVideoProvider`, `SyntheticTelehealthVideoProvider`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 451`** (1 nodes): `FlowBoardRepository`
+- **Thin community `Community 452`** (1 nodes): `FlowBoardRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 452`** (1 nodes): `PhiAuditRepository`
+- **Thin community `Community 453`** (1 nodes): `PhiAuditRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 453`** (1 nodes): `DevelopmentTestIdentityProviderEndpoints`
+- **Thin community `Community 454`** (1 nodes): `DevelopmentTestIdentityProviderEndpoints`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 454`** (1 nodes): `FhirR4Endpoints`
+- **Thin community `Community 455`** (1 nodes): `FhirR4Endpoints`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 455`** (1 nodes): `FhirR4ValidationService`
+- **Thin community `Community 456`** (1 nodes): `FhirR4ValidationService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 456`** (1 nodes): `PatientEndpoints`
+- **Thin community `Community 457`** (1 nodes): `PatientEndpoints`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 471`** (2 nodes): `Invoke-FixtureSql()`, `Set-FixturePortalState()`
+- **Thin community `Community 472`** (2 nodes): `Invoke-FixtureSql()`, `Set-FixturePortalState()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 472`** (1 nodes): `AuthorizationPolicyCatalog`
+- **Thin community `Community 473`** (1 nodes): `AuthorizationPolicyCatalog`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 473`** (2 nodes): `IStaffIdentityAdapter`, `LocalDevelopmentStaffIdentityAdapter`
+- **Thin community `Community 474`** (2 nodes): `IStaffIdentityAdapter`, `LocalDevelopmentStaffIdentityAdapter`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 474`** (1 nodes): `SyntheticProfessionalClaimGatewayTests`
+- **Thin community `Community 475`** (1 nodes): `SyntheticProfessionalClaimGatewayTests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 475`** (2 nodes): `ITelehealthTriageEvaluator`, `SyntheticTelehealthTriageEvaluator`
+- **Thin community `Community 476`** (2 nodes): `ITelehealthTriageEvaluator`, `SyntheticTelehealthTriageEvaluator`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 476`** (1 nodes): `TelehealthApplicantIdentityReviewPolicy`
+- **Thin community `Community 477`** (1 nodes): `TelehealthApplicantIdentityReviewPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 477`** (1 nodes): `TelehealthApplicantInsuranceHandoffPolicy`
+- **Thin community `Community 478`** (1 nodes): `TelehealthApplicantInsuranceHandoffPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 478`** (1 nodes): `TelehealthApplicantPracticeReviewClaimPolicyTests`
+- **Thin community `Community 479`** (1 nodes): `TelehealthApplicantPracticeReviewClaimPolicyTests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 479`** (1 nodes): `TelehealthApplicantPracticeReviewInboxService`
+- **Thin community `Community 480`** (1 nodes): `TelehealthApplicantPracticeReviewInboxService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 480`** (1 nodes): `TelehealthApplicantRequestComplaintTriageService`
+- **Thin community `Community 481`** (1 nodes): `TelehealthApplicantRequestComplaintTriageService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 481`** (1 nodes): `TelehealthApplicantRequestIntakePolicy`
+- **Thin community `Community 482`** (1 nodes): `TelehealthApplicantRequestIntakePolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 482`** (1 nodes): `TelehealthApplicantRequestParticipationEvaluationPolicy`
+- **Thin community `Community 483`** (1 nodes): `TelehealthApplicantRequestParticipationEvaluationPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 483`** (1 nodes): `TelehealthApplicantRequestQueueStatusRepository`
+- **Thin community `Community 484`** (1 nodes): `TelehealthApplicantRequestQueueStatusRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 484`** (1 nodes): `TelehealthAuthorizationTests`
+- **Thin community `Community 485`** (1 nodes): `TelehealthAuthorizationTests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 485`** (1 nodes): `TelehealthEncounterFinalizationRepository`
+- **Thin community `Community 486`** (1 nodes): `TelehealthEncounterFinalizationRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 486`** (1 nodes): `TelehealthFinalClinicalReviewService`
+- **Thin community `Community 487`** (1 nodes): `TelehealthFinalClinicalReviewService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 487`** (1 nodes): `TelehealthPatientQueueStatusProjectorTests`
+- **Thin community `Community 488`** (1 nodes): `TelehealthPatientQueueStatusProjectorTests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 488`** (2 nodes): `IProfessionalClaimGateway`, `SyntheticProfessionalClaimGateway`
+- **Thin community `Community 489`** (2 nodes): `IProfessionalClaimGateway`, `SyntheticProfessionalClaimGateway`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 489`** (1 nodes): `TelehealthProspectiveMemberInsuranceDetailsProtector`
+- **Thin community `Community 490`** (1 nodes): `TelehealthProspectiveMemberInsuranceDetailsProtector`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 490`** (1 nodes): `TelehealthProspectiveMemberInsuranceDetailsService`
+- **Thin community `Community 491`** (1 nodes): `TelehealthProspectiveMemberInsuranceDetailsService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 491`** (1 nodes): `TelehealthProspectiveSafetyTriageService`
+- **Thin community `Community 492`** (1 nodes): `TelehealthProspectiveSafetyTriageService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 492`** (1 nodes): `TelehealthProspectiveVisitPurposeService`
+- **Thin community `Community 493`** (1 nodes): `TelehealthProspectiveVisitPurposeService`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 493`** (1 nodes): `TelehealthSyntheticVisitClosureRepository`
+- **Thin community `Community 494`** (1 nodes): `TelehealthSyntheticVisitClosureRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 494`** (1 nodes): `StaffAccessContextServiceTests`
+- **Thin community `Community 495`** (1 nodes): `StaffAccessContextServiceTests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 499`** (1 nodes): `ExternalLaboratoryFhirIntakeEndpoints`
+- **Thin community `Community 500`** (1 nodes): `ExternalLaboratoryFhirIntakeEndpoints`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 500`** (1 nodes): `IntegrationEndpoints`
+- **Thin community `Community 501`** (1 nodes): `IntegrationEndpoints`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 518`** (1 nodes): `TelehealthApplicantRequestEligibilityPolicy`
+- **Thin community `Community 519`** (1 nodes): `TelehealthApplicantRequestEligibilityPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 519`** (1 nodes): `TelehealthApplicantRequestInsuranceSourcePolicy`
+- **Thin community `Community 520`** (1 nodes): `TelehealthApplicantRequestInsuranceSourcePolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 520`** (1 nodes): `TelehealthApplicantRequestLocationPolicy`
+- **Thin community `Community 521`** (1 nodes): `TelehealthApplicantRequestLocationPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 521`** (1 nodes): `TelehealthApplicantRequestOperationalReviewSubmissionPolicy`
+- **Thin community `Community 522`** (1 nodes): `TelehealthApplicantRequestOperationalReviewSubmissionPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 522`** (1 nodes): `TelehealthApplicantRequestPracticeNetworkPolicy`
+- **Thin community `Community 523`** (1 nodes): `TelehealthApplicantRequestPracticeNetworkPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 523`** (1 nodes): `TelehealthApplicantRequestQueueAuthorizationPolicy`
+- **Thin community `Community 524`** (1 nodes): `TelehealthApplicantRequestQueueAuthorizationPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 524`** (1 nodes): `TelehealthCompletionReviewRepository`
+- **Thin community `Community 525`** (1 nodes): `TelehealthCompletionReviewRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 525`** (1 nodes): `TelehealthAuthorizationPolicy`
+- **Thin community `Community 526`** (1 nodes): `TelehealthAuthorizationPolicy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 526`** (1 nodes): `TelehealthLocalWebRtcPocRelayTests`
+- **Thin community `Community 527`** (1 nodes): `TelehealthLocalWebRtcPocRelayTests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 527`** (1 nodes): `TelehealthRequestStateMachineTests`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 528`** (2 nodes): `BackgroundService`, `ReportExecutionWorker`
+- **Thin community `Community 528`** (1 nodes): `TelehealthRequestStateMachineTests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 529`** (1 nodes): `PatientEducationRepository`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -3103,7 +3101,7 @@ Nodes (1): AvenChart.Api.csproj
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `AdministrationRepository` connect `Community 32` to `Community 70`, `Community 142`, `Community 159`, `Community 116`, `Community 98`, `Community 125`, `Community 186`, `Community 87`, `Community 103`, `Community 109`?**
+- **Why does `AdministrationRepository` connect `Community 33` to `Community 70`, `Community 142`, `Community 159`, `Community 116`, `Community 98`, `Community 125`, `Community 186`, `Community 87`, `Community 103`, `Community 109`?**
   _High betweenness centrality (0.041) - this node is a cross-community bridge._
 - **Why does `PatientPortalRepository` connect `Community 28` to `Community 9`, `Community 137`, `Community 138`, `Community 161`, `Community 75`, `Community 60`, `Community 292`, `Community 293`, `Community 144`, `Community 323`?**
   _High betweenness centrality (0.038) - this node is a cross-community bridge._
