@@ -17,6 +17,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
   const remoteVideo = useRef<HTMLVideoElement>(null)
   const peer = useRef<RTCPeerConnection | null>(null)
   const localStream = useRef<MediaStream | null>(null)
+  const pendingRemoteCandidates = useRef<RTCIceCandidateInit[]>([])
   const sequence = useRef(0)
   const polling = useRef(false)
   const connectionStateChange = useRef(onConnectionStateChange)
@@ -37,6 +38,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
     connectionStateChange.current?.(false)
     peer.current?.close()
     peer.current = null
+    pendingRemoteCandidates.current = []
     localStream.current?.getTracks().forEach((track) => track.stop())
     localStream.current = null
     if (localVideo.current) localVideo.current.srcObject = null
@@ -56,18 +58,31 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
       if (kind === 'offer') {
         const offer = JSON.parse(payload) as RTCSessionDescriptionInit
         await connection.setRemoteDescription(offer)
+        await flushRemoteCandidates(connection)
         const answer = await connection.createAnswer()
         await connection.setLocalDescription(answer)
         await writeSignal('answer', JSON.stringify(answer))
       } else if (kind === 'answer') {
         await connection.setRemoteDescription(JSON.parse(payload) as RTCSessionDescriptionInit)
+        await flushRemoteCandidates(connection)
       } else if (payload !== 'null') {
-        await connection.addIceCandidate(JSON.parse(payload) as RTCIceCandidateInit)
+        const candidate = JSON.parse(payload) as RTCIceCandidateInit
+        if (connection.remoteDescription) {
+          await connection.addIceCandidate(candidate)
+        } else {
+          pendingRemoteCandidates.current.push(candidate)
+        }
       }
     } catch (error) {
       fail(error)
     }
   }, [fail, writeSignal])
+
+  async function flushRemoteCandidates(connection: RTCPeerConnection) {
+    const candidates = pendingRemoteCandidates.current
+    pendingRemoteCandidates.current = []
+    for (const candidate of candidates) await connection.addIceCandidate(candidate)
+  }
 
   async function join() {
     if (state === 'joining' || peer.current) return
@@ -85,6 +100,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
       if (localVideo.current) localVideo.current.srcObject = stream
       const connection = new RTCPeerConnection({ iceServers: [] })
       peer.current = connection
+      pendingRemoteCandidates.current = []
       stream.getTracks().forEach((track) => connection.addTrack(track, stream))
       connection.ontrack = (event) => {
         if (remoteVideo.current) remoteVideo.current.srcObject = event.streams[0] ?? new MediaStream([event.track])

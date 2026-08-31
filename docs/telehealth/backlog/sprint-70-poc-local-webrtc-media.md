@@ -32,4 +32,5 @@ Production media architecture, TURN capacity, vendor selection and agreements, r
 
 - The relay is an in-process, expiry-cleaned, role-separated offer/answer/candidate buffer; the API reauthorizes the exact issued connection grant on every read and write.
 - Native browser media is available only when the staging-only flag is true. The physician UI requires a connected peer before it enables the existing synthetic consultation-start action.
-- Backend regression (800 tests), UI regression (341 tests), runtime-safety, planning, live OpenAPI, Docker staging health, and bundle checks passed for this slice.
+- Candidate-before-description ordering is handled locally: early remote ICE candidates are held only in browser memory until the matching remote SDP is applied, then flushed in received order.
+- Backend regression (800 tests), UI regression (343 tests), runtime-safety, planning, live OpenAPI, Docker staging health, and bundle checks passed for this slice.
