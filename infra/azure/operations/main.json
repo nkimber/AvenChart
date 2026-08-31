@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "7808862512738997009"
+      "templateHash": "14318581624894294626"
     }
   },
   "parameters": {
@@ -254,7 +254,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "202841139154514809"
+              "templateHash": "8914656548579060249"
             }
           },
           "parameters": {
@@ -353,7 +353,8 @@
             "networkName": "[format('{0}-vnet', parameters('resourceNamePrefix'))]",
             "privateDnsZoneName": "private.postgres.database.azure.com",
             "postgresHost": "[format('{0}.postgres.database.azure.com', parameters('postgresServerName'))]",
-            "connectionString": "[format('Host={0};Port=5432;Database={1};Username={2};Password={3};SSL Mode=VerifyFull;Pooling=true;Minimum Pool Size=0;Maximum Pool Size={4};Connection Idle Lifetime=300;Timeout=15;Command Timeout=30', variables('postgresHost'), parameters('databaseName'), parameters('databaseAdministratorLogin'), parameters('databaseAdministratorPassword'), parameters('connectionPoolMaximum'))]"
+            "connectionString": "[format('Host={0};Port=5432;Database={1};Username={2};Password={3};SSL Mode=VerifyFull;Pooling=true;Minimum Pool Size=0;Maximum Pool Size={4};Connection Idle Lifetime=300;Timeout=15;Command Timeout=30', variables('postgresHost'), parameters('databaseName'), parameters('databaseAdministratorLogin'), parameters('databaseAdministratorPassword'), parameters('connectionPoolMaximum'))]",
+            "telehealthCallingConnectionStringSecretName": "telehealth-internet-calling-connection-string"
           },
           "resources": [
             {
@@ -429,6 +430,30 @@
                 "contentType": "AvenChart Npgsql connection string"
               },
               "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Communication/communicationServices",
+              "apiVersion": "2025-05-01",
+              "name": "[format('{0}-relay', parameters('resourceNamePrefix'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "dataLocation": "United States",
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('keyVaultName'), variables('telehealthCallingConnectionStringSecretName'))]",
+              "properties": {
+                "value": "[listKeys(resourceId('Microsoft.Communication/communicationServices', format('{0}-relay', parameters('resourceNamePrefix'))), '2025-05-01').primaryConnectionString]",
+                "contentType": "Azure Communication Services synthetic calling connection string"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Communication/communicationServices', format('{0}-relay', parameters('resourceNamePrefix')))]",
                 "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
               ]
             },

@@ -161,12 +161,26 @@ public sealed class TelehealthVideoService(
             grant.ExpiresAt,
             false,
             false,
-            _options.LocalWebRtcPocEnabled,
+            _options.LocalWebRtcPocEnabled || _options.InternetCallingPocEnabled,
+            MediaTransportMode(),
             "Your private synthetic waiting room is ready. No media is connected in this demonstration.",
             Limitations());
     }
 
-    private IReadOnlyList<string> Limitations() => _options.LocalWebRtcPocEnabled
+    private string MediaTransportMode() => _options.InternetCallingPocEnabled
+        ? "NON_PRODUCTION_INTERNET_ACS_CALLING_POC"
+        : _options.LocalWebRtcPocEnabled
+            ? "NON_PRODUCTION_LOCAL_WEBRTC_POC"
+            : "NONE";
+
+    private IReadOnlyList<string> Limitations() => _options.InternetCallingPocEnabled
+        ? [
+            "NON_PRODUCTION internet calling POC: browser media begins only after an explicit user action and is protected by Azure Communication Services transport encryption.",
+            "AvenChart issues a short-lived VoIP credential only after the waiting-room grant is authorized. It does not record, transcribe, store, or receive browser media.",
+            "Azure Communication Services manages calling signaling and media transport. The browser-to-AvenChart authorization service remains a single-replica synthetic demo.",
+            "The browser connection does not start a consultation, create an encounter, or establish clinical care. Call 911 for an emergency."
+        ]
+        : _options.LocalWebRtcPocEnabled
         ? [
             "NON_PRODUCTION local-only WebRTC POC: browser media is peer-to-peer after an explicit user action; SDP and ICE are transient process memory only.",
             "No recording, transcription, persistent media, TURN service, vendor service, or external media destination is enabled.",

@@ -30,7 +30,7 @@ The reset command explicitly discards and reconstructs the isolated synthetic st
 
 1. In the patient browser, sign in at `http://127.0.0.1:8088/portal/login` as `mod-pat-0012@example.test` with password `PortalPass207!`. Open `/portal/telehealth`, run **Check camera and microphone**, then select **Enter synthetic waiting room**.
 2. In the physician browser, sign in at `http://127.0.0.1:8088/login` as `gold-provider-01` with password `pass`. Open `/clinician/telehealth/physician`; the active synthetic shift and reservation should be present. Run **Check camera and microphone**, then select **Enter physician waiting room**.
-3. In the physician browser select **Start local media POC**. In the patient browser select **Join local media POC**.
+3. In the physician browser select **Start browser media POC**. In the patient browser select **Join browser media POC**.
 4. Before starting or joining, use **Choose your local devices** to select the local camera and microphone. Where the browser supports it, choose the speaker as well; otherwise use the browser's audio settings. These choices apply only to the local browser and remain outside AvenChart.
 5. Confirm that each browser shows its own camera preview and the other participant's video. Speak from each side and confirm that the remote audio track is heard.
 
@@ -38,7 +38,7 @@ The doctor starts the offer, so the last two actions must occur in that order. I
 
 ## Clean up
 
-Select **End local media POC** in both browsers. In the physician browser use the connection-abandon control to release the synthetic request back to the staging queue; end the idle synthetic shift when the control permits it. To stop the environment:
+Select **End browser media POC** in both browsers. In the physician browser use the connection-abandon control to release the synthetic request back to the staging queue; end the idle synthetic shift when the control permits it. To stop the environment:
 
 ```powershell
 docker compose --env-file .env.staging -f docker-compose.staging.yml down
@@ -51,4 +51,4 @@ Use `down --volumes` only when intentionally discarding the entire synthetic sta
 - A patient and physician receive distinct, short-lived grants for one synthetic request.
 - Camera and microphone tracks remain in the two browsers; only bounded WebRTC offer/answer/candidate messages pass through the transient local relay.
 - The call is not recorded or transcribed, and it cannot create a prescription, claim, external message, or real clinical outcome.
-- The physician cannot start the synthetic consultation lifecycle until the local peer connection reports itself connected.
+- The physician cannot start the synthetic consultation lifecycle until the browser peer connection reports itself connected.

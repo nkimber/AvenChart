@@ -15,7 +15,6 @@ const grant = {
 } as TelehealthConnectionGrant
 
 const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices')
-
 describe('TelehealthLocalWebRtcPocPanel', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -29,9 +28,9 @@ describe('TelehealthLocalWebRtcPocPanel', () => {
 
     render(<TelehealthLocalWebRtcPocPanel grant={grant} role="patient" writeSignal={writeSignal} readSignals={readSignals} />)
 
-    expect(screen.getByText(/NON_PRODUCTION local-only demonstration/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'End local media POC' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Join local media POC' }))
+    expect(screen.getByText(/NON_PRODUCTION local-only synthetic demonstration/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'End browser media POC' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Join browser media POC' }))
 
     expect(screen.getByRole('status')).toHaveTextContent(/requires a secure browser context/i)
     expect(writeSignal).not.toHaveBeenCalled()
@@ -53,7 +52,8 @@ describe('TelehealthLocalWebRtcPocPanel', () => {
       setRemoteDescription: vi.fn(async (description: RTCSessionDescriptionInit) => { peer.remoteDescription = description }),
     }
     vi.stubGlobal('isSecureContext', true)
-    vi.stubGlobal('RTCPeerConnection', vi.fn(function FakePeerConnection() { return peer }))
+    const createPeerConnection = vi.fn(function FakePeerConnection() { return peer })
+    vi.stubGlobal('RTCPeerConnection', createPeerConnection)
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
       value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [] }) },
@@ -71,9 +71,10 @@ describe('TelehealthLocalWebRtcPocPanel', () => {
       .mockResolvedValue({ latestSequence: 2, expiresAt: grant.expiresAt, signals: [] })
 
     render(<TelehealthLocalWebRtcPocPanel grant={grant} role="patient" writeSignal={writeSignal} readSignals={readSignals} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Join local media POC' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Join browser media POC' }))
 
     await waitFor(() => expect(peer.addIceCandidate).toHaveBeenCalledWith({ candidate: 'candidate:opaque' }))
+    expect(createPeerConnection).toHaveBeenCalledWith()
     expect(peer.setRemoteDescription.mock.invocationCallOrder[0]).toBeLessThan(peer.addIceCandidate.mock.invocationCallOrder[0])
     expect(writeSignal).toHaveBeenCalledWith('answer', JSON.stringify({ type: 'answer', sdp: 'opaque-answer' }))
   })
@@ -107,9 +108,9 @@ describe('TelehealthLocalWebRtcPocPanel', () => {
     render(<TelehealthLocalWebRtcPocPanel grant={grant} role="patient" writeSignal={writeSignal} readSignals={readSignals} />)
 
     await screen.findByRole('option', { name: 'USB camera' })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Camera for local media POC' }), { target: { value: 'camera-usb' } })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Microphone for local media POC' }), { target: { value: 'microphone-usb' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Join local media POC' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Camera for browser media POC' }), { target: { value: 'camera-usb' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Microphone for browser media POC' }), { target: { value: 'microphone-usb' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Join browser media POC' }))
 
     await waitFor(() => expect(getUserMedia).toHaveBeenCalledWith({
       audio: { deviceId: { exact: 'microphone-usb' } },

@@ -5,7 +5,7 @@ using Npgsql;
 
 namespace AvenChart.Api.Features.Telehealth;
 
-public sealed record TelehealthLocalWebRtcGrantRecord(Guid SessionId, string ParticipantRole, DateTimeOffset ExpiresAt);
+public sealed record TelehealthLocalWebRtcGrantRecord(Guid SessionId, Guid GrantId, string ParticipantRole, DateTimeOffset ExpiresAt);
 
 public sealed class TelehealthLocalWebRtcPocRepository(NpgsqlDataSource dataSource)
 {
@@ -35,6 +35,7 @@ public sealed class TelehealthLocalWebRtcPocRepository(NpgsqlDataSource dataSour
         return await reader.ReadAsync(cancellationToken)
             ? new TelehealthLocalWebRtcGrantRecord(
                 reader.GetGuid(0),
+                grantId,
                 reader.GetString(1),
                 reader.GetFieldValue<DateTimeOffset>(2))
             : null;

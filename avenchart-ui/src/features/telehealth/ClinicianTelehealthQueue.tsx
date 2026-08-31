@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { abandonTelehealthConnection, endIdleClinicianShift, enterTelehealthConsultationWrapUp, getClinicianActiveWork, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, readPhysicianLocalWebRtcSignals, releaseTelehealthReservation, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, writePhysicianLocalWebRtcSignal, type TelehealthConnectionGrant, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { abandonTelehealthConnection, endIdleClinicianShift, enterTelehealthConsultationWrapUp, getClinicianActiveWork, getPhysicianInternetCallingConfiguration, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, readPhysicianLocalWebRtcSignals, releaseTelehealthReservation, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, writePhysicianLocalWebRtcSignal, type TelehealthConnectionGrant, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
 import { isRequestCancellation } from '../../api/transport.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import TelehealthPharmacyChoicePanel from './TelehealthPharmacyChoicePanel.tsx'
@@ -19,6 +19,8 @@ import ClinicianIdleShiftEndControl, { type ClinicianIdleShiftEndConfirmations }
 import ClinicianReservationReleaseControl, { type ClinicianReservationReleaseConfirmations } from './ClinicianReservationReleaseControl.tsx'
 import ClinicianConnectionAbandonControl, { type ClinicianConnectionAbandonConfirmations } from './ClinicianConnectionAbandonControl.tsx'
 import './telehealth.css'
+
+const TelehealthInternetCallingPocPanel = lazy(() => import('./TelehealthInternetCallingPocPanel.tsx'))
 
 export default function ClinicianTelehealthQueue() {
   type DraftFields = { subjective: string; objective: string; assessment: string; plan: string }
@@ -348,7 +350,8 @@ export default function ClinicianTelehealthQueue() {
             </div>
             {deviceEvidence ? <p className="telehealth-preflight-passed" role="status">Device check passed. Network indication: {deviceEvidence.networkQuality}.</p> : null}
             {waitingRoom ? <div className="telehealth-waiting-room" role="status"><h4>Physician grant ready</h4><p>{waitingRoom.waitingRoomMessage}</p><p><small>Local grant expires {new Date(waitingRoom.expiresAt).toLocaleTimeString()}.</small></p><ul>{waitingRoom.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></div> : null}
-            {waitingRoom?.mediaTransportEnabled ? <TelehealthLocalWebRtcPocPanel grant={waitingRoom} role="physician" writeSignal={(kind, payload) => writePhysicianLocalWebRtcSignal(waitingRoom, kind, payload)} readSignals={(afterSequence, signal) => readPhysicianLocalWebRtcSignals(waitingRoom, afterSequence, signal)} onConnectionStateChange={setLocalMediaConnected} /> : null}
+            {waitingRoom?.mediaTransportEnabled && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_INTERNET_ACS_CALLING_POC' ? <Suspense fallback={<p role="status">Loading the synthetic internet calling controls…</p>}><TelehealthInternetCallingPocPanel grant={waitingRoom} role="physician" getCallingConfiguration={() => getPhysicianInternetCallingConfiguration(waitingRoom)} onConnectionStateChange={setLocalMediaConnected} /></Suspense> : null}
+            {waitingRoom?.mediaTransportEnabled && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_LOCAL_WEBRTC_POC' ? <TelehealthLocalWebRtcPocPanel grant={waitingRoom} role="physician" writeSignal={(kind, payload) => writePhysicianLocalWebRtcSignal(waitingRoom, kind, payload)} readSignals={(afterSequence, signal) => readPhysicianLocalWebRtcSignals(waitingRoom, afterSequence, signal)} onConnectionStateChange={setLocalMediaConnected} /> : null}
           </section>
           {waitingRoom && !consultation ? <ClinicianConnectionAbandonControl reservation={reservation} disabled={working || connectionWorking} onAbandon={(confirmations) => void abandonConnection(confirmations)} /> : null}
           {waitingRoom && !consultation ? (
@@ -368,7 +371,7 @@ export default function ClinicianTelehealthQueue() {
                   ['communicationSufficient', 'Synthetic communication check is sufficient'],
                 ] as const).map(([name, label]) => <label className="telehealth-check" key={name}><input type="checkbox" checked={startChecklist[name]} onChange={(event) => setStartCheck(name, event.target.checked)} />{label}</label>)}
               </fieldset>
-              {waitingRoom.mediaTransportEnabled && !localMediaConnected ? <p className="telehealth-inline-warning" role="note">Connect the local browser media POC before starting this synthetic lifecycle.</p> : null}
+              {waitingRoom.mediaTransportEnabled && !localMediaConnected ? <p className="telehealth-inline-warning" role="note">Connect the synthetic browser media POC before starting this synthetic lifecycle.</p> : null}
               <button className="telehealth-button" type="submit" disabled={connectionWorking || !startReady || (waitingRoom.mediaTransportEnabled && !localMediaConnected)}>Start synthetic lifecycle</button>
             </form>
           ) : null}

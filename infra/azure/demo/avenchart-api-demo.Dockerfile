@@ -9,7 +9,11 @@ WORKDIR /src
 COPY avenchart/backend/src/AvenChart.Api/AvenChart.Api.csproj ./
 RUN dotnet restore
 COPY avenchart/backend/src/AvenChart.Api/ ./
-RUN dotnet publish -c Release -o /app/publish --no-restore
+# Source worktrees can contain Windows-generated obj assets. Recreate package
+# assets inside this Linux image before publishing to avoid host fallback paths.
+RUN rm -rf bin obj \
+    && dotnet restore \
+    && dotnet publish -c Release -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 RUN apt-get update \

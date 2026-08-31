@@ -23,6 +23,8 @@ public sealed class TelehealthOptions
     public int ReservationLeaseSeconds { get; init; } = 120;
     public string VideoAdapterMode { get; init; } = "NON_PRODUCTION";
     public bool LocalWebRtcPocEnabled { get; init; }
+    public bool InternetCallingPocEnabled { get; init; }
+    public string InternetCallingConnectionString { get; init; } = string.Empty;
     public string PharmacyDirectoryAdapterMode { get; init; } = "NON_PRODUCTION";
     public string ProfessionalClaimAdapterMode { get; init; } = "NON_PRODUCTION";
 }
@@ -51,7 +53,8 @@ public static partial class TelehealthRuntimeSafetyPolicy
             && options.BrandedHosts.Distinct(StringComparer.OrdinalIgnoreCase).Count() == options.BrandedHosts.Length
             && options.BrandedHosts.All(IsExplicitHost)
             && options.SupportedStates.Order(StringComparer.Ordinal).SequenceEqual(
-                new[] { "CA", "FL", "GA" }, StringComparer.Ordinal);
+                new[] { "CA", "FL", "GA" }, StringComparer.Ordinal)
+            && (!options.InternetCallingPocEnabled || IsAzureCommunicationServicesConnectionString(options.InternetCallingConnectionString));
     }
 
     private static bool IsExplicitHost(string host) =>
@@ -60,6 +63,22 @@ public static partial class TelehealthRuntimeSafetyPolicy
         && !host.Contains('*', StringComparison.Ordinal)
         && !host.Contains('/', StringComparison.Ordinal)
         && !host.Contains(':', StringComparison.Ordinal);
+
+    private static bool IsAzureCommunicationServicesConnectionString(string connectionString)
+    {
+        var values = connectionString
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => part.Split('=', 2, StringSplitOptions.TrimEntries))
+            .Where(part => part.Length == 2)
+            .ToDictionary(part => part[0], part => part[1], StringComparer.OrdinalIgnoreCase);
+
+        return values.TryGetValue("Endpoint", out var endpoint)
+            && values.TryGetValue("AccessKey", out var accessKey)
+            && !string.IsNullOrWhiteSpace(accessKey)
+            && Uri.TryCreate(endpoint, UriKind.Absolute, out var endpointUri)
+            && string.Equals(endpointUri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
+            && endpointUri.Host.EndsWith(".communication.azure.com", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public static class TelehealthServiceRegistration
@@ -72,7 +91,7 @@ public static class TelehealthServiceRegistration
         services.AddOptions<TelehealthOptions>()
             .BindConfiguration(TelehealthOptions.SectionName)
             .Validate(options => TelehealthRuntimeSafetyPolicy.IsSafe(options, environment),
-                "Enabled telehealth is synthetic-only, requires explicit safe hosts and GA/CA/FL, and cannot run in Production.")
+                "Enabled telehealth is synthetic-only, requires explicit safe hosts and GA/CA/FL, cannot run in Production, and internet calling requires an Azure Communication Services connection string.")
             .ValidateOnStart();
         services.AddScoped<TelehealthRepository>();
         services.AddScoped<TelehealthService>();
@@ -166,6 +185,10 @@ public static class TelehealthServiceRegistration
         services.AddScoped<TelehealthLocalWebRtcPocRepository>();
         services.AddScoped<TelehealthLocalWebRtcPocService>();
         services.AddSingleton<TelehealthLocalWebRtcPocRelay>();
+        services.AddSingleton<AzureCommunicationServicesTelehealthCallingProvider>();
+        services.AddSingleton<ITelehealthInternetCallingProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<AzureCommunicationServicesTelehealthCallingProvider>());
+        services.AddHostedService<TelehealthInternetCallingIdentityReaper>();
         services.AddScoped<TelehealthConsultationRepository>();
         services.AddScoped<TelehealthConsultationService>();
         services.AddScoped<TelehealthConversationRepository>();

@@ -42,6 +42,13 @@ public static class TelehealthEndpoints
             .Produces<TelehealthLocalWebRtcSignalReadResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound);
+        root.MapPost("/calling/configuration", GetInternetCallingConfigurationAsync)
+            .WithName("GetTelehealthInternetCallingConfiguration")
+            .WithDescription("Returns a non-cacheable, short-lived Azure Communication Services VoIP credential only to an exact authorized synthetic waiting-room participant. Azure Communication Services carries browser media; AvenChart does not receive, record, or persist it.")
+            .Accepts<TelehealthInternetCallingConfigurationRequest>("application/json")
+            .Produces<TelehealthInternetCallingConfigurationResponse>()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         var applicants = root.MapGroup("/applicants");
         applicants.MapPost("", CreateProspectiveApplicantAsync)
@@ -1108,7 +1115,7 @@ public static class TelehealthEndpoints
         CancellationToken cancellationToken) =>
         ExecuteAsync(async () =>
         {
-            SetLocalWebRtcPrivateResponse(context, request.SessionId);
+            SetMediaPocPrivateResponse(context, request.SessionId);
             return Results.Ok(await service.WriteAsync(request, cancellationToken));
         });
 
@@ -1119,8 +1126,19 @@ public static class TelehealthEndpoints
         CancellationToken cancellationToken) =>
         ExecuteAsync(async () =>
         {
-            SetLocalWebRtcPrivateResponse(context, request.SessionId);
+            SetMediaPocPrivateResponse(context, request.SessionId);
             return Results.Ok(await service.ReadAsync(request, cancellationToken));
+        });
+
+    private static Task<IResult> GetInternetCallingConfigurationAsync(
+        TelehealthLocalWebRtcPocService service,
+        HttpContext context,
+        TelehealthInternetCallingConfigurationRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetMediaPocPrivateResponse(context, request.SessionId);
+            return Results.Ok(await service.GetInternetCallingConfigurationAsync(request, cancellationToken));
         });
 
     private static Task<IResult> CreateProspectiveApplicantAsync(
@@ -2967,12 +2985,12 @@ public static class TelehealthEndpoints
         PhiAuditResourceContext.Set(context, "TelehealthConversation", requestId.ToString("D"));
     }
 
-    private static void SetLocalWebRtcPrivateResponse(HttpContext context, Guid sessionId)
+    private static void SetMediaPocPrivateResponse(HttpContext context, Guid sessionId)
     {
         context.Response.Headers.CacheControl = "no-store, private";
         context.Response.Headers.Pragma = "no-cache";
         context.Response.Headers.Expires = "0";
-        PhiAuditResourceContext.Set(context, "TelehealthLocalWebRtcPoc", sessionId.ToString("D"));
+        PhiAuditResourceContext.Set(context, "TelehealthMediaPoc", sessionId.ToString("D"));
     }
 
     private static void SetApplicantIdentityReviewPrivateResponse(HttpContext context, string resourceId)

@@ -12,6 +12,16 @@ param apiImage string
 param uiImage string
 param keyVaultName string
 param databaseConnectionStringSecretName string = 'avenchart-database-connection-string'
+param telehealthInternetCallingPocEnabled bool = false
+param telehealthInternetCallingConnectionStringSecretName string = 'telehealth-internet-calling-connection-string'
+// Pass true only when upgrading an active revision that still references the
+// Phase-1 network-traversal secret. It avoids a destructive secret removal
+// during the same revision transition and is not exposed to the new code.
+param preserveLegacyTelehealthWebRtcRelaySecret bool = false
+param legacyTelehealthWebRtcRelayConnectionStringSecretName string = 'telehealth-internet-webrtc-relay-connection-string'
+param telehealthBrandedHost string = ''
+param customDomainName string = ''
+param customDomainCertificateId string = ''
 @allowed([0, 1])
 param minimumReplicas int = 1
 @minValue(1)
@@ -59,6 +69,13 @@ resource application 'Microsoft.App/containerApps@2024-03-01' = {
             weight: 100
           }
         ]
+        customDomains: !empty(customDomainName) && !empty(customDomainCertificateId) ? [
+          {
+            name: customDomainName
+            bindingType: 'SniEnabled'
+            certificateId: customDomainCertificateId
+          }
+        ] : []
       }
       registries: [
         {
@@ -72,6 +89,20 @@ resource application 'Microsoft.App/containerApps@2024-03-01' = {
           keyVaultUrl: 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/${databaseConnectionStringSecretName}'
           identity: managedIdentityResourceId
         }
+        ...(preserveLegacyTelehealthWebRtcRelaySecret ? [
+          {
+            name: 'telehealth-internet-webrtc-relay-connection-string'
+            keyVaultUrl: 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/${legacyTelehealthWebRtcRelayConnectionStringSecretName}'
+            identity: managedIdentityResourceId
+          }
+        ] : [])
+        ...(telehealthInternetCallingPocEnabled ? [
+          {
+            name: 'telehealth-internet-calling-connection-string'
+            keyVaultUrl: 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/${telehealthInternetCallingConnectionStringSecretName}'
+            identity: managedIdentityResourceId
+          }
+        ] : [])
       ]
     }
     template: {
@@ -162,6 +193,68 @@ resource application 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'DEMO_RESET_ON_STARTUP'
               value: 'false'
             }
+            ...(telehealthInternetCallingPocEnabled ? [
+              {
+                name: 'Telehealth__Enabled'
+                value: 'true'
+              }
+              {
+                name: 'Telehealth__Mode'
+                value: 'Synthetic'
+              }
+              {
+                name: 'Telehealth__PracticeId'
+                value: 'avenchart-synthetic-practice'
+              }
+              {
+                name: 'Telehealth__FacilityId'
+                value: '10'
+              }
+              {
+                name: 'Telehealth__BrandedHosts__0'
+                value: telehealthBrandedHost
+              }
+              {
+                name: 'Telehealth__SupportedStates__0'
+                value: 'GA'
+              }
+              {
+                name: 'Telehealth__SupportedStates__1'
+                value: 'CA'
+              }
+              {
+                name: 'Telehealth__SupportedStates__2'
+                value: 'FL'
+              }
+              {
+                name: 'Telehealth__ReservationLeaseSeconds'
+                value: '300'
+              }
+              {
+                name: 'Telehealth__VideoAdapterMode'
+                value: 'NON_PRODUCTION'
+              }
+              {
+                name: 'Telehealth__PharmacyDirectoryAdapterMode'
+                value: 'NON_PRODUCTION'
+              }
+              {
+                name: 'Telehealth__ProfessionalClaimAdapterMode'
+                value: 'NON_PRODUCTION'
+              }
+              {
+                name: 'Telehealth__LocalWebRtcPocEnabled'
+                value: 'false'
+              }
+              {
+                name: 'Telehealth__InternetCallingPocEnabled'
+                value: 'true'
+              }
+              {
+                name: 'Telehealth__InternetCallingConnectionString'
+                secretRef: 'telehealth-internet-calling-connection-string'
+              }
+            ] : [])
           ]
           probes: [
             {
@@ -201,8 +294,11 @@ resource application 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: {
-        minReplicas: minimumReplicas
-        maxReplicas: maximumReplicas
+        // The synthetic calling authorization service is deliberately limited
+        // to one replica until a reviewed, durable participant-session design
+        // exists for multi-replica operation.
+        minReplicas: telehealthInternetCallingPocEnabled ? 1 : minimumReplicas
+        maxReplicas: telehealthInternetCallingPocEnabled ? 1 : maximumReplicas
         rules: [
           {
             name: 'http-concurrency'

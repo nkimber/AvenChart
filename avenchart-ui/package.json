@@ -23,6 +23,8 @@
     "test:repeatability": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-AvenChartUiRepeatability.ps1"
   },
   "dependencies": {
+    "@azure/communication-calling": "1.46.1",
+    "@azure/communication-common": "2.5.0",
     "lucide-react": "^1.21.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

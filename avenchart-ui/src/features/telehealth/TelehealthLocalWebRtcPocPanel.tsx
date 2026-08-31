@@ -44,7 +44,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
   const connectionStateChange = useRef(onConnectionStateChange)
   const selectedSpeaker = useRef('')
   const [state, setState] = useState<'idle' | 'joining' | 'waiting' | 'connected' | 'ended' | 'error'>('idle')
-  const [message, setMessage] = useState('Join only when both participants are in the local POC waiting room.')
+  const [message, setMessage] = useState('Join only when both participants are in the synthetic waiting room.')
   const [cameras, setCameras] = useState<LocalDevice[]>([])
   const [microphones, setMicrophones] = useState<LocalDevice[]>([])
   const [speakers, setSpeakers] = useState<LocalDevice[]>([])
@@ -83,7 +83,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
   const fail = useCallback((error: unknown) => {
     connectionStateChange.current?.(false)
     setState('error')
-    setMessage(error instanceof Error ? error.message : 'The local media POC could not connect. End and retry both participants.')
+    setMessage(error instanceof Error ? error.message : 'The browser media POC could not connect. End and retry both participants.')
   }, [])
 
   const applySpeaker = useCallback(async (video: HTMLVideoElement | null, deviceId: string) => {
@@ -177,20 +177,20 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
     if (state === 'joining' || peer.current) return
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection !== 'function') {
       setState('error')
-      setMessage('This local media POC requires a secure browser context with camera, microphone, and WebRTC support.')
+      setMessage('This synthetic browser media POC requires a secure browser context with camera, microphone, and WebRTC support.')
       return
     }
 
     setState('joining')
-    setMessage('Requesting camera and microphone permission…')
     try {
+      setMessage('Requesting camera and microphone permission…')
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: deviceConstraint(selectedMicrophone),
         video: deviceConstraint(selectedCamera),
       })
       localStream.current = stream
       if (localVideo.current) localVideo.current.srcObject = stream
-      const connection = new RTCPeerConnection({ iceServers: [] })
+      const connection = new RTCPeerConnection()
       peer.current = connection
       pendingRemoteCandidates.current = []
       stream.getTracks().forEach((track) => connection.addTrack(track, stream))
@@ -206,10 +206,10 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
       connection.onconnectionstatechange = () => {
         if (connection.connectionState === 'connected') {
           setState('connected')
-          setMessage('Local peer-to-peer media connected. No media is sent to AvenChart or a vendor.')
+          setMessage('Local browser-to-browser media connected. AvenChart does not receive or store media.')
           connectionStateChange.current?.(true)
         } else if (connection.connectionState === 'failed') {
-          fail(new Error('The local peer-to-peer media connection failed. End and reconnect both participants.'))
+          fail(new Error('The browser media connection failed. End and reconnect both participants.'))
         } else if (connection.connectionState === 'closed') {
           connectionStateChange.current?.(false)
           setState('ended')
@@ -219,9 +219,9 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
         const offer = await connection.createOffer()
         await connection.setLocalDescription(offer)
         await writeSignal('offer', JSON.stringify(offer))
-        setMessage('Local offer sent. Waiting for the patient browser to join.')
+        setMessage('Browser offer sent. Waiting for the patient browser to join.')
       } else {
-        setMessage('Waiting for the physician browser to begin the local connection.')
+        setMessage('Waiting for the physician browser to begin the connection.')
       }
       setState('waiting')
     } catch (error) {
@@ -273,29 +273,29 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
 
   return (
     <section className="telehealth-local-webrtc-poc" aria-labelledby={`local-webrtc-${grant.grantId}`}>
-      <h4 id={`local-webrtc-${grant.grantId}`}>Local browser media POC</h4>
-      <p role="note">NON_PRODUCTION local-only demonstration. Camera and microphone stay in the browsers and are peer-to-peer only. No recording, transcription, media storage, TURN service, vendor service, patient delivery, clinical completion, or emergency support is provided.</p>
+      <h4 id={`local-webrtc-${grant.grantId}`}>Synthetic browser media POC</h4>
+      <p role="note">NON_PRODUCTION local-only synthetic demonstration. Browser media is protected by WebRTC and does not enter AvenChart. No external media service, recording, transcription, media storage, patient delivery, clinical completion, or emergency support is provided.</p>
       <fieldset className="telehealth-local-device-picker" disabled={mediaActive}>
         <legend>Choose your local devices</legend>
         <p aria-live="polite">{deviceStatus}</p>
         <div className="telehealth-local-device-grid">
           <label>
             Camera
-            <select aria-label="Camera for local media POC" value={selectedCamera} onChange={(event) => setSelectedCamera(event.target.value)}>
+            <select aria-label="Camera for browser media POC" value={selectedCamera} onChange={(event) => setSelectedCamera(event.target.value)}>
               <option value="">Browser default camera</option>
               {cameras.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
             </select>
           </label>
           <label>
             Microphone
-            <select aria-label="Microphone for local media POC" value={selectedMicrophone} onChange={(event) => setSelectedMicrophone(event.target.value)}>
+            <select aria-label="Microphone for browser media POC" value={selectedMicrophone} onChange={(event) => setSelectedMicrophone(event.target.value)}>
               <option value="">Browser default microphone</option>
               {microphones.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
             </select>
           </label>
           <label>
             Speaker
-            <select aria-label="Speaker for local media POC" value={selectedSpeakerId} disabled={!speakerSelectionSupported} onChange={(event) => void changeSpeaker(event.target.value)}>
+            <select aria-label="Speaker for browser media POC" value={selectedSpeakerId} disabled={!speakerSelectionSupported} onChange={(event) => void changeSpeaker(event.target.value)}>
               <option value="">Browser default speaker</option>
               {speakers.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
             </select>
@@ -310,8 +310,8 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
       </div>
       <p role="status">{message}</p>
       <div className="telehealth-actions">
-        <button className="telehealth-button" type="button" disabled={mediaActive} onClick={() => void join()}>{role === 'physician' ? 'Start local media POC' : 'Join local media POC'}</button>
-        <button className="telehealth-button telehealth-button-secondary" type="button" disabled={state === 'idle' || state === 'ended'} onClick={() => { stop(); setState('ended'); setMessage('Local camera, microphone, and peer connection ended.') }}>End local media POC</button>
+        <button className="telehealth-button" type="button" disabled={mediaActive} onClick={() => void join()}>{role === 'physician' ? 'Start browser media POC' : 'Join browser media POC'}</button>
+        <button className="telehealth-button telehealth-button-secondary" type="button" disabled={state === 'idle' || state === 'ended'} onClick={() => { stop(); setState('ended'); setMessage('Local camera, microphone, and browser connection ended.') }}>End browser media POC</button>
       </div>
     </section>
   )

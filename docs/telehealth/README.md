@@ -77,6 +77,7 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [19-testing-acceptance-and-traceability.md](19-testing-acceptance-and-traceability.md) | Test layers, safety cases, fixtures, acceptance, and traceability (`TEL-TST`) |
 | [20-rollout-metrics-risks-and-approvals.md](20-rollout-metrics-risks-and-approvals.md) | Phased rollout, KPIs, risks, readiness evidence, owners, and approval gates (`TEL-ROL`) |
 | [22-local-two-person-video-demo.md](22-local-two-person-video-demo.md) | Local synthetic patient-and-physician WebRTC audio/video demonstration runbook; not a production media deployment |
+| [23-internet-two-person-video-demo.md](23-internet-two-person-video-demo.md) | Synthetic patient-and-physician internet audio/video demonstration through Azure Communication Services Calling; not a production media deployment |
 | [references.md](references.md) | Authoritative sources and retrieval dates |
 
 ## 5.1 Pre-development assets

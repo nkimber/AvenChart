@@ -9,6 +9,7 @@ namespace AvenChart.Api.Features.Telehealth;
 public sealed class TelehealthLocalWebRtcPocService(
     TelehealthLocalWebRtcPocRepository repository,
     TelehealthLocalWebRtcPocRelay relay,
+    ITelehealthInternetCallingProvider internetCallingProvider,
     IOptions<TelehealthOptions> options)
 {
     private readonly TelehealthOptions _options = options.Value;
@@ -17,6 +18,7 @@ public sealed class TelehealthLocalWebRtcPocService(
         TelehealthLocalWebRtcSignalWriteRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureLocalWebRtcEnabled();
         var grant = await AuthorizeAsync(request.SessionId, request.GrantId, request.JoinCredential, cancellationToken);
         var kind = NormalizeKind(request.Kind);
         var payload = NormalizePayload(request.Payload);
@@ -28,6 +30,7 @@ public sealed class TelehealthLocalWebRtcPocService(
         TelehealthLocalWebRtcSignalReadRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureLocalWebRtcEnabled();
         if (request.AfterSequence < 0)
         {
             throw TelehealthProblem.BadRequest("telehealth_local_webrtc_sequence_invalid", "AfterSequence cannot be negative.");
@@ -37,21 +40,42 @@ public sealed class TelehealthLocalWebRtcPocService(
         return relay.Read(grant.SessionId, grant.ParticipantRole, request.AfterSequence, grant.ExpiresAt);
     }
 
+    public async Task<TelehealthInternetCallingConfigurationResponse> GetInternetCallingConfigurationAsync(
+        TelehealthInternetCallingConfigurationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_options.InternetCallingPocEnabled)
+        {
+            throw TelehealthProblem.NotFound();
+        }
+
+        var grant = await AuthorizeAsync(request.SessionId, request.GrantId, request.JoinCredential, cancellationToken);
+        var configuration = await internetCallingProvider.CreateConfigurationAsync(grant.GrantId, cancellationToken);
+        return new TelehealthInternetCallingConfigurationResponse(
+            grant.SessionId.ToString(),
+            configuration.AccessToken,
+            configuration.ExpiresAt,
+            "NON_PRODUCTION_INTERNET_ACS_CALLING_POC");
+    }
+
     private async Task<TelehealthLocalWebRtcGrantRecord> AuthorizeAsync(
         Guid sessionId,
         Guid grantId,
         string joinCredential,
         CancellationToken cancellationToken)
     {
-        if (!_options.LocalWebRtcPocEnabled)
-        {
-            throw TelehealthProblem.NotFound();
-        }
-
         var credential = TelehealthProspectiveApplicantPolicy.RequireAccessKey(joinCredential);
         var credentialHash = TelehealthProspectiveApplicantPolicy.Hash(credential);
         return await repository.AuthorizeAsync(sessionId, grantId, credentialHash, cancellationToken)
             ?? throw TelehealthProblem.NotFound();
+    }
+
+    private void EnsureLocalWebRtcEnabled()
+    {
+        if (!_options.LocalWebRtcPocEnabled)
+        {
+            throw TelehealthProblem.NotFound();
+        }
     }
 
     private static string NormalizeKind(string? value)

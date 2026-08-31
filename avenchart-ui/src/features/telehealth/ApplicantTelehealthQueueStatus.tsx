@@ -1,12 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { ApiRequestError, isRequestCancellation } from '../../api/transport.ts'
 import {
   getApplicantSyntheticAfterVisitPlanPreview,
   getApplicantSyntheticPostVisitReceipt,
   getApplicantTelehealthRequestQueueStatus,
+  getApplicantInternetCallingConfiguration,
   prepareApplicantConnection,
   withdrawApplicantTelehealthRequest,
   readApplicantLocalWebRtcSignals,
@@ -21,6 +22,8 @@ import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import { queuePollDelayMilliseconds, shouldPollPatientQueueStatus } from './polling.ts'
 import TelehealthLocalWebRtcPocPanel from './TelehealthLocalWebRtcPocPanel.tsx'
 import { connectionReturnedToQueueMessage, connectionWasReturnedToQueue } from './connectionRecovery.ts'
+
+const TelehealthInternetCallingPocPanel = lazy(() => import('./TelehealthInternetCallingPocPanel.tsx'))
 
 type Props = {
   applicantId: string
@@ -362,7 +365,8 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
               ) : null}
             </section>
           ) : null}
-          {waitingRoom?.mediaTransportEnabled && ['Connecting', 'InConsultation'].includes(status.requestStatus) ? <TelehealthLocalWebRtcPocPanel grant={waitingRoom} role="patient" writeSignal={(kind, payload) => writeApplicantLocalWebRtcSignal(applicantAccessKey, waitingRoom, kind, payload)} readSignals={(afterSequence, signal) => readApplicantLocalWebRtcSignals(applicantAccessKey, waitingRoom, afterSequence, signal)} /> : null}
+          {waitingRoom?.mediaTransportEnabled && ['Connecting', 'InConsultation'].includes(status.requestStatus) && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_INTERNET_ACS_CALLING_POC' ? <Suspense fallback={<p role="status">Loading the synthetic internet calling controls…</p>}><TelehealthInternetCallingPocPanel grant={waitingRoom} role="patient" getCallingConfiguration={() => getApplicantInternetCallingConfiguration(applicantAccessKey, waitingRoom)} /></Suspense> : null}
+          {waitingRoom?.mediaTransportEnabled && ['Connecting', 'InConsultation'].includes(status.requestStatus) && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_LOCAL_WEBRTC_POC' ? <TelehealthLocalWebRtcPocPanel grant={waitingRoom} role="patient" writeSignal={(kind, payload) => writeApplicantLocalWebRtcSignal(applicantAccessKey, waitingRoom, kind, payload)} readSignals={(afterSequence, signal) => readApplicantLocalWebRtcSignals(applicantAccessKey, waitingRoom, afterSequence, signal)} /> : null}
           {shouldPollPatientQueueStatus(status.requestStatus) ? (
             <button
               className="telehealth-button telehealth-button-secondary"

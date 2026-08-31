@@ -39,6 +39,7 @@ var networkName = '${resourceNamePrefix}-vnet'
 var privateDnsZoneName = 'private.postgres.database.azure.com'
 var postgresHost = '${postgresServerName}.postgres.database.azure.com'
 var connectionString = 'Host=${postgresHost};Port=5432;Database=${databaseName};Username=${databaseAdministratorLogin};Password=${databaseAdministratorPassword};SSL Mode=VerifyFull;Pooling=true;Minimum Pool Size=0;Maximum Pool Size=${connectionPoolMaximum};Connection Idle Lifetime=300;Timeout=15;Command Timeout=30'
+var telehealthCallingConnectionStringSecretName = 'telehealth-internet-calling-connection-string'
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
@@ -103,6 +104,27 @@ resource databaseConnectionSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01'
   properties: {
     value: connectionString
     contentType: 'AvenChart Npgsql connection string'
+  }
+}
+
+// AvenChart uses this resource only for synthetic internet calling. It is not
+// linked to a real patient identity, clinical record, or production workflow.
+resource telehealthCommunication 'Microsoft.Communication/communicationServices@2025-05-01' = {
+  name: '${resourceNamePrefix}-relay'
+  location: 'global'
+  tags: tags
+  properties: {
+    dataLocation: 'United States'
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+resource telehealthCallingConnectionSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: vault
+  name: telehealthCallingConnectionStringSecretName
+  properties: {
+    value: telehealthCommunication.listKeys().primaryConnectionString
+    contentType: 'Azure Communication Services synthetic calling connection string'
   }
 }
 

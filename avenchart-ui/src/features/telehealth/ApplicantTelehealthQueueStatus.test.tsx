@@ -219,6 +219,7 @@ describe('ApplicantTelehealthQueueStatus', () => {
       recordingEnabled: false,
       transcriptionEnabled: false,
       mediaTransportEnabled: false,
+      mediaTransportMode: 'NONE',
       waitingRoomMessage: 'Your private synthetic waiting room is ready. No media is connected in this demonstration.',
       limitations: ['No media or communication is connected.'],
     })

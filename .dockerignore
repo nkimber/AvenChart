@@ -1,10 +1,19 @@
+# Do not copy host build outputs into Linux container builds. In particular,
+# Windows NuGet assets contain fallback paths that are invalid in Azure builds.
 .git
 .github
 **/node_modules
 **/dist
 **/bin
 **/obj
+**/.vs
 **/artifacts
 **/test-results
 **/playwright-report
+.env
+.env.*
 public-history
+.graphify
+avenchart/.playwright-cli
+*.user
+*.suo

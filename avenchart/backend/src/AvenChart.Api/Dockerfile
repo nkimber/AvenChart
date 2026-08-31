@@ -9,7 +9,12 @@ RUN dotnet restore backend/src/AvenChart.Api/AvenChart.Api.csproj
 
 COPY backend/src/AvenChart.Api/ backend/src/AvenChart.Api/
 WORKDIR /src/backend/src/AvenChart.Api
-RUN dotnet publish -c Release -o /app/publish --no-restore
+# The working tree can contain Windows-generated obj assets. They encode local
+# NuGet fallback paths and are invalid in this Linux image, so rebuild assets
+# after the source copy rather than publishing them.
+RUN rm -rf bin obj \
+    && dotnet restore \
+    && dotnet publish -c Release -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app

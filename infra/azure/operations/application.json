@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "17530536083289589904"
+      "templateHash": "15618830075254072859"
     }
   },
   "parameters": {
@@ -36,6 +36,34 @@
     "databaseConnectionStringSecretName": {
       "type": "string",
       "defaultValue": "avenchart-database-connection-string"
+    },
+    "telehealthInternetCallingPocEnabled": {
+      "type": "bool",
+      "defaultValue": false
+    },
+    "telehealthInternetCallingConnectionStringSecretName": {
+      "type": "string",
+      "defaultValue": "telehealth-internet-calling-connection-string"
+    },
+    "preserveLegacyTelehealthWebRtcRelaySecret": {
+      "type": "bool",
+      "defaultValue": false
+    },
+    "legacyTelehealthWebRtcRelayConnectionStringSecretName": {
+      "type": "string",
+      "defaultValue": "telehealth-internet-webrtc-relay-connection-string"
+    },
+    "telehealthBrandedHost": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "customDomainName": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "customDomainCertificateId": {
+      "type": "string",
+      "defaultValue": ""
     },
     "minimumReplicas": {
       "type": "int",
@@ -126,7 +154,8 @@
                 "latestRevision": true,
                 "weight": 100
               }
-            ]
+            ],
+            "customDomains": "[if(and(not(empty(parameters('customDomainName'))), not(empty(parameters('customDomainCertificateId')))), createArray(createObject('name', parameters('customDomainName'), 'bindingType', 'SniEnabled', 'certificateId', parameters('customDomainCertificateId'))), createArray())]"
           },
           "registries": [
             {
@@ -134,13 +163,7 @@
               "identity": "[parameters('managedIdentityResourceId')]"
             }
           ],
-          "secrets": [
-            {
-              "name": "database-connection-string",
-              "keyVaultUrl": "[format('https://{0}{1}/secrets/{2}', parameters('keyVaultName'), environment().suffixes.keyvaultDns, parameters('databaseConnectionStringSecretName'))]",
-              "identity": "[parameters('managedIdentityResourceId')]"
-            }
-          ]
+          "secrets": "[flatten(createArray(createArray(createObject('name', 'database-connection-string', 'keyVaultUrl', format('https://{0}{1}/secrets/{2}', parameters('keyVaultName'), environment().suffixes.keyvaultDns, parameters('databaseConnectionStringSecretName')), 'identity', parameters('managedIdentityResourceId'))), if(parameters('preserveLegacyTelehealthWebRtcRelaySecret'), createArray(createObject('name', 'telehealth-internet-webrtc-relay-connection-string', 'keyVaultUrl', format('https://{0}{1}/secrets/{2}', parameters('keyVaultName'), environment().suffixes.keyvaultDns, parameters('legacyTelehealthWebRtcRelayConnectionStringSecretName')), 'identity', parameters('managedIdentityResourceId'))), createArray()), if(parameters('telehealthInternetCallingPocEnabled'), createArray(createObject('name', 'telehealth-internet-calling-connection-string', 'keyVaultUrl', format('https://{0}{1}/secrets/{2}', parameters('keyVaultName'), environment().suffixes.keyvaultDns, parameters('telehealthInternetCallingConnectionStringSecretName')), 'identity', parameters('managedIdentityResourceId'))), createArray())))]"
         },
         "template": {
           "containers": [
@@ -194,36 +217,7 @@
                 "cpu": "[json(parameters('apiCpu'))]",
                 "memory": "[parameters('apiMemory')]"
               },
-              "env": [
-                {
-                  "name": "ASPNETCORE_URLS",
-                  "value": "http://+:8081"
-                },
-                {
-                  "name": "ConnectionStrings__AvenChart",
-                  "secretRef": "database-connection-string"
-                },
-                {
-                  "name": "DatabaseSchema__MigrationsPath",
-                  "value": "/app/database/migrations"
-                },
-                {
-                  "name": "RuntimeSafety__RequireHttps",
-                  "value": "false"
-                },
-                {
-                  "name": "RuntimeSafety__RateLimitPermitLimit",
-                  "value": "[string(parameters('rateLimitPermitLimit'))]"
-                },
-                {
-                  "name": "DEMO_SEED_ON_STARTUP",
-                  "value": "false"
-                },
-                {
-                  "name": "DEMO_RESET_ON_STARTUP",
-                  "value": "false"
-                }
-              ],
+              "env": "[flatten(createArray(createArray(createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Staging'), createObject('name', 'ASPNETCORE_URLS', 'value', 'http://+:8081'), createObject('name', 'ConnectionStrings__AvenChart', 'secretRef', 'database-connection-string'), createObject('name', 'DatabaseSchema__MigrationsPath', 'value', '/app/database/migrations'), createObject('name', 'RuntimeSafety__RequireHttps', 'value', 'false'), createObject('name', 'RuntimeSafety__RateLimitPermitLimit', 'value', string(parameters('rateLimitPermitLimit'))), createObject('name', 'DEMO_SEED_ON_STARTUP', 'value', 'false'), createObject('name', 'DEMO_RESET_ON_STARTUP', 'value', 'false')), if(parameters('telehealthInternetCallingPocEnabled'), createArray(createObject('name', 'Telehealth__Enabled', 'value', 'true'), createObject('name', 'Telehealth__Mode', 'value', 'Synthetic'), createObject('name', 'Telehealth__PracticeId', 'value', 'avenchart-synthetic-practice'), createObject('name', 'Telehealth__FacilityId', 'value', '10'), createObject('name', 'Telehealth__BrandedHosts__0', 'value', parameters('telehealthBrandedHost')), createObject('name', 'Telehealth__SupportedStates__0', 'value', 'GA'), createObject('name', 'Telehealth__SupportedStates__1', 'value', 'CA'), createObject('name', 'Telehealth__SupportedStates__2', 'value', 'FL'), createObject('name', 'Telehealth__ReservationLeaseSeconds', 'value', '300'), createObject('name', 'Telehealth__VideoAdapterMode', 'value', 'NON_PRODUCTION'), createObject('name', 'Telehealth__PharmacyDirectoryAdapterMode', 'value', 'NON_PRODUCTION'), createObject('name', 'Telehealth__ProfessionalClaimAdapterMode', 'value', 'NON_PRODUCTION'), createObject('name', 'Telehealth__LocalWebRtcPocEnabled', 'value', 'false'), createObject('name', 'Telehealth__InternetCallingPocEnabled', 'value', 'true'), createObject('name', 'Telehealth__InternetCallingConnectionString', 'secretRef', 'telehealth-internet-calling-connection-string')), createArray())))]",
               "probes": [
                 {
                   "type": "Startup",
@@ -262,8 +256,8 @@
             }
           ],
           "scale": {
-            "minReplicas": "[parameters('minimumReplicas')]",
-            "maxReplicas": "[parameters('maximumReplicas')]",
+            "minReplicas": "[if(parameters('telehealthInternetCallingPocEnabled'), 1, parameters('minimumReplicas'))]",
+            "maxReplicas": "[if(parameters('telehealthInternetCallingPocEnabled'), 1, parameters('maximumReplicas'))]",
             "rules": [
               {
                 "name": "http-concurrency",

@@ -18,6 +18,7 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         var options = new TelehealthOptions();
         Assert.False(options.Enabled);
         Assert.False(options.LocalWebRtcPocEnabled);
+        Assert.False(options.InternetCallingPocEnabled);
         Assert.True(TelehealthRuntimeSafetyPolicy.IsSafe(options, Environment(Environments.Production)));
     }
 
@@ -40,6 +41,19 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
 
         Assert.True(TelehealthRuntimeSafetyPolicy.IsSafe(options, Environment(Environments.Development)));
         Assert.False(TelehealthRuntimeSafetyPolicy.IsSafe(options, Environment(Environments.Production)));
+    }
+
+    [Fact]
+    public void InternetCallingPocRequiresAnAzureCommunicationServicesConnectionString()
+    {
+        var missingConnectionString = ValidEnabledOptions(internetCallingPocEnabled: true);
+        var validConnectionString = ValidEnabledOptions(
+            internetCallingPocEnabled: true,
+            internetCallingConnectionString: "endpoint=https://avenchart-communication.communication.azure.com/;accesskey=synthetic-test-key");
+
+        Assert.False(TelehealthRuntimeSafetyPolicy.IsSafe(missingConnectionString, Environment(Environments.Development)));
+        Assert.True(TelehealthRuntimeSafetyPolicy.IsSafe(validConnectionString, Environment(Environments.Development)));
+        Assert.False(TelehealthRuntimeSafetyPolicy.IsSafe(validConnectionString, Environment(Environments.Production)));
     }
 
     [Fact]
@@ -117,7 +131,11 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
             WithProfessionalClaimAdapter(ValidEnabledOptions(), "ClearinghouseVendor"), Environment(Environments.Development)));
     }
 
-    private static TelehealthOptions ValidEnabledOptions(string[]? hosts = null, bool localWebRtcPocEnabled = false) => new()
+    private static TelehealthOptions ValidEnabledOptions(
+        string[]? hosts = null,
+        bool localWebRtcPocEnabled = false,
+        bool internetCallingPocEnabled = false,
+        string internetCallingConnectionString = "") => new()
     {
         Enabled = true,
         Mode = "Synthetic",
@@ -128,6 +146,8 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         ReservationLeaseSeconds = 120,
         VideoAdapterMode = "NON_PRODUCTION",
         LocalWebRtcPocEnabled = localWebRtcPocEnabled,
+        InternetCallingPocEnabled = internetCallingPocEnabled,
+        InternetCallingConnectionString = internetCallingConnectionString,
         PharmacyDirectoryAdapterMode = "NON_PRODUCTION",
         ProfessionalClaimAdapterMode = "NON_PRODUCTION"
     };
@@ -144,6 +164,8 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         ReservationLeaseSeconds = options.ReservationLeaseSeconds,
         VideoAdapterMode = mode,
         LocalWebRtcPocEnabled = options.LocalWebRtcPocEnabled,
+        InternetCallingPocEnabled = options.InternetCallingPocEnabled,
+        InternetCallingConnectionString = options.InternetCallingConnectionString,
         PharmacyDirectoryAdapterMode = options.PharmacyDirectoryAdapterMode,
         ProfessionalClaimAdapterMode = options.ProfessionalClaimAdapterMode
     };
@@ -160,6 +182,8 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         ReservationLeaseSeconds = options.ReservationLeaseSeconds,
         VideoAdapterMode = options.VideoAdapterMode,
         LocalWebRtcPocEnabled = options.LocalWebRtcPocEnabled,
+        InternetCallingPocEnabled = options.InternetCallingPocEnabled,
+        InternetCallingConnectionString = options.InternetCallingConnectionString,
         PharmacyDirectoryAdapterMode = mode,
         ProfessionalClaimAdapterMode = options.ProfessionalClaimAdapterMode
     };
@@ -176,6 +200,8 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         ReservationLeaseSeconds = options.ReservationLeaseSeconds,
         VideoAdapterMode = options.VideoAdapterMode,
         LocalWebRtcPocEnabled = options.LocalWebRtcPocEnabled,
+        InternetCallingPocEnabled = options.InternetCallingPocEnabled,
+        InternetCallingConnectionString = options.InternetCallingConnectionString,
         PharmacyDirectoryAdapterMode = options.PharmacyDirectoryAdapterMode,
         ProfessionalClaimAdapterMode = mode
     };

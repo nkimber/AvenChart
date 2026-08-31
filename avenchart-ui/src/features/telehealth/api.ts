@@ -2543,6 +2543,7 @@ export type TelehealthConnectionGrant = {
   recordingEnabled: false
   transcriptionEnabled: false
   mediaTransportEnabled: boolean
+  mediaTransportMode: 'NONE' | 'NON_PRODUCTION_LOCAL_WEBRTC_POC' | 'NON_PRODUCTION_INTERNET_ACS_CALLING_POC'
   waitingRoomMessage: string
   limitations: string[]
 }
@@ -2565,6 +2566,13 @@ export type TelehealthLocalWebRtcSignalWrite = {
   sequence: number
   expiresAt: string
   mode: 'NON_PRODUCTION_LOCAL_WEBRTC_POC'
+}
+
+export type TelehealthInternetCallingConfiguration = {
+  groupId: string
+  accessToken: string
+  expiresAt: string
+  mode: 'NON_PRODUCTION_INTERNET_ACS_CALLING_POC'
 }
 
 export type TelehealthConsultationStartInput = {
@@ -4382,6 +4390,15 @@ function readLocalWebRtcSignals(
   })
 }
 
+function getInternetCallingConfiguration(grant: TelehealthConnectionGrant, headers: Record<string, string>) {
+  return json<TelehealthInternetCallingConfiguration>('/api/telehealth/v1/calling/configuration', {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({ sessionId: grant.sessionId, grantId: grant.grantId, joinCredential: grant.joinCredential }),
+  })
+}
+
 export function writePatientLocalWebRtcSignal(grant: TelehealthConnectionGrant, kind: TelehealthLocalWebRtcSignalKind, payload: string) {
   return writeLocalWebRtcSignal(grant, kind, payload, portalHeaders())
 }
@@ -4390,12 +4407,20 @@ export function readPatientLocalWebRtcSignals(grant: TelehealthConnectionGrant, 
   return readLocalWebRtcSignals(grant, afterSequence, portalHeaders(), signal)
 }
 
+export function getPatientInternetCallingConfiguration(grant: TelehealthConnectionGrant) {
+  return getInternetCallingConfiguration(grant, portalHeaders())
+}
+
 export function writeApplicantLocalWebRtcSignal(applicantAccessKey: string, grant: TelehealthConnectionGrant, kind: TelehealthLocalWebRtcSignalKind, payload: string) {
   return writeLocalWebRtcSignal(grant, kind, payload, applicantHeaders(applicantAccessKey))
 }
 
 export function readApplicantLocalWebRtcSignals(applicantAccessKey: string, grant: TelehealthConnectionGrant, afterSequence: number, signal?: AbortSignal) {
   return readLocalWebRtcSignals(grant, afterSequence, applicantHeaders(applicantAccessKey), signal)
+}
+
+export function getApplicantInternetCallingConfiguration(applicantAccessKey: string, grant: TelehealthConnectionGrant) {
+  return getInternetCallingConfiguration(grant, applicantHeaders(applicantAccessKey))
 }
 
 export function createPatientRequest(complaintCategory: 'migraine' | 'sleep') {
@@ -4836,6 +4861,10 @@ export function writePhysicianLocalWebRtcSignal(grant: TelehealthConnectionGrant
 
 export function readPhysicianLocalWebRtcSignals(grant: TelehealthConnectionGrant, afterSequence: number, signal?: AbortSignal) {
   return readLocalWebRtcSignals(grant, afterSequence, clinicianHeaders(), signal)
+}
+
+export function getPhysicianInternetCallingConfiguration(grant: TelehealthConnectionGrant) {
+  return getInternetCallingConfiguration(grant, clinicianHeaders())
 }
 
 export function startTelehealthConsultation(

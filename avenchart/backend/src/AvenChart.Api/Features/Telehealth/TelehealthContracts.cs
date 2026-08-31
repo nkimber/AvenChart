@@ -895,6 +895,7 @@ public sealed record TelehealthConnectionGrantResponse(
     bool RecordingEnabled,
     bool TranscriptionEnabled,
     bool MediaTransportEnabled,
+    string MediaTransportMode,
     string WaitingRoomMessage,
     IReadOnlyList<string> Limitations);
 
@@ -918,6 +919,17 @@ public sealed record TelehealthLocalWebRtcSignalResponse(
 
 public sealed record TelehealthLocalWebRtcSignalWriteResponse(
     int Sequence,
+    DateTimeOffset ExpiresAt,
+    string Mode);
+
+public sealed record TelehealthInternetCallingConfigurationRequest(
+    Guid SessionId,
+    Guid GrantId,
+    string JoinCredential);
+
+public sealed record TelehealthInternetCallingConfigurationResponse(
+    string GroupId,
+    string AccessToken,
     DateTimeOffset ExpiresAt,
     string Mode);
 

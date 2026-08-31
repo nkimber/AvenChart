@@ -8,6 +8,12 @@ const distRoot = new URL('../dist/', import.meta.url)
 const assetsRoot = new URL('./assets/', distRoot)
 const initialBudgetBytes = 250 * 1024
 const routeChunkBudgetBytes = 300 * 1024
+// The ACS Calling SDK is deliberately lazy-loaded only after an authorized
+// synthetic waiting-room grant exists. Its browser media engine is materially
+// larger than ordinary route code, so constrain it separately rather than
+// silently weakening the budget for every route.
+const optionalCallingSdkBudgetBytes = 7 * 1024 * 1024
+const optionalCallingSdkChunkPattern = /^TelehealthInternetCallingPocPanel-/
 
 const indexHtml = await readFile(new URL('./index.html', distRoot), 'utf8')
 const initialMatch = indexHtml.match(/<script[^>]+src="\/assets\/([^"]+\.js)"/)
@@ -31,7 +37,7 @@ if (!initial) {
 const violations = chunks.filter((chunk) =>
   chunk.file === initial.file
     ? chunk.bytes > initialBudgetBytes
-    : chunk.bytes > routeChunkBudgetBytes,
+    : chunk.bytes > (optionalCallingSdkChunkPattern.test(chunk.file) ? optionalCallingSdkBudgetBytes : routeChunkBudgetBytes),
 )
 
 const result = {
@@ -39,6 +45,7 @@ const result = {
   budgets: {
     initialBytes: initialBudgetBytes,
     routeChunkBytes: routeChunkBudgetBytes,
+    optionalCallingSdkBytes: optionalCallingSdkBudgetBytes,
   },
   initial,
   largestChunks: [...chunks].sort((a, b) => b.bytes - a.bytes).slice(0, 10),

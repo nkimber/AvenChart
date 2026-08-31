@@ -146,6 +146,9 @@ public sealed class TelehealthProblem(int statusCode, string code, string title,
 
     public static TelehealthProblem Conflict(string code, string detail) =>
         new(StatusCodes.Status409Conflict, code, "Telehealth request conflict", detail);
+
+    public static TelehealthProblem ServiceUnavailable(string code, string detail) =>
+        new(StatusCodes.Status503ServiceUnavailable, code, "Telehealth media relay is unavailable", detail);
 }
 
 public static class TelehealthCommandFingerprint
