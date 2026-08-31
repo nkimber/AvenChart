@@ -27,6 +27,21 @@ public static class TelehealthEndpoints
             .WithName("GetTelehealthPracticeContext")
             .Produces<TelehealthPracticeContextResponse>()
             .ProducesProblem(StatusCodes.Status404NotFound);
+        root.MapPost("/local-webrtc/signals/write", WriteLocalWebRtcSignalAsync)
+            .WithName("WriteTelehealthLocalWebRtcSignal")
+            .WithDescription("Relays one short-lived offer, answer, or ICE candidate between exact existing local POC connection grants. SDP and ICE are process-memory-only, not persisted or logged; no recording, transcription, vendor, TURN, or external service is used.")
+            .Accepts<TelehealthLocalWebRtcSignalWriteRequest>("application/json")
+            .Produces<TelehealthLocalWebRtcSignalWriteResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+        root.MapPost("/local-webrtc/signals/read", ReadLocalWebRtcSignalsAsync)
+            .WithName("ReadTelehealthLocalWebRtcSignals")
+            .WithDescription("Reads only the other exact participant's transient local POC signaling messages. It does not persist media, signaling payloads, transcript, or patient data and is unavailable after the waiting-room grant expires.")
+            .Accepts<TelehealthLocalWebRtcSignalReadRequest>("application/json")
+            .Produces<TelehealthLocalWebRtcSignalReadResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound);
 
         var applicants = root.MapGroup("/applicants");
         applicants.MapPost("", CreateProspectiveApplicantAsync)
@@ -1050,6 +1065,28 @@ public static class TelehealthEndpoints
 
     private static Task<IResult> GetContextAsync(TelehealthService service, HttpContext context) =>
         ExecuteAsync(() => Task.FromResult<IResult>(Results.Ok(service.GetPracticeContext(context.Request.Host))));
+
+    private static Task<IResult> WriteLocalWebRtcSignalAsync(
+        TelehealthLocalWebRtcPocService service,
+        HttpContext context,
+        TelehealthLocalWebRtcSignalWriteRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetLocalWebRtcPrivateResponse(context, request.SessionId);
+            return Results.Ok(await service.WriteAsync(request, cancellationToken));
+        });
+
+    private static Task<IResult> ReadLocalWebRtcSignalsAsync(
+        TelehealthLocalWebRtcPocService service,
+        HttpContext context,
+        TelehealthLocalWebRtcSignalReadRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetLocalWebRtcPrivateResponse(context, request.SessionId);
+            return Results.Ok(await service.ReadAsync(request, cancellationToken));
+        });
 
     private static Task<IResult> CreateProspectiveApplicantAsync(
         TelehealthProspectiveApplicantService service,
@@ -2828,6 +2865,14 @@ public static class TelehealthEndpoints
         context.Response.Headers.Pragma = "no-cache";
         context.Response.Headers.Expires = "0";
         PhiAuditResourceContext.Set(context, "TelehealthConversation", requestId.ToString("D"));
+    }
+
+    private static void SetLocalWebRtcPrivateResponse(HttpContext context, Guid sessionId)
+    {
+        context.Response.Headers.CacheControl = "no-store, private";
+        context.Response.Headers.Pragma = "no-cache";
+        context.Response.Headers.Expires = "0";
+        PhiAuditResourceContext.Set(context, "TelehealthLocalWebRtcPoc", sessionId.ToString("D"));
     }
 
     private static void SetApplicantIdentityReviewPrivateResponse(HttpContext context, string resourceId)

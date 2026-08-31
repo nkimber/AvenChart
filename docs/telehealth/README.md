@@ -1,8 +1,8 @@
 # AvenChart immediate telehealth master specification
 
-Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–69 scopes active under Decisions 0003 and 0005–0072
+Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–70 scopes active under Decisions 0003 and 0005–0073
 Version: 0.1
-Last reviewed: 2026-08-30
+Last reviewed: 2026-08-31
 Initial jurisdictions: Georgia, California, and Florida  
 Initial delivery channel: a specific medical practice's branded site
 
@@ -154,6 +154,7 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Decision 0070](decisions/0070-approved-poc-synthetic-professional-claim-preparation.md) | Approved, time-bounded POC exception for a physician-owned durable `PreparedOnly` synthetic professional-claim receipt without claim creation or external submission |
 | [Decision 0071](decisions/0071-approved-poc-synthetic-post-visit-receipt.md) | Approved, time-bounded POC exception for an exact owner’s immutable, non-clinical synthetic post-closure receipt without delivery or completion |
 | [Decision 0072](decisions/0072-approved-poc-synthetic-after-visit-plan-preview.md) | Approved, time-bounded POC exception for an exact owner’s immutable physician-authored synthetic after-visit plan preview without actual AVS delivery or completion |
+| [Decision 0073](decisions/0073-approved-poc-local-webrtc-media.md) | Approved, time-bounded POC exception for exact short-lived waiting-room grant holders to exchange transient local-browser WebRTC signaling without server media, persistence, recording, vendor, or production capability |
 | [Implementation backlog](backlog/README.md) | Delivery model for 20 epics and 60 stories, with every one of the 329 requirements assigned exactly once as a primary responsibility |
 | [Machine-readable backlog](backlog/backlog.json) | Structured epic, story, dependency, priority, gate and requirement-range source for planning and future traceability automation |
 | [Sprint 1 foundation plan](backlog/sprint-01-foundation.md) | Recommended synthetic vertical slice from branded entry through safety/triage, administrator authorization, queueing and atomic clinician reservation |

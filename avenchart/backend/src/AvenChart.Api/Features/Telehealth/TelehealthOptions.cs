@@ -22,6 +22,7 @@ public sealed class TelehealthOptions
     public string[] SupportedStates { get; init; } = [];
     public int ReservationLeaseSeconds { get; init; } = 120;
     public string VideoAdapterMode { get; init; } = "NON_PRODUCTION";
+    public bool LocalWebRtcPocEnabled { get; init; }
     public string PharmacyDirectoryAdapterMode { get; init; } = "NON_PRODUCTION";
     public string ProfessionalClaimAdapterMode { get; init; } = "NON_PRODUCTION";
 }
@@ -159,6 +160,9 @@ public static class TelehealthServiceRegistration
         services.AddScoped<TelehealthApplicantRequestQueueStatusService>();
         services.AddScoped<TelehealthVideoRepository>();
         services.AddScoped<TelehealthVideoService>();
+        services.AddScoped<TelehealthLocalWebRtcPocRepository>();
+        services.AddScoped<TelehealthLocalWebRtcPocService>();
+        services.AddSingleton<TelehealthLocalWebRtcPocRelay>();
         services.AddScoped<TelehealthConsultationRepository>();
         services.AddScoped<TelehealthConsultationService>();
         services.AddScoped<TelehealthConversationRepository>();

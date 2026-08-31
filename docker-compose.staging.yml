@@ -32,6 +32,7 @@ x-api-environment: &api-environment
   Telehealth__SupportedStates__2: GA
   Telehealth__ReservationLeaseSeconds: "120"
   Telehealth__VideoAdapterMode: NON_PRODUCTION
+  Telehealth__LocalWebRtcPocEnabled: "true"
   Telehealth__PharmacyDirectoryAdapterMode: NON_PRODUCTION
   Telehealth__ProfessionalClaimAdapterMode: NON_PRODUCTION
 

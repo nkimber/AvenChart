@@ -1,13 +1,13 @@
 # Telehealth implementation backlog
 
-Status: Exact disabled synthetic Sprints 1–69 active only within Decisions 0003 and 0005–0072
+Status: Exact disabled synthetic Sprints 1–70 active only within Decisions 0003 and 0005–0073
 Decision baseline: [Decision 0001](../decisions/0001-g0-development-baseline.md)  
 Machine-readable source: [backlog.json](backlog.json)  
 First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 69 POC synthetic after-visit plan preview](sprint-69-poc-synthetic-after-visit-plan-preview.md); implementation and automated evidence are complete
+Current increment: [Sprint 70 POC local browser WebRTC media](sprint-70-poc-local-webrtc-media.md); implementation and automated evidence passed
 
 ## 1. Backlog contract
 

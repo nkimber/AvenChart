@@ -50,9 +50,25 @@ try {
       '/api/telehealth/v1/applicants/{applicantId}/telehealth-request/{requestId}/post-visit-receipt',
       '/api/telehealth/v1/patient/requests/{requestId}/post-visit-receipt',
       '/api/telehealth/v1/applicants/{applicantId}/telehealth-request/{requestId}/after-visit-plan-preview',
-      '/api/telehealth/v1/patient/requests/{requestId}/after-visit-plan-preview')
+      '/api/telehealth/v1/patient/requests/{requestId}/after-visit-plan-preview',
+      '/api/telehealth/v1/local-webrtc/signals/write','/api/telehealth/v1/local-webrtc/signals/read')
     $paths = @($document.paths.PSObject.Properties.Name)
     Add-Check 'Versioned synthetic telehealth paths are published only when enabled' (@($expected | Where-Object { $_ -notin $paths }).Count -eq 0) @{ paths=$paths | Where-Object { $_ -like '/api/telehealth/*' } }
+    $localWebRtcWrite = Get-Operation $document '/api/telehealth/v1/local-webrtc/signals/write' 'post'
+    $localWebRtcRead = Get-Operation $document '/api/telehealth/v1/local-webrtc/signals/read' 'post'
+    $localWebRtcWriteReference = Get-Property $localWebRtcWrite.requestBody.content.'application/json'.schema '$ref'
+    $localWebRtcReadReference = Get-Property $localWebRtcRead.requestBody.content.'application/json'.schema '$ref'
+    $localWebRtcWriteSchemaName = ($localWebRtcWriteReference -split '/')[-1]
+    $localWebRtcReadSchemaName = ($localWebRtcReadReference -split '/')[-1]
+    $localWebRtcWriteJson = ((Get-Property $document.components 'schemas').$localWebRtcWriteSchemaName | ConvertTo-Json -Depth 20 -Compress)
+    $localWebRtcReadJson = ((Get-Property $document.components 'schemas').$localWebRtcReadSchemaName | ConvertTo-Json -Depth 20 -Compress)
+    Add-Check 'Local browser WebRTC signaling is bounded to transient grant material and exposes no media or external payload contract' (
+      $null-ne $localWebRtcWrite -and $null-ne $localWebRtcRead -and
+      $null-ne(Get-Property $localWebRtcWrite.responses '400') -and $null-ne(Get-Property $localWebRtcWrite.responses '404') -and $null-ne(Get-Property $localWebRtcWrite.responses '409') -and
+      $null-ne(Get-Property $localWebRtcRead.responses '400') -and $null-ne(Get-Property $localWebRtcRead.responses '404') -and
+      $localWebRtcWriteJson-match'sessionId' -and $localWebRtcWriteJson-match'grantId' -and $localWebRtcWriteJson-match'joinCredential' -and $localWebRtcWriteJson-match'kind' -and $localWebRtcWriteJson-match'payload' -and
+      $localWebRtcReadJson-match'sessionId' -and $localWebRtcReadJson-match'grantId' -and $localWebRtcReadJson-match'joinCredential' -and $localWebRtcReadJson-match'afterSequence' -and
+      $localWebRtcWriteJson-notmatch'patientId|encounterId|appointmentId|recording|transcri|vendor|turn|stun|external') $null
     $patientCreate = Get-Operation $document '/api/telehealth/v1/patient/requests' 'post'
     Add-Check 'Patient mutation documents portal/OIDC authentication and idempotency' (
       (Has-Security $patientCreate 'AvenChartPatientPortalSession') -and (Has-Security $patientCreate 'AvenChartOidcBearer') -and (Has-Header $patientCreate 'X-Idempotency-Key'))
@@ -2229,5 +2245,5 @@ try {
     Add-Check 'Public context has no protected security requirement and exposes only the public projection' ($null -eq $contextSecurity -or @($contextSecurity).Count -eq 0)
 }
 catch { Add-Check 'Telehealth OpenAPI contract execution' $false $_.Exception.Message }
-    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060','TH-DEC-0061','TH-DEC-0062','TH-DEC-0063','TH-DEC-0064','TH-DEC-0065','TH-DEC-0066','TH-DEC-0067','TH-DEC-0068','TH-DEC-0069','TH-DEC-0070','TH-DEC-0071','TH-DEC-0072');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
+    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060','TH-DEC-0061','TH-DEC-0062','TH-DEC-0063','TH-DEC-0064','TH-DEC-0065','TH-DEC-0066','TH-DEC-0067','TH-DEC-0068','TH-DEC-0069','TH-DEC-0070','TH-DEC-0071','TH-DEC-0072','TH-DEC-0073');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
 if(-not $passed){exit 1}

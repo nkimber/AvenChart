@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { endIdleClinicianShift, enterTelehealthConsultationWrapUp, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
+import { endIdleClinicianShift, enterTelehealthConsultationWrapUp, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, readPhysicianLocalWebRtcSignals, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, writePhysicianLocalWebRtcSignal, type TelehealthConnectionGrant, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
 import { isRequestCancellation } from '../../api/transport.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import TelehealthPharmacyChoicePanel from './TelehealthPharmacyChoicePanel.tsx'
@@ -10,6 +10,7 @@ import TelehealthPrescriptionPreparationPanel from './TelehealthPrescriptionPrep
 import TelehealthSafetyDispositionPanel from './TelehealthSafetyDispositionPanel.tsx'
 import TelehealthCompletionPrerequisitesPanel from './TelehealthCompletionPrerequisitesPanel.tsx'
 import TelehealthConversationPanel from './TelehealthConversationPanel.tsx'
+import TelehealthLocalWebRtcPocPanel from './TelehealthLocalWebRtcPocPanel.tsx'
 import TelehealthFinalClinicalReviewPanel from './TelehealthFinalClinicalReviewPanel.tsx'
 import TelehealthProfessionalClaimPreparationPanel from './TelehealthProfessionalClaimPreparationPanel.tsx'
 import TelehealthEncounterFinalizationPanel from './TelehealthEncounterFinalizationPanel.tsx'
@@ -28,7 +29,8 @@ export default function ClinicianTelehealthQueue() {
   const [error, setError] = useState<string | null>(null)
   const [connectionWorking, setConnectionWorking] = useState(false)
   const [deviceEvidence, setDeviceEvidence] = useState<TelehealthDevicePreflight | null>(null)
-  const [waitingRoom, setWaitingRoom] = useState<{ expiresAt: string; message: string; limitations: string[] } | null>(null)
+  const [waitingRoom, setWaitingRoom] = useState<TelehealthConnectionGrant | null>(null)
+  const [localMediaConnected, setLocalMediaConnected] = useState(false)
   const [consultation, setConsultation] = useState<{ consultationId: string; limitations: string[] } | null>(null)
   const [workspace, setWorkspace] = useState<TelehealthConsultationWorkspace | null>(null)
   const [encounterLocked, setEncounterLocked] = useState(false)
@@ -244,7 +246,7 @@ export default function ClinicianTelehealthQueue() {
   }
 
   async function checkDevices() {
-    setConnectionWorking(true); setError(null); setWaitingRoom(null)
+    setConnectionWorking(true); setError(null); setWaitingRoom(null); setLocalMediaConnected(false)
     try {
       const result = await runTelehealthDevicePreflight()
       if (result.status === 'failed') { setDeviceEvidence(null); setError(result.message); return }
@@ -263,7 +265,7 @@ export default function ClinicianTelehealthQueue() {
         deviceEvidence,
         connectionCommandKey.current,
       )
-      setWaitingRoom({ expiresAt: result.expiresAt, message: result.waitingRoomMessage, limitations: result.limitations })
+      setWaitingRoom(result); setLocalMediaConnected(false)
       setReservation((current) => current ? { ...current, requestVersion: result.requestVersion } : current)
       connectionCommandKey.current = null
     } catch (caught) {
@@ -298,7 +300,8 @@ export default function ClinicianTelehealthQueue() {
               <button className="telehealth-button" type="button" disabled={connectionWorking || !deviceEvidence} onClick={() => void enterWaitingRoom()}>Enter physician waiting room</button>
             </div>
             {deviceEvidence ? <p className="telehealth-preflight-passed" role="status">Device check passed. Network indication: {deviceEvidence.networkQuality}.</p> : null}
-            {waitingRoom ? <div className="telehealth-waiting-room" role="status"><h4>Physician grant ready</h4><p>{waitingRoom.message}</p><p><small>Local grant expires {new Date(waitingRoom.expiresAt).toLocaleTimeString()}.</small></p><ul>{waitingRoom.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></div> : null}
+            {waitingRoom ? <div className="telehealth-waiting-room" role="status"><h4>Physician grant ready</h4><p>{waitingRoom.waitingRoomMessage}</p><p><small>Local grant expires {new Date(waitingRoom.expiresAt).toLocaleTimeString()}.</small></p><ul>{waitingRoom.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></div> : null}
+            {waitingRoom?.mediaTransportEnabled ? <TelehealthLocalWebRtcPocPanel grant={waitingRoom} role="physician" writeSignal={(kind, payload) => writePhysicianLocalWebRtcSignal(waitingRoom, kind, payload)} readSignals={(afterSequence, signal) => readPhysicianLocalWebRtcSignals(waitingRoom, afterSequence, signal)} onConnectionStateChange={setLocalMediaConnected} /> : null}
           </section>
           {waitingRoom && !consultation ? (
             <form className="telehealth-consultation-start" onSubmit={(event) => { event.preventDefault(); void beginSyntheticConsultation() }}>
@@ -317,7 +320,8 @@ export default function ClinicianTelehealthQueue() {
                   ['communicationSufficient', 'Synthetic communication check is sufficient'],
                 ] as const).map(([name, label]) => <label className="telehealth-check" key={name}><input type="checkbox" checked={startChecklist[name]} onChange={(event) => setStartCheck(name, event.target.checked)} />{label}</label>)}
               </fieldset>
-              <button className="telehealth-button" type="submit" disabled={connectionWorking || !startReady}>Start synthetic lifecycle</button>
+              {waitingRoom.mediaTransportEnabled && !localMediaConnected ? <p className="telehealth-inline-warning" role="note">Connect the local browser media POC before starting this synthetic lifecycle.</p> : null}
+              <button className="telehealth-button" type="submit" disabled={connectionWorking || !startReady || (waitingRoom.mediaTransportEnabled && !localMediaConnected)}>Start synthetic lifecycle</button>
             </form>
           ) : null}
           {consultation ? <section className="telehealth-consultation-started" role="status"><h3>Synthetic consultation lifecycle started</h3><p>Opaque consultation {consultation.consultationId.slice(0, 8)}. The sequential encounter key is not exposed.</p><ul>{consultation.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></section> : null}
@@ -382,7 +386,7 @@ export default function ClinicianTelehealthQueue() {
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthFinalClinicalReviewPanel consultationId={consultation.consultationId} /> : null}
                 {workspace.consultationStatus === 'WrapUp' ? <TelehealthEncounterFinalizationPanel consultationId={consultation.consultationId} onFinalized={() => setEncounterLocked(true)} /> : null}
                 {workspace.consultationStatus === 'WrapUp' && encounterLocked ? <TelehealthSyntheticVisitClosurePanel consultationId={consultation.consultationId} expectedVersion={workspace.consultationVersion} onClosed={(result) => {
-                  setReservation(null); setConsultation(null); setWorkspace(null); setEncounterLocked(false); setDeviceEvidence(null); setWaitingRoom(null); resetDraft()
+                  setReservation(null); setConsultation(null); setWorkspace(null); setEncounterLocked(false); setDeviceEvidence(null); setWaitingRoom(null); setLocalMediaConnected(false); resetDraft()
                   setShift((current) => current ? { ...current, status: result.clinicianAvailableForNewWork ? 'Active' : current.status } : current)
                   setClosureStatus(result.clinicianAvailableForNewWork
                     ? 'Synthetic visit lifecycle closed. You are available for new work; the appointment and encounter remain incomplete, and no delivery, billing, claim, integration, or external action was created.'

@@ -15,7 +15,7 @@ public sealed class TelehealthVideoService(
     ITelehealthVideoProvider videoProvider,
     IOptions<TelehealthOptions> options)
 {
-    private static readonly IReadOnlyList<string> Limitations =
+    private static readonly IReadOnlyList<string> SimulatorLimitations =
     [
         "NON_PRODUCTION simulator: no video, audio, signaling, TURN, or vendor connection is created.",
         "Recording, transcription, summarization, and persistent media are disabled.",
@@ -161,10 +161,19 @@ public sealed class TelehealthVideoService(
             grant.ExpiresAt,
             false,
             false,
-            false,
+            _options.LocalWebRtcPocEnabled,
             "Your private synthetic waiting room is ready. No media is connected in this demonstration.",
-            Limitations);
+            Limitations());
     }
+
+    private IReadOnlyList<string> Limitations() => _options.LocalWebRtcPocEnabled
+        ? [
+            "NON_PRODUCTION local-only WebRTC POC: browser media is peer-to-peer after an explicit user action; SDP and ICE are transient process memory only.",
+            "No recording, transcription, persistent media, TURN service, vendor service, or external media destination is enabled.",
+            "The local browser connection does not start a consultation, create an encounter, or establish clinical care.",
+            "If symptoms worsen or you are unsure it is safe to wait, contact the practice or seek in-person care. Call 911 for an emergency."
+        ]
+        : SimulatorLimitations;
 
     private static PrepareTelehealthConnectionRequest Normalize(PrepareTelehealthConnectionRequest request)
     {

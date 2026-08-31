@@ -17,7 +17,17 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
     {
         var options = new TelehealthOptions();
         Assert.False(options.Enabled);
+        Assert.False(options.LocalWebRtcPocEnabled);
         Assert.True(TelehealthRuntimeSafetyPolicy.IsSafe(options, Environment(Environments.Production)));
+    }
+
+    [Fact]
+    public void LocalWebRtcPocRemainsNonProductionSyntheticOnly()
+    {
+        var options = ValidEnabledOptions(localWebRtcPocEnabled: true);
+
+        Assert.True(TelehealthRuntimeSafetyPolicy.IsSafe(options, Environment(Environments.Development)));
+        Assert.False(TelehealthRuntimeSafetyPolicy.IsSafe(options, Environment(Environments.Production)));
     }
 
     [Fact]
@@ -95,7 +105,7 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
             WithProfessionalClaimAdapter(ValidEnabledOptions(), "ClearinghouseVendor"), Environment(Environments.Development)));
     }
 
-    private static TelehealthOptions ValidEnabledOptions(string[]? hosts = null) => new()
+    private static TelehealthOptions ValidEnabledOptions(string[]? hosts = null, bool localWebRtcPocEnabled = false) => new()
     {
         Enabled = true,
         Mode = "Synthetic",
@@ -105,6 +115,7 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         SupportedStates = ["GA", "CA", "FL"],
         ReservationLeaseSeconds = 120,
         VideoAdapterMode = "NON_PRODUCTION",
+        LocalWebRtcPocEnabled = localWebRtcPocEnabled,
         PharmacyDirectoryAdapterMode = "NON_PRODUCTION",
         ProfessionalClaimAdapterMode = "NON_PRODUCTION"
     };
@@ -120,6 +131,7 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         SupportedStates = options.SupportedStates,
         ReservationLeaseSeconds = options.ReservationLeaseSeconds,
         VideoAdapterMode = mode,
+        LocalWebRtcPocEnabled = options.LocalWebRtcPocEnabled,
         PharmacyDirectoryAdapterMode = options.PharmacyDirectoryAdapterMode,
         ProfessionalClaimAdapterMode = options.ProfessionalClaimAdapterMode
     };
@@ -135,6 +147,7 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         SupportedStates = options.SupportedStates,
         ReservationLeaseSeconds = options.ReservationLeaseSeconds,
         VideoAdapterMode = options.VideoAdapterMode,
+        LocalWebRtcPocEnabled = options.LocalWebRtcPocEnabled,
         PharmacyDirectoryAdapterMode = mode,
         ProfessionalClaimAdapterMode = options.ProfessionalClaimAdapterMode
     };
@@ -150,6 +163,7 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
         SupportedStates = options.SupportedStates,
         ReservationLeaseSeconds = options.ReservationLeaseSeconds,
         VideoAdapterMode = options.VideoAdapterMode,
+        LocalWebRtcPocEnabled = options.LocalWebRtcPocEnabled,
         PharmacyDirectoryAdapterMode = options.PharmacyDirectoryAdapterMode,
         ProfessionalClaimAdapterMode = mode
     };

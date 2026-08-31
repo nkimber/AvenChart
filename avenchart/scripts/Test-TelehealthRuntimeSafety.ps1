@@ -1129,14 +1129,33 @@ try {
     $videoProviderSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoProvider.cs')
     $videoServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoService.cs')
     $videoRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoRepository.cs')
+    $localWebRtcRelaySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthLocalWebRtcPocRelay.cs')
+    $localWebRtcRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthLocalWebRtcPocRepository.cs')
+    $localWebRtcServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthLocalWebRtcPocService.cs')
     $applicantConnectionPolicySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantConnectionPolicy.cs')
     $videoMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0285__telehealth_connection_room_shell.sql')
-    Add-Check 'Connection-room adapter has no media, recording, vendor, external-call, or encounter mutation path' (
+    Add-Check 'Connection-room adapter excludes vendor, recording, transcription, external-call, and encounter mutation paths' (
         $videoProviderSource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|SignalR|HubConnection|RTCPeerConnection|MediaStream' -and
         $videoServiceSource -notmatch 'HttpClient|recording_enabled\s*=\s*true|transcription_enabled\s*=\s*true' -and
         $videoRepositorySource -notmatch '(?i)insert\s+into\s+(encounters|clinical_notes|prescriptions|claims)' -and
         $videoMigrationSource -match 'media_transport_enabled boolean not null default false' -and
         $videoMigrationSource -match 'recording_enabled = false and transcription_enabled = false and media_transport_enabled = false')
+    Add-Check 'Optional local WebRTC POC is default-off, grant-bound, transient-only, and excludes recording, external, or clinical mutation paths' (
+        $settings.Telehealth.LocalWebRtcPocEnabled -eq $false -and
+        $development.Telehealth.LocalWebRtcPocEnabled -eq $false -and
+        $featureSource -match 'LocalWebRtcPocEnabled' -and
+        $localWebRtcServiceSource -match 'if \(!_options\.LocalWebRtcPocEnabled\)' -and
+        $localWebRtcServiceSource -match 'RequireAccessKey' -and
+        $localWebRtcRepositorySource -match "video_grant\.status='Issued'" -and
+        $localWebRtcRepositorySource -match "session\.status='WaitingRoom'" -and
+        $localWebRtcRepositorySource -match "request\.status='Connecting'" -and
+        $localWebRtcRepositorySource -notmatch '(?i)\b(insert\s+into|update\s+|delete\s+from|truncate\s+)\b' -and
+        $localWebRtcRelaySource -match 'ConcurrentDictionary' -and
+        $localWebRtcRelaySource -match 'RemoveExpiredSessions' -and
+        $localWebRtcRelaySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|\bSignalR\b|recording|transcription|MediaStream|RTCPeerConnection' -and
+        $localWebRtcServiceSource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|\bSignalR\b|recording|transcription|MediaStream|RTCPeerConnection' -and
+        $endpointSource -match '/local-webrtc/signals/write' -and
+        $endpointSource -match '/local-webrtc/signals/read')
     Add-Check 'Applicant connection preparation is owner-bound to the exact reserved request and cannot start media, communication, consent, encounter, care, or external work' (
         $applicantConnectionPolicySource -match 'SYNTHETIC_APPLICANT_CONNECTION_ROOM' -and
         $applicantConnectionPolicySource -match 'NON_PRODUCTION' -and

@@ -8,6 +8,9 @@ import {
   getApplicantSyntheticPostVisitReceipt,
   getApplicantTelehealthRequestQueueStatus,
   prepareApplicantConnection,
+  readApplicantLocalWebRtcSignals,
+  writeApplicantLocalWebRtcSignal,
+  type TelehealthConnectionGrant,
   type TelehealthApplicantRequestQueueStatus,
   type TelehealthDevicePreflight,
   type TelehealthSyntheticAfterVisitPlanPreview,
@@ -15,6 +18,7 @@ import {
 } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import { queuePollDelayMilliseconds, shouldPollPatientQueueStatus } from './polling.ts'
+import TelehealthLocalWebRtcPocPanel from './TelehealthLocalWebRtcPocPanel.tsx'
 
 type Props = {
   applicantId: string
@@ -30,7 +34,7 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
   const [connectionWorking, setConnectionWorking] = useState(false)
   const [connectionIssue, setConnectionIssue] = useState<string | null>(null)
   const [deviceEvidence, setDeviceEvidence] = useState<TelehealthDevicePreflight | null>(null)
-  const [waitingRoom, setWaitingRoom] = useState<{ expiresAt: string; message: string; limitations: string[] } | null>(null)
+  const [waitingRoom, setWaitingRoom] = useState<TelehealthConnectionGrant | null>(null)
   const [postVisitReceipt, setPostVisitReceipt] = useState<TelehealthSyntheticPostVisitReceipt | null>(null)
   const [afterVisitPlanPreview, setAfterVisitPlanPreview] = useState<TelehealthSyntheticAfterVisitPlanPreview | null>(null)
   const generation = useRef(0)
@@ -187,11 +191,7 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
         deviceEvidence,
         connectionCommandKey.current,
       )
-      setWaitingRoom({
-        expiresAt: result.expiresAt,
-        message: result.waitingRoomMessage,
-        limitations: result.limitations,
-      })
+      setWaitingRoom(result)
       connectionCommandKey.current = null
       setRetryAttempt((value) => value + 1)
     } catch (caught) {
@@ -298,13 +298,14 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
               {waitingRoom ? (
                 <div className="telehealth-waiting-room" role="status">
                   <h5>Waiting room ready</h5>
-                  <p>{waitingRoom.message}</p>
+                  <p>{waitingRoom.waitingRoomMessage}</p>
                   <p><small>Local grant expires {new Date(waitingRoom.expiresAt).toLocaleTimeString()}.</small></p>
                   <ul>{waitingRoom.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                 </div>
               ) : null}
             </section>
           ) : null}
+          {waitingRoom?.mediaTransportEnabled && ['Connecting', 'InConsultation'].includes(status.requestStatus) ? <TelehealthLocalWebRtcPocPanel grant={waitingRoom} role="patient" writeSignal={(kind, payload) => writeApplicantLocalWebRtcSignal(applicantAccessKey, waitingRoom, kind, payload)} readSignals={(afterSequence, signal) => readApplicantLocalWebRtcSignals(applicantAccessKey, waitingRoom, afterSequence, signal)} /> : null}
           {shouldPollPatientQueueStatus(status.requestStatus) ? (
             <button
               className="telehealth-button telehealth-button-secondary"

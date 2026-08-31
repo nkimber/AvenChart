@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, authorizeApplicantPracticeReview, authorizeApplicantRequestToQueue, authorizeRequest, cancelPatientTelehealthRequest, claimApplicantPracticeReview, completePatientReadiness, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestInsuranceSource, confirmApplicantTelehealthRequestIntake, confirmApplicantTelehealthRequestLocation, confirmApplicantTelehealthRequestParticipationContext, createApplicantTelehealthRequest, createPatientRequest, createProspectiveApplicant, endIdleClinicianShift, enterTelehealthConsultationWrapUp, evaluateApplicantTelehealthRequestParticipation, evaluateProspectiveSafetyTriage, executeApplicantSyntheticPromotion, getApplicantInsuranceHandoff, getApplicantPracticeReviewPacket, getApplicantRegistrationDetails, getApplicantRequestQueueAuthorization, getApplicantSyntheticPostVisitReceipt, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestEligibility, getApplicantTelehealthRequestInsuranceSource, getApplicantTelehealthRequestIntake, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestOperationalReviewSubmission, getApplicantTelehealthRequestParticipationContext, getApplicantTelehealthRequestParticipationEvaluation, getApplicantTelehealthRequestPracticeNetwork, getApplicantTelehealthRequestQueueStatus, getApplicantTelehealthRequestRenderingCandidate, getApplicantTelehealthRequestUniversalSafety, getPatientQueueStatus, getPatientRequestHistory, getPatientSyntheticPostVisitReceipt, getProspectivePracticeNetworkOptions, getTelehealthCompletionPrerequisites, getTelehealthConsultationWorkspace, getTelehealthPharmacyChoices, getTelehealthPrescriptionPreparationDraft, getTelehealthSafetyDispositionDraft, listApplicantIdentityReview, listApplicantPracticeReviewInbox, listApplicantPromotionAuthorization, listApplicantSyntheticPromotion, listClinicianQueue, prepareApplicantConnection, preparePatientConnection, preparePhysicianConnection, prepareTelehealthProfessionalClaim, recordApplicantIdentityReview, recordApplicantPromotionAuthorization, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, recordTelehealthPharmacyChoice, recordTelehealthPrescriptionPreparationDraft, recordTelehealthSafetyDispositionDraft, reserveNextRequest, runApplicantTelehealthRequestEligibility, runApplicantTelehealthRequestPracticeNetwork, saveTelehealthConsultationDocumentationDraft, selectApplicantTelehealthRequestRenderingCandidate, startTelehealthConsultation, submitApplicantTelehealthRequestForOperationalReview, verifyPatientCoverage, verifyProspectiveApplicantContact, type TelehealthDevicePreflight, type TelehealthReadiness } from './api.ts'
 import { getApplicantSyntheticAfterVisitPlanPreview, getPatientSyntheticAfterVisitPlanPreview } from './api.ts'
+import { readPhysicianLocalWebRtcSignals, writePhysicianLocalWebRtcSignal } from './api.ts'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -1411,6 +1412,30 @@ describe('telehealth transport boundaries', () => {
     expect(headers.get('X-AvenChart-Facility-Id')).toBe('10')
     expect(headers.get('X-AvenChart-Purpose-Of-Use')).toBe('treatment')
     expect(headers.get('X-Idempotency-Key')).toBe('physician-retry-key')
+  })
+
+  it('relays only an exact active grant plus transient WebRTC negotiation material', async () => {
+    sessionStorage.setItem('avenchart-ui.clinicianSession', JSON.stringify({ sessionId: 'physician-session', username: 'doctor', displayName: 'Doctor', role: 'provider', facilityId: 10, purposeOfUse: 'treatment' }))
+    const grant = {
+      sessionId: 'session/1', grantId: 'grant/1', joinCredential: 'local-poc-credential',
+      expiresAt: '2026-08-30T00:00:00Z', mediaTransportEnabled: true,
+    } as import('./api.ts').TelehealthConnectionGrant
+    fetchMock.mockImplementation(async () => jsonResponse({ latestSequence: 2, signals: [] }))
+
+    await writePhysicianLocalWebRtcSignal(grant, 'offer', '{"type":"offer","sdp":"opaque-sdp"}')
+    await readPhysicianLocalWebRtcSignals(grant, 1)
+
+    const [writeUrl, writeInit] = fetchMock.mock.calls[0]
+    const writeHeaders = new Headers(writeInit?.headers)
+    expect(String(writeUrl)).toContain('/local-webrtc/signals/write')
+    expect(writeInit?.method).toBe('POST')
+    expect(writeHeaders.get('X-AvenChart-Session')).toBe('physician-session')
+    expect(JSON.parse(String(writeInit?.body))).toEqual({ sessionId: 'session/1', grantId: 'grant/1', joinCredential: 'local-poc-credential', kind: 'offer', payload: '{"type":"offer","sdp":"opaque-sdp"}' })
+
+    const [readUrl, readInit] = fetchMock.mock.calls[1]
+    expect(String(readUrl)).toContain('/local-webrtc/signals/read')
+    expect(JSON.parse(String(readInit?.body))).toEqual({ sessionId: 'session/1', grantId: 'grant/1', joinCredential: 'local-poc-credential', afterSequence: 1 })
+    expect(JSON.stringify(readInit?.body)).not.toMatch(/patientId|encounterId|recording|transcription|pharmacy|claim/i)
   })
 
   it('starts a consultation with a retry-stable command and coarse affirmative evidence only', async () => {

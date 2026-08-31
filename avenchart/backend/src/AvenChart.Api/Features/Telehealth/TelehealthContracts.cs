@@ -857,6 +857,34 @@ public sealed record TelehealthConnectionGrantResponse(
     string WaitingRoomMessage,
     IReadOnlyList<string> Limitations);
 
+public sealed record TelehealthLocalWebRtcSignalWriteRequest(
+    Guid SessionId,
+    Guid GrantId,
+    string JoinCredential,
+    string Kind,
+    string Payload);
+
+public sealed record TelehealthLocalWebRtcSignalReadRequest(
+    Guid SessionId,
+    Guid GrantId,
+    string JoinCredential,
+    int AfterSequence);
+
+public sealed record TelehealthLocalWebRtcSignalResponse(
+    int Sequence,
+    string Kind,
+    string Payload);
+
+public sealed record TelehealthLocalWebRtcSignalWriteResponse(
+    int Sequence,
+    DateTimeOffset ExpiresAt,
+    string Mode);
+
+public sealed record TelehealthLocalWebRtcSignalReadResponse(
+    IReadOnlyList<TelehealthLocalWebRtcSignalResponse> Signals,
+    int LatestSequence,
+    DateTimeOffset ExpiresAt);
+
 public sealed record TelehealthConsultationStartResponse(
     Guid ConsultationId,
     Guid RequestId,
