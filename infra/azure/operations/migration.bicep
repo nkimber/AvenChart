@@ -72,6 +72,12 @@ resource migrationJob 'Microsoft.App/jobs@2024-03-01' = {
             memory: '1Gi'
           }
           env: [
+            // Run schema updates under the same synthetic staging policy as the
+            // application revision they prepare.
+            {
+              name: 'ASPNETCORE_ENVIRONMENT'
+              value: 'Staging'
+            }
             {
               name: 'ConnectionStrings__AvenChart'
               secretRef: 'database-connection-string'

@@ -19,6 +19,7 @@ WORKDIR /app
 COPY --from=build /app/publish ./
 COPY --from=seed /src/avenchart/artifacts/postgres/seed-gold.sql ./demo-seed.sql
 COPY avenchart/database/migrations ./database/migrations
+COPY avenchart/database/bootstrap ./database/bootstrap
 COPY infra/azure/demo/avenchart-api-entrypoint.sh ./avenchart-api-entrypoint.sh
 RUN chmod +x ./avenchart-api-entrypoint.sh
 EXPOSE 8081

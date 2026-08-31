@@ -127,6 +127,13 @@ resource application 'Microsoft.App/containerApps@2024-03-01' = {
             memory: apiMemory
           }
           env: [
+            // This Container App is a synthetic-only staging deployment. Declare
+            // that explicitly so the API applies its staging safety policy rather
+            // than the production-only host and data-protection requirements.
+            {
+              name: 'ASPNETCORE_ENVIRONMENT'
+              value: 'Staging'
+            }
             {
               name: 'ASPNETCORE_URLS'
               value: 'http://+:8081'
