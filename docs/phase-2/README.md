@@ -53,7 +53,7 @@ The repository-scoped `avanchart-phase-2-assessment` skill contains the executab
 
 Phase 2 remains the program's independent quality check as Phase 3 packets are delivered. The Phase 1 baseline and original evidence are never rewritten to make later work look like it existed earlier. Instead, each later re-assessment is recorded in the [iteration register](iterations/README.md) with its implementation target, covered surfaces, improvements, residual findings, candidates, and remaining gate evidence.
 
-The current [Iteration 2](iterations/iteration-002-current-implementation-reassessment.md) rechecked the current implementation and found meaningful remaining work. It therefore does not converge Phase 2, accept a recommendation, or close a gate.
+The current [Iteration 3](iterations/iteration-003-generated-code-quality-and-maintainability.md) rechecked generated-code quality, readability, and static guardrails. It found meaningful remaining work, so it does not converge Phase 2 or close a gate.
 
 ## Assessment sequence
 

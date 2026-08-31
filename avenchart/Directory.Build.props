@@ -1,0 +1,10 @@
+<!-- SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
+<Project>
+  <PropertyGroup>
+    <!-- Make the SDK analyzer and code-style contract explicit across API and test projects. -->
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+</Project>

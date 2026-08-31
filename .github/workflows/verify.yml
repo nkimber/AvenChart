@@ -36,6 +36,8 @@ jobs:
         run: ./avenchart/scripts/Test-TelehealthRuntimeSafety.ps1
       - name: Verify C# formatting
         run: dotnet format avenchart/AvenChart.slnx --verify-no-changes --no-restore
+      - name: Verify C# analyzers
+        run: dotnet format analyzers avenchart/AvenChart.slnx --verify-no-changes --no-restore
 
   frontends:
     runs-on: ubuntu-latest

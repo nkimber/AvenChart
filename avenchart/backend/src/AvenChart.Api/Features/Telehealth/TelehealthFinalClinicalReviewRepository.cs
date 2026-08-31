@@ -212,7 +212,8 @@ public sealed class TelehealthFinalClinicalReviewRepository(NpgsqlDataSource dat
             reader.GetBoolean(12), reader.GetBoolean(13), reader.GetString(14), reader.GetBoolean(15), reader.GetBoolean(16),
             reader.GetBoolean(17), reader.GetBoolean(18), reader.GetBoolean(19));
         return new Source(reader.GetInt32(0), reader.GetFieldValue<DateTimeOffset>(1), documentation, disposition,
-            reader.IsDBNull(20) ? null : reader.GetGuid(20)) { ConsultationId = consultationId };
+            reader.IsDBNull(20) ? null : reader.GetGuid(20))
+        { ConsultationId = consultationId };
     }
 
     private static async Task<TelehealthFinalClinicalReviewResponse?> ReadCurrentReviewAsync(

@@ -30,6 +30,7 @@ High, blocker, systemic, clinical-safety, and disputed conclusions retain the in
 | --- | --- | --- | --- | --- |
 | [01 — baseline synthesis](../phase-2-completion-audit.md) | Recorded | `phase-1-experimental` at `d77a8320e6751a2deb2daf14cf1ac5d6b00cb989` | The fixed Phase 1 result | 64 canonical findings and seven proposed recommendations; gates remained open. |
 | [02 — current implementation reassessment](iteration-002-current-implementation-reassessment.md) | Recorded · not converged | Same immutable Phase 1 baseline | `af0f321f6eb215384dff7c1dd882d39ea973be1a` | Material implementation gains are corroborated; production identity/CORS, SMART/US Core, structural, and verification work remains. |
+| [03 — generated-code quality and maintainability](iteration-003-generated-code-quality-and-maintainability.md) | Recorded · not converged | Same immutable Phase 1 baseline | `10fbf3940259c3176c7d86ff72de273e84093adf` | Explicit static-quality guardrails are verified; persistence/template and readability opportunities remain evidence-gated. |
 
 ## Convergence decision
 

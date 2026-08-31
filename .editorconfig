@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Keep the repository's formatting contract small and explicit. Broader style
+# changes require an evidence-backed, separately reviewed remediation packet.
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+tab_width = 4
+
+# The analyzer command in CI verifies the existing clean baseline. Additional
+# rule families are enabled only after maintainers have reviewed a reporting
+# baseline, preventing historical diagnostic debt from silently becoming a
+# required build warning.
