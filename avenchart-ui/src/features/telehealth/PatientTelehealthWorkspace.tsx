@@ -28,6 +28,7 @@ import {
   type TelehealthSyntheticPostVisitReceipt,
 } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
+import { connectionReturnedToQueueMessage, connectionWasReturnedToQueue } from './connectionRecovery.ts'
 import { isRequestCancellation } from '../../api/transport.ts'
 import { queuePollDelayMilliseconds, shouldPollPatientQueueStatus } from './polling.ts'
 import TelehealthConversationPanel from './TelehealthConversationPanel.tsx'
@@ -59,6 +60,7 @@ export default function PatientTelehealthWorkspace() {
   const [connectionWorking, setConnectionWorking] = useState(false)
   const [deviceEvidence, setDeviceEvidence] = useState<TelehealthDevicePreflight | null>(null)
   const [waitingRoom, setWaitingRoom] = useState<TelehealthConnectionGrant | null>(null)
+  const [connectionRecoveryNotice, setConnectionRecoveryNotice] = useState<string | null>(null)
   const connectionCommandKey = useRef<string | null>(null)
   const requestGeneration = useRef(0)
   const readinessGeneration = useRef(0)
@@ -181,6 +183,7 @@ export default function PatientTelehealthWorkspace() {
   useEffect(() => {
     setDeviceEvidence(null)
     setWaitingRoom(null)
+    setConnectionRecoveryNotice(null)
     connectionCommandKey.current = null
   }, [selectedId])
 
@@ -221,6 +224,13 @@ export default function PatientTelehealthWorkspace() {
         const result = await getPatientQueueStatus(selectedQueueRequestId, controller.signal)
         if (stopped || generation !== queueStatusGeneration.current) return
         consecutiveFailures = 0
+        if (connectionWasReturnedToQueue(selectedQueueRequestStatus, result.requestStatus)) {
+          setConnectionWorking(false)
+          setDeviceEvidence(null)
+          setWaitingRoom(null)
+          connectionCommandKey.current = null
+          setConnectionRecoveryNotice(connectionReturnedToQueueMessage)
+        }
         setQueueStatus(result)
         setQueueIssue(null)
         setQueueConnection('connected')
@@ -500,6 +510,7 @@ export default function PatientTelehealthWorkspace() {
                     </>
                   ) : <p>The server is checking the authoritative request state.</p>}
                   {queueIssue ? <p className="telehealth-inline-warning" role="status">{queueIssue}</p> : null}
+                  {connectionRecoveryNotice ? <p className="telehealth-inline-warning" role="status">{connectionRecoveryNotice}</p> : null}
                   <button className="telehealth-button telehealth-button-secondary" type="button" onClick={() => setQueueRefreshNonce((current) => current + 1)}>Refresh status now</button>
                 </section>
               ) : null}

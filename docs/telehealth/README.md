@@ -1,6 +1,6 @@
 # AvenChart immediate telehealth master specification
 
-Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–73 scopes active under Decisions 0003 and 0005–0076
+Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–74 scopes active under Decisions 0003 and 0005–0077
 Version: 0.1
 Last reviewed: 2026-08-31
 Initial jurisdictions: Georgia, California, and Florida  
@@ -158,6 +158,7 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Decision 0074](decisions/0074-approved-poc-clinician-reservation-release.md) | Approved, time-bounded POC exception for an exact physician to release an unconnected synthetic reservation back to its existing queue with an append-only lifecycle event and no clinical declination or downstream effect |
 | [Decision 0075](decisions/0075-approved-poc-reservation-lease-reaper.md) | Approved, time-bounded POC exception for server-owned expiration reconciliation of stale synthetic reservations without clinician, patient, clinical, media, or external consequence |
 | [Decision 0076](decisions/0076-approved-poc-clinician-connection-recovery.md) | Approved, time-bounded POC exception for an exact physician to abandon a failed pre-consultation synthetic connection, revoke its local grants, end its session, and restore the existing queue without clinical or downstream effect |
+| [Decision 0077](decisions/0077-approved-poc-patient-connection-recovery-transparency.md) | Approved, time-bounded POC exception to clear stale local waiting-room state and show a neutral recovery message to established and new patients after the authoritative status returns from `Connecting` to `Queued` |
 | [Implementation backlog](backlog/README.md) | Delivery model for 20 epics and 60 stories, with every one of the 329 requirements assigned exactly once as a primary responsibility |
 | [Machine-readable backlog](backlog/backlog.json) | Structured epic, story, dependency, priority, gate and requirement-range source for planning and future traceability automation |
 | [Sprint 1 foundation plan](backlog/sprint-01-foundation.md) | Recommended synthetic vertical slice from branded entry through safety/triage, administrator authorization, queueing and atomic clinician reservation |

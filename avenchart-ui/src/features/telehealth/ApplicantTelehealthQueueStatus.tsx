@@ -19,6 +19,7 @@ import {
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import { queuePollDelayMilliseconds, shouldPollPatientQueueStatus } from './polling.ts'
 import TelehealthLocalWebRtcPocPanel from './TelehealthLocalWebRtcPocPanel.tsx'
+import { connectionReturnedToQueueMessage, connectionWasReturnedToQueue } from './connectionRecovery.ts'
 
 type Props = {
   applicantId: string
@@ -35,19 +36,23 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
   const [connectionIssue, setConnectionIssue] = useState<string | null>(null)
   const [deviceEvidence, setDeviceEvidence] = useState<TelehealthDevicePreflight | null>(null)
   const [waitingRoom, setWaitingRoom] = useState<TelehealthConnectionGrant | null>(null)
+  const [connectionRecoveryNotice, setConnectionRecoveryNotice] = useState<string | null>(null)
   const [postVisitReceipt, setPostVisitReceipt] = useState<TelehealthSyntheticPostVisitReceipt | null>(null)
   const [afterVisitPlanPreview, setAfterVisitPlanPreview] = useState<TelehealthSyntheticAfterVisitPlanPreview | null>(null)
   const generation = useRef(0)
   const connectionCommandKey = useRef<string | null>(null)
+  const lastRequestStatus = useRef<TelehealthApplicantRequestQueueStatus['requestStatus'] | null>(null)
 
   useEffect(() => {
     setConnectionWorking(false)
     setConnectionIssue(null)
     setDeviceEvidence(null)
     setWaitingRoom(null)
+    setConnectionRecoveryNotice(null)
     setPostVisitReceipt(null)
     setAfterVisitPlanPreview(null)
     connectionCommandKey.current = null
+    lastRequestStatus.current = null
   }, [applicantAccessKey, applicantId, enabled])
 
   useEffect(() => {
@@ -116,6 +121,15 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
         if (stopped || currentGeneration !== generation.current) return
         hasConfirmedStatus = true
         consecutiveFailures = 0
+        if (connectionWasReturnedToQueue(lastRequestStatus.current, result.requestStatus)) {
+          setConnectionWorking(false)
+          setConnectionIssue(null)
+          setDeviceEvidence(null)
+          setWaitingRoom(null)
+          connectionCommandKey.current = null
+          setConnectionRecoveryNotice(connectionReturnedToQueueMessage)
+        }
+        lastRequestStatus.current = result.requestStatus
         setStatus(result)
         setIssue(null)
         setConnection('connected')
@@ -295,6 +309,7 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
               </div>
               {deviceEvidence ? <p className="telehealth-preflight-passed" role="status">Device check passed. Camera, microphone, speaker, and secure browser capability are available. Connection indication: {deviceEvidence.networkQuality}.</p> : null}
               {connectionIssue ? <p className="telehealth-error" role="alert">{connectionIssue}</p> : null}
+              {connectionRecoveryNotice ? <p className="telehealth-inline-warning" role="status">{connectionRecoveryNotice}</p> : null}
               {waitingRoom ? (
                 <div className="telehealth-waiting-room" role="status">
                   <h5>Waiting room ready</h5>

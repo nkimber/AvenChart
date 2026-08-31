@@ -461,7 +461,7 @@ if ($null -ne $backlog) {
     Add-ValidationCheck -Name 'Backlog schema and baseline decision are current' -Passed (
         (Get-PropertyValue -Object $backlog -Name 'schemaVersion') -eq 1 -and
         (Get-PropertyValue -Object $backlog -Name 'baselineDecision') -eq 'TH-DEC-0001' -and
-        (Get-PropertyValue -Object $backlog -Name 'implementationAuthorization') -eq 'disabled-synthetic-sprints-01-through-73-authorized-by-th-dec-0003-and-th-dec-0005-through-th-dec-0076-through-2026-10-31; all-other-feature-code-blocked-by-phase-2-exit-gate'
+        (Get-PropertyValue -Object $backlog -Name 'implementationAuthorization') -eq 'disabled-synthetic-sprints-01-through-74-authorized-by-th-dec-0003-and-th-dec-0005-through-th-dec-0077-through-2026-10-31; all-other-feature-code-blocked-by-phase-2-exit-gate'
     ) -Details @{ baselineDecision = Get-PropertyValue -Object $backlog -Name 'baselineDecision'; implementationAuthorization = Get-PropertyValue -Object $backlog -Name 'implementationAuthorization' }
     Add-ValidationCheck -Name 'Backlog declares the permitted status vocabulary' -Passed (Test-ExactSet -Actual $declaredStatuses -Expected $allowedStatuses) -Details @{ statuses = $declaredStatuses }
 
