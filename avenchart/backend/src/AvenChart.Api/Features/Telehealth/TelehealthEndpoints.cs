@@ -833,6 +833,11 @@ public static class TelehealthEndpoints
             .WithName("ListTelehealthClinicianQueue")
             .Produces<TelehealthQueueResponse>()
             .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "view"));
+        clinician.MapGet("/active-work", GetActiveWorkAsync)
+            .WithName("GetTelehealthClinicianActiveWork")
+            .WithDescription("Returns only the authenticated physician's active synthetic shift and unexpired reservation so a local waiting-room demonstration can recover after a page reload. It returns no connection grant, media, consultation, or patient chart.")
+            .Produces<TelehealthClinicianActiveWorkResponse>()
+            .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "view"));
         clinician.MapPost("/shifts", StartShiftAsync)
             .WithName("StartTelehealthClinicianShift")
             .Produces<TelehealthShiftResponse>(StatusCodes.Status201Created)
@@ -2541,6 +2546,21 @@ public static class TelehealthEndpoints
                 RequireStaffAccessContext(context),
                 ReadIdempotencyKey(context),
                 cancellationToken)));
+
+    private static async Task<IResult> GetActiveWorkAsync(
+        TelehealthService service,
+        AuthRepository authRepository,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        context.Response.Headers.CacheControl = "no-store, private";
+        context.Response.Headers.Pragma = "no-cache";
+        context.Response.Headers.Expires = "0";
+        return await ExecuteAsync(async () => Results.Ok(await service.GetActiveWorkAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context),
+            cancellationToken)));
+    }
 
     private static async Task<IResult> EndIdleShiftAsync(
         TelehealthService service, AuthRepository authRepository, HttpContext context, Guid shiftId,

@@ -377,6 +377,20 @@ public sealed class TelehealthService(
             cancellationToken);
     }
 
+    public async Task<TelehealthClinicianActiveWorkResponse> GetActiveWorkAsync(
+        AuthSessionResponse session,
+        StaffAccessContext accessContext,
+        CancellationToken cancellationToken)
+    {
+        RequirePhysician(session);
+        RequireConfiguredFacility(accessContext);
+        return await repository.GetActiveWorkAsync(
+            _options.PracticeId,
+            accessContext.FacilityId,
+            RequireStaffId(session),
+            cancellationToken);
+    }
+
     public async Task<TelehealthReservationResponse?> ReserveNextAsync(
         AuthSessionResponse session,
         StaffAccessContext accessContext,

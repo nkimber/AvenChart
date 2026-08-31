@@ -20,6 +20,14 @@ docker compose --env-file .env.staging -f docker-compose.staging.yml up --build 
 
 Open <http://127.0.0.1:8088/>. Readiness is available at <http://127.0.0.1:8088/health/ready>.
 
+The isolated volume starts empty. To load the repository's synthetic gold dataset for a local demonstration, explicitly reset that staging volume after startup:
+
+```powershell
+.\avenchart\scripts\Reset-AvenChartTelehealthPocStaging.ps1 -ResetStagingData
+```
+
+This operation drops and recreates only the `avenchart_staging` schema in the isolated staging volume, imports the repository's synthetic dataset, reapplies migrations, and restarts the API/UI. It must never be pointed at a development or production database.
+
 ## Validate and stop
 
 ```powershell

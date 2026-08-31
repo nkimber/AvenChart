@@ -94,6 +94,12 @@ describe('PortalShell', () => {
     expect(loadPortalSession()).toBeNull()
   })
 
+  it('provides a direct TeleHealth destination in the portal navigation', async () => {
+    renderShell()
+
+    expect(await screen.findByRole('link', { name: 'TeleHealth' })).toHaveAttribute('href', '/portal/telehealth')
+  })
+
   it('shows a retryable error instead of rendering an unverified portal', async () => {
     vi.mocked(getPatientPortalSession).mockRejectedValueOnce(new TypeError('Network unavailable'))
 

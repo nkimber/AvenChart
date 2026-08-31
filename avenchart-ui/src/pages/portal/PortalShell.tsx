@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { CalendarClock, FolderOpen, Home, Mail, UserCircle } from 'lucide-react'
+import { CalendarClock, FolderOpen, Home, Mail, UserCircle, Video } from 'lucide-react'
 import {
   endPatientPortalSession,
   getPatientPortalHome,
@@ -47,6 +47,7 @@ const TABS = [
   { path: '/portal/home', label: 'Home', icon: Home },
   { path: '/portal/messages', label: 'Messages', icon: Mail },
   { path: '/portal/appointments', label: 'Appointments', icon: CalendarClock },
+  { path: '/portal/telehealth', label: 'TeleHealth', icon: Video },
   { path: '/portal/records', label: 'Records', icon: FolderOpen },
   { path: '/portal/account', label: 'Account', icon: UserCircle },
 ] as const

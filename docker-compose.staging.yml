@@ -30,7 +30,10 @@ x-api-environment: &api-environment
   Telehealth__SupportedStates__0: CA
   Telehealth__SupportedStates__1: FL
   Telehealth__SupportedStates__2: GA
-  Telehealth__ReservationLeaseSeconds: "120"
+  # Five minutes gives the two local demo browsers time to authenticate and
+  # grant camera/microphone access. Runtime validation still caps this at the
+  # synthetic-only maximum and the lease reaper remains active.
+  Telehealth__ReservationLeaseSeconds: "300"
   Telehealth__VideoAdapterMode: NON_PRODUCTION
   Telehealth__LocalWebRtcPocEnabled: "true"
   Telehealth__PharmacyDirectoryAdapterMode: NON_PRODUCTION

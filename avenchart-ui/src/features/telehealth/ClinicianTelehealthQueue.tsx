@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { abandonTelehealthConnection, endIdleClinicianShift, enterTelehealthConsultationWrapUp, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, readPhysicianLocalWebRtcSignals, releaseTelehealthReservation, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, writePhysicianLocalWebRtcSignal, type TelehealthConnectionGrant, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
+import { abandonTelehealthConnection, endIdleClinicianShift, enterTelehealthConsultationWrapUp, getClinicianActiveWork, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, readPhysicianLocalWebRtcSignals, releaseTelehealthReservation, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, writePhysicianLocalWebRtcSignal, type TelehealthConnectionGrant, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
 import { isRequestCancellation } from '../../api/transport.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import TelehealthPharmacyChoicePanel from './TelehealthPharmacyChoicePanel.tsx'
@@ -74,9 +74,14 @@ export default function ClinicianTelehealthQueue() {
     setLoading(true)
     setError(null)
     try {
-      const result = await listClinicianQueue(signal)
+      const [result, activeWork] = await Promise.all([
+        listClinicianQueue(signal),
+        getClinicianActiveWork(signal),
+      ])
       if (current !== generation.current) return
       setItems(result)
+      setShift(activeWork.shift)
+      setReservation(activeWork.reservation)
     } catch (caught) {
       if (isRequestCancellation(caught) || current !== generation.current) return
       setItems([])

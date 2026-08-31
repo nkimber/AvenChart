@@ -617,6 +617,59 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         }
     }
 
+    public async Task<TelehealthClinicianActiveWorkResponse> GetActiveWorkAsync(
+        string practiceId,
+        int facilityId,
+        int clinicianStaffId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        TelehealthShiftResponse? shift;
+        await using (var shiftCommand = connection.CreateCommand())
+        {
+            shiftCommand.CommandText = """
+                select shift_id, status, facility_id, clinician_staff_id, started_at, version
+                from telehealth_clinician_shifts
+                where practice_id=@practice_id and facility_id=@facility_id
+                  and clinician_staff_id=@clinician and status='Active';
+                """;
+            shiftCommand.Parameters.AddWithValue("practice_id", practiceId);
+            shiftCommand.Parameters.AddWithValue("facility_id", facilityId);
+            shiftCommand.Parameters.AddWithValue("clinician", clinicianStaffId);
+            await using var reader = await shiftCommand.ExecuteReaderAsync(cancellationToken);
+            shift = await reader.ReadAsync(cancellationToken) ? ReadShift(reader) : null;
+        }
+
+        if (shift is null)
+        {
+            return new TelehealthClinicianActiveWorkResponse(null, null);
+        }
+
+        await using var reservationCommand = connection.CreateCommand();
+        reservationCommand.CommandText = """
+            select reservation.reservation_id, reservation.request_id, reservation.queue_entry_id,
+                   reservation.shift_id, reservation.clinician_staff_id, reservation.reserved_at,
+                   reservation.lease_expires_at, reservation.status, request.version,
+                   request.source_applicant_id is not null
+            from telehealth_reservations reservation
+            join telehealth_requests request on request.request_id=reservation.request_id
+            where reservation.shift_id=@shift_id and reservation.clinician_staff_id=@clinician
+              and reservation.status='Active' and reservation.lease_expires_at > now();
+            """;
+        reservationCommand.Parameters.AddWithValue("shift_id", shift.ShiftId);
+        reservationCommand.Parameters.AddWithValue("clinician", clinicianStaffId);
+        await using var reservationReader = await reservationCommand.ExecuteReaderAsync(cancellationToken);
+        var reservation = await reservationReader.ReadAsync(cancellationToken)
+            ? ReadReservation(
+                reservationReader,
+                checked((int)reservationReader.GetInt64(8)),
+                reservationReader.GetBoolean(9))
+            : null;
+
+        return new TelehealthClinicianActiveWorkResponse(shift, reservation);
+    }
+
     public async Task<TelehealthReservationResponse?> ReserveNextAsync(
         string practiceId,
         int facilityId,

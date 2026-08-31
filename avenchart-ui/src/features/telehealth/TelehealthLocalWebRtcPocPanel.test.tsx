@@ -77,4 +77,43 @@ describe('TelehealthLocalWebRtcPocPanel', () => {
     expect(peer.setRemoteDescription.mock.invocationCallOrder[0]).toBeLessThan(peer.addIceCandidate.mock.invocationCallOrder[0])
     expect(writeSignal).toHaveBeenCalledWith('answer', JSON.stringify({ type: 'answer', sdp: 'opaque-answer' }))
   })
+
+  it('uses the selected local camera and microphone when joining', async () => {
+    const peer = {
+      connectionState: 'new',
+      ontrack: null as RTCPeerConnection['ontrack'],
+      onicecandidate: null as RTCPeerConnection['onicecandidate'],
+      onconnectionstatechange: null as RTCPeerConnection['onconnectionstatechange'],
+      addTrack: vi.fn(),
+      close: vi.fn(),
+    }
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [] })
+    vi.stubGlobal('isSecureContext', true)
+    vi.stubGlobal('RTCPeerConnection', vi.fn(function FakePeerConnection() { return peer }))
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        enumerateDevices: vi.fn().mockResolvedValue([
+          { kind: 'videoinput', deviceId: 'camera-usb', label: 'USB camera' },
+          { kind: 'audioinput', deviceId: 'microphone-usb', label: 'USB microphone' },
+          { kind: 'audiooutput', deviceId: 'speaker-usb', label: 'USB speaker' },
+        ]),
+        getUserMedia,
+      },
+    })
+    const writeSignal = vi.fn().mockResolvedValue(undefined)
+    const readSignals = vi.fn().mockResolvedValue({ latestSequence: 0, expiresAt: grant.expiresAt, signals: [] })
+
+    render(<TelehealthLocalWebRtcPocPanel grant={grant} role="patient" writeSignal={writeSignal} readSignals={readSignals} />)
+
+    await screen.findByRole('option', { name: 'USB camera' })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Camera for local media POC' }), { target: { value: 'camera-usb' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Microphone for local media POC' }), { target: { value: 'microphone-usb' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Join local media POC' }))
+
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledWith({
+      audio: { deviceId: { exact: 'microphone-usb' } },
+      video: { deviceId: { exact: 'camera-usb' } },
+    }))
+  })
 })

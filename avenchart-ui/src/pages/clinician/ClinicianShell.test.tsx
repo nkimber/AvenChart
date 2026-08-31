@@ -103,6 +103,7 @@ describe('ClinicianShell', () => {
 
     const drawer = screen.getByRole('dialog', { name: 'Main navigation' })
     expect(within(drawer).getByRole('link', { name: 'Dashboard' })).toBeInTheDocument()
+    expect(within(drawer).getByRole('link', { name: 'TeleHealth' })).toHaveAttribute('href', '/clinician/telehealth/physician')
     expect(within(drawer).getByRole('link', { name: 'Patients' })).toBeInTheDocument()
     expect(within(drawer).getByRole('link', { name: 'Admin' })).toBeInTheDocument()
     expect(within(drawer).getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
@@ -134,12 +135,12 @@ describe('ClinicianShell', () => {
     await user.click(within(navigation).getByRole('link', { name: 'Reports' }))
 
     await screen.findByText('Reports content')
-    expect(navigation.scrollTop).toBe(1008)
+    expect(navigation.scrollTop).toBe(1048)
     expect(
       window.sessionStorage.getItem(
         'modern-ui:clinician-navigation-scroll:v1:desktop',
       ),
-    ).toBe('1008')
+    ).toBe('1048')
 
     const reports = within(navigation).getByRole('link', { name: 'Reports' })
     const admin = within(navigation).getByRole('link', { name: 'Admin' })

@@ -440,7 +440,7 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
         }
 
         var session = await LoadSessionAsync(
-            connection, transaction, currentRequestId, cancellationToken);
+            connection, transaction, currentRequestId, currentReservationId, cancellationToken);
         if (session is null)
         {
             var sessionId = Guid.NewGuid();
@@ -455,7 +455,7 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
                   adapter_mode,provider_session_reference,status,expires_at)
                 values(@sessionId,@requestId,@reservationId,@practiceId,@facilityId,
                        'NON_PRODUCTION',@providerReference,'Prepared',@expiresAt)
-                on conflict(request_id) do nothing;
+                on conflict(reservation_id) do nothing;
                 """;
             insert.Parameters.AddWithValue("sessionId", sessionId);
             insert.Parameters.AddWithValue("requestId", currentRequestId);
@@ -466,7 +466,8 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
                 "providerReference", TelehealthCommandFingerprint.Create("opaque-video-session", sessionId));
             insert.Parameters.AddWithValue("expiresAt", expiresAt);
             await insert.ExecuteNonQueryAsync(cancellationToken);
-            session = await LoadSessionAsync(connection, transaction, currentRequestId, cancellationToken);
+            session = await LoadSessionAsync(
+                connection, transaction, currentRequestId, currentReservationId, cancellationToken);
         }
 
         if (session is null || session.Value.ReservationId != currentReservationId)
@@ -532,15 +533,18 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid requestId,
+        Guid reservationId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             select session_id,reservation_id,expires_at
-            from telehealth_video_sessions where request_id=@requestId;
+            from telehealth_video_sessions
+            where request_id=@requestId and reservation_id=@reservationId;
             """;
         command.Parameters.AddWithValue("requestId", requestId);
+        command.Parameters.AddWithValue("reservationId", reservationId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
             ? (reader.GetGuid(0), reader.GetGuid(1), reader.GetFieldValue<DateTimeOffset>(2))

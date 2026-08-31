@@ -857,6 +857,10 @@ public sealed record TelehealthReservationResponse(
     int RequestVersion,
     bool ApplicantOriginated);
 
+public sealed record TelehealthClinicianActiveWorkResponse(
+    TelehealthShiftResponse? Shift,
+    TelehealthReservationResponse? Reservation);
+
 public sealed record ReleaseTelehealthReservationRequest(
     int ExpectedVersion,
     bool NoConnectionOrConsultationConfirmed,

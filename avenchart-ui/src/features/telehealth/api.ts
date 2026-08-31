@@ -2506,6 +2506,11 @@ export type TelehealthReservation = {
   applicantOriginated: boolean
 }
 
+export type TelehealthClinicianActiveWork = {
+  shift: TelehealthShift | null
+  reservation: TelehealthReservation | null
+}
+
 export type TelehealthReservationRelease = {
   reservationId: string
   requestId: string
@@ -4715,6 +4720,14 @@ export async function listClinicianQueue(signal?: AbortSignal) {
     signal,
   })
   return result.requests
+}
+
+export function getClinicianActiveWork(signal?: AbortSignal) {
+  return json<TelehealthClinicianActiveWork>('/api/telehealth/v1/clinician/active-work', {
+    headers: clinicianHeaders(),
+    cache: 'no-store',
+    signal,
+  })
 }
 
 export function startClinicianShift() {
