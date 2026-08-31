@@ -741,6 +741,16 @@ public sealed record TelehealthRequestResponse(
 
 public sealed record TelehealthRequestListResponse(IReadOnlyList<TelehealthRequestResponse> Requests);
 
+public sealed record TelehealthRequestHistoryEntryResponse(
+    int AggregateVersion,
+    string Status,
+    string Message,
+    DateTimeOffset OccurredAt);
+
+public sealed record TelehealthRequestHistoryResponse(
+    Guid RequestId,
+    IReadOnlyList<TelehealthRequestHistoryEntryResponse> Entries);
+
 public sealed record TelehealthPatientQueueStatusResponse(
     Guid RequestId,
     string RequestStatus,

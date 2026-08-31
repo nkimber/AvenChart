@@ -1,13 +1,13 @@
 # Telehealth implementation backlog
 
-Status: Exact disabled synthetic Sprints 1–65 active only within Decisions 0003 and 0005–0068
+Status: Exact disabled synthetic Sprints 1–66 active only within Decisions 0003 and 0005–0069
 Decision baseline: [Decision 0001](../decisions/0001-g0-development-baseline.md)  
 Machine-readable source: [backlog.json](backlog.json)  
 First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 65 POC synthetic patient request cancellation](sprint-65-poc-synthetic-patient-request-cancellation.md); implementation and automated evidence are complete
+Current increment: [Sprint 66 POC synthetic request history](sprint-66-poc-synthetic-request-history.md); implementation and automated evidence are complete
 
 ## 1. Backlog contract
 
@@ -86,7 +86,7 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 - Telehealth G0 product baseline: **approved** by Decision 0001.
 - Backlog and wireframe preparation: **authorized**.
 - Planning-artifact validator and existing-CI invocation: **authorized and active under Decision 0002**.
-- Decisions 0003 and 0005–0068 authorize only their exact disabled synthetic Sprint 1–65 application/database/feature-test/runtime paths through 2026-10-31.
+- Decisions 0003 and 0005–0069 authorize only their exact disabled synthetic Sprint 1–66 application/database/feature-test/runtime paths through 2026-10-31.
 - All implementation outside those decisions remains **blocked by the existing Phase 2 exit gate** until explicit closure or another scoped override.
 - Real patient care: separately blocked until G4 regardless of implementation authorization.
 
@@ -117,3 +117,5 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 [Decision 0067](../decisions/0067-approved-poc-synthetic-consultation-transcript.md) permits only the active synthetic request owner and exact consultation-owning physician to append/read an immutable, plain-text, confirmed-synthetic POC transcript during `InConsultation`. It uses visible-page HTTP polling only and creates no realtime delivery, media, recording, transcription, attachment, notification, patient delivery, clinical, financial, integration, external, or production consequence.
 
 [Decision 0068](../decisions/0068-approved-poc-synthetic-patient-request-cancellation.md) permits only the exact authenticated patient owner to cancel an incomplete synthetic request before practice queue authorization with a current version, semantic idempotency, explicit confirmation, and an append-only event. It cannot cancel an appointment, reservation, connection, consultation, prescription, billing item, claim, integration, notification, external action, or production behavior.
+
+[Decision 0069](../decisions/0069-approved-poc-synthetic-request-history.md) permits only the exact authenticated owner to read a minimized synthetic request lifecycle history from the existing append-only event ledger. It exposes only version, resulting status, neutral message, and timestamp; it exposes no actor, raw action, clinical, financial, delivery, integration, external, or production information.

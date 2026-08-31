@@ -9,6 +9,7 @@ import {
   createPatientRequest,
   evaluatePatientTriage,
   getPatientQueueStatus,
+  getPatientRequestHistory,
   getPatientReadiness,
   listPatientRequests,
   preparePatientConnection,
@@ -17,6 +18,7 @@ import {
   type TelehealthPatientQueueStatus,
   type TelehealthReadiness,
   type TelehealthRequest,
+  type TelehealthRequestHistory,
 } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import { isRequestCancellation } from '../../api/transport.ts'
@@ -40,6 +42,7 @@ export default function PatientTelehealthWorkspace() {
   const [confirmations, setConfirmations] = useState({ details: false, clinical: false, coverage: false, acknowledgment: false, synthetic: false })
   const [cancellationConfirmed, setCancellationConfirmed] = useState(false)
   const [queueStatus, setQueueStatus] = useState<TelehealthPatientQueueStatus | null>(null)
+  const [requestHistory, setRequestHistory] = useState<TelehealthRequestHistory | null>(null)
   const [queueConnection, setQueueConnection] = useState<'idle' | 'checking' | 'connected' | 'paused' | 'retrying'>('idle')
   const [queueIssue, setQueueIssue] = useState<string | null>(null)
   const [queueRefreshNonce, setQueueRefreshNonce] = useState(0)
@@ -49,6 +52,7 @@ export default function PatientTelehealthWorkspace() {
   const connectionCommandKey = useRef<string | null>(null)
   const requestGeneration = useRef(0)
   const readinessGeneration = useRef(0)
+  const historyGeneration = useRef(0)
   const queueStatusGeneration = useRef(0)
   const selected = requests.find((item) => item.requestId === selectedId) ?? null
   const selectedQueueRequestId = selected?.requestId ?? null
@@ -107,6 +111,23 @@ export default function PatientTelehealthWorkspace() {
       })
       .finally(() => {
         if (generation === readinessGeneration.current) setReadinessLoading(false)
+      })
+    return () => controller.abort()
+  }, [selected])
+
+  useEffect(() => {
+    const generation = ++historyGeneration.current
+    setRequestHistory(null)
+    if (!selected) return
+    const controller = new AbortController()
+    void getPatientRequestHistory(selected.requestId, controller.signal)
+      .then((result) => {
+        if (generation === historyGeneration.current) setRequestHistory(result)
+      })
+      .catch((caught) => {
+        if (!isRequestCancellation(caught) && generation === historyGeneration.current) {
+          setError(caught instanceof Error ? caught.message : 'Request history could not be loaded.')
+        }
       })
     return () => controller.abort()
   }, [selected])
@@ -438,6 +459,15 @@ export default function PatientTelehealthWorkspace() {
                   ) : <p>The server is checking the authoritative request state.</p>}
                   {queueIssue ? <p className="telehealth-inline-warning" role="status">{queueIssue}</p> : null}
                   <button className="telehealth-button telehealth-button-secondary" type="button" onClick={() => setQueueRefreshNonce((current) => current + 1)}>Refresh status now</button>
+                </section>
+              ) : null}
+              {requestHistory?.requestId === selected.requestId ? (
+                <section className="telehealth-request-history" aria-labelledby="telehealth-history-title">
+                  <h3 id="telehealth-history-title">Synthetic request history</h3>
+                  <p>This is a read-only POC status history. It does not show clinician identity, clinical notes, prescriptions, billing, claims, communications, or external activity.</p>
+                  <ol>
+                    {requestHistory.entries.map((entry) => <li key={entry.aggregateVersion}><strong>{entry.status}</strong> — {entry.message} <time dateTime={entry.occurredAt}>{new Date(entry.occurredAt).toLocaleString()}</time></li>)}
+                  </ol>
                 </section>
               ) : null}
               {['Reserved', 'Connecting'].includes(selected.status) ? (

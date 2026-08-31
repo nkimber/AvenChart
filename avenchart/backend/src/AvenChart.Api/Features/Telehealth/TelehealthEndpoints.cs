@@ -587,6 +587,12 @@ public static class TelehealthEndpoints
             .WithName("ListPatientTelehealthRequests")
             .Produces<TelehealthRequestListResponse>()
             .ProducesProblem(StatusCodes.Status401Unauthorized);
+        patient.MapGet("/requests/{requestId:guid}/history", GetPatientRequestHistoryAsync)
+            .WithName("GetPatientTelehealthRequestHistory")
+            .WithDescription("Returns the authenticated request owner's minimized synthetic lifecycle history. It is read-only and excludes actor identity, idempotency, clinical, financial, integration, and external information.")
+            .Produces<TelehealthRequestHistoryResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound);
         patient.MapGet("/requests/{requestId:guid}/status", GetPatientQueueStatusAsync)
             .WithName("GetPatientTelehealthQueueStatus")
             .WithDescription("Returns the authenticated request owner's authoritative synthetic status and an approximate same-practice/facility queue count when available. It never promises a wait time or exposes another patient or clinician.")
@@ -2033,6 +2039,14 @@ public static class TelehealthEndpoints
         Guid requestId,
         CancellationToken cancellationToken) =>
         ExecuteAsync(async () => Results.Ok(await service.GetPatientQueueStatusAsync(
+            context, requestId, cancellationToken)));
+
+    private static Task<IResult> GetPatientRequestHistoryAsync(
+        TelehealthService service,
+        HttpContext context,
+        Guid requestId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () => Results.Ok(await service.GetPatientRequestHistoryAsync(
             context, requestId, cancellationToken)));
 
     private static Task<IResult> CreateRequestAsync(

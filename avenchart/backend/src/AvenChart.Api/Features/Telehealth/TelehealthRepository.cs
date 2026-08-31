@@ -817,6 +817,48 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         return new TelehealthOperationalReviewResponse(items);
     }
 
+    public async Task<TelehealthRequestHistoryResponse> GetPatientRequestHistoryAsync(
+        string practiceId,
+        string patientId,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using (var access = connection.CreateCommand())
+        {
+            access.CommandText = """
+                select 1 from telehealth_requests
+                where request_id=@request_id and practice_id=@practice_id and patient_id=@patient_id;
+                """;
+            access.Parameters.AddWithValue("request_id", requestId);
+            access.Parameters.AddWithValue("practice_id", practiceId);
+            access.Parameters.AddWithValue("patient_id", patientId);
+            if (await access.ExecuteScalarAsync(cancellationToken) is null)
+            {
+                throw TelehealthProblem.NotFound();
+            }
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select aggregate_version, to_status, occurred_at
+            from telehealth_request_events
+            where request_id=@request_id
+            order by aggregate_version;
+            """;
+        command.Parameters.AddWithValue("request_id", requestId);
+        var entries = new List<TelehealthRequestHistoryEntryResponse>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var status = reader.IsDBNull(1) ? "Draft" : reader.GetString(1);
+            entries.Add(new TelehealthRequestHistoryEntryResponse(
+                checked((int)reader.GetInt64(0)), status, PatientHistoryMessage(status),
+                reader.GetFieldValue<DateTimeOffset>(2)));
+        }
+        return new TelehealthRequestHistoryResponse(requestId, entries);
+    }
+
     public async Task<TelehealthQueueResponse> ListClinicianQueueAsync(
         string practiceId,
         int facilityId,
@@ -1517,6 +1559,25 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         TelehealthRequestStatus.Reserved => ["clinician-reserved"],
         TelehealthRequestStatus.Redirected => ["follow-redirect-guidance"],
         _ => []
+    };
+
+    private static string PatientHistoryMessage(string status) => status switch
+    {
+        "Draft" => "Your synthetic request was created.",
+        "LocationConfirmed" => "Location confirmation was recorded.",
+        "SafetyScreening" => "Safety screening was recorded.",
+        "Intake" => "Synthetic intake is ready for review.",
+        "Verification" => "Synthetic coverage verification is in progress.",
+        "OperationalReview" => "The practice is reviewing your synthetic request.",
+        "Queued" => "The practice authorized your synthetic request for the queue.",
+        "Reserved" => "A synthetic physician workspace is preparing.",
+        "Connecting" => "The synthetic connection room is ready.",
+        "InConsultation" => "The synthetic consultation lifecycle started.",
+        "WrapUp" => "The synthetic visit record is being prepared.",
+        "Closed" => "The synthetic request lifecycle closed.",
+        "Cancelled" => "The synthetic request was cancelled.",
+        "Redirected" or "EmergencyRedirected" or "InPersonRecommended" or "Unsupported" or "ClinicalReview" => "This request cannot continue in the synthetic telehealth workflow.",
+        _ => "Synthetic request status updated."
     };
 
     private static async Task<RequestRow?> GetRequestForUpdateAsync(

@@ -2328,6 +2328,18 @@ export type TelehealthRequest = {
 
 export type TelehealthRequestStatus = 'Draft' | 'LocationConfirmed' | 'SafetyScreening' | 'EmergencyRedirected' | 'InPersonRecommended' | 'Unsupported' | 'ClinicalReview' | 'Intake' | 'Verification' | 'OperationalReview' | 'Redirected' | 'Cancelled' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp' | 'Closed'
 
+export type TelehealthRequestHistoryEntry = {
+  aggregateVersion: number
+  status: TelehealthRequestStatus
+  message: string
+  occurredAt: string
+}
+
+export type TelehealthRequestHistory = {
+  requestId: string
+  entries: TelehealthRequestHistoryEntry[]
+}
+
 export type TelehealthPatientQueueStatus = {
   requestId: string
   requestStatus: TelehealthRequestStatus
@@ -4233,6 +4245,10 @@ export function cancelPatientTelehealthRequest(requestId: string, expectedVersio
     `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/cancel`,
     commandInit({ expectedVersion, syntheticCancellationConfirmed: true }),
   )
+}
+
+export function getPatientRequestHistory(requestId: string, signal?: AbortSignal) {
+  return json<TelehealthRequestHistory>(`/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/history`, { headers: portalHeaders(), signal })
 }
 
 export async function listOperationalReview(signal?: AbortSignal) {

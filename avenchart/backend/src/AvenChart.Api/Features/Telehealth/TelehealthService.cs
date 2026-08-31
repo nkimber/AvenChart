@@ -71,6 +71,17 @@ public sealed class TelehealthService(
             _options.PracticeId, patient.CanonicalId, requestId, cancellationToken);
     }
 
+    public async Task<TelehealthRequestHistoryResponse> GetPatientRequestHistoryAsync(
+        HttpContext httpContext,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        RequireConfiguredHost(httpContext.Request.Host);
+        var patient = await RequirePatientAsync(httpContext, cancellationToken);
+        return await repository.GetPatientRequestHistoryAsync(
+            _options.PracticeId, patient.CanonicalId, requestId, cancellationToken);
+    }
+
     public async Task<TelehealthRequestResponse> ConfirmLocationAsync(
         HttpContext httpContext,
         Guid requestId,
