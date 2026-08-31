@@ -34,6 +34,7 @@ public sealed class TelehealthStateMachineTests
         { TelehealthRequestStatus.OperationalReview, TelehealthRequestStatus.Queued },
         { TelehealthRequestStatus.OperationalReview, TelehealthRequestStatus.Cancelled },
         { TelehealthRequestStatus.Queued, TelehealthRequestStatus.Reserved },
+        { TelehealthRequestStatus.Queued, TelehealthRequestStatus.Cancelled },
         { TelehealthRequestStatus.Reserved, TelehealthRequestStatus.Queued },
         { TelehealthRequestStatus.Reserved, TelehealthRequestStatus.Connecting },
         { TelehealthRequestStatus.Connecting, TelehealthRequestStatus.Queued },

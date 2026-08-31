@@ -70,7 +70,7 @@ public static class TelehealthRequestStateMachine
             [TelehealthRequestStatus.Intake] = [TelehealthRequestStatus.Verification, TelehealthRequestStatus.Cancelled],
             [TelehealthRequestStatus.Verification] = [TelehealthRequestStatus.Verification, TelehealthRequestStatus.OperationalReview, TelehealthRequestStatus.Cancelled],
             [TelehealthRequestStatus.OperationalReview] = [TelehealthRequestStatus.Verification, TelehealthRequestStatus.OperationalReview, TelehealthRequestStatus.Queued, TelehealthRequestStatus.Cancelled],
-            [TelehealthRequestStatus.Queued] = [TelehealthRequestStatus.Reserved],
+            [TelehealthRequestStatus.Queued] = [TelehealthRequestStatus.Reserved, TelehealthRequestStatus.Cancelled],
             [TelehealthRequestStatus.Redirected] = [],
             [TelehealthRequestStatus.Reserved] = [TelehealthRequestStatus.Queued, TelehealthRequestStatus.Connecting],
             [TelehealthRequestStatus.Connecting] = [TelehealthRequestStatus.Queued, TelehealthRequestStatus.InConsultation],

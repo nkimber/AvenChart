@@ -29,6 +29,7 @@ import {
 } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import { connectionReturnedToQueueMessage, connectionWasReturnedToQueue } from './connectionRecovery.ts'
+import { canCancelPatientTelehealthRequest } from './requestCancellation.ts'
 import { isRequestCancellation } from '../../api/transport.ts'
 import { queuePollDelayMilliseconds, shouldPollPatientQueueStatus } from './polling.ts'
 import TelehealthConversationPanel from './TelehealthConversationPanel.tsx'
@@ -472,10 +473,10 @@ export default function PatientTelehealthWorkspace() {
               <button className="telehealth-button" type="button" disabled={working} onClick={() => void run(() => verifyPatientCoverage(selected.requestId, selected.version))}>{selected.coverage ? 'Run synthetic verification again' : 'Run synthetic coverage verification'}</button>
             </div>
           ) : null}
-          {selected && ['Draft', 'LocationConfirmed', 'SafetyScreening', 'Intake', 'Verification', 'OperationalReview'].includes(selected.status) ? (
+          {selected && canCancelPatientTelehealthRequest(selected.status) ? (
             <section className="telehealth-request-cancellation" aria-labelledby="telehealth-cancel-title">
               <h3 id="telehealth-cancel-title">Cancel this synthetic request</h3>
-              <p>This is available only before practice queue authorization. It does not cancel an appointment, reservation, connection, consultation, prescription, billing item, claim, or external action.</p>
+              <p>You may cancel before a physician reserves the request or a connection starts. If practice queue authorization already occurred, this removes the request from the ready queue and cancels its provisional synthetic appointment. It does not cancel a reservation, connection, consultation, prescription, billing item, claim, or external action.</p>
               <label className="telehealth-check"><input type="checkbox" checked={cancellationConfirmed} onChange={(event) => setCancellationConfirmed(event.target.checked)} />I confirm I want to cancel this synthetic request.</label>
               <button className="telehealth-button telehealth-button-secondary" type="button" disabled={working || !cancellationConfirmed} onClick={() => void run(() => cancelPatientTelehealthRequest(selected.requestId, selected.version))}>Cancel synthetic request</button>
             </section>
@@ -577,7 +578,7 @@ export default function PatientTelehealthWorkspace() {
               {selected.status === 'WrapUp' ? <section className="telehealth-consultation-started" role="status"><h3>Your physician is finishing the synthetic visit record</h3><p>This visit is not complete. No signed record, after-visit summary, prescription, or claim is available. Follow the practice guidance you received.</p><ul className="telehealth-safety-actions"><li>If symptoms worsen or you are unsure it is safe to wait, contact the practice or seek in-person care.</li><li>Call 911 now for an emergency.</li></ul></section> : null}
               {selected.status === 'Closed' && !postVisitReceipt ? <section className="telehealth-consultation-started" role="status"><h3>Synthetic lifecycle closed</h3><p>The post-visit receipt is loading. This does not mean your appointment, encounter, clinical record, prescription, billing, or claim is complete.</p></section> : null}
               {selected.status === 'Redirected' ? <p>This request cannot enter the telehealth queue. Follow urgent or in-person guidance.</p> : null}
-              {selected.status === 'Cancelled' ? <p>This synthetic request was cancelled before practice queue authorization. No appointment, reservation, consultation, billing item, claim, integration, or external action was created.</p> : null}
+              {selected.status === 'Cancelled' ? <p>This synthetic request was cancelled. If practice queue authorization had already occurred, its provisional synthetic appointment was also cancelled. No reservation, connection, consultation, prescription, billing item, claim, integration, or external action occurred.</p> : null}
             </div>
           ) : null}
         </section>

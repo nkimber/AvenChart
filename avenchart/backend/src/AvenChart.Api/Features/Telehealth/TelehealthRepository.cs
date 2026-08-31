@@ -353,15 +353,24 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             cancellationToken);
     }
 
-    public Task<TelehealthRequestResponse> CancelRequestAsync(
+    public async Task<TelehealthRequestResponse> CancelRequestAsync(
         string practiceId,
         string patientId,
         Guid requestId,
         int expectedVersion,
         string idempotencyKey,
         string fingerprint,
-        CancellationToken cancellationToken) =>
-        MutatePatientRequestAsync(
+        CancellationToken cancellationToken)
+    {
+        var status = await GetPatientRequestStatusAsync(practiceId, patientId, requestId, cancellationToken)
+            ?? throw TelehealthProblem.NotFound();
+        if (status == TelehealthRequestStatus.Queued)
+        {
+            return await CancelQueuedRequestAsync(
+                practiceId, patientId, requestId, expectedVersion, idempotencyKey, fingerprint, cancellationToken);
+        }
+
+        return await MutatePatientRequestAsync(
             practiceId,
             patientId,
             requestId,
@@ -381,6 +390,7 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             static (_, _, _, _, _) => Task.CompletedTask,
             triageOutcome: null,
             cancellationToken);
+    }
 
     public async Task<TelehealthRequestResponse> AuthorizeToQueueAsync(
         string practiceId,
@@ -1621,6 +1631,100 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             groupNumber, relationship, subscriberFirstName, subscriberLastName,
             subscriberDateOfBirth);
 
+    private async Task<TelehealthRequestResponse> CancelQueuedRequestAsync(
+        string practiceId,
+        string patientId,
+        Guid requestId,
+        int expectedVersion,
+        string idempotencyKey,
+        string fingerprint,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        RequestRow? current = null;
+        string? queueStatus = null;
+        string? appointmentStatus = null;
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                select r.request_id, r.practice_id, r.facility_id, r.patient_id, r.status,
+                       r.complaint_category, r.triage_outcome, r.version, r.create_fingerprint,
+                       q.status, coalesce(appointment.status, '-')
+                from telehealth_queue_entries q
+                join telehealth_requests r on r.request_id=q.request_id
+                join appointments appointment
+                  on appointment.id=r.appointment_id
+                 and appointment.patient_id=r.patient_id
+                 and appointment.facility_id=r.facility_id
+                where r.request_id=@request_id and r.practice_id=@practice_id and r.patient_id=@patient_id
+                for update of q, r, appointment;
+                """;
+            command.Parameters.AddWithValue("request_id", requestId);
+            command.Parameters.AddWithValue("practice_id", practiceId);
+            command.Parameters.AddWithValue("patient_id", patientId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                current = ReadRequestRow(reader);
+                queueStatus = reader.GetString(9);
+                appointmentStatus = reader.GetString(10);
+            }
+        }
+
+        if (current is null)
+        {
+            throw TelehealthProblem.NotFound();
+        }
+
+        if (await IsReplayAsync(connection, transaction, requestId, idempotencyKey, fingerprint, cancellationToken))
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return await GetPatientRequestAsync(practiceId, patientId, requestId, cancellationToken)
+                ?? throw TelehealthProblem.NotFound();
+        }
+
+        RequireVersion(current.Version, expectedVersion);
+        if (current.Status != TelehealthRequestStatus.Queued || queueStatus != "Ready" || appointmentStatus != "-")
+        {
+            throw TelehealthProblem.Conflict(
+                "telehealth_queue_withdrawal_unavailable",
+                "Only a ready synthetic queue request with an unstarted provisional appointment can be withdrawn.");
+        }
+
+        TelehealthRequestStateMachine.RequireTransition(current.Status, TelehealthRequestStatus.Cancelled);
+        var newVersion = current.Version + 1;
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = """
+                update telehealth_queue_entries
+                set status='Removed', version=version+1, updated_at=now()
+                where request_id=@request_id and status='Ready';
+                update appointments
+                set provider_id=null, status='x', row_version=row_version+1
+                where id=(select appointment_id from telehealth_requests where request_id=@request_id)
+                  and coalesce(status, '-')='-';
+                update telehealth_requests
+                set status='Cancelled', version=@version, updated_at=now()
+                where request_id=@request_id and status='Queued' and version=@expected_version;
+                """;
+            update.Parameters.AddWithValue("request_id", requestId);
+            update.Parameters.AddWithValue("version", newVersion);
+            update.Parameters.AddWithValue("expected_version", expectedVersion);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertEventAsync(
+            connection, transaction, requestId, newVersion, "synthetic-request-withdrawn-from-queue",
+            "Queued", "Cancelled", "patient", patientId,
+            idempotencyKey, fingerprint, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetPatientRequestAsync(practiceId, patientId, requestId, cancellationToken)
+            ?? throw TelehealthProblem.NotFound();
+    }
+
     private async Task<TelehealthRequestResponse> MutatePatientRequestAsync(
         string practiceId,
         string patientId,
@@ -1709,6 +1813,25 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         return (await ReadRequestListAsync(command, cancellationToken)).SingleOrDefault();
     }
 
+    private async Task<TelehealthRequestStatus?> GetPatientRequestStatusAsync(
+        string practiceId,
+        string patientId,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select status from telehealth_requests
+            where request_id=@request_id and practice_id=@practice_id and patient_id=@patient_id;
+            """;
+        command.Parameters.AddWithValue("request_id", requestId);
+        command.Parameters.AddWithValue("practice_id", practiceId);
+        command.Parameters.AddWithValue("patient_id", patientId);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is string status ? Enum.Parse<TelehealthRequestStatus>(status) : null;
+    }
+
     private async Task<TelehealthRequestResponse?> GetStaffRequestAsync(
         string practiceId,
         int facilityId,
@@ -1794,7 +1917,7 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         TelehealthRequestStatus.Verification => ["verify-coverage"],
         TelehealthRequestStatus.OperationalReview => ["await-operational-review", "refresh-coverage"],
         TelehealthRequestStatus.Cancelled => ["request-cancelled"],
-        TelehealthRequestStatus.Queued => ["await-clinician"],
+        TelehealthRequestStatus.Queued => ["await-clinician", "cancel-request"],
         TelehealthRequestStatus.Reserved => ["clinician-reserved"],
         TelehealthRequestStatus.Redirected => ["follow-redirect-guidance"],
         _ => []
