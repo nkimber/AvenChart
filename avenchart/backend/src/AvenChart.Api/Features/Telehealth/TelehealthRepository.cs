@@ -427,7 +427,12 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             practiceId,
             facilityId,
             expectedPatientId: patientId,
-            actorType: "patient-synthetic-demo",
+            // The event schema deliberately uses the stable actor categories
+            // patient, administrator, physician, applicant, and system. The
+            // distinct synthetic-demo action below records the bounded POC
+            // handoff without inventing a new actor type that the durable
+            // audit constraint cannot represent.
+            actorType: "patient",
             actorId: patientId,
             eventAction: "synthetic-demo-patient-queue-fast-track",
             requestId,

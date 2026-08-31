@@ -32,7 +32,7 @@ import {
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import { connectionReturnedToQueueMessage, connectionWasReturnedToQueue } from './connectionRecovery.ts'
 import { canCancelPatientTelehealthRequest } from './requestCancellation.ts'
-import { isRequestCancellation } from '../../api/transport.ts'
+import { ApiRequestError, isRequestCancellation } from '../../api/transport.ts'
 import { queuePollDelayMilliseconds, shouldPollPatientQueueStatus } from './polling.ts'
 import TelehealthConversationPanel from './TelehealthConversationPanel.tsx'
 import TelehealthLocalWebRtcPocPanel from './TelehealthLocalWebRtcPocPanel.tsx'
@@ -297,10 +297,33 @@ export default function PatientTelehealthWorkspace() {
       setRequests((current) => [result, ...current.filter((item) => item.requestId !== result.requestId)])
       setSelectedId(result.requestId)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The request could not be updated.')
+      const message = caught instanceof Error ? caught.message : 'The request could not be updated.'
+      setError(message)
       await refresh()
+      // Refreshing retrieves the current authoritative request state, but it
+      // must not erase the reason a command was rejected before the patient
+      // has a chance to read it.
+      setError(message)
     } finally {
       setWorking(false)
+    }
+  }
+
+  async function joinPhysicianDemoQueue(request: TelehealthRequest) {
+    try {
+      return await fastTrackPatientRequestToQueue(request.requestId, request.version)
+    } catch (caught) {
+      // A synthetic verification can expire or become out of date while the
+      // request is still in OperationalReview. The patient has explicitly
+      // initiated the demo handoff, so refresh that deterministic evidence
+      // once and retry with the returned authoritative version. All existing
+      // server-side eligibility, readiness, ownership, and queue checks still
+      // run on the retry.
+      if (!(caught instanceof ApiRequestError) || caught.problem?.code !== 'telehealth_coverage_gate_failed') {
+        throw caught
+      }
+      const refreshed = await verifyPatientCoverage(request.requestId, request.version)
+      return await fastTrackPatientRequestToQueue(request.requestId, refreshed.version)
     }
   }
 
@@ -418,9 +441,9 @@ export default function PatientTelehealthWorkspace() {
           {selected?.status === 'OperationalReview' ? (
             <section className="telehealth-queue-status" aria-labelledby="patient-demo-queue-title">
               <h3 id="patient-demo-queue-title">Ready for the physician demo</h3>
-              <p>Your synthetic eligibility, readiness, and coverage checks have already passed. Join the ready physician queue now so the physician can reserve this request.</p>
+              <p>Your synthetic eligibility and readiness checks have already passed. Join the ready physician queue now so the physician can reserve this request. If the synthetic coverage evidence needs to be refreshed, this handoff does that automatically before it continues.</p>
               <p><small>This records a patient-initiated synthetic demonstration handoff. It is not acceptance for care, an appointment confirmation, or a payment guarantee.</small></p>
-              <button className="telehealth-button" type="button" disabled={working} onClick={() => void run(() => fastTrackPatientRequestToQueue(selected.requestId, selected.version))}>Join physician demo queue</button>
+              <button className="telehealth-button" type="button" disabled={working} onClick={() => void run(() => joinPhysicianDemoQueue(selected))}>{working ? 'Joining physician demo queue…' : 'Join physician demo queue'}</button>
             </section>
           ) : null}
           {selected && ['Intake', 'Verification', 'OperationalReview'].includes(selected.status) ? (

@@ -10,10 +10,12 @@ import {
   getPatientRequestHistory,
   fastTrackPatientRequestToQueue,
   listPatientRequests,
+  verifyPatientCoverage,
   type TelehealthPatientQueueStatus,
   type TelehealthReadiness,
   type TelehealthRequest,
 } from './api.ts'
+import { ApiRequestError } from '../../api/transport.ts'
 
 vi.mock('./api.ts', async (importOriginal) => {
   const original = await importOriginal<typeof import('./api.ts')>()
@@ -24,6 +26,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     getPatientRequestHistory: vi.fn(),
     fastTrackPatientRequestToQueue: vi.fn(),
     listPatientRequests: vi.fn(),
+    verifyPatientCoverage: vi.fn(),
   }
 })
 
@@ -106,6 +109,10 @@ describe('PatientTelehealthWorkspace', () => {
     vi.mocked(getPatientReadiness).mockResolvedValue(readiness)
     vi.mocked(getPatientRequestHistory).mockResolvedValue({ requestId: request.requestId, entries: [] })
     vi.mocked(getPatientQueueStatus).mockResolvedValue(queueStatus)
+    vi.mocked(verifyPatientCoverage).mockResolvedValue({
+      ...request,
+      version: request.version + 1,
+    })
     vi.mocked(fastTrackPatientRequestToQueue).mockResolvedValue({
       ...request,
       status: 'Queued',
@@ -160,5 +167,33 @@ describe('PatientTelehealthWorkspace', () => {
     await waitFor(() => expect(screen.getAllByText('Queued').length).toBeGreaterThan(0))
     await act(async () => resolveQueueStatus?.({ ...queueStatus, requestVersion: request.version }))
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Join physician demo queue' })).not.toBeInTheDocument())
+  })
+
+  it('refreshes stale synthetic coverage once before completing the patient-owned demo handoff', async () => {
+    vi.mocked(fastTrackPatientRequestToQueue)
+      .mockRejectedValueOnce(new ApiRequestError('Current synthetic coverage is stale.', 409, { code: 'telehealth_coverage_gate_failed' }))
+      .mockResolvedValueOnce({
+        ...request,
+        status: 'Queued',
+        version: request.version + 2,
+        readyAt: '2026-08-31T12:05:00Z',
+        allowedActions: ['await-clinician', 'cancel-request'],
+      })
+    render(<PatientTelehealthWorkspace />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Join physician demo queue' }))
+
+    await waitFor(() => expect(verifyPatientCoverage).toHaveBeenCalledWith(request.requestId, request.version))
+    await waitFor(() => expect(fastTrackPatientRequestToQueue).toHaveBeenNthCalledWith(2, request.requestId, request.version + 1))
+    await waitFor(() => expect(screen.getAllByText('Queued').length).toBeGreaterThan(0))
+  })
+
+  it('retains a rejected handoff message after refreshing the authoritative request state', async () => {
+    vi.mocked(fastTrackPatientRequestToQueue).mockRejectedValueOnce(new Error('The synthetic handoff could not be completed.'))
+    render(<PatientTelehealthWorkspace />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Join physician demo queue' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The synthetic handoff could not be completed.')
   })
 })

@@ -14,6 +14,8 @@ export type ApiProblemDetails = {
   title?: string;
   detail?: string;
   error?: string;
+  /** Stable machine-readable application error code carried as a ProblemDetails extension. */
+  code?: string;
   status?: number;
   targetPatientId?: string;
   errors?: Record<string, string[]>;
