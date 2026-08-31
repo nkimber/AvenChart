@@ -73,6 +73,12 @@ export default function PatientTelehealthWorkspace() {
   const afterVisitPlanPreviewGeneration = useRef(0)
   const queueStatusGeneration = useRef(0)
   const selected = requests.find((item) => item.requestId === selectedId) ?? null
+  // A polling response may replace the selected request object even though the
+  // patient is still on exactly the same readiness step. Keep draft input
+  // scoped to meaningful workflow identity, not object identity.
+  const selectedReadinessRequestId = selected?.requestId ?? null
+  const selectedReadinessStatus = selected?.status ?? null
+  const selectedReadinessComplaintCategory = selected?.complaintCategory ?? null
   const selectedQueueRequestId = selected?.requestId ?? null
   const selectedQueueRequestStatus = selected?.status ?? null
   const visibleQueueStatus = queueStatus?.requestId === selectedQueueRequestId ? queueStatus : null
@@ -106,18 +112,18 @@ export default function PatientTelehealthWorkspace() {
     const generation = ++readinessGeneration.current
     setReadiness(null)
     setCoverageToken('')
-    setComplaintSummary(selected?.complaintCategory === 'sleep'
+    setComplaintSummary(selectedReadinessComplaintCategory === 'sleep'
       ? 'Synthetic sleep difficulty demonstration'
       : 'Synthetic recurring migraine demonstration')
     setConfirmations({ details: false, clinical: false, coverage: false, acknowledgment: false, synthetic: false })
     setCancellationConfirmed(false)
-    if (!selected || !['Intake', 'Verification', 'OperationalReview'].includes(selected.status)) {
+    if (!selectedReadinessRequestId || !selectedReadinessStatus || !['Intake', 'Verification', 'OperationalReview'].includes(selectedReadinessStatus)) {
       setReadinessLoading(false)
       return
     }
     const controller = new AbortController()
     setReadinessLoading(true)
-    void getPatientReadiness(selected.requestId, controller.signal)
+    void getPatientReadiness(selectedReadinessRequestId, controller.signal)
       .then((result) => {
         if (generation !== readinessGeneration.current) return
         setReadiness(result)
@@ -131,7 +137,7 @@ export default function PatientTelehealthWorkspace() {
         if (generation === readinessGeneration.current) setReadinessLoading(false)
       })
     return () => controller.abort()
-  }, [selected])
+  }, [selectedReadinessComplaintCategory, selectedReadinessRequestId, selectedReadinessStatus])
 
   useEffect(() => {
     const generation = ++afterVisitPlanPreviewGeneration.current
@@ -238,9 +244,19 @@ export default function PatientTelehealthWorkspace() {
         setQueueStatus(result)
         setQueueIssue(null)
         setQueueConnection('connected')
-        setRequests((current) => current.map((item) => item.requestId === result.requestId
-          ? { ...item, status: result.requestStatus, version: result.requestVersion, updatedAt: result.requestUpdatedAt }
-          : item))
+        setRequests((current) => {
+          const existing = current.find((item) => item.requestId === result.requestId)
+          if (!existing
+            || (existing.status === result.requestStatus
+              && existing.version === result.requestVersion
+              && existing.updatedAt === result.requestUpdatedAt)) {
+            return current
+          }
+
+          return current.map((item) => item.requestId === result.requestId
+            ? { ...item, status: result.requestStatus, version: result.requestVersion, updatedAt: result.requestUpdatedAt }
+            : item)
+        })
         schedule(result.refreshAfterSeconds)
       } catch (caught) {
         if (stopped || isRequestCancellation(caught) || generation !== queueStatusGeneration.current) return
