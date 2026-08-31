@@ -1170,6 +1170,17 @@ try {
         $telehealthRepositorySource -match '"reservation-released"' -and
         $telehealthRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|RTCPeerConnection|MediaStream' -and
         $endpointSource -match '/\{reservationId:guid\}/release')
+    Add-Check 'Clinician connection abandonment is exact-owner, pre-consultation, queue-restoring, revokes local grants, ends the synthetic session, and cannot add clinical or outbound work' (
+        $telehealthRepositorySource -match 'AbandonConnectionAsync' -and
+        $telehealthRepositorySource -match 'reservation\.clinician_staff_id=@clinician' -and
+        $telehealthRepositorySource -match 'current\.RequestStatus != TelehealthRequestStatus\.Connecting\.ToString\(\)' -and
+        $telehealthRepositorySource -match '!current\.HasConnectionSession' -and
+        $telehealthRepositorySource -match 'current\.HasConsultation' -and
+        $telehealthRepositorySource -match "telehealth_video_participant_grants set status='Revoked'" -and
+        $telehealthRepositorySource -match "telehealth_video_sessions set status='Ended'" -and
+        $telehealthRepositorySource -match '"connection-abandoned"' -and
+        $telehealthRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|RTCPeerConnection|MediaStream' -and
+        $endpointSource -match '/\{reservationId:guid\}/connection/abandon')
     Add-Check 'Synthetic reservation leases are reconciled without a user-triggered reserve action and fail closed when telehealth is disabled' (
         $reservationLeaseReaperSource -match 'if \(!options\.Value\.Enabled\)' -and
         $reservationLeaseReaperSource -match 'ExpireLeasedReservationsAsync' -and

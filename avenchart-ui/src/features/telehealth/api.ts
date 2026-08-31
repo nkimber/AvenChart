@@ -4706,6 +4706,18 @@ export function releaseTelehealthReservation(
   )
 }
 
+export function abandonTelehealthConnection(
+  reservationId: string,
+  expectedVersion: number,
+  noConsultationConfirmed: boolean,
+  syntheticConnectionAbandonConfirmed: boolean,
+) {
+  return json<TelehealthReservationRelease>(
+    `/api/telehealth/v1/clinician/reservations/${reservationId}/connection/abandon`,
+    commandInit({ expectedVersion, noConsultationConfirmed, syntheticConnectionAbandonConfirmed }, 'clinician'),
+  )
+}
+
 function connectionCommandInit(
   preflight: TelehealthDevicePreflight,
   expectedVersion: number,

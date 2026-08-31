@@ -30,7 +30,7 @@ try {
       '/api/telehealth/v1/admin/applicant-promotion-authorization','/api/telehealth/v1/admin/applicants/{applicantId}/promotion-authorization-decision',
       '/api/telehealth/v1/admin/applicant-synthetic-promotion','/api/telehealth/v1/admin/applicants/{applicantId}/synthetic-promotion',
       '/api/telehealth/v1/admin/operational-review','/api/telehealth/v1/admin/applicant-requests/{requestId}/queue-authorization','/api/telehealth/v1/admin/requests/{requestId}/authorize',
-      '/api/telehealth/v1/clinician/queue','/api/telehealth/v1/clinician/shifts','/api/telehealth/v1/clinician/shifts/{shiftId}/end','/api/telehealth/v1/clinician/reservations/reserve-next','/api/telehealth/v1/clinician/reservations/{reservationId}/release',
+      '/api/telehealth/v1/clinician/queue','/api/telehealth/v1/clinician/shifts','/api/telehealth/v1/clinician/shifts/{shiftId}/end','/api/telehealth/v1/clinician/reservations/reserve-next','/api/telehealth/v1/clinician/reservations/{reservationId}/release','/api/telehealth/v1/clinician/reservations/{reservationId}/connection/abandon',
       '/api/telehealth/v1/clinician/reservations/{reservationId}/connection-grants',
       '/api/telehealth/v1/clinician/reservations/{reservationId}/consultations/start',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/workspace',
@@ -2042,6 +2042,21 @@ try {
       @(Compare-Object @('expectedVersion','noConnectionOrConsultationConfirmed','syntheticReleaseConfirmed') ($reservationReleaseRequestProperties|Sort-Object)).Count -eq 0 -and
       @(Compare-Object @('applicantOriginated','queueEntryId','requestId','requestStatus','requestVersion','reservationId','reservationStatus') ($reservationReleaseResponseProperties|Sort-Object)).Count -eq 0 -and
       @($reservationReleaseRequestProperties + $reservationReleaseResponseProperties | Where-Object { $_ -match 'patientId|clinician|staff|provider|physician|reason|note|freeText|clinical|diagnosis|media|claim|prescription|appointment|encounter' }).Count -eq 0)
+    $connectionAbandon = Get-Operation $document '/api/telehealth/v1/clinician/reservations/{reservationId}/connection/abandon' 'post'
+    $connectionAbandonRequestReference = Get-Property (Get-Property (Get-Property (Get-Property $connectionAbandon 'requestBody') 'content') 'application/json').schema '$ref'
+    $connectionAbandonRequestSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') (($connectionAbandonRequestReference -split '/')[-1])
+    $connectionAbandonRequestProperties = @((Get-Property $connectionAbandonRequestSchema 'properties').PSObject.Properties.Name)
+    $connectionAbandonResponseReference = Get-Property (Get-Property (Get-Property (Get-Property $connectionAbandon.responses '200') 'content') 'application/json').schema '$ref'
+    $connectionAbandonResponseSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') (($connectionAbandonResponseReference -split '/')[-1])
+    $connectionAbandonResponseProperties = @((Get-Property $connectionAbandonResponseSchema 'properties').PSObject.Properties.Name)
+    Add-Check 'Connection abandonment publishes exact physician-only pre-consultation confirmations, idempotency, and the minimized queue-restoration receipt' (
+      (Has-Security $connectionAbandon 'AvenChartLocalStaffSession') -and -not (Has-Security $connectionAbandon 'AvenChartPatientPortalSession') -and
+      (Has-Header $connectionAbandon 'X-AvenChart-Facility-Id') -and (Has-Header $connectionAbandon 'X-AvenChart-Purpose-Of-Use') -and (Has-Header $connectionAbandon 'X-Idempotency-Key') -and
+      $null-ne(Get-Property $connectionAbandon 'requestBody') -and
+      $null-ne(Get-Property $connectionAbandon.responses '400') -and $null-ne(Get-Property $connectionAbandon.responses '403') -and $null-ne(Get-Property $connectionAbandon.responses '404') -and $null-ne(Get-Property $connectionAbandon.responses '409') -and
+      @(Compare-Object @('expectedVersion','noConsultationConfirmed','syntheticConnectionAbandonConfirmed') ($connectionAbandonRequestProperties|Sort-Object)).Count -eq 0 -and
+      @(Compare-Object @('applicantOriginated','queueEntryId','requestId','requestStatus','requestVersion','reservationId','reservationStatus') ($connectionAbandonResponseProperties|Sort-Object)).Count -eq 0 -and
+      @($connectionAbandonRequestProperties + $connectionAbandonResponseProperties | Where-Object { $_ -match 'patientId|clinician|staff|provider|physician|reason|note|freeText|clinical|diagnosis|media|claim|prescription|appointment|encounter' }).Count -eq 0)
     Add-Check 'Patient and physician connection grants publish distinct auth scopes, typed preflight, idempotency, and conflict contracts' (
       (Has-Security $patientConnection 'AvenChartPatientPortalSession') -and -not (Has-Security $patientConnection 'AvenChartLocalStaffSession') -and
       (Has-Header $patientConnection 'X-Idempotency-Key') -and $null-ne(Get-Property $patientConnection 'requestBody') -and $null-ne(Get-Property $patientConnection.responses '409') -and

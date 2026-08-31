@@ -853,6 +853,11 @@ public sealed record TelehealthReservationReleaseResponse(
     int RequestVersion,
     bool ApplicantOriginated);
 
+public sealed record AbandonTelehealthConnectionRequest(
+    int ExpectedVersion,
+    bool NoConsultationConfirmed,
+    bool SyntheticConnectionAbandonConfirmed);
+
 public sealed record TelehealthQueueResponse(IReadOnlyList<TelehealthOperationalReviewItem> Requests);
 
 public sealed record TelehealthConnectionGrantResponse(

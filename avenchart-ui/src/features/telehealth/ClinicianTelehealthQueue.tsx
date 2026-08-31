@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { endIdleClinicianShift, enterTelehealthConsultationWrapUp, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, readPhysicianLocalWebRtcSignals, releaseTelehealthReservation, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, writePhysicianLocalWebRtcSignal, type TelehealthConnectionGrant, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
+import { abandonTelehealthConnection, endIdleClinicianShift, enterTelehealthConsultationWrapUp, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, readPhysicianLocalWebRtcSignals, releaseTelehealthReservation, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, writePhysicianLocalWebRtcSignal, type TelehealthConnectionGrant, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
 import { isRequestCancellation } from '../../api/transport.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import TelehealthPharmacyChoicePanel from './TelehealthPharmacyChoicePanel.tsx'
@@ -17,6 +17,7 @@ import TelehealthEncounterFinalizationPanel from './TelehealthEncounterFinalizat
 import TelehealthSyntheticVisitClosurePanel from './TelehealthSyntheticVisitClosurePanel.tsx'
 import ClinicianIdleShiftEndControl, { type ClinicianIdleShiftEndConfirmations } from './ClinicianIdleShiftEndControl.tsx'
 import ClinicianReservationReleaseControl, { type ClinicianReservationReleaseConfirmations } from './ClinicianReservationReleaseControl.tsx'
+import ClinicianConnectionAbandonControl, { type ClinicianConnectionAbandonConfirmations } from './ClinicianConnectionAbandonControl.tsx'
 import './telehealth.css'
 
 export default function ClinicianTelehealthQueue() {
@@ -135,6 +136,26 @@ export default function ClinicianTelehealthQueue() {
       await refresh()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The synthetic reservation could not be released. Refresh before retrying.')
+    } finally { setWorking(false) }
+  }
+
+  async function abandonConnection(confirmations: ClinicianConnectionAbandonConfirmations) {
+    if (!reservation || !waitingRoom || consultation || working || connectionWorking
+      || !confirmations.noConsultationConfirmed || !confirmations.syntheticConnectionAbandonConfirmed) return
+    setWorking(true); setError(null)
+    try {
+      await abandonTelehealthConnection(
+        reservation.reservationId,
+        reservation.requestVersion,
+        confirmations.noConsultationConfirmed,
+        confirmations.syntheticConnectionAbandonConfirmed,
+      )
+      setReservation(null); setDeviceEvidence(null); setWaitingRoom(null); setLocalMediaConnected(false)
+      connectionCommandKey.current = null
+      setClosureStatus('Synthetic connection attempt abandoned and the request returned to the existing queue. Pending local grants and the synthetic session ended; no consultation, clinical, billing, claim, integration, or external state changed.')
+      await refresh()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'The synthetic connection attempt could not be abandoned. Refresh before retrying.')
     } finally { setWorking(false) }
   }
 
@@ -324,6 +345,7 @@ export default function ClinicianTelehealthQueue() {
             {waitingRoom ? <div className="telehealth-waiting-room" role="status"><h4>Physician grant ready</h4><p>{waitingRoom.waitingRoomMessage}</p><p><small>Local grant expires {new Date(waitingRoom.expiresAt).toLocaleTimeString()}.</small></p><ul>{waitingRoom.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></div> : null}
             {waitingRoom?.mediaTransportEnabled ? <TelehealthLocalWebRtcPocPanel grant={waitingRoom} role="physician" writeSignal={(kind, payload) => writePhysicianLocalWebRtcSignal(waitingRoom, kind, payload)} readSignals={(afterSequence, signal) => readPhysicianLocalWebRtcSignals(waitingRoom, afterSequence, signal)} onConnectionStateChange={setLocalMediaConnected} /> : null}
           </section>
+          {waitingRoom && !consultation ? <ClinicianConnectionAbandonControl reservation={reservation} disabled={working || connectionWorking} onAbandon={(confirmations) => void abandonConnection(confirmations)} /> : null}
           {waitingRoom && !consultation ? (
             <form className="telehealth-consultation-start" onSubmit={(event) => { event.preventDefault(); void beginSyntheticConsultation() }}>
               <fieldset>

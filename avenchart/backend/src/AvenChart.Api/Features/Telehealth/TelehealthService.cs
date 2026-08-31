@@ -437,6 +437,45 @@ public sealed class TelehealthService(
             cancellationToken);
     }
 
+    public async Task<TelehealthReservationReleaseResponse> AbandonConnectionAsync(
+        AuthSessionResponse session,
+        StaffAccessContext accessContext,
+        Guid reservationId,
+        AbandonTelehealthConnectionRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        RequirePhysician(session);
+        RequireConfiguredFacility(accessContext);
+        if (request.ExpectedVersion < 1
+            || !request.NoConsultationConfirmed
+            || !request.SyntheticConnectionAbandonConfirmed)
+        {
+            throw TelehealthProblem.BadRequest(
+                "telehealth_connection_abandon_invalid",
+                "Confirm the current version, that no consultation has started, and the synthetic-only connection-abandon effect.");
+        }
+
+        var staffId = RequireStaffId(session);
+        var key = TelehealthCommandFingerprint.RequireIdempotencyKey(idempotencyKey);
+        var fingerprint = TelehealthCommandFingerprint.Create(
+            "abandon-connection",
+            _options.PracticeId,
+            accessContext.FacilityId,
+            staffId,
+            reservationId,
+            request.ExpectedVersion);
+        return await repository.AbandonConnectionAsync(
+            _options.PracticeId,
+            accessContext.FacilityId,
+            staffId,
+            reservationId,
+            request.ExpectedVersion,
+            key,
+            fingerprint,
+            cancellationToken);
+    }
+
     private async Task<PatientPortalSessionResponse> RequirePatientAsync(
         HttpContext httpContext,
         CancellationToken cancellationToken)

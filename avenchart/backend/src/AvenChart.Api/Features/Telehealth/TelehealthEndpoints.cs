@@ -852,6 +852,16 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
+        clinician.MapPost("/reservations/{reservationId:guid}/connection/abandon", AbandonConnectionAsync)
+            .WithName("AbandonTelehealthConnection")
+            .WithDescription("Abandons only the owning physician's active prepared NON_PRODUCTION synthetic connection attempt and returns the request to the same queue. It refuses a consultation, revokes pending local grants, ends the synthetic session, and changes no clinical, billing, claim, integration, or external state.")
+            .Accepts<AbandonTelehealthConnectionRequest>("application/json")
+            .Produces<TelehealthReservationReleaseResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
         clinician.MapPost("/reservations/{reservationId:guid}/connection-grants", PreparePhysicianConnectionAsync)
             .WithName("PreparePhysicianTelehealthConnection")
             .WithDescription("Issues a short-lived NON_PRODUCTION waiting-room grant only to the physician who owns the active reservation. No media or encounter is started.")
@@ -2532,6 +2542,21 @@ public static class TelehealthEndpoints
         ReleaseTelehealthReservationRequest request,
         CancellationToken cancellationToken) =>
         await ExecuteAsync(async () => Results.Ok(await service.ReleaseReservationAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context),
+            reservationId,
+            request,
+            ReadIdempotencyKey(context),
+            cancellationToken)));
+
+    private static async Task<IResult> AbandonConnectionAsync(
+        TelehealthService service,
+        AuthRepository authRepository,
+        HttpContext context,
+        Guid reservationId,
+        AbandonTelehealthConnectionRequest request,
+        CancellationToken cancellationToken) =>
+        await ExecuteAsync(async () => Results.Ok(await service.AbandonConnectionAsync(
             await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
             RequireStaffAccessContext(context),
             reservationId,

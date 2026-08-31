@@ -857,6 +857,125 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             reservationId, current.RequestId, current.QueueEntryId, "Released", "Queued", newRequestVersion, current.ApplicantOriginated);
     }
 
+    public async Task<TelehealthReservationReleaseResponse> AbandonConnectionAsync(
+        string practiceId,
+        int facilityId,
+        int clinicianStaffId,
+        Guid reservationId,
+        int expectedVersion,
+        string idempotencyKey,
+        string fingerprint,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        _ = await GetActiveShiftForUpdateAsync(connection, transaction, practiceId, facilityId, clinicianStaffId, cancellationToken)
+            ?? throw TelehealthProblem.Conflict("telehealth_active_shift_required", "Start an active telehealth shift before abandoning a connection attempt.");
+        await ExpireReservationsAsync(connection, transaction, practiceId, facilityId, cancellationToken);
+
+        ReservationForRelease? current;
+        await using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText = """
+                select reservation.request_id, reservation.queue_entry_id, reservation.status,
+                       request.status, request.version, request.source_applicant_id is not null,
+                       exists(
+                         select 1 from telehealth_video_sessions session
+                         where session.request_id=request.request_id
+                           and session.reservation_id=reservation.reservation_id
+                           and session.status in ('Prepared','WaitingRoom')
+                           and session.expires_at > now()),
+                       exists(select 1 from telehealth_consultation_contexts consultation where consultation.request_id=request.request_id)
+                from telehealth_reservations reservation
+                join telehealth_requests request on request.request_id=reservation.request_id
+                join telehealth_queue_entries queue on queue.queue_entry_id=reservation.queue_entry_id
+                where reservation.reservation_id=@reservation_id
+                  and reservation.clinician_staff_id=@clinician
+                  and queue.practice_id=@practice_id
+                  and queue.facility_id=@facility_id
+                for update of reservation, request, queue;
+                """;
+            select.Parameters.AddWithValue("reservation_id", reservationId);
+            select.Parameters.AddWithValue("clinician", clinicianStaffId);
+            select.Parameters.AddWithValue("practice_id", practiceId);
+            select.Parameters.AddWithValue("facility_id", facilityId);
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+            current = await reader.ReadAsync(cancellationToken)
+                ? new ReservationForRelease(
+                    reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
+                    checked((int)reader.GetInt64(4)), reader.GetBoolean(5), reader.GetBoolean(6), reader.GetBoolean(7))
+                : null;
+        }
+
+        if (current is null)
+        {
+            throw TelehealthProblem.NotFound();
+        }
+
+        var priorFingerprint = await FindEventFingerprintAsync(
+            connection, transaction, current.RequestId, idempotencyKey, cancellationToken);
+        if (priorFingerprint is not null)
+        {
+            if (!string.Equals(priorFingerprint, fingerprint, StringComparison.Ordinal)
+                || current.ReservationStatus != "Released"
+                || current.RequestStatus != TelehealthRequestStatus.Queued.ToString())
+            {
+                throw TelehealthProblem.Conflict("telehealth_idempotency_conflict", "The connection-abandon idempotency key was reused with different content.");
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return new TelehealthReservationReleaseResponse(
+                reservationId, current.RequestId, current.QueueEntryId, "Released", "Queued", current.RequestVersion, current.ApplicantOriginated);
+        }
+
+        if (current.ReservationStatus != "Active"
+            || current.RequestStatus != TelehealthRequestStatus.Connecting.ToString()
+            || !current.HasConnectionSession
+            || current.HasConsultation)
+        {
+            throw TelehealthProblem.Conflict(
+                "telehealth_connection_abandon_unavailable",
+                "Only an active prepared connection with no consultation can be abandoned.");
+        }
+        if (current.RequestVersion != expectedVersion)
+        {
+            throw TelehealthProblem.Conflict("telehealth_version_conflict", "The request changed before the connection attempt could be abandoned. Refresh and try again.");
+        }
+
+        TelehealthRequestStateMachine.RequireTransition(TelehealthRequestStatus.Connecting, TelehealthRequestStatus.Queued);
+        var newRequestVersion = current.RequestVersion + 1;
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = """
+                update telehealth_reservations set status='Released', version=version+1 where reservation_id=@reservation_id and status='Active';
+                update telehealth_queue_entries set status='Ready', version=version+1, updated_at=now() where queue_entry_id=@queue_entry_id and status='Reserved';
+                update telehealth_requests set status='Queued', version=@version, updated_at=now() where request_id=@request_id and status='Connecting' and version=@expected_version;
+                update appointments set provider_id=null,status='-',row_version=row_version+1
+                where id=(select appointment_id from telehealth_requests where request_id=@request_id)
+                  and coalesce(status,'-')='-';
+                update telehealth_video_participant_grants set status='Revoked'
+                where session_id in (select session_id from telehealth_video_sessions where request_id=@request_id)
+                  and status='Issued';
+                update telehealth_video_sessions set status='Ended',version=version+1
+                where request_id=@request_id and reservation_id=@reservation_id and status in ('Prepared','WaitingRoom');
+                """;
+            update.Parameters.AddWithValue("reservation_id", reservationId);
+            update.Parameters.AddWithValue("queue_entry_id", current.QueueEntryId);
+            update.Parameters.AddWithValue("request_id", current.RequestId);
+            update.Parameters.AddWithValue("version", newRequestVersion);
+            update.Parameters.AddWithValue("expected_version", expectedVersion);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await InsertEventAsync(
+            connection, transaction, current.RequestId, newRequestVersion, "connection-abandoned",
+            "Connecting", "Queued", "physician", clinicianStaffId.ToString(), idempotencyKey, fingerprint, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new TelehealthReservationReleaseResponse(
+            reservationId, current.RequestId, current.QueueEntryId, "Released", "Queued", newRequestVersion, current.ApplicantOriginated);
+    }
+
     public async Task<TelehealthRequestListResponse> ListPatientRequestsAsync(
         string practiceId,
         string patientId,
