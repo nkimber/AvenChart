@@ -1,6 +1,6 @@
 # AvenChart immediate telehealth master specification
 
-Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–66 scopes active under Decisions 0003 and 0005–0069
+Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–68 scopes active under Decisions 0003 and 0005–0071
 Version: 0.1
 Last reviewed: 2026-08-30
 Initial jurisdictions: Georgia, California, and Florida  

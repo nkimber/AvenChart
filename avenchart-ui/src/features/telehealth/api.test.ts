@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, authorizeApplicantPracticeReview, authorizeApplicantRequestToQueue, authorizeRequest, cancelPatientTelehealthRequest, claimApplicantPracticeReview, completePatientReadiness, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestInsuranceSource, confirmApplicantTelehealthRequestIntake, confirmApplicantTelehealthRequestLocation, confirmApplicantTelehealthRequestParticipationContext, createApplicantTelehealthRequest, createPatientRequest, createProspectiveApplicant, endIdleClinicianShift, enterTelehealthConsultationWrapUp, evaluateApplicantTelehealthRequestParticipation, evaluateProspectiveSafetyTriage, executeApplicantSyntheticPromotion, getApplicantInsuranceHandoff, getApplicantPracticeReviewPacket, getApplicantRegistrationDetails, getApplicantRequestQueueAuthorization, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestEligibility, getApplicantTelehealthRequestInsuranceSource, getApplicantTelehealthRequestIntake, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestOperationalReviewSubmission, getApplicantTelehealthRequestParticipationContext, getApplicantTelehealthRequestParticipationEvaluation, getApplicantTelehealthRequestPracticeNetwork, getApplicantTelehealthRequestQueueStatus, getApplicantTelehealthRequestRenderingCandidate, getApplicantTelehealthRequestUniversalSafety, getPatientQueueStatus, getPatientRequestHistory, getProspectivePracticeNetworkOptions, getTelehealthCompletionPrerequisites, getTelehealthConsultationWorkspace, getTelehealthPharmacyChoices, getTelehealthPrescriptionPreparationDraft, getTelehealthSafetyDispositionDraft, listApplicantIdentityReview, listApplicantPracticeReviewInbox, listApplicantPromotionAuthorization, listApplicantSyntheticPromotion, listClinicianQueue, prepareApplicantConnection, preparePatientConnection, preparePhysicianConnection, prepareTelehealthProfessionalClaim, recordApplicantIdentityReview, recordApplicantPromotionAuthorization, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, recordTelehealthPharmacyChoice, recordTelehealthPrescriptionPreparationDraft, recordTelehealthSafetyDispositionDraft, reserveNextRequest, runApplicantTelehealthRequestEligibility, runApplicantTelehealthRequestPracticeNetwork, saveTelehealthConsultationDocumentationDraft, selectApplicantTelehealthRequestRenderingCandidate, startTelehealthConsultation, submitApplicantTelehealthRequestForOperationalReview, verifyPatientCoverage, verifyProspectiveApplicantContact, type TelehealthDevicePreflight, type TelehealthReadiness } from './api.ts'
+import { acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, authorizeApplicantPracticeReview, authorizeApplicantRequestToQueue, authorizeRequest, cancelPatientTelehealthRequest, claimApplicantPracticeReview, completePatientReadiness, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestInsuranceSource, confirmApplicantTelehealthRequestIntake, confirmApplicantTelehealthRequestLocation, confirmApplicantTelehealthRequestParticipationContext, createApplicantTelehealthRequest, createPatientRequest, createProspectiveApplicant, endIdleClinicianShift, enterTelehealthConsultationWrapUp, evaluateApplicantTelehealthRequestParticipation, evaluateProspectiveSafetyTriage, executeApplicantSyntheticPromotion, getApplicantInsuranceHandoff, getApplicantPracticeReviewPacket, getApplicantRegistrationDetails, getApplicantRequestQueueAuthorization, getApplicantSyntheticPostVisitReceipt, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestEligibility, getApplicantTelehealthRequestInsuranceSource, getApplicantTelehealthRequestIntake, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestOperationalReviewSubmission, getApplicantTelehealthRequestParticipationContext, getApplicantTelehealthRequestParticipationEvaluation, getApplicantTelehealthRequestPracticeNetwork, getApplicantTelehealthRequestQueueStatus, getApplicantTelehealthRequestRenderingCandidate, getApplicantTelehealthRequestUniversalSafety, getPatientQueueStatus, getPatientRequestHistory, getPatientSyntheticPostVisitReceipt, getProspectivePracticeNetworkOptions, getTelehealthCompletionPrerequisites, getTelehealthConsultationWorkspace, getTelehealthPharmacyChoices, getTelehealthPrescriptionPreparationDraft, getTelehealthSafetyDispositionDraft, listApplicantIdentityReview, listApplicantPracticeReviewInbox, listApplicantPromotionAuthorization, listApplicantSyntheticPromotion, listClinicianQueue, prepareApplicantConnection, preparePatientConnection, preparePhysicianConnection, prepareTelehealthProfessionalClaim, recordApplicantIdentityReview, recordApplicantPromotionAuthorization, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, recordTelehealthPharmacyChoice, recordTelehealthPrescriptionPreparationDraft, recordTelehealthSafetyDispositionDraft, reserveNextRequest, runApplicantTelehealthRequestEligibility, runApplicantTelehealthRequestPracticeNetwork, saveTelehealthConsultationDocumentationDraft, selectApplicantTelehealthRequestRenderingCandidate, startTelehealthConsultation, submitApplicantTelehealthRequestForOperationalReview, verifyPatientCoverage, verifyProspectiveApplicantContact, type TelehealthDevicePreflight, type TelehealthReadiness } from './api.ts'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -60,6 +60,38 @@ describe('telehealth transport boundaries', () => {
     expect(init?.method).toBeUndefined()
     expect(headers.get('X-AvenChart-Patient-Portal-Session')).toBe('portal-session')
     expect(headers.get('X-Idempotency-Key')).toBeNull()
+  })
+
+  it('reads a post-visit receipt with only the portal session and no mutation identity', async () => {
+    sessionStorage.setItem('avenchart-ui.portalSession', JSON.stringify({ sessionId: 'portal-session', username: 'patient', portalUsername: 'patient', displayName: 'Synthetic Patient' }))
+    fetchMock.mockResolvedValue(jsonResponse({ receiptId: 'receipt-1', requestId: 'request-1', receiptState: 'AvailableInPortal' }))
+
+    await getPatientSyntheticPostVisitReceipt('request/1')
+
+    const [url, init] = fetchMock.mock.calls[0]
+    const headers = new Headers(init?.headers)
+    expect(String(url)).toContain('/patient/requests/request%2F1/post-visit-receipt')
+    expect(init?.method).toBeUndefined()
+    expect(init?.body).toBeUndefined()
+    expect(init?.cache).toBe('no-store')
+    expect(headers.get('X-AvenChart-Patient-Portal-Session')).toBe('portal-session')
+    expect(headers.get('X-Idempotency-Key')).toBeNull()
+  })
+
+  it('reads an applicant post-visit receipt only with the applicant access key and no mutation identity', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ receiptId: 'receipt-1', requestId: 'request-1', receiptState: 'AvailableInPortal' }))
+
+    await getApplicantSyntheticPostVisitReceipt('applicant/1', 'access-secret', 'request/1')
+
+    const [url, init] = fetchMock.mock.calls[0]
+    const headers = new Headers(init?.headers)
+    expect(String(url)).toContain('/applicants/applicant%2F1/telehealth-request/request%2F1/post-visit-receipt')
+    expect(init?.method).toBeUndefined()
+    expect(init?.body).toBeUndefined()
+    expect(init?.cache).toBe('no-store')
+    expect(headers.get('X-AvenChart-Telehealth-Applicant-Key')).toBe('access-secret')
+    expect(headers.get('X-Idempotency-Key')).toBeNull()
+    expect(headers.get('X-AvenChart-Patient-Portal-Session')).toBeNull()
   })
 
   it('keeps applicant Draft-request reads private and writes access-key bound with caller retry identity', async () => {

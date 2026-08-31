@@ -4,10 +4,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiRequestError, isRequestCancellation } from '../../api/transport.ts'
 import {
+  getApplicantSyntheticPostVisitReceipt,
   getApplicantTelehealthRequestQueueStatus,
   prepareApplicantConnection,
   type TelehealthApplicantRequestQueueStatus,
   type TelehealthDevicePreflight,
+  type TelehealthSyntheticPostVisitReceipt,
 } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import { queuePollDelayMilliseconds, shouldPollPatientQueueStatus } from './polling.ts'
@@ -27,6 +29,7 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
   const [connectionIssue, setConnectionIssue] = useState<string | null>(null)
   const [deviceEvidence, setDeviceEvidence] = useState<TelehealthDevicePreflight | null>(null)
   const [waitingRoom, setWaitingRoom] = useState<{ expiresAt: string; message: string; limitations: string[] } | null>(null)
+  const [postVisitReceipt, setPostVisitReceipt] = useState<TelehealthSyntheticPostVisitReceipt | null>(null)
   const generation = useRef(0)
   const connectionCommandKey = useRef<string | null>(null)
 
@@ -35,8 +38,20 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
     setConnectionIssue(null)
     setDeviceEvidence(null)
     setWaitingRoom(null)
+    setPostVisitReceipt(null)
     connectionCommandKey.current = null
   }, [applicantAccessKey, applicantId, enabled])
+
+  useEffect(() => {
+    if (!enabled || status?.requestStatus !== 'Closed') return
+    const controller = new AbortController()
+    void getApplicantSyntheticPostVisitReceipt(applicantId, applicantAccessKey, status.requestId, controller.signal)
+      .then((receipt) => setPostVisitReceipt(receipt))
+      .catch((caught) => {
+        if (!isRequestCancellation(caught)) setPostVisitReceipt(null)
+      })
+    return () => controller.abort()
+  }, [applicantAccessKey, applicantId, enabled, status?.requestId, status?.requestStatus])
 
   useEffect(() => {
     const currentGeneration = ++generation.current
@@ -210,6 +225,25 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
           <p><small>Last confirmed <time dateTime={status.snapshotAt}>{new Date(status.snapshotAt).toLocaleTimeString()}</time>. Authoritative HTTP polling; realtime delivery is not enabled.</small></p>
           <ul className="telehealth-safety-actions">{(status.safetyActions ?? []).map((action) => <li key={action}>{action}</li>)}</ul>
           <ul>{(status.limitations ?? []).map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+          {status.requestStatus === 'Closed' ? (
+            <section className="telehealth-post-visit-receipt" aria-labelledby="applicant-post-visit-receipt-title">
+              <h4 id="applicant-post-visit-receipt-title">Synthetic post-visit receipt</h4>
+              {postVisitReceipt ? (
+                <>
+                  <p>{postVisitReceipt.receiptState}. This is a minimized lifecycle receipt, not an after-visit summary.</p>
+                  <dl className="telehealth-details">
+                    <div><dt>Source mode</dt><dd>{postVisitReceipt.sourceMode}</dd></div>
+                    <div><dt>Appointment completed</dt><dd>{postVisitReceipt.appointmentCompleted ? 'Yes' : 'No'}</dd></div>
+                    <div><dt>Encounter completed</dt><dd>{postVisitReceipt.encounterCompleted ? 'Yes' : 'No'}</dd></div>
+                    <div><dt>Clinical record delivered</dt><dd>{postVisitReceipt.clinicalRecordDelivered ? 'Yes' : 'No'}</dd></div>
+                    <div><dt>Prescription delivered</dt><dd>{postVisitReceipt.prescriptionDelivered ? 'Yes' : 'No'}</dd></div>
+                    <div><dt>Billing or claim created</dt><dd>{postVisitReceipt.billingCreated || postVisitReceipt.claimCreated ? 'Yes' : 'No'}</dd></div>
+                  </dl>
+                  <ul>{postVisitReceipt.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                </>
+              ) : <p>Loading the minimized synthetic lifecycle receipt.</p>}
+            </section>
+          ) : null}
           {status.requestStatus === 'Reserved' || status.requestStatus === 'Connecting' ? (
             <section className="telehealth-connection-room" aria-labelledby="applicant-device-check-title" aria-busy={connectionWorking}>
               <h4 id="applicant-device-check-title">Private synthetic connection room</h4>

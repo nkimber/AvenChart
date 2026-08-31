@@ -10,6 +10,7 @@ import {
   evaluatePatientTriage,
   getPatientQueueStatus,
   getPatientRequestHistory,
+  getPatientSyntheticPostVisitReceipt,
   getPatientReadiness,
   listPatientRequests,
   preparePatientConnection,
@@ -19,6 +20,7 @@ import {
   type TelehealthReadiness,
   type TelehealthRequest,
   type TelehealthRequestHistory,
+  type TelehealthSyntheticPostVisitReceipt,
 } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import { isRequestCancellation } from '../../api/transport.ts'
@@ -43,6 +45,7 @@ export default function PatientTelehealthWorkspace() {
   const [cancellationConfirmed, setCancellationConfirmed] = useState(false)
   const [queueStatus, setQueueStatus] = useState<TelehealthPatientQueueStatus | null>(null)
   const [requestHistory, setRequestHistory] = useState<TelehealthRequestHistory | null>(null)
+  const [postVisitReceipt, setPostVisitReceipt] = useState<TelehealthSyntheticPostVisitReceipt | null>(null)
   const [queueConnection, setQueueConnection] = useState<'idle' | 'checking' | 'connected' | 'paused' | 'retrying'>('idle')
   const [queueIssue, setQueueIssue] = useState<string | null>(null)
   const [queueRefreshNonce, setQueueRefreshNonce] = useState(0)
@@ -53,6 +56,7 @@ export default function PatientTelehealthWorkspace() {
   const requestGeneration = useRef(0)
   const readinessGeneration = useRef(0)
   const historyGeneration = useRef(0)
+  const postVisitReceiptGeneration = useRef(0)
   const queueStatusGeneration = useRef(0)
   const selected = requests.find((item) => item.requestId === selectedId) ?? null
   const selectedQueueRequestId = selected?.requestId ?? null
@@ -111,6 +115,23 @@ export default function PatientTelehealthWorkspace() {
       })
       .finally(() => {
         if (generation === readinessGeneration.current) setReadinessLoading(false)
+      })
+    return () => controller.abort()
+  }, [selected])
+
+  useEffect(() => {
+    const generation = ++postVisitReceiptGeneration.current
+    setPostVisitReceipt(null)
+    if (!selected || selected.status !== 'Closed') return
+    const controller = new AbortController()
+    void getPatientSyntheticPostVisitReceipt(selected.requestId, controller.signal)
+      .then((result) => {
+        if (generation === postVisitReceiptGeneration.current) setPostVisitReceipt(result)
+      })
+      .catch((caught) => {
+        if (!isRequestCancellation(caught) && generation === postVisitReceiptGeneration.current) {
+          setError(caught instanceof Error ? caught.message : 'Post-visit receipt could not be loaded.')
+        }
       })
     return () => controller.abort()
   }, [selected])
@@ -470,6 +491,14 @@ export default function PatientTelehealthWorkspace() {
                   </ol>
                 </section>
               ) : null}
+              {selected.status === 'Closed' && postVisitReceipt?.requestId === selected.requestId ? (
+                <section className="telehealth-post-visit-receipt" aria-labelledby="telehealth-post-visit-receipt-title">
+                  <h3 id="telehealth-post-visit-receipt-title">Synthetic post-visit receipt</h3>
+                  <p><strong>State:</strong> {postVisitReceipt.receiptState} · version {postVisitReceipt.receiptVersion}</p>
+                  <p>Created <time dateTime={postVisitReceipt.createdAt}>{new Date(postVisitReceipt.createdAt).toLocaleString()}</time>. This is an immutable non-production lifecycle receipt, not an after-visit summary.</p>
+                  <ul>{postVisitReceipt.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                </section>
+              ) : null}
               {['Reserved', 'Connecting'].includes(selected.status) ? (
                 <section className="telehealth-connection-room" aria-labelledby="patient-device-check-title">
                   <h3 id="patient-device-check-title">Private synthetic connection room</h3>
@@ -493,6 +522,7 @@ export default function PatientTelehealthWorkspace() {
               ) : null}
               {selected.status === 'InConsultation' ? <section className="telehealth-consultation-started" role="status"><h3>Synthetic consultation lifecycle started</h3><p>This is lifecycle demonstration data only. No real media, clinician identity, chart, diagnosis, prescription, completion, or claim is available.</p><TelehealthConversationPanel participant="patient" requestId={selected.requestId} /><ul className="telehealth-safety-actions"><li>If symptoms worsen or you are unsure it is safe to continue, contact the practice or seek in-person care.</li><li>Call 911 now for an emergency.</li></ul></section> : null}
               {selected.status === 'WrapUp' ? <section className="telehealth-consultation-started" role="status"><h3>Your physician is finishing the synthetic visit record</h3><p>This visit is not complete. No signed record, after-visit summary, prescription, or claim is available. Follow the practice guidance you received.</p><ul className="telehealth-safety-actions"><li>If symptoms worsen or you are unsure it is safe to wait, contact the practice or seek in-person care.</li><li>Call 911 now for an emergency.</li></ul></section> : null}
+              {selected.status === 'Closed' && !postVisitReceipt ? <section className="telehealth-consultation-started" role="status"><h3>Synthetic lifecycle closed</h3><p>The post-visit receipt is loading. This does not mean your appointment, encounter, clinical record, prescription, billing, or claim is complete.</p></section> : null}
               {selected.status === 'Redirected' ? <p>This request cannot enter the telehealth queue. Follow urgent or in-person guidance.</p> : null}
               {selected.status === 'Cancelled' ? <p>This synthetic request was cancelled before practice queue authorization. No appointment, reservation, consultation, billing item, claim, integration, or external action was created.</p> : null}
             </div>

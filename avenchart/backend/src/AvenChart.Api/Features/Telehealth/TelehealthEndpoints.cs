@@ -571,6 +571,12 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapGet("/{applicantId:guid}/telehealth-request/{requestId:guid}/post-visit-receipt", GetApplicantSyntheticPostVisitReceiptAsync)
+            .WithName("GetTelehealthApplicantSyntheticPostVisitReceipt")
+            .WithDescription("Returns the exact access-key owner's minimized immutable NON_PRODUCTION post-closure receipt. It is not a clinical after-visit summary, notification, or delivery.")
+            .Produces<TelehealthSyntheticPostVisitReceiptResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound);
         applicants.MapPost("/{applicantId:guid}/telehealth-request/{requestId:guid}/connection-grants", PrepareApplicantConnectionAsync)
             .WithName("PrepareTelehealthApplicantConnection")
             .WithDescription("Runs a coarse device preflight and issues the request owner's short-lived participant-scoped NON_PRODUCTION waiting-room grant after exact clinician reservation. No media, consultation, consent, encounter, or care is started.")
@@ -597,6 +603,12 @@ public static class TelehealthEndpoints
             .WithName("GetPatientTelehealthQueueStatus")
             .WithDescription("Returns the authenticated request owner's authoritative synthetic status and an approximate same-practice/facility queue count when available. It never promises a wait time or exposes another patient or clinician.")
             .Produces<TelehealthPatientQueueStatusResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+        patient.MapGet("/requests/{requestId:guid}/post-visit-receipt", GetPatientSyntheticPostVisitReceiptAsync)
+            .WithName("GetPatientTelehealthSyntheticPostVisitReceipt")
+            .WithDescription("Returns the authenticated request owner's minimized immutable NON_PRODUCTION post-closure receipt. It is not a clinical after-visit summary, notification, or delivery.")
+            .Produces<TelehealthSyntheticPostVisitReceiptResponse>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound);
         patient.MapPost("/requests", CreateRequestAsync)
@@ -2019,6 +2031,19 @@ public static class TelehealthEndpoints
                 cancellationToken));
         });
 
+    private static Task<IResult> GetApplicantSyntheticPostVisitReceiptAsync(
+        TelehealthSyntheticPostVisitReceiptService service,
+        HttpContext context,
+        Guid applicantId,
+        Guid requestId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.GetForApplicantAsync(
+                context, applicantId, requestId, ReadApplicantAccessKey(context), cancellationToken));
+        });
+
     private static Task<IResult> PrepareApplicantConnectionAsync(
         TelehealthVideoService service,
         HttpContext context,
@@ -2052,6 +2077,13 @@ public static class TelehealthEndpoints
         CancellationToken cancellationToken) =>
         ExecuteAsync(async () => Results.Ok(await service.GetPatientQueueStatusAsync(
             context, requestId, cancellationToken)));
+
+    private static Task<IResult> GetPatientSyntheticPostVisitReceiptAsync(
+        TelehealthSyntheticPostVisitReceiptService service,
+        HttpContext context,
+        Guid requestId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () => Results.Ok(await service.GetForPatientAsync(context, requestId, cancellationToken)));
 
     private static Task<IResult> GetPatientRequestHistoryAsync(
         TelehealthService service,

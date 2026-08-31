@@ -2894,6 +2894,27 @@ export type TelehealthProfessionalClaimPreparation = {
   limitations: string[]
 }
 
+export type TelehealthSyntheticPostVisitReceipt = {
+  receiptId: string
+  requestId: string
+  createdAt: string
+  receiptVersion: number
+  consultationVersion: number
+  requestVersion: number
+  receiptState: string
+  sourceMode: 'NON_PRODUCTION'
+  syntheticDataConfirmed: true
+  appointmentCompleted: false
+  encounterCompleted: false
+  clinicalRecordDelivered: false
+  prescriptionDelivered: false
+  billingCreated: false
+  claimCreated: false
+  notificationSent: false
+  externalDestinationContacted: false
+  limitations: string[]
+}
+
 export type TelehealthEncounterFinalization = {
   encounterSignatureId: number
   signedAt: string
@@ -4167,6 +4188,18 @@ export function getApplicantTelehealthRequestQueueStatus(
   )
 }
 
+export function getApplicantSyntheticPostVisitReceipt(
+  applicantId: string,
+  applicantAccessKey: string,
+  requestId: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthSyntheticPostVisitReceipt>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/${encodeURIComponent(requestId)}/post-visit-receipt`,
+    { headers: applicantHeaders(applicantAccessKey), cache: 'no-store', signal },
+  )
+}
+
 export async function listPatientRequests(signal?: AbortSignal) {
   const result = await json<{ requests: TelehealthRequest[] }>('/api/telehealth/v1/patient/requests', {
     headers: portalHeaders(),
@@ -4179,6 +4212,13 @@ export function getPatientQueueStatus(requestId: string, signal?: AbortSignal) {
   return json<TelehealthPatientQueueStatus>(
     `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/status`,
     { headers: portalHeaders(), signal },
+  )
+}
+
+export function getPatientSyntheticPostVisitReceipt(requestId: string, signal?: AbortSignal) {
+  return json<TelehealthSyntheticPostVisitReceipt>(
+    `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/post-visit-receipt`,
+    { headers: portalHeaders(), cache: 'no-store', signal },
   )
 }
 

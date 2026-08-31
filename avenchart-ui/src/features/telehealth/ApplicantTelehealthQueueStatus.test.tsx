@@ -5,12 +5,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiRequestError } from '../../api/transport.ts'
 import ApplicantTelehealthQueueStatus from './ApplicantTelehealthQueueStatus.tsx'
-import { getApplicantTelehealthRequestQueueStatus, prepareApplicantConnection, type TelehealthApplicantRequestQueueStatus } from './api.ts'
+import { getApplicantSyntheticPostVisitReceipt, getApplicantTelehealthRequestQueueStatus, prepareApplicantConnection, type TelehealthApplicantRequestQueueStatus } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 
 vi.mock('./api.ts', async (importOriginal) => {
   const original = await importOriginal<typeof import('./api.ts')>()
-  return { ...original, getApplicantTelehealthRequestQueueStatus: vi.fn(), prepareApplicantConnection: vi.fn() }
+  return { ...original, getApplicantSyntheticPostVisitReceipt: vi.fn(), getApplicantTelehealthRequestQueueStatus: vi.fn(), prepareApplicantConnection: vi.fn() }
 })
 
 vi.mock('./devicePreflight.ts', () => ({ runTelehealthDevicePreflight: vi.fn() }))
@@ -261,11 +261,21 @@ describe('ApplicantTelehealthQueueStatus', () => {
 
   it('shows synthetic lifecycle closure without claiming an appointment or encounter completion', async () => {
     vi.mocked(getApplicantTelehealthRequestQueueStatus).mockResolvedValue(closedStatus)
+    vi.mocked(getApplicantSyntheticPostVisitReceipt).mockResolvedValue({
+      receiptId: 'receipt-61', requestId: closedStatus.requestId, createdAt: '2026-08-29T14:01:00Z', receiptVersion: 1,
+      consultationVersion: 18, requestVersion: 18, receiptState: 'AvailableInPortal', sourceMode: 'NON_PRODUCTION', syntheticDataConfirmed: true,
+      appointmentCompleted: false, encounterCompleted: false, clinicalRecordDelivered: false, prescriptionDelivered: false,
+      billingCreated: false, claimCreated: false, notificationSent: false, externalDestinationContacted: false,
+      limitations: ['This is an immutable NON_PRODUCTION synthetic lifecycle receipt, not an after-visit summary.'],
+    })
 
     render(<ApplicantTelehealthQueueStatus applicantId="applicant-61" applicantAccessKey="secret-key" enabled />)
 
     expect(await screen.findByRole('heading', { name: 'The synthetic visit lifecycle has closed' })).toBeVisible()
     expect(screen.getByText(/appointment and encounter remain incomplete/i)).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'Synthetic post-visit receipt' })).toBeVisible()
+    expect(screen.getByText(/minimized lifecycle receipt, not an after-visit summary/i)).toBeVisible()
+    expect(getApplicantSyntheticPostVisitReceipt).toHaveBeenCalledWith('applicant-61', 'secret-key', closedStatus.requestId, expect.any(AbortSignal))
     expect(screen.getByText(/Physician assigned/).parentElement).toHaveTextContent('No')
     expect(screen.queryByRole('button', { name: 'Refresh queue status now' })).not.toBeInTheDocument()
     expect(screen.queryByText(/provider|NPI|prescription ID/i)).not.toBeInTheDocument()
