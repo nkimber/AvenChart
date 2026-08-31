@@ -2312,13 +2312,13 @@ export type TelehealthApplicantRequestQueueStatus = {
   limitations: string[]
 }
 
-export type TelehealthApplicantQueuedRequestWithdrawal = {
+export type TelehealthApplicantRequestWithdrawal = {
   requestId: string
   requestVersion: number
   requestStatus: 'Cancelled'
   sourceMode: 'NON_PRODUCTION'
-  queueEntryRemoved: true
-  provisionalAppointmentCancelled: true
+  queueEntryRemoved: boolean
+  provisionalAppointmentCancelled: boolean
   reservationCreated: false
   connectionCreated: false
   consultationCreated: false
@@ -4260,14 +4260,14 @@ export function getApplicantTelehealthRequestQueueStatus(
   )
 }
 
-export function withdrawApplicantQueuedTelehealthRequest(
+export function withdrawApplicantTelehealthRequest(
   applicantId: string,
   applicantAccessKey: string,
   requestId: string,
   expectedRequestVersion: number,
   idempotencyKey: string,
 ) {
-  return json<TelehealthApplicantQueuedRequestWithdrawal>(
+  return json<TelehealthApplicantRequestWithdrawal>(
     `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/${encodeURIComponent(requestId)}/withdraw`,
     {
       method: 'POST',

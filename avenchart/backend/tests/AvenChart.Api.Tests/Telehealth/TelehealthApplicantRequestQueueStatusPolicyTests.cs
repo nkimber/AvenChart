@@ -153,6 +153,7 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
         Assert.Null(result.ApproximateRequestsAhead);
         Assert.False(result.PositionIsApproximate);
         Assert.Contains(result.Limitations, limitation => limitation.Contains("applicant withdrew", StringComparison.Ordinal));
+        Assert.Contains(result.Limitations, limitation => limitation.Contains("Before queue authorization no queue entry or provisional appointment existed", StringComparison.Ordinal));
         AssertClosedConsequences(result);
     }
 

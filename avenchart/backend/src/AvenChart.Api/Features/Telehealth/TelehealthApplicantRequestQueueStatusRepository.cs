@@ -476,6 +476,15 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
             && source.ConnectionSessionCount == 0
             && source.ActiveApplicantGrantCount == 0
             && !source.AppointmentCreated;
+        var preAuthorizationCancellationValid = source.RequestStatus == TelehealthRequestStatus.Cancelled
+            && source.RequestVersion == 13
+            && source.AuthorizationCount == 0
+            && source.QueueCount == 0
+            && !source.AppointmentCreated
+            && source.ActiveReservationCount == 0
+            && source.ConnectionSessionCount == 0
+            && source.ActiveApplicantGrantCount == 0
+            && source.ConsultationCount == 0;
         var queueStateValid = source.RequestStatus switch
         {
             TelehealthRequestStatus.Queued => source.RequestVersion >= 13
@@ -522,13 +531,22 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                 && source.ActiveApplicantGrantCount == 0
                 && source.ConsultationCount == 1
                 && source.ConsultationValid,
-            TelehealthRequestStatus.Cancelled => source.RequestVersion >= 14
-                && source.QueueStatus == "Removed"
-                && source.ActiveReservationCount == 0
-                && source.AppointmentStatus == "x"
-                && source.ConnectionSessionCount == 0
-                && source.ActiveApplicantGrantCount == 0
-                && source.ConsultationCount == 0,
+            TelehealthRequestStatus.Cancelled =>
+                (source.RequestVersion == 13
+                 && source.AuthorizationCount == 0
+                 && source.QueueCount == 0
+                 && !source.AppointmentCreated
+                 && source.ActiveReservationCount == 0
+                 && source.ConnectionSessionCount == 0
+                 && source.ActiveApplicantGrantCount == 0
+                 && source.ConsultationCount == 0)
+                || (source.RequestVersion >= 14
+                    && source.QueueStatus == "Removed"
+                    && source.ActiveReservationCount == 0
+                    && source.AppointmentStatus == "x"
+                    && source.ConnectionSessionCount == 0
+                    && source.ActiveApplicantGrantCount == 0
+                    && source.ConsultationCount == 0),
             _ => false
         };
         var downstreamValid = source.AuthorizationCount == 1
@@ -536,7 +554,7 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
             && source.QueueCount == 1
             && source.AppointmentCreated
             && queueStateValid;
-        if (!commonValid || (!operationalReviewValid && !downstreamValid))
+        if (!commonValid || (!operationalReviewValid && !preAuthorizationCancellationValid && !downstreamValid))
         {
             throw TelehealthProblem.Conflict(
                 "telehealth_applicant_request_queue_status_provenance_conflict",

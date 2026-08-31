@@ -1,6 +1,6 @@
 # AvenChart immediate telehealth master specification
 
-Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–76 scopes active under Decisions 0003 and 0005–0079
+Status: G0 planning baseline approved; exact disabled synthetic Sprints 1–77 scopes active under Decisions 0003 and 0005–0080
 Version: 0.1
 Last reviewed: 2026-08-31
 Initial jurisdictions: Georgia, California, and Florida  
@@ -161,6 +161,7 @@ Requirement prefixes are stable and unique: `TEL-PROD`, `TEL-ACT`, `TEL-WF`, `TE
 | [Decision 0077](decisions/0077-approved-poc-patient-connection-recovery-transparency.md) | Approved, time-bounded POC exception to clear stale local waiting-room state and show a neutral recovery message to established and new patients after the authoritative status returns from `Connecting` to `Queued` |
 | [Decision 0078](decisions/0078-approved-poc-patient-queued-request-withdrawal.md) | Approved, time-bounded POC exception for an established-patient owner to withdraw only a ready queued synthetic request, removing its queue entry and cancelling its provisional appointment without a reservation, connection, consultation, or downstream effect |
 | [Decision 0079](decisions/0079-approved-poc-applicant-queued-request-withdrawal.md) | Approved, time-bounded POC exception for an applicant access-key owner to withdraw only a ready queued synthetic request, retaining a minimized terminal status without a portal, reservation, connection, consultation, or downstream effect |
+| [Decision 0080](decisions/0080-approved-poc-applicant-pre-authorization-request-withdrawal.md) | Approved, time-bounded POC exception for an applicant access-key owner to withdraw an operational-review synthetic request before practice queue authorization, without a queue entry, appointment, reservation, connection, consultation, or downstream effect |
 | [Implementation backlog](backlog/README.md) | Delivery model for 20 epics and 60 stories, with every one of the 329 requirements assigned exactly once as a primary responsibility |
 | [Machine-readable backlog](backlog/backlog.json) | Structured epic, story, dependency, priority, gate and requirement-range source for planning and future traceability automation |
 | [Sprint 1 foundation plan](backlog/sprint-01-foundation.md) | Recommended synthetic vertical slice from branded entry through safety/triage, administrator authorization, queueing and atomic clinician reservation |

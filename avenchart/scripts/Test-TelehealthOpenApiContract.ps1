@@ -1830,7 +1830,7 @@ try {
     $applicantQueuedWithdrawalResponseReference = Get-Property (Get-Property (Get-Property (Get-Property $applicantQueuedWithdrawal.responses '200') 'content') 'application/json').schema '$ref'
     $applicantQueuedWithdrawalResponseSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') (($applicantQueuedWithdrawalResponseReference -split '/')[-1])
     $applicantQueuedWithdrawalResponseProperties = @((Get-Property $applicantQueuedWithdrawalResponseSchema 'properties').PSObject.Properties.Name)
-    Add-Check 'Applicant queued withdrawal is access-key-only, idempotent, explicitly confirmed, and consequence-minimized' (
+    Add-Check 'Applicant pre-authorization or queued withdrawal is access-key-only, idempotent, explicitly confirmed, and consequence-minimized' (
       @($applicantQueuedWithdrawalPath.PSObject.Properties.Name).Count -eq 1 -and
       (Has-Security $applicantQueuedWithdrawal 'AvenChartTelehealthApplicantAccess') -and
       -not (Has-Security $applicantQueuedWithdrawal 'AvenChartPatientPortalSession') -and

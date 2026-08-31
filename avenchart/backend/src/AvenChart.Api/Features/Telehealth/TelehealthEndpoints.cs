@@ -587,8 +587,8 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
         applicants.MapPost("/{applicantId:guid}/telehealth-request/{requestId:guid}/withdraw", WithdrawApplicantQueuedTelehealthRequestAsync)
-            .WithName("WithdrawTelehealthApplicantQueuedRequest")
-            .WithDescription("Allows only the exact access-key owner to withdraw a ready queued synthetic request before clinician reservation. It removes the queue entry and cancels the provisional appointment; it creates no reservation, connection, consultation, care, financial, integration, notification, or external action.")
+            .WithName("WithdrawTelehealthApplicantRequest")
+            .WithDescription("Allows only the exact access-key owner to withdraw either an operational-review synthetic request before practice queue authorization or a ready queued synthetic request before clinician reservation. A pre-authorization withdrawal creates no queue entry or appointment; a queued withdrawal removes the queue entry and cancels the provisional appointment. Neither creates a reservation, connection, consultation, care, financial, integration, notification, or external action.")
             .Accepts<WithdrawTelehealthApplicantQueuedRequest>("application/json")
             .Produces<TelehealthApplicantQueuedRequestWithdrawalResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)

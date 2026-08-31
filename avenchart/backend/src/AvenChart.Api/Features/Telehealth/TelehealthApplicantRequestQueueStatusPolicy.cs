@@ -81,7 +81,7 @@ public static class TelehealthApplicantRequestQueueStatusPolicy
                 "A consultation state means only that the exact physician started the bounded synthetic lifecycle and encounter; it is not proof of media, legal consent, real coverage, diagnosis, treatment, or completed care.",
                 "A wrap-up state means only that the synthetic session ended and the owning physician may finish unsigned planning drafts; it is not proof of a signature, prescription, patient delivery, claim, or completed visit.",
                 "A closed state means only that the synthetic consultation/request lifecycle was closed after the governed encounter lock and the physician returned to availability. The appointment and encounter remain incomplete; no patient delivery, billing, claim, integration, or external action was created.",
-                "A cancelled state means the applicant withdrew a ready queued request before a clinician reservation or consultation. The queue entry and provisional appointment were cancelled; no care, financial, integration, or external action occurred.",
+                "A cancelled state means the applicant withdrew before a clinician reservation or consultation. Before queue authorization no queue entry or provisional appointment existed; if already authorized, the ready queue entry and provisional appointment were cancelled. No care, financial, integration, or external action occurred.",
                 "No consent, care authorization, prescription, claim, integration, or external action is created by reading this status."
             ]);
     }

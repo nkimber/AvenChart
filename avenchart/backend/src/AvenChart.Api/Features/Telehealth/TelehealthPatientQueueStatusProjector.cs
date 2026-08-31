@@ -77,7 +77,7 @@ public static class TelehealthPatientQueueStatusProjector
         TelehealthRequestStatus.Cancelled => new(
             "RequestCancelled",
             "This synthetic request was cancelled",
-            "The request is no longer in the queue. If it had already been authorized to the queue, its provisional synthetic appointment was cancelled before any clinician reservation or consultation."),
+            "The request is no longer active. If it had already been authorized to the queue, its provisional synthetic appointment was cancelled before any clinician reservation or consultation."),
         TelehealthRequestStatus.Redirected => new(
             "Redirected",
             "This request cannot enter the telehealth queue",
