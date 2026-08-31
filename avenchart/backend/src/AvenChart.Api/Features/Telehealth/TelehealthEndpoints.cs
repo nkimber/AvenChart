@@ -688,6 +688,15 @@ public static class TelehealthEndpoints
             .Accepts<VerifyTelehealthCoverageRequest>("application/json")
             .Produces<TelehealthRequestResponse>()
             .ProducesProblem(StatusCodes.Status409Conflict);
+        patient.MapPost("/requests/{requestId:guid}/demo-queue", FastTrackPatientToQueueAsync)
+            .WithName("FastTrackPatientTelehealthRequestToQueue")
+            .WithDescription("Moves only the authenticated patient's already eligible, current-readiness, current-coverage synthetic request from operational review into the ready physician queue. It is an explicit NON_PRODUCTION demonstration handoff, is versioned and idempotent, and records a distinct patient-initiated audit event; it does not authorize patient care.")
+            .Accepts<FastTrackTelehealthRequestToQueue>("application/json")
+            .Produces<TelehealthRequestResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
         patient.MapPost("/requests/{requestId:guid}/cancel", CancelPatientRequestAsync)
             .WithName("CancelPatientTelehealthRequest")
             .WithDescription("Cancels the authenticated patient's synthetic request before queue authorization. It is versioned and idempotent, and creates no appointment, reservation, consultation, clinical, billing, claim, integration, or external action.")
@@ -2288,6 +2297,15 @@ public static class TelehealthEndpoints
         VerifyTelehealthCoverageRequest request,
         CancellationToken cancellationToken) =>
         ExecuteAsync(async () => Results.Ok(await service.VerifyCoverageAsync(
+            context, requestId, request, ReadIdempotencyKey(context), cancellationToken)));
+
+    private static Task<IResult> FastTrackPatientToQueueAsync(
+        TelehealthService service,
+        HttpContext context,
+        Guid requestId,
+        FastTrackTelehealthRequestToQueue request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () => Results.Ok(await service.FastTrackPatientToQueueAsync(
             context, requestId, request, ReadIdempotencyKey(context), cancellationToken)));
 
     private static Task<IResult> CancelPatientRequestAsync(

@@ -334,6 +334,41 @@ public sealed class TelehealthService(
             cancellationToken);
     }
 
+    public async Task<TelehealthRequestResponse> FastTrackPatientToQueueAsync(
+        HttpContext httpContext,
+        Guid requestId,
+        FastTrackTelehealthRequestToQueue request,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        RequireConfiguredHost(httpContext.Request.Host);
+        var patient = await RequirePatientAsync(httpContext, cancellationToken);
+        RequirePositiveVersion(request.ExpectedVersion);
+        if (!request.SyntheticDemoConfirmed)
+        {
+            throw TelehealthProblem.BadRequest(
+                "telehealth_synthetic_demo_confirmation_required",
+                "Confirm that this is a synthetic demonstration request before joining the physician queue.");
+        }
+
+        var key = TelehealthCommandFingerprint.RequireIdempotencyKey(idempotencyKey);
+        var fingerprint = TelehealthCommandFingerprint.Create(
+            "patient-synthetic-demo-queue-fast-track",
+            patient.CanonicalId,
+            requestId,
+            request.ExpectedVersion,
+            request.SyntheticDemoConfirmed);
+        return await repository.FastTrackPatientToQueueAsync(
+            _options.PracticeId,
+            _options.FacilityId,
+            patient.CanonicalId,
+            requestId,
+            request.ExpectedVersion,
+            key,
+            fingerprint,
+            cancellationToken);
+    }
+
     public async Task<TelehealthShiftResponse> StartShiftAsync(
         AuthSessionResponse session,
         StaffAccessContext accessContext,

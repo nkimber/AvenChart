@@ -8,6 +8,7 @@ import {
   getPatientQueueStatus,
   getPatientReadiness,
   getPatientRequestHistory,
+  fastTrackPatientRequestToQueue,
   listPatientRequests,
   type TelehealthPatientQueueStatus,
   type TelehealthReadiness,
@@ -21,6 +22,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     getPatientQueueStatus: vi.fn(),
     getPatientReadiness: vi.fn(),
     getPatientRequestHistory: vi.fn(),
+    fastTrackPatientRequestToQueue: vi.fn(),
     listPatientRequests: vi.fn(),
   }
 })
@@ -104,6 +106,13 @@ describe('PatientTelehealthWorkspace', () => {
     vi.mocked(getPatientReadiness).mockResolvedValue(readiness)
     vi.mocked(getPatientRequestHistory).mockResolvedValue({ requestId: request.requestId, entries: [] })
     vi.mocked(getPatientQueueStatus).mockResolvedValue(queueStatus)
+    vi.mocked(fastTrackPatientRequestToQueue).mockResolvedValue({
+      ...request,
+      status: 'Queued',
+      version: 100,
+      readyAt: '2026-08-31T12:05:00Z',
+      allowedActions: ['await-clinician', 'cancel-request'],
+    })
   })
 
   afterEach(() => {
@@ -135,5 +144,21 @@ describe('PatientTelehealthWorkspace', () => {
     expect(screen.getByLabelText(/selected and confirmed this existing synthetic coverage/i)).toBeChecked()
     expect(screen.getByLabelText(/affirmatively accept this exact synthetic acknowledgment/i)).toBeChecked()
     expect(submit).toBeEnabled()
+  })
+
+  it('lets an operational-review request join the physician demo queue with its current version', async () => {
+    let resolveQueueStatus: ((value: TelehealthPatientQueueStatus) => void) | undefined
+    vi.mocked(getPatientQueueStatus).mockImplementationOnce(() => new Promise<TelehealthPatientQueueStatus>((resolve) => {
+      resolveQueueStatus = resolve
+    }))
+    render(<PatientTelehealthWorkspace />)
+
+    const handoff = await screen.findByRole('button', { name: 'Join physician demo queue' })
+    fireEvent.click(handoff)
+
+    await waitFor(() => expect(fastTrackPatientRequestToQueue).toHaveBeenCalledWith(request.requestId, expect.any(Number)))
+    await waitFor(() => expect(screen.getAllByText('Queued').length).toBeGreaterThan(0))
+    await act(async () => resolveQueueStatus?.({ ...queueStatus, requestVersion: request.version }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Join physician demo queue' })).not.toBeInTheDocument())
   })
 })

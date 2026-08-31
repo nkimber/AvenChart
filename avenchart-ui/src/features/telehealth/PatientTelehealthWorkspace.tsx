@@ -8,6 +8,7 @@ import {
   confirmPatientLocation,
   createPatientRequest,
   evaluatePatientTriage,
+  fastTrackPatientRequestToQueue,
   getPatientQueueStatus,
   getPatientRequestHistory,
   getPatientSyntheticAfterVisitPlanPreview,
@@ -247,9 +248,9 @@ export default function PatientTelehealthWorkspace() {
         setRequests((current) => {
           const existing = current.find((item) => item.requestId === result.requestId)
           if (!existing
+            || existing.version > result.requestVersion
             || (existing.status === result.requestStatus
-              && existing.version === result.requestVersion
-              && existing.updatedAt === result.requestUpdatedAt)) {
+              && existing.version === result.requestVersion)) {
             return current
           }
 
@@ -414,6 +415,14 @@ export default function PatientTelehealthWorkspace() {
               <button className="telehealth-button" type="submit" disabled={working}>Evaluate synthetic triage</button>
             </form>
           ) : null}
+          {selected?.status === 'OperationalReview' ? (
+            <section className="telehealth-queue-status" aria-labelledby="patient-demo-queue-title">
+              <h3 id="patient-demo-queue-title">Ready for the physician demo</h3>
+              <p>Your synthetic eligibility, readiness, and coverage checks have already passed. Join the ready physician queue now so the physician can reserve this request.</p>
+              <p><small>This records a patient-initiated synthetic demonstration handoff. It is not acceptance for care, an appointment confirmation, or a payment guarantee.</small></p>
+              <button className="telehealth-button" type="button" disabled={working} onClick={() => void run(() => fastTrackPatientRequestToQueue(selected.requestId, selected.version))}>Join physician demo queue</button>
+            </section>
+          ) : null}
           {selected && ['Intake', 'Verification', 'OperationalReview'].includes(selected.status) ? (
             <form onSubmit={(event) => {
               event.preventDefault()
@@ -504,7 +513,7 @@ export default function PatientTelehealthWorkspace() {
             <div aria-live="polite">
               <p><strong>Status:</strong> {selected.status}</p>
               <p><strong>Synthetic result:</strong> {selected.triageOutcome ?? 'Pending'}</p>
-              {selected.status === 'OperationalReview' ? <><p>The practice is reviewing this request.</p><button className="telehealth-button telehealth-button-secondary" type="button" disabled={working} onClick={() => void run(() => verifyPatientCoverage(selected.requestId, selected.version))}>Refresh synthetic coverage evidence</button></> : null}
+              {selected.status === 'OperationalReview' ? <><p>This synthetic request is ready for the physician-demo handoff above.</p><button className="telehealth-button telehealth-button-secondary" type="button" disabled={working} onClick={() => void run(() => verifyPatientCoverage(selected.requestId, selected.version))}>Refresh synthetic coverage evidence</button></> : null}
               {selected.coverage ? <p><strong>Synthetic coverage:</strong> eligibility {selected.coverage.eligibilityStatus}; exact network {selected.coverage.networkStatus}. This is not a guarantee of payment.</p> : null}
               {shouldPollPatientQueueStatus(selected.status) ? (
                 <section className="telehealth-queue-status" aria-labelledby="patient-queue-status-title" aria-busy={queueConnection === 'checking'}>

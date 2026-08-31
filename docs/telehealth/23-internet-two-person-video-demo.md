@@ -78,10 +78,15 @@ is available from `az containerapp env certificate list`.
 ## Demonstrate the call
 
 1. Have the patient use a separate browser profile or device and sign in with
-   the designated synthetic patient account. Open `/portal/telehealth`.
+   the designated synthetic patient account. Open `/portal/telehealth`. When
+   the request reaches **OperationalReview**, select **Join physician demo
+   queue**. This patient-owned, one-click handoff remains available only after
+   the existing synthetic eligibility, readiness, and coverage gates have
+   passed; it is logged as a NON_PRODUCTION demonstration event, not a care
+   acceptance or payment guarantee.
 2. Have the physician sign in separately with the designated synthetic
    physician account. Open `/clinician/telehealth/physician`, start the
-   synthetic shift, and reserve the queued synthetic request.
+   synthetic shift, refresh if needed, and reserve the ready synthetic request.
 3. Each person runs the device check, selects **Enter synthetic waiting room**
    or **Enter physician waiting room**, and selects the desired camera,
    microphone, and speaker in **Synthetic internet video-call POC**.

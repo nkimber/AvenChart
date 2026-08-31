@@ -401,11 +401,61 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         string idempotencyKey,
         string fingerprint,
         CancellationToken cancellationToken)
+        => await QueueToClinicianAsync(
+            practiceId,
+            facilityId,
+            expectedPatientId: null,
+            actorType: "administrator",
+            actorId: administratorActorId,
+            eventAction: "operationally-authorized",
+            requestId,
+            expectedVersion,
+            idempotencyKey,
+            fingerprint,
+            cancellationToken);
+
+    public async Task<TelehealthRequestResponse> FastTrackPatientToQueueAsync(
+        string practiceId,
+        int facilityId,
+        string patientId,
+        Guid requestId,
+        int expectedVersion,
+        string idempotencyKey,
+        string fingerprint,
+        CancellationToken cancellationToken)
+        => await QueueToClinicianAsync(
+            practiceId,
+            facilityId,
+            expectedPatientId: patientId,
+            actorType: "patient-synthetic-demo",
+            actorId: patientId,
+            eventAction: "synthetic-demo-patient-queue-fast-track",
+            requestId,
+            expectedVersion,
+            idempotencyKey,
+            fingerprint,
+            cancellationToken);
+
+    private async Task<TelehealthRequestResponse> QueueToClinicianAsync(
+        string practiceId,
+        int facilityId,
+        string? expectedPatientId,
+        string actorType,
+        string actorId,
+        string eventAction,
+        Guid requestId,
+        int expectedVersion,
+        string idempotencyKey,
+        string fingerprint,
+        CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var current = await GetRequestForUpdateAsync(connection, transaction, requestId, cancellationToken);
-        if (current is null || current.PracticeId != practiceId || current.FacilityId != facilityId)
+        if (current is null
+            || current.PracticeId != practiceId
+            || current.FacilityId != facilityId
+            || (expectedPatientId is not null && current.PatientId != expectedPatientId))
         {
             throw TelehealthProblem.NotFound();
         }
@@ -482,13 +532,13 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             update.Parameters.AddWithValue("queue_entry_id", queueEntryId);
             update.Parameters.AddWithValue("practice_id", practiceId);
             update.Parameters.AddWithValue("facility_id", facilityId);
-            update.Parameters.AddWithValue("actor_id", administratorActorId);
+            update.Parameters.AddWithValue("actor_id", actorId);
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await InsertEventAsync(
-            connection, transaction, requestId, newVersion, "operationally-authorized",
-            current.Status.ToString(), "Queued", "administrator", administratorActorId,
+            connection, transaction, requestId, newVersion, eventAction,
+            current.Status.ToString(), "Queued", actorType, actorId,
             idempotencyKey, fingerprint, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return await GetStaffRequestAsync(practiceId, facilityId, requestId, cancellationToken)

@@ -632,6 +632,7 @@ public sealed record EvaluateTelehealthTriageRequest(
     bool Unsure,
     int ExpectedVersion);
 public sealed record AuthorizeTelehealthRequest(int ExpectedVersion);
+public sealed record FastTrackTelehealthRequestToQueue(int ExpectedVersion, bool SyntheticDemoConfirmed);
 public sealed record CompleteTelehealthReadinessRequest(
     int ExpectedVersion,
     string DemographicsFingerprint,

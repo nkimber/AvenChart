@@ -4498,6 +4498,13 @@ export function verifyPatientCoverage(requestId: string, expectedVersion: number
   )
 }
 
+export function fastTrackPatientRequestToQueue(requestId: string, expectedVersion: number) {
+  return json<TelehealthRequest>(
+    `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/demo-queue`,
+    commandInit({ expectedVersion, syntheticDemoConfirmed: true }),
+  )
+}
+
 export function cancelPatientTelehealthRequest(requestId: string, expectedVersion: number) {
   return json<TelehealthRequest>(
     `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/cancel`,
