@@ -6,11 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiRequestError } from '../../api/transport.ts'
 import ApplicantTelehealthQueueStatus from './ApplicantTelehealthQueueStatus.tsx'
 import { getApplicantSyntheticPostVisitReceipt, getApplicantTelehealthRequestQueueStatus, prepareApplicantConnection, type TelehealthApplicantRequestQueueStatus } from './api.ts'
+import { getApplicantSyntheticAfterVisitPlanPreview } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 
 vi.mock('./api.ts', async (importOriginal) => {
   const original = await importOriginal<typeof import('./api.ts')>()
-  return { ...original, getApplicantSyntheticPostVisitReceipt: vi.fn(), getApplicantTelehealthRequestQueueStatus: vi.fn(), prepareApplicantConnection: vi.fn() }
+  return { ...original, getApplicantSyntheticAfterVisitPlanPreview: vi.fn(), getApplicantSyntheticPostVisitReceipt: vi.fn(), getApplicantTelehealthRequestQueueStatus: vi.fn(), prepareApplicantConnection: vi.fn() }
 })
 
 vi.mock('./devicePreflight.ts', () => ({ runTelehealthDevicePreflight: vi.fn() }))
@@ -120,7 +121,10 @@ const closedStatus: TelehealthApplicantRequestQueueStatus = {
 }
 
 describe('ApplicantTelehealthQueueStatus', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getApplicantSyntheticAfterVisitPlanPreview).mockRejectedValue(new ApiRequestError('Not available.', 404))
+  })
 
   it('shows only approximate applicant-owned queue status without a wait promise or clinician identity', async () => {
     vi.mocked(getApplicantTelehealthRequestQueueStatus).mockResolvedValue(queuedStatus)
@@ -268,6 +272,16 @@ describe('ApplicantTelehealthQueueStatus', () => {
       billingCreated: false, claimCreated: false, notificationSent: false, externalDestinationContacted: false,
       limitations: ['This is an immutable NON_PRODUCTION synthetic lifecycle receipt, not an after-visit summary.'],
     })
+    vi.mocked(getApplicantSyntheticAfterVisitPlanPreview).mockResolvedValue({
+      previewId: 'preview-61', requestId: closedStatus.requestId, createdAt: '2026-08-29T14:01:00Z', previewVersion: 1,
+      consultationVersion: 18, requestVersion: 18, dispositionVersion: 1, finalClinicalReviewVersion: 1,
+      previewState: 'AvailableInPortal', sourceMode: 'NON_PRODUCTION', syntheticDataConfirmed: true,
+      dispositionCode: 'TreatedTelehealth', followUpOwner: 'Practice', followUpTimeframe: 'Synthetic timeframe',
+      nextStepInstructions: 'Synthetic next-step preview only.', warningEscalationInstructions: 'Synthetic warning preview only.',
+      communicationMethod: 'DiscussedDuringSyntheticConsultation', communicationCompleted: true,
+      appointmentCompleted: false, encounterCompleted: false, avsDelivered: false, notificationSent: false, externalDestinationContacted: false,
+      limitations: ['This is an immutable NON_PRODUCTION synthetic plan preview, not medical advice or a delivered after-visit summary.'],
+    })
 
     render(<ApplicantTelehealthQueueStatus applicantId="applicant-61" applicantAccessKey="secret-key" enabled />)
 
@@ -276,6 +290,9 @@ describe('ApplicantTelehealthQueueStatus', () => {
     expect(await screen.findByRole('heading', { name: 'Synthetic post-visit receipt' })).toBeVisible()
     expect(screen.getByText(/minimized lifecycle receipt, not an after-visit summary/i)).toBeVisible()
     expect(getApplicantSyntheticPostVisitReceipt).toHaveBeenCalledWith('applicant-61', 'secret-key', closedStatus.requestId, expect.any(AbortSignal))
+    expect(await screen.findByRole('heading', { name: 'Synthetic after-visit plan preview' })).toBeVisible()
+    expect(screen.getByText(/Synthetic next-step preview only/)).toBeVisible()
+    expect(getApplicantSyntheticAfterVisitPlanPreview).toHaveBeenCalledWith('applicant-61', 'secret-key', closedStatus.requestId, expect.any(AbortSignal))
     expect(screen.getByText(/Physician assigned/).parentElement).toHaveTextContent('No')
     expect(screen.queryByRole('button', { name: 'Refresh queue status now' })).not.toBeInTheDocument()
     expect(screen.queryByText(/provider|NPI|prescription ID/i)).not.toBeInTheDocument()

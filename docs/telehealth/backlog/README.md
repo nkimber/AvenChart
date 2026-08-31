@@ -1,13 +1,13 @@
 # Telehealth implementation backlog
 
-Status: Exact disabled synthetic Sprints 1–68 active only within Decisions 0003 and 0005–0071
+Status: Exact disabled synthetic Sprints 1–69 active only within Decisions 0003 and 0005–0072
 Decision baseline: [Decision 0001](../decisions/0001-g0-development-baseline.md)  
 Machine-readable source: [backlog.json](backlog.json)  
 First iteration: [Sprint 1 foundation plan](sprint-01-foundation.md)
 Structural evidence: [Planning-artifact validation report](validation-report.md)
 Sprint evidence: [Sprint 1 implementation and verification index](sprint-01-evidence.md)  
 Synthetic operations: [Sprint 1 runbook](sprint-01-runbook.md) and [release manifest](sprint-01-release-manifest.json)
-Current increment: [Sprint 68 POC synthetic post-visit receipt](sprint-68-poc-synthetic-post-visit-receipt.md); implemented with automated evidence complete
+Current increment: [Sprint 69 POC synthetic after-visit plan preview](sprint-69-poc-synthetic-after-visit-plan-preview.md); implementation and automated evidence are complete
 
 ## 1. Backlog contract
 
@@ -119,3 +119,9 @@ The definition of done in [specification 19](../19-testing-acceptance-and-tracea
 [Decision 0068](../decisions/0068-approved-poc-synthetic-patient-request-cancellation.md) permits only the exact authenticated patient owner to cancel an incomplete synthetic request before practice queue authorization with a current version, semantic idempotency, explicit confirmation, and an append-only event. It cannot cancel an appointment, reservation, connection, consultation, prescription, billing item, claim, integration, notification, external action, or production behavior.
 
 [Decision 0069](../decisions/0069-approved-poc-synthetic-request-history.md) permits only the exact authenticated owner to read a minimized synthetic request lifecycle history from the existing append-only event ledger. It exposes only version, resulting status, neutral message, and timestamp; it exposes no actor, raw action, clinical, financial, delivery, integration, external, or production information.
+
+[Decision 0070](../decisions/0070-approved-poc-synthetic-professional-claim-preparation.md) permits the exact wrap-up physician to persist a durable, source-bound `PreparedOnly` synthetic professional-claim receipt with no claim transaction, payer, clearinghouse, pharmacy, or external contact.
+
+[Decision 0071](../decisions/0071-approved-poc-synthetic-post-visit-receipt.md) permits the exact patient or applicant owner to read an immutable, non-clinical synthetic closure receipt that records no delivery, completion, financial, clinical, or external effect.
+
+[Decision 0072](../decisions/0072-approved-poc-synthetic-after-visit-plan-preview.md) permits the exact patient or applicant owner to read an immutable, physician-authored synthetic post-closure plan preview derived from the existing disposition/final-review evidence. It is not a delivered AVS, medical advice, notification, document, completion, financial, integration, or external action.

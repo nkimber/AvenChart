@@ -4,11 +4,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiRequestError, isRequestCancellation } from '../../api/transport.ts'
 import {
+  getApplicantSyntheticAfterVisitPlanPreview,
   getApplicantSyntheticPostVisitReceipt,
   getApplicantTelehealthRequestQueueStatus,
   prepareApplicantConnection,
   type TelehealthApplicantRequestQueueStatus,
   type TelehealthDevicePreflight,
+  type TelehealthSyntheticAfterVisitPlanPreview,
   type TelehealthSyntheticPostVisitReceipt,
 } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
@@ -30,6 +32,7 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
   const [deviceEvidence, setDeviceEvidence] = useState<TelehealthDevicePreflight | null>(null)
   const [waitingRoom, setWaitingRoom] = useState<{ expiresAt: string; message: string; limitations: string[] } | null>(null)
   const [postVisitReceipt, setPostVisitReceipt] = useState<TelehealthSyntheticPostVisitReceipt | null>(null)
+  const [afterVisitPlanPreview, setAfterVisitPlanPreview] = useState<TelehealthSyntheticAfterVisitPlanPreview | null>(null)
   const generation = useRef(0)
   const connectionCommandKey = useRef<string | null>(null)
 
@@ -39,8 +42,20 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
     setDeviceEvidence(null)
     setWaitingRoom(null)
     setPostVisitReceipt(null)
+    setAfterVisitPlanPreview(null)
     connectionCommandKey.current = null
   }, [applicantAccessKey, applicantId, enabled])
+
+  useEffect(() => {
+    if (!enabled || status?.requestStatus !== 'Closed') return
+    const controller = new AbortController()
+    void getApplicantSyntheticAfterVisitPlanPreview(applicantId, applicantAccessKey, status.requestId, controller.signal)
+      .then((preview) => setAfterVisitPlanPreview(preview))
+      .catch((caught) => {
+        if (!isRequestCancellation(caught)) setAfterVisitPlanPreview(null)
+      })
+    return () => controller.abort()
+  }, [applicantAccessKey, applicantId, enabled, status?.requestId, status?.requestStatus])
 
   useEffect(() => {
     if (!enabled || status?.requestStatus !== 'Closed') return
@@ -242,6 +257,28 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
                   <ul>{postVisitReceipt.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                 </>
               ) : <p>Loading the minimized synthetic lifecycle receipt.</p>}
+            </section>
+          ) : null}
+          {status.requestStatus === 'Closed' ? (
+            <section className="telehealth-post-visit-receipt" aria-labelledby="applicant-after-visit-plan-preview-title">
+              <h4 id="applicant-after-visit-plan-preview-title">Synthetic after-visit plan preview</h4>
+              {afterVisitPlanPreview ? (
+                <>
+                  <p>{afterVisitPlanPreview.previewState}. This is not medical advice, a delivered after-visit summary, or a completed visit.</p>
+                  <dl className="telehealth-details">
+                    <div><dt>Disposition</dt><dd>{afterVisitPlanPreview.dispositionCode}</dd></div>
+                    <div><dt>Follow-up owner</dt><dd>{afterVisitPlanPreview.followUpOwner}</dd></div>
+                    <div><dt>Follow-up timeframe</dt><dd>{afterVisitPlanPreview.followUpTimeframe}</dd></div>
+                    <div><dt>Appointment completed</dt><dd>No</dd></div>
+                    <div><dt>Encounter completed</dt><dd>No</dd></div>
+                  </dl>
+                  <h5>Physician-authored synthetic next steps</h5>
+                  <p>{afterVisitPlanPreview.nextStepInstructions}</p>
+                  <h5>Physician-authored synthetic warning text</h5>
+                  <p>{afterVisitPlanPreview.warningEscalationInstructions}</p>
+                  <ul>{afterVisitPlanPreview.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                </>
+              ) : <p>Loading the synthetic after-visit plan preview.</p>}
             </section>
           ) : null}
           {status.requestStatus === 'Reserved' || status.requestStatus === 'Connecting' ? (

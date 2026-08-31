@@ -10,6 +10,7 @@ import {
   evaluatePatientTriage,
   getPatientQueueStatus,
   getPatientRequestHistory,
+  getPatientSyntheticAfterVisitPlanPreview,
   getPatientSyntheticPostVisitReceipt,
   getPatientReadiness,
   listPatientRequests,
@@ -20,6 +21,7 @@ import {
   type TelehealthReadiness,
   type TelehealthRequest,
   type TelehealthRequestHistory,
+  type TelehealthSyntheticAfterVisitPlanPreview,
   type TelehealthSyntheticPostVisitReceipt,
 } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
@@ -46,6 +48,7 @@ export default function PatientTelehealthWorkspace() {
   const [queueStatus, setQueueStatus] = useState<TelehealthPatientQueueStatus | null>(null)
   const [requestHistory, setRequestHistory] = useState<TelehealthRequestHistory | null>(null)
   const [postVisitReceipt, setPostVisitReceipt] = useState<TelehealthSyntheticPostVisitReceipt | null>(null)
+  const [afterVisitPlanPreview, setAfterVisitPlanPreview] = useState<TelehealthSyntheticAfterVisitPlanPreview | null>(null)
   const [queueConnection, setQueueConnection] = useState<'idle' | 'checking' | 'connected' | 'paused' | 'retrying'>('idle')
   const [queueIssue, setQueueIssue] = useState<string | null>(null)
   const [queueRefreshNonce, setQueueRefreshNonce] = useState(0)
@@ -57,6 +60,7 @@ export default function PatientTelehealthWorkspace() {
   const readinessGeneration = useRef(0)
   const historyGeneration = useRef(0)
   const postVisitReceiptGeneration = useRef(0)
+  const afterVisitPlanPreviewGeneration = useRef(0)
   const queueStatusGeneration = useRef(0)
   const selected = requests.find((item) => item.requestId === selectedId) ?? null
   const selectedQueueRequestId = selected?.requestId ?? null
@@ -115,6 +119,23 @@ export default function PatientTelehealthWorkspace() {
       })
       .finally(() => {
         if (generation === readinessGeneration.current) setReadinessLoading(false)
+      })
+    return () => controller.abort()
+  }, [selected])
+
+  useEffect(() => {
+    const generation = ++afterVisitPlanPreviewGeneration.current
+    setAfterVisitPlanPreview(null)
+    if (!selected || selected.status !== 'Closed') return
+    const controller = new AbortController()
+    void getPatientSyntheticAfterVisitPlanPreview(selected.requestId, controller.signal)
+      .then((result) => {
+        if (generation === afterVisitPlanPreviewGeneration.current) setAfterVisitPlanPreview(result)
+      })
+      .catch((caught) => {
+        if (!isRequestCancellation(caught) && generation === afterVisitPlanPreviewGeneration.current) {
+          setError(caught instanceof Error ? caught.message : 'After-visit plan preview could not be loaded.')
+        }
       })
     return () => controller.abort()
   }, [selected])
@@ -497,6 +518,26 @@ export default function PatientTelehealthWorkspace() {
                   <p><strong>State:</strong> {postVisitReceipt.receiptState} · version {postVisitReceipt.receiptVersion}</p>
                   <p>Created <time dateTime={postVisitReceipt.createdAt}>{new Date(postVisitReceipt.createdAt).toLocaleString()}</time>. This is an immutable non-production lifecycle receipt, not an after-visit summary.</p>
                   <ul>{postVisitReceipt.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                </section>
+              ) : null}
+              {selected.status === 'Closed' && afterVisitPlanPreview?.requestId === selected.requestId ? (
+                <section className="telehealth-post-visit-receipt" aria-labelledby="telehealth-after-visit-plan-preview-title">
+                  <h3 id="telehealth-after-visit-plan-preview-title">Synthetic after-visit plan preview</h3>
+                  <p><strong>{afterVisitPlanPreview.previewState}</strong> · version {afterVisitPlanPreview.previewVersion} · {afterVisitPlanPreview.sourceMode}</p>
+                  <p>This immutable synthetic preview is not medical advice, a delivered after-visit summary, or a completed visit.</p>
+                  <dl className="telehealth-details">
+                    <div><dt>Disposition</dt><dd>{afterVisitPlanPreview.dispositionCode}</dd></div>
+                    <div><dt>Follow-up owner</dt><dd>{afterVisitPlanPreview.followUpOwner}</dd></div>
+                    <div><dt>Follow-up timeframe</dt><dd>{afterVisitPlanPreview.followUpTimeframe}</dd></div>
+                    <div><dt>Communication recorded</dt><dd>{afterVisitPlanPreview.communicationCompleted ? 'Yes' : 'No'}</dd></div>
+                    <div><dt>Appointment completed</dt><dd>No</dd></div>
+                    <div><dt>Encounter completed</dt><dd>No</dd></div>
+                  </dl>
+                  <h4>Physician-authored synthetic next steps</h4>
+                  <p>{afterVisitPlanPreview.nextStepInstructions}</p>
+                  <h4>Physician-authored synthetic warning text</h4>
+                  <p>{afterVisitPlanPreview.warningEscalationInstructions}</p>
+                  <ul>{afterVisitPlanPreview.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                 </section>
               ) : null}
               {['Reserved', 'Connecting'].includes(selected.status) ? (

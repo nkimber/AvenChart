@@ -2915,6 +2915,33 @@ export type TelehealthSyntheticPostVisitReceipt = {
   limitations: string[]
 }
 
+export type TelehealthSyntheticAfterVisitPlanPreview = {
+  previewId: string
+  requestId: string
+  createdAt: string
+  previewVersion: number
+  consultationVersion: number
+  requestVersion: number
+  dispositionVersion: number
+  finalClinicalReviewVersion: number
+  previewState: string
+  sourceMode: 'NON_PRODUCTION'
+  syntheticDataConfirmed: true
+  dispositionCode: string
+  followUpOwner: string
+  followUpTimeframe: string
+  nextStepInstructions: string
+  warningEscalationInstructions: string
+  communicationMethod: string
+  communicationCompleted: boolean
+  appointmentCompleted: false
+  encounterCompleted: false
+  avsDelivered: false
+  notificationSent: false
+  externalDestinationContacted: false
+  limitations: string[]
+}
+
 export type TelehealthEncounterFinalization = {
   encounterSignatureId: number
   signedAt: string
@@ -4200,6 +4227,18 @@ export function getApplicantSyntheticPostVisitReceipt(
   )
 }
 
+export function getApplicantSyntheticAfterVisitPlanPreview(
+  applicantId: string,
+  applicantAccessKey: string,
+  requestId: string,
+  signal?: AbortSignal,
+) {
+  return json<TelehealthSyntheticAfterVisitPlanPreview>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/${encodeURIComponent(requestId)}/after-visit-plan-preview`,
+    { headers: applicantHeaders(applicantAccessKey), cache: 'no-store', signal },
+  )
+}
+
 export async function listPatientRequests(signal?: AbortSignal) {
   const result = await json<{ requests: TelehealthRequest[] }>('/api/telehealth/v1/patient/requests', {
     headers: portalHeaders(),
@@ -4218,6 +4257,13 @@ export function getPatientQueueStatus(requestId: string, signal?: AbortSignal) {
 export function getPatientSyntheticPostVisitReceipt(requestId: string, signal?: AbortSignal) {
   return json<TelehealthSyntheticPostVisitReceipt>(
     `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/post-visit-receipt`,
+    { headers: portalHeaders(), cache: 'no-store', signal },
+  )
+}
+
+export function getPatientSyntheticAfterVisitPlanPreview(requestId: string, signal?: AbortSignal) {
+  return json<TelehealthSyntheticAfterVisitPlanPreview>(
+    `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/after-visit-plan-preview`,
     { headers: portalHeaders(), cache: 'no-store', signal },
   )
 }

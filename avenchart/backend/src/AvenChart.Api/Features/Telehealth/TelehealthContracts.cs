@@ -1266,6 +1266,32 @@ public sealed record TelehealthSyntheticPostVisitReceiptResponse(
     bool ExternalDestinationContacted,
     IReadOnlyList<string> Limitations);
 
+public sealed record TelehealthSyntheticAfterVisitPlanPreviewResponse(
+    Guid PreviewId,
+    Guid RequestId,
+    DateTimeOffset CreatedAt,
+    int PreviewVersion,
+    int ConsultationVersion,
+    int RequestVersion,
+    int DispositionVersion,
+    int FinalClinicalReviewVersion,
+    string PreviewState,
+    string SourceMode,
+    bool SyntheticDataConfirmed,
+    string DispositionCode,
+    string FollowUpOwner,
+    string FollowUpTimeframe,
+    string NextStepInstructions,
+    string WarningEscalationInstructions,
+    string CommunicationMethod,
+    bool CommunicationCompleted,
+    bool AppointmentCompleted,
+    bool EncounterCompleted,
+    bool AvsDelivered,
+    bool NotificationSent,
+    bool ExternalDestinationContacted,
+    IReadOnlyList<string> Limitations);
+
 public sealed record TelehealthCompletionPrerequisitesResponse(
     Guid ConsultationId,
     string ConsultationStatus,

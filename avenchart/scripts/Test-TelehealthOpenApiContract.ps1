@@ -48,7 +48,9 @@ try {
       '/api/telehealth/v1/clinician/consultations/{consultationId}/completion-prerequisites')
     $expected += @(
       '/api/telehealth/v1/applicants/{applicantId}/telehealth-request/{requestId}/post-visit-receipt',
-      '/api/telehealth/v1/patient/requests/{requestId}/post-visit-receipt')
+      '/api/telehealth/v1/patient/requests/{requestId}/post-visit-receipt',
+      '/api/telehealth/v1/applicants/{applicantId}/telehealth-request/{requestId}/after-visit-plan-preview',
+      '/api/telehealth/v1/patient/requests/{requestId}/after-visit-plan-preview')
     $paths = @($document.paths.PSObject.Properties.Name)
     Add-Check 'Versioned synthetic telehealth paths are published only when enabled' (@($expected | Where-Object { $_ -notin $paths }).Count -eq 0) @{ paths=$paths | Where-Object { $_ -like '/api/telehealth/*' } }
     $patientCreate = Get-Operation $document '/api/telehealth/v1/patient/requests' 'post'
@@ -76,6 +78,27 @@ try {
       $null-eq(Get-Property $applicantPostVisitReceipt 'requestBody') -and
       $null-ne(Get-Property $applicantPostVisitReceipt.responses '401') -and
       $null-ne(Get-Property $applicantPostVisitReceipt.responses '404'))
+    $patientAfterVisitPlan = Get-Operation $document '/api/telehealth/v1/patient/requests/{requestId}/after-visit-plan-preview' 'get'
+    $patientAfterVisitPlanReference = Get-Property (Get-Property (Get-Property (Get-Property $patientAfterVisitPlan.responses '200') 'content') 'application/json').schema '$ref'
+    $patientAfterVisitPlanSchemaName = ($patientAfterVisitPlanReference -split '/')[-1]
+    $patientAfterVisitPlanJson = ((Get-Property $document.components 'schemas').$patientAfterVisitPlanSchemaName | ConvertTo-Json -Depth 20 -Compress)
+    Add-Check 'Synthetic after-visit plan preview is patient-authenticated, read-only, source-bounded, and excludes protected domains' (
+      (Has-Security $patientAfterVisitPlan 'AvenChartPatientPortalSession') -and (Has-Security $patientAfterVisitPlan 'AvenChartOidcBearer') -and
+      -not (Has-Security $patientAfterVisitPlan 'AvenChartLocalStaffSession') -and -not (Has-Header $patientAfterVisitPlan 'X-Idempotency-Key') -and
+      $null-eq(Get-Property $patientAfterVisitPlan 'requestBody') -and $null-ne(Get-Property $patientAfterVisitPlan.responses '401') -and $null-ne(Get-Property $patientAfterVisitPlan.responses '404') -and
+      $patientAfterVisitPlanJson-match'previewState' -and $patientAfterVisitPlanJson-match'sourceMode' -and $patientAfterVisitPlanJson-match'dispositionVersion' -and $patientAfterVisitPlanJson-match'finalClinicalReviewVersion' -and
+      $patientAfterVisitPlanJson-match'dispositionCode' -and $patientAfterVisitPlanJson-match'followUpOwner' -and $patientAfterVisitPlanJson-match'followUpTimeframe' -and
+      $patientAfterVisitPlanJson-match'nextStepInstructions' -and $patientAfterVisitPlanJson-match'warningEscalationInstructions' -and $patientAfterVisitPlanJson-match'appointmentCompleted' -and
+      $patientAfterVisitPlanJson-match'encounterCompleted' -and $patientAfterVisitPlanJson-match'avsDelivered' -and $patientAfterVisitPlanJson-notmatch'patientId|encounterId|appointmentId|physician|diagnosis|medication|pharmacy|insurance|claimId|billingId')
+    $applicantAfterVisitPlan = Get-Operation $document '/api/telehealth/v1/applicants/{applicantId}/telehealth-request/{requestId}/after-visit-plan-preview' 'get'
+    Add-Check 'Synthetic after-visit plan preview is applicant-key authenticated and excludes patient or staff identity' (
+      (Has-Security $applicantAfterVisitPlan 'AvenChartTelehealthApplicantAccess') -and
+      -not (Has-Security $applicantAfterVisitPlan 'AvenChartPatientPortalSession') -and
+      -not (Has-Security $applicantAfterVisitPlan 'AvenChartLocalStaffSession') -and
+      -not (Has-Header $applicantAfterVisitPlan 'X-Idempotency-Key') -and
+      $null-eq(Get-Property $applicantAfterVisitPlan 'requestBody') -and
+      $null-ne(Get-Property $applicantAfterVisitPlan.responses '401') -and
+      $null-ne(Get-Property $applicantAfterVisitPlan.responses '404'))
     $applicantCreate = Get-Operation $document '/api/telehealth/v1/applicants' 'post'
     $applicantRead = Get-Operation $document '/api/telehealth/v1/applicants/{applicantId}' 'get'
     $applicantVerify = Get-Operation $document '/api/telehealth/v1/applicants/{applicantId}/contact-verification' 'post'
@@ -2206,5 +2229,5 @@ try {
     Add-Check 'Public context has no protected security requirement and exposes only the public projection' ($null -eq $contextSecurity -or @($contextSecurity).Count -eq 0)
 }
 catch { Add-Check 'Telehealth OpenAPI contract execution' $false $_.Exception.Message }
-    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060','TH-DEC-0061','TH-DEC-0062','TH-DEC-0063','TH-DEC-0064','TH-DEC-0065','TH-DEC-0066','TH-DEC-0067','TH-DEC-0068','TH-DEC-0069','TH-DEC-0070','TH-DEC-0071');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
+    finally { $result=[ordered]@{status=$(if($passed){'passed'}else{'failed'});generatedAtUtc=(Get-Date).ToUniversalTime().ToString('O');decisions=@('TH-DEC-0003','TH-DEC-0005','TH-DEC-0006','TH-DEC-0007','TH-DEC-0008','TH-DEC-0009','TH-DEC-0010','TH-DEC-0011','TH-DEC-0012','TH-DEC-0013','TH-DEC-0014','TH-DEC-0015','TH-DEC-0016','TH-DEC-0017','TH-DEC-0018','TH-DEC-0019','TH-DEC-0020','TH-DEC-0021','TH-DEC-0022','TH-DEC-0023','TH-DEC-0024','TH-DEC-0025','TH-DEC-0026','TH-DEC-0027','TH-DEC-0028','TH-DEC-0029','TH-DEC-0030','TH-DEC-0031','TH-DEC-0032','TH-DEC-0033','TH-DEC-0034','TH-DEC-0035','TH-DEC-0036','TH-DEC-0037','TH-DEC-0038','TH-DEC-0039','TH-DEC-0040','TH-DEC-0041','TH-DEC-0042','TH-DEC-0043','TH-DEC-0044','TH-DEC-0045','TH-DEC-0046','TH-DEC-0047','TH-DEC-0048','TH-DEC-0049','TH-DEC-0050','TH-DEC-0051','TH-DEC-0052','TH-DEC-0053','TH-DEC-0054','TH-DEC-0055','TH-DEC-0056','TH-DEC-0057','TH-DEC-0058','TH-DEC-0059','TH-DEC-0060','TH-DEC-0061','TH-DEC-0062','TH-DEC-0063','TH-DEC-0064','TH-DEC-0065','TH-DEC-0066','TH-DEC-0067','TH-DEC-0068','TH-DEC-0069','TH-DEC-0070','TH-DEC-0071','TH-DEC-0072');checks=$checks};$result|ConvertTo-Json -Depth 10|Set-Content $resultPath -Encoding utf8;$result|ConvertTo-Json -Depth 10 }
 if(-not $passed){exit 1}
