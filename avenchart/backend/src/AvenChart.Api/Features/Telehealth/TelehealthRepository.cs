@@ -737,6 +737,17 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
         return response;
     }
 
+    public async Task ExpireLeasedReservationsAsync(
+        string practiceId,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await ExpireReservationsAsync(connection, transaction, practiceId, facilityId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task<TelehealthReservationReleaseResponse> ReleaseReservationAsync(
         string practiceId,
         int facilityId,

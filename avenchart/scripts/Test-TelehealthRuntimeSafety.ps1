@@ -1133,6 +1133,7 @@ try {
     $localWebRtcRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthLocalWebRtcPocRepository.cs')
     $localWebRtcServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthLocalWebRtcPocService.cs')
     $telehealthRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthRepository.cs')
+    $reservationLeaseReaperSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthReservationLeaseReaper.cs')
     $applicantConnectionPolicySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantConnectionPolicy.cs')
     $videoMigrationSource = Get-Content -Raw (Join-Path $solutionRoot 'database/migrations/V0285__telehealth_connection_room_shell.sql')
     Add-Check 'Connection-room adapter excludes vendor, recording, transcription, external-call, and encounter mutation paths' (
@@ -1169,6 +1170,14 @@ try {
         $telehealthRepositorySource -match '"reservation-released"' -and
         $telehealthRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|RTCPeerConnection|MediaStream' -and
         $endpointSource -match '/\{reservationId:guid\}/release')
+    Add-Check 'Synthetic reservation leases are reconciled without a user-triggered reserve action and fail closed when telehealth is disabled' (
+        $reservationLeaseReaperSource -match 'if \(!options\.Value\.Enabled\)' -and
+        $reservationLeaseReaperSource -match 'ExpireLeasedReservationsAsync' -and
+        $reservationLeaseReaperSource -match 'TimeSpan\.FromSeconds\(15\)' -and
+        $reservationLeaseReaperSource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|RTCPeerConnection|MediaStream' -and
+        $telehealthRepositorySource -match 'public async Task ExpireLeasedReservationsAsync' -and
+        $telehealthRepositorySource -match 'await ExpireReservationsAsync\(connection, transaction, practiceId, facilityId, cancellationToken\)' -and
+        $featureSource -match 'AddHostedService<TelehealthReservationLeaseReaper>')
     Add-Check 'Applicant connection preparation is owner-bound to the exact reserved request and cannot start media, communication, consent, encounter, care, or external work' (
         $applicantConnectionPolicySource -match 'SYNTHETIC_APPLICANT_CONNECTION_ROOM' -and
         $applicantConnectionPolicySource -match 'NON_PRODUCTION' -and

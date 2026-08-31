@@ -22,6 +22,18 @@ public sealed class TelehealthRuntimeSafetyPolicyTests
     }
 
     [Fact]
+    public void RegistrationIncludesTheDisabledByDefaultReservationLeaseReaper()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder().Build();
+        services.AddTelehealth(configuration, Environment(Environments.Development));
+
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IHostedService)
+            && descriptor.ImplementationType == typeof(TelehealthReservationLeaseReaper));
+    }
+
+    [Fact]
     public void LocalWebRtcPocRemainsNonProductionSyntheticOnly()
     {
         var options = ValidEnabledOptions(localWebRtcPocEnabled: true);

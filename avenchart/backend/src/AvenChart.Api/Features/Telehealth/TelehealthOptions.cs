@@ -76,6 +76,7 @@ public static class TelehealthServiceRegistration
             .ValidateOnStart();
         services.AddScoped<TelehealthRepository>();
         services.AddScoped<TelehealthService>();
+        services.AddHostedService<TelehealthReservationLeaseReaper>();
         services.AddScoped<TelehealthProspectiveApplicantRepository>();
         services.AddScoped<TelehealthProspectiveApplicantService>();
         services.AddScoped<TelehealthProspectiveSafetyTriageRepository>();
