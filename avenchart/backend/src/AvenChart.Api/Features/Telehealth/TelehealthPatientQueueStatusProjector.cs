@@ -74,6 +74,10 @@ public static class TelehealthPatientQueueStatusProjector
             "SyntheticLifecycleClosed",
             "The synthetic visit lifecycle has closed",
             "The physician's synthetic workflow has ended. This does not mean the appointment or encounter is complete and does not create a signed record, after-visit summary, prescription delivery, bill, claim, or external action."),
+        TelehealthRequestStatus.Cancelled => new(
+            "RequestCancelled",
+            "This synthetic request was cancelled",
+            "The request is no longer in the queue. If it had already been authorized to the queue, its provisional synthetic appointment was cancelled before any clinician reservation or consultation."),
         TelehealthRequestStatus.Redirected => new(
             "Redirected",
             "This request cannot enter the telehealth queue",

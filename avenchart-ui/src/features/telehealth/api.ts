@@ -2276,12 +2276,12 @@ export type TelehealthApplicantRequestOperationalReviewSubmission = {
 
 export type TelehealthApplicantRequestQueueStatus = {
   requestId: string
-  requestStatus: 'OperationalReview' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp' | 'Closed'
+  requestStatus: 'OperationalReview' | 'Queued' | 'Reserved' | 'Connecting' | 'InConsultation' | 'WrapUp' | 'Closed' | 'Cancelled'
   requestVersion: number
   policyKey: 'SYNTHETIC_APPLICANT_REQUEST_QUEUE_STATUS'
   policyVersion: 1
   sourceMode: 'NON_PRODUCTION'
-  phase: 'Reviewing' | 'InQueue' | 'PhysicianPreparing' | 'ConnectionRoom' | 'Consultation' | 'WrapUp' | 'SyntheticLifecycleClosed'
+  phase: 'Reviewing' | 'InQueue' | 'PhysicianPreparing' | 'ConnectionRoom' | 'Consultation' | 'WrapUp' | 'SyntheticLifecycleClosed' | 'RequestCancelled'
   headline: string
   detail: string
   approximateRequestsAhead: number | null
@@ -2309,6 +2309,21 @@ export type TelehealthApplicantRequestQueueStatus = {
   integrationEnabled: false
   externalCallPerformed: false
   safetyActions: string[]
+  limitations: string[]
+}
+
+export type TelehealthApplicantQueuedRequestWithdrawal = {
+  requestId: string
+  requestVersion: number
+  requestStatus: 'Cancelled'
+  sourceMode: 'NON_PRODUCTION'
+  queueEntryRemoved: true
+  provisionalAppointmentCancelled: true
+  reservationCreated: false
+  connectionCreated: false
+  consultationCreated: false
+  externalActionPerformed: false
+  withdrawnAt: string
   limitations: string[]
 }
 
@@ -4241,6 +4256,27 @@ export function getApplicantTelehealthRequestQueueStatus(
       headers: applicantHeaders(applicantAccessKey),
       cache: 'no-store',
       signal,
+    },
+  )
+}
+
+export function withdrawApplicantQueuedTelehealthRequest(
+  applicantId: string,
+  applicantAccessKey: string,
+  requestId: string,
+  expectedRequestVersion: number,
+  idempotencyKey: string,
+) {
+  return json<TelehealthApplicantQueuedRequestWithdrawal>(
+    `/api/telehealth/v1/applicants/${encodeURIComponent(applicantId)}/telehealth-request/${encodeURIComponent(requestId)}/withdraw`,
+    {
+      method: 'POST',
+      headers: applicantHeaders(applicantAccessKey, {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      }),
+      cache: 'no-store',
+      body: JSON.stringify({ expectedRequestVersion, syntheticWithdrawalConfirmed: true }),
     },
   )
 }

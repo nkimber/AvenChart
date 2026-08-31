@@ -5,13 +5,13 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiRequestError } from '../../api/transport.ts'
 import ApplicantTelehealthQueueStatus from './ApplicantTelehealthQueueStatus.tsx'
-import { getApplicantSyntheticPostVisitReceipt, getApplicantTelehealthRequestQueueStatus, prepareApplicantConnection, type TelehealthApplicantRequestQueueStatus } from './api.ts'
+import { getApplicantSyntheticPostVisitReceipt, getApplicantTelehealthRequestQueueStatus, prepareApplicantConnection, withdrawApplicantQueuedTelehealthRequest, type TelehealthApplicantRequestQueueStatus } from './api.ts'
 import { getApplicantSyntheticAfterVisitPlanPreview } from './api.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 
 vi.mock('./api.ts', async (importOriginal) => {
   const original = await importOriginal<typeof import('./api.ts')>()
-  return { ...original, getApplicantSyntheticAfterVisitPlanPreview: vi.fn(), getApplicantSyntheticPostVisitReceipt: vi.fn(), getApplicantTelehealthRequestQueueStatus: vi.fn(), prepareApplicantConnection: vi.fn() }
+  return { ...original, getApplicantSyntheticAfterVisitPlanPreview: vi.fn(), getApplicantSyntheticPostVisitReceipt: vi.fn(), getApplicantTelehealthRequestQueueStatus: vi.fn(), prepareApplicantConnection: vi.fn(), withdrawApplicantQueuedTelehealthRequest: vi.fn() }
 })
 
 vi.mock('./devicePreflight.ts', () => ({ runTelehealthDevicePreflight: vi.fn() }))
@@ -261,6 +261,34 @@ describe('ApplicantTelehealthQueueStatus', () => {
     expect(screen.getByText(/No signed record, after-visit summary, prescription, or claim/)).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Refresh queue status now' })).not.toBeInTheDocument()
     expect(screen.queryByText(/provider|NPI|prescription ID/i)).not.toBeInTheDocument()
+  })
+
+  it('requires an explicit confirmation before the access-key owner can withdraw a ready queued request', async () => {
+    vi.mocked(getApplicantTelehealthRequestQueueStatus).mockResolvedValue(queuedStatus)
+    vi.mocked(withdrawApplicantQueuedTelehealthRequest).mockResolvedValue({
+      requestId: queuedStatus.requestId,
+      requestVersion: 14,
+      requestStatus: 'Cancelled',
+      sourceMode: 'NON_PRODUCTION',
+      queueEntryRemoved: true,
+      provisionalAppointmentCancelled: true,
+      reservationCreated: false,
+      connectionCreated: false,
+      consultationCreated: false,
+      externalActionPerformed: false,
+      withdrawnAt: '2026-08-31T01:00:00Z',
+      limitations: [],
+    })
+
+    render(<ApplicantTelehealthQueueStatus applicantId="applicant-53" applicantAccessKey="secret-key" enabled />)
+
+    const withdraw = await screen.findByRole('button', { name: 'Withdraw synthetic request' })
+    expect(withdraw).toBeDisabled()
+    fireEvent.click(screen.getByLabelText(/I confirm I want to withdraw/i))
+    fireEvent.click(withdraw)
+    await waitFor(() => expect(withdrawApplicantQueuedTelehealthRequest).toHaveBeenCalledWith(
+      'applicant-53', 'secret-key', queuedStatus.requestId, 13, expect.any(String),
+    ))
   })
 
   it('shows synthetic lifecycle closure without claiming an appointment or encounter completion', async () => {

@@ -1126,6 +1126,20 @@ try {
         $applicantQueueStatusPolicySource -match 'CareAuthorized: false' -and
         $applicantQueueStatusPolicySource -match 'ExternalCallPerformed: false' -and
         $endpointSource -match '/\{applicantId:guid\}/telehealth-request/queue-status')
+    $applicantQueuedWithdrawalRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantQueuedRequestWithdrawalRepository.cs')
+    $applicantQueuedWithdrawalServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthApplicantQueuedRequestWithdrawalService.cs')
+    Add-Check 'Applicant queued withdrawal is access-key-bound, ready-only, atomic, and has no care or external path' (
+        $applicantQueuedWithdrawalRepositorySource -match 'for update of a,r,q,appointment' -and
+        $applicantQueuedWithdrawalRepositorySource -match "set status='Removed'" -and
+        $applicantQueuedWithdrawalRepositorySource -match "set provider_id=null, status='x'" -and
+        $applicantQueuedWithdrawalRepositorySource -match "set status='Cancelled'" -and
+        $applicantQueuedWithdrawalRepositorySource -match 'source.RequestStatus != TelehealthRequestStatus.Queued' -and
+        $applicantQueuedWithdrawalRepositorySource -match 'source.QueueStatus != "Ready"' -and
+        $applicantQueuedWithdrawalRepositorySource -match 'source.AppointmentStatus != "-"' -and
+        $applicantQueuedWithdrawalRepositorySource -notmatch 'HttpClient|ClientWebSocket|SmtpClient|HubConnection|WebRequest|SendAsync|telehealth_consultations|prescriptions|claims' -and
+        $applicantQueuedWithdrawalServiceSource -match 'RequireAccessKey' -and
+        $applicantQueuedWithdrawalServiceSource -match 'SyntheticWithdrawalConfirmed' -and
+        $endpointSource -match '/\{applicantId:guid\}/telehealth-request/\{requestId:guid\}/withdraw')
     $videoProviderSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoProvider.cs')
     $videoServiceSource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoService.cs')
     $videoRepositorySource = Get-Content -Raw (Join-Path $solutionRoot 'backend/src/AvenChart.Api/Features/Telehealth/TelehealthVideoRepository.cs')

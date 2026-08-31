@@ -522,6 +522,13 @@ public sealed class TelehealthApplicantRequestQueueStatusRepository(NpgsqlDataSo
                 && source.ActiveApplicantGrantCount == 0
                 && source.ConsultationCount == 1
                 && source.ConsultationValid,
+            TelehealthRequestStatus.Cancelled => source.RequestVersion >= 14
+                && source.QueueStatus == "Removed"
+                && source.ActiveReservationCount == 0
+                && source.AppointmentStatus == "x"
+                && source.ConnectionSessionCount == 0
+                && source.ActiveApplicantGrantCount == 0
+                && source.ConsultationCount == 0,
             _ => false
         };
         var downstreamValid = source.AuthorizationCount == 1

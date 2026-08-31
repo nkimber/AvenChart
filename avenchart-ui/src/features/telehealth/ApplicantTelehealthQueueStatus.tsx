@@ -8,6 +8,7 @@ import {
   getApplicantSyntheticPostVisitReceipt,
   getApplicantTelehealthRequestQueueStatus,
   prepareApplicantConnection,
+  withdrawApplicantQueuedTelehealthRequest,
   readApplicantLocalWebRtcSignals,
   writeApplicantLocalWebRtcSignal,
   type TelehealthConnectionGrant,
@@ -39,6 +40,9 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
   const [connectionRecoveryNotice, setConnectionRecoveryNotice] = useState<string | null>(null)
   const [postVisitReceipt, setPostVisitReceipt] = useState<TelehealthSyntheticPostVisitReceipt | null>(null)
   const [afterVisitPlanPreview, setAfterVisitPlanPreview] = useState<TelehealthSyntheticAfterVisitPlanPreview | null>(null)
+  const [withdrawalConfirmed, setWithdrawalConfirmed] = useState(false)
+  const [withdrawalWorking, setWithdrawalWorking] = useState(false)
+  const [withdrawalIssue, setWithdrawalIssue] = useState<string | null>(null)
   const generation = useRef(0)
   const connectionCommandKey = useRef<string | null>(null)
   const lastRequestStatus = useRef<TelehealthApplicantRequestQueueStatus['requestStatus'] | null>(null)
@@ -51,6 +55,9 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
     setConnectionRecoveryNotice(null)
     setPostVisitReceipt(null)
     setAfterVisitPlanPreview(null)
+    setWithdrawalConfirmed(false)
+    setWithdrawalWorking(false)
+    setWithdrawalIssue(null)
     connectionCommandKey.current = null
     lastRequestStatus.current = null
   }, [applicantAccessKey, applicantId, enabled])
@@ -217,6 +224,29 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
     }
   }
 
+  async function withdrawQueuedRequest() {
+    if (!status || status.requestStatus !== 'Queued' || !withdrawalConfirmed || withdrawalWorking) return
+    setWithdrawalWorking(true)
+    setWithdrawalIssue(null)
+    try {
+      await withdrawApplicantQueuedTelehealthRequest(
+        applicantId,
+        applicantAccessKey,
+        status.requestId,
+        status.requestVersion,
+        crypto.randomUUID(),
+      )
+      setWithdrawalConfirmed(false)
+      setRetryAttempt((value) => value + 1)
+    } catch (caught) {
+      setWithdrawalIssue(caught instanceof Error
+        ? caught.message
+        : 'The ready synthetic request could not be withdrawn.')
+    } finally {
+      setWithdrawalWorking(false)
+    }
+  }
+
   if (!status && !issue) return null
 
   return (
@@ -254,6 +284,16 @@ export default function ApplicantTelehealthQueueStatus({ applicantId, applicantA
           <p><small>Last confirmed <time dateTime={status.snapshotAt}>{new Date(status.snapshotAt).toLocaleTimeString()}</time>. Authoritative HTTP polling; realtime delivery is not enabled.</small></p>
           <ul className="telehealth-safety-actions">{(status.safetyActions ?? []).map((action) => <li key={action}>{action}</li>)}</ul>
           <ul>{(status.limitations ?? []).map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+          {status.requestStatus === 'Queued' ? (
+            <section className="telehealth-request-cancellation" aria-labelledby="applicant-queued-withdrawal-title">
+              <h4 id="applicant-queued-withdrawal-title">Withdraw this synthetic request</h4>
+              <p>You may withdraw only while the request is ready in the synthetic queue, before any physician reserves it. This removes the queue entry and cancels the provisional synthetic appointment; it does not create a reservation, connection, consultation, prescription, billing item, claim, integration, notification, or external action.</p>
+              <label className="telehealth-check"><input type="checkbox" checked={withdrawalConfirmed} onChange={(event) => setWithdrawalConfirmed(event.target.checked)} />I confirm I want to withdraw this synthetic queued request.</label>
+              <button className="telehealth-button telehealth-button-secondary" type="button" disabled={withdrawalWorking || !withdrawalConfirmed} onClick={() => void withdrawQueuedRequest()}>{withdrawalWorking ? 'Withdrawing…' : 'Withdraw synthetic request'}</button>
+              {withdrawalIssue ? <p className="telehealth-error" role="alert">{withdrawalIssue}</p> : null}
+            </section>
+          ) : null}
+          {status.requestStatus === 'Cancelled' ? <p>This synthetic request was withdrawn before a physician reservation or consultation. Its provisional synthetic appointment was cancelled; no care, financial, integration, or external action occurred.</p> : null}
           {status.requestStatus === 'Closed' ? (
             <section className="telehealth-post-visit-receipt" aria-labelledby="applicant-post-visit-receipt-title">
               <h4 id="applicant-post-visit-receipt-title">Synthetic post-visit receipt</h4>

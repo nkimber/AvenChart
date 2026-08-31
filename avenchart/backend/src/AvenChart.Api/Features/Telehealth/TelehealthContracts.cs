@@ -805,6 +805,24 @@ public sealed record TelehealthApplicantRequestQueueStatusResponse(
     IReadOnlyList<string> SafetyActions,
     IReadOnlyList<string> Limitations);
 
+public sealed record WithdrawTelehealthApplicantQueuedRequest(
+    int ExpectedRequestVersion,
+    bool SyntheticWithdrawalConfirmed);
+
+public sealed record TelehealthApplicantQueuedRequestWithdrawalResponse(
+    Guid RequestId,
+    int RequestVersion,
+    string RequestStatus,
+    string SourceMode,
+    bool QueueEntryRemoved,
+    bool ProvisionalAppointmentCancelled,
+    bool ReservationCreated,
+    bool ConnectionCreated,
+    bool ConsultationCreated,
+    bool ExternalActionPerformed,
+    DateTimeOffset WithdrawnAt,
+    IReadOnlyList<string> Limitations);
+
 public sealed record TelehealthOperationalReviewItem(
     Guid RequestId,
     string Status,

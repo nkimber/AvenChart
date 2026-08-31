@@ -586,6 +586,16 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
+        applicants.MapPost("/{applicantId:guid}/telehealth-request/{requestId:guid}/withdraw", WithdrawApplicantQueuedTelehealthRequestAsync)
+            .WithName("WithdrawTelehealthApplicantQueuedRequest")
+            .WithDescription("Allows only the exact access-key owner to withdraw a ready queued synthetic request before clinician reservation. It removes the queue entry and cancels the provisional appointment; it creates no reservation, connection, consultation, care, financial, integration, notification, or external action.")
+            .Accepts<WithdrawTelehealthApplicantQueuedRequest>("application/json")
+            .Produces<TelehealthApplicantQueuedRequestWithdrawalResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
         applicants.MapGet("/{applicantId:guid}/telehealth-request/{requestId:guid}/post-visit-receipt", GetApplicantSyntheticPostVisitReceiptAsync)
             .WithName("GetTelehealthApplicantSyntheticPostVisitReceipt")
             .WithDescription("Returns the exact access-key owner's minimized immutable NON_PRODUCTION post-closure receipt. It is not a clinical after-visit summary, notification, or delivery.")
@@ -2097,6 +2107,26 @@ public static class TelehealthEndpoints
                 context,
                 applicantId,
                 ReadApplicantAccessKey(context),
+                cancellationToken));
+        });
+
+    private static Task<IResult> WithdrawApplicantQueuedTelehealthRequestAsync(
+        TelehealthApplicantQueuedRequestWithdrawalService service,
+        HttpContext context,
+        Guid applicantId,
+        Guid requestId,
+        WithdrawTelehealthApplicantQueuedRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetProspectiveApplicantPrivateResponse(context);
+            return Results.Ok(await service.WithdrawAsync(
+                context,
+                applicantId,
+                requestId,
+                request,
+                ReadApplicantAccessKey(context),
+                ReadIdempotencyKey(context),
                 cancellationToken));
         });
 

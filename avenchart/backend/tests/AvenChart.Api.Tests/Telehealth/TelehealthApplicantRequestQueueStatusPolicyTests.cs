@@ -17,6 +17,7 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
     [InlineData(TelehealthRequestStatus.InConsultation, true)]
     [InlineData(TelehealthRequestStatus.WrapUp, true)]
     [InlineData(TelehealthRequestStatus.Closed, true)]
+    [InlineData(TelehealthRequestStatus.Cancelled, true)]
     [InlineData(TelehealthRequestStatus.Verification, false)]
     [InlineData(TelehealthRequestStatus.Redirected, false)]
     public void VisibleStatusesAreExplicitlyBounded(TelehealthRequestStatus status, bool expected)
@@ -136,6 +137,22 @@ public sealed class TelehealthApplicantRequestQueueStatusPolicyTests
         Assert.False(result.ConnectionRoomCreated);
         Assert.False(result.PatientWaitingRoomEntered);
         Assert.Contains(result.Limitations, limitation => limitation.Contains("appointment and encounter remain incomplete", StringComparison.Ordinal));
+        AssertClosedConsequences(result);
+    }
+
+    [Fact]
+    public void CancelledDisclosesOnlyPreReservationWithdrawalWithoutQueueOrCareClaims()
+    {
+        var result = Create(TelehealthRequestStatus.Cancelled, 14, null);
+
+        Assert.Equal("RequestCancelled", result.Phase);
+        Assert.False(result.PracticeAccepted);
+        Assert.False(result.DoctorSearchStarted);
+        Assert.False(result.RenderingPhysicianAssigned);
+        Assert.False(result.SyntheticRenderingCandidateMatched);
+        Assert.Null(result.ApproximateRequestsAhead);
+        Assert.False(result.PositionIsApproximate);
+        Assert.Contains(result.Limitations, limitation => limitation.Contains("applicant withdrew", StringComparison.Ordinal));
         AssertClosedConsequences(result);
     }
 
