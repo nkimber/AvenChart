@@ -398,6 +398,45 @@ public sealed class TelehealthService(
             cancellationToken);
     }
 
+    public async Task<TelehealthReservationReleaseResponse> ReleaseReservationAsync(
+        AuthSessionResponse session,
+        StaffAccessContext accessContext,
+        Guid reservationId,
+        ReleaseTelehealthReservationRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        RequirePhysician(session);
+        RequireConfiguredFacility(accessContext);
+        if (request.ExpectedVersion < 1
+            || !request.NoConnectionOrConsultationConfirmed
+            || !request.SyntheticReleaseConfirmed)
+        {
+            throw TelehealthProblem.BadRequest(
+                "telehealth_reservation_release_invalid",
+                "Confirm the current version, no connection or consultation, and the synthetic-only release effect.");
+        }
+
+        var staffId = RequireStaffId(session);
+        var key = TelehealthCommandFingerprint.RequireIdempotencyKey(idempotencyKey);
+        var fingerprint = TelehealthCommandFingerprint.Create(
+            "release-reservation",
+            _options.PracticeId,
+            accessContext.FacilityId,
+            staffId,
+            reservationId,
+            request.ExpectedVersion);
+        return await repository.ReleaseReservationAsync(
+            _options.PracticeId,
+            accessContext.FacilityId,
+            staffId,
+            reservationId,
+            request.ExpectedVersion,
+            key,
+            fingerprint,
+            cancellationToken);
+    }
+
     private async Task<PatientPortalSessionResponse> RequirePatientAsync(
         HttpContext httpContext,
         CancellationToken cancellationToken)

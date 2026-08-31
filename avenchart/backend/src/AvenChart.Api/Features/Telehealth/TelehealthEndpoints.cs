@@ -842,6 +842,16 @@ public static class TelehealthEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
+        clinician.MapPost("/reservations/{reservationId:guid}/release", ReleaseReservationAsync)
+            .WithName("ReleaseTelehealthReservation")
+            .WithDescription("Releases only the owning physician's unconnected NON_PRODUCTION synthetic reservation back to the same queue. It cannot release a prepared connection or consultation and changes no clinical, billing, claim, media, integration, or external state.")
+            .Accepts<ReleaseTelehealthReservationRequest>("application/json")
+            .Produces<TelehealthReservationReleaseResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
         clinician.MapPost("/reservations/{reservationId:guid}/connection-grants", PreparePhysicianConnectionAsync)
             .WithName("PreparePhysicianTelehealthConnection")
             .WithDescription("Issues a short-lived NON_PRODUCTION waiting-room grant only to the physician who owns the active reservation. No media or encounter is started.")
@@ -2513,6 +2523,21 @@ public static class TelehealthEndpoints
                 cancellationToken);
             return result is null ? Results.NoContent() : Results.Ok(result);
         });
+
+    private static async Task<IResult> ReleaseReservationAsync(
+        TelehealthService service,
+        AuthRepository authRepository,
+        HttpContext context,
+        Guid reservationId,
+        ReleaseTelehealthReservationRequest request,
+        CancellationToken cancellationToken) =>
+        await ExecuteAsync(async () => Results.Ok(await service.ReleaseReservationAsync(
+            await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+            RequireStaffAccessContext(context),
+            reservationId,
+            request,
+            ReadIdempotencyKey(context),
+            cancellationToken)));
 
     private static async Task<IResult> PreparePhysicianConnectionAsync(
         TelehealthVideoService service,

@@ -2491,6 +2491,16 @@ export type TelehealthReservation = {
   applicantOriginated: boolean
 }
 
+export type TelehealthReservationRelease = {
+  reservationId: string
+  requestId: string
+  queueEntryId: string
+  reservationStatus: string
+  requestStatus: string
+  requestVersion: number
+  applicantOriginated: boolean
+}
+
 export type TelehealthDevicePreflight = {
   browserSupported: boolean
   cameraAvailable: boolean
@@ -4682,6 +4692,18 @@ export function endIdleClinicianShift(shiftId: string, expectedVersion: number, 
 export async function reserveNextRequest() {
   const response = await apiFetch(`${apiBaseUrl}/api/telehealth/v1/clinician/reservations/reserve-next`, commandInit(undefined, 'clinician'))
   return response.status === 204 ? null : ((await response.json()) as TelehealthReservation)
+}
+
+export function releaseTelehealthReservation(
+  reservationId: string,
+  expectedVersion: number,
+  noConnectionOrConsultationConfirmed: boolean,
+  syntheticReleaseConfirmed: boolean,
+) {
+  return json<TelehealthReservationRelease>(
+    `/api/telehealth/v1/clinician/reservations/${reservationId}/release`,
+    commandInit({ expectedVersion, noConnectionOrConsultationConfirmed, syntheticReleaseConfirmed }, 'clinician'),
+  )
 }
 
 function connectionCommandInit(

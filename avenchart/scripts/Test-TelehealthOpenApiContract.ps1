@@ -30,7 +30,7 @@ try {
       '/api/telehealth/v1/admin/applicant-promotion-authorization','/api/telehealth/v1/admin/applicants/{applicantId}/promotion-authorization-decision',
       '/api/telehealth/v1/admin/applicant-synthetic-promotion','/api/telehealth/v1/admin/applicants/{applicantId}/synthetic-promotion',
       '/api/telehealth/v1/admin/operational-review','/api/telehealth/v1/admin/applicant-requests/{requestId}/queue-authorization','/api/telehealth/v1/admin/requests/{requestId}/authorize',
-      '/api/telehealth/v1/clinician/queue','/api/telehealth/v1/clinician/shifts','/api/telehealth/v1/clinician/shifts/{shiftId}/end','/api/telehealth/v1/clinician/reservations/reserve-next',
+      '/api/telehealth/v1/clinician/queue','/api/telehealth/v1/clinician/shifts','/api/telehealth/v1/clinician/shifts/{shiftId}/end','/api/telehealth/v1/clinician/reservations/reserve-next','/api/telehealth/v1/clinician/reservations/{reservationId}/release',
       '/api/telehealth/v1/clinician/reservations/{reservationId}/connection-grants',
       '/api/telehealth/v1/clinician/reservations/{reservationId}/consultations/start',
       '/api/telehealth/v1/clinician/consultations/{consultationId}/workspace',
@@ -2027,6 +2027,21 @@ try {
       -not (Has-Header $patientStatus 'X-Idempotency-Key') -and $null -ne (Get-Property $patientStatus.responses '404'))
     $patientConnection = Get-Operation $document '/api/telehealth/v1/patient/requests/{requestId}/connection-grants' 'post'
     $physicianConnection = Get-Operation $document '/api/telehealth/v1/clinician/reservations/{reservationId}/connection-grants' 'post'
+    $reservationRelease = Get-Operation $document '/api/telehealth/v1/clinician/reservations/{reservationId}/release' 'post'
+    $reservationReleaseRequestReference = Get-Property (Get-Property (Get-Property (Get-Property $reservationRelease 'requestBody') 'content') 'application/json').schema '$ref'
+    $reservationReleaseRequestSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') (($reservationReleaseRequestReference -split '/')[-1])
+    $reservationReleaseRequestProperties = @((Get-Property $reservationReleaseRequestSchema 'properties').PSObject.Properties.Name)
+    $reservationReleaseResponseReference = Get-Property (Get-Property (Get-Property (Get-Property $reservationRelease.responses '200') 'content') 'application/json').schema '$ref'
+    $reservationReleaseResponseSchema = Get-Property (Get-Property (Get-Property $document 'components') 'schemas') (($reservationReleaseResponseReference -split '/')[-1])
+    $reservationReleaseResponseProperties = @((Get-Property $reservationReleaseResponseSchema 'properties').PSObject.Properties.Name)
+    Add-Check 'Reservation release publishes exact physician-only pre-connection confirmations, idempotency, and a minimized queue-restoration receipt' (
+      (Has-Security $reservationRelease 'AvenChartLocalStaffSession') -and -not (Has-Security $reservationRelease 'AvenChartPatientPortalSession') -and
+      (Has-Header $reservationRelease 'X-AvenChart-Facility-Id') -and (Has-Header $reservationRelease 'X-AvenChart-Purpose-Of-Use') -and (Has-Header $reservationRelease 'X-Idempotency-Key') -and
+      $null-ne(Get-Property $reservationRelease 'requestBody') -and
+      $null-ne(Get-Property $reservationRelease.responses '400') -and $null-ne(Get-Property $reservationRelease.responses '403') -and $null-ne(Get-Property $reservationRelease.responses '404') -and $null-ne(Get-Property $reservationRelease.responses '409') -and
+      @(Compare-Object @('expectedVersion','noConnectionOrConsultationConfirmed','syntheticReleaseConfirmed') ($reservationReleaseRequestProperties|Sort-Object)).Count -eq 0 -and
+      @(Compare-Object @('applicantOriginated','queueEntryId','requestId','requestStatus','requestVersion','reservationId','reservationStatus') ($reservationReleaseResponseProperties|Sort-Object)).Count -eq 0 -and
+      @($reservationReleaseRequestProperties + $reservationReleaseResponseProperties | Where-Object { $_ -match 'patientId|clinician|staff|provider|physician|reason|note|freeText|clinical|diagnosis|media|claim|prescription|appointment|encounter' }).Count -eq 0)
     Add-Check 'Patient and physician connection grants publish distinct auth scopes, typed preflight, idempotency, and conflict contracts' (
       (Has-Security $patientConnection 'AvenChartPatientPortalSession') -and -not (Has-Security $patientConnection 'AvenChartLocalStaffSession') -and
       (Has-Header $patientConnection 'X-Idempotency-Key') -and $null-ne(Get-Property $patientConnection 'requestBody') -and $null-ne(Get-Property $patientConnection.responses '409') -and

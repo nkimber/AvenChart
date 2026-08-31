@@ -839,6 +839,20 @@ public sealed record TelehealthReservationResponse(
     int RequestVersion,
     bool ApplicantOriginated);
 
+public sealed record ReleaseTelehealthReservationRequest(
+    int ExpectedVersion,
+    bool NoConnectionOrConsultationConfirmed,
+    bool SyntheticReleaseConfirmed);
+
+public sealed record TelehealthReservationReleaseResponse(
+    Guid ReservationId,
+    Guid RequestId,
+    Guid QueueEntryId,
+    string ReservationStatus,
+    string RequestStatus,
+    int RequestVersion,
+    bool ApplicantOriginated);
+
 public sealed record TelehealthQueueResponse(IReadOnlyList<TelehealthOperationalReviewItem> Requests);
 
 public sealed record TelehealthConnectionGrantResponse(

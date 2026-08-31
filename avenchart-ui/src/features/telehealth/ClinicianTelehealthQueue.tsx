@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { endIdleClinicianShift, enterTelehealthConsultationWrapUp, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, readPhysicianLocalWebRtcSignals, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, writePhysicianLocalWebRtcSignal, type TelehealthConnectionGrant, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
+import { endIdleClinicianShift, enterTelehealthConsultationWrapUp, getTelehealthConsultationWorkspace, listClinicianQueue, preparePhysicianConnection, readPhysicianLocalWebRtcSignals, releaseTelehealthReservation, reserveNextRequest, saveTelehealthConsultationDocumentationDraft, startClinicianShift, startTelehealthConsultation, writePhysicianLocalWebRtcSignal, type TelehealthConnectionGrant, type TelehealthConsultationStartInput, type TelehealthConsultationWorkspace, type TelehealthDevicePreflight, type TelehealthQueueItem, type TelehealthReservation, type TelehealthShift } from './api.ts'
 import { isRequestCancellation } from '../../api/transport.ts'
 import { runTelehealthDevicePreflight } from './devicePreflight.ts'
 import TelehealthPharmacyChoicePanel from './TelehealthPharmacyChoicePanel.tsx'
@@ -16,6 +16,7 @@ import TelehealthProfessionalClaimPreparationPanel from './TelehealthProfessiona
 import TelehealthEncounterFinalizationPanel from './TelehealthEncounterFinalizationPanel.tsx'
 import TelehealthSyntheticVisitClosurePanel from './TelehealthSyntheticVisitClosurePanel.tsx'
 import ClinicianIdleShiftEndControl, { type ClinicianIdleShiftEndConfirmations } from './ClinicianIdleShiftEndControl.tsx'
+import ClinicianReservationReleaseControl, { type ClinicianReservationReleaseConfirmations } from './ClinicianReservationReleaseControl.tsx'
 import './telehealth.css'
 
 export default function ClinicianTelehealthQueue() {
@@ -116,6 +117,25 @@ export default function ClinicianTelehealthQueue() {
     try { await endIdleClinicianShift(shift.shiftId, shift.version, confirmations.noActiveWorkConfirmed, confirmations.syntheticEndConfirmed); setShift(null); setClosureStatus('Synthetic telehealth shift ended. No patient, appointment, encounter, clinical, billing, claim, media, integration, or external state changed.') }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'The idle shift could not be ended.') }
     finally { setWorking(false) }
+  }
+
+  async function releaseReservation(confirmations: ClinicianReservationReleaseConfirmations) {
+    if (!reservation || waitingRoom || consultation || working || connectionWorking
+      || !confirmations.noConnectionOrConsultationConfirmed || !confirmations.syntheticReleaseConfirmed) return
+    setWorking(true); setError(null)
+    try {
+      await releaseTelehealthReservation(
+        reservation.reservationId,
+        reservation.requestVersion,
+        confirmations.noConnectionOrConsultationConfirmed,
+        confirmations.syntheticReleaseConfirmed,
+      )
+      setReservation(null); setDeviceEvidence(null); setWaitingRoom(null); setLocalMediaConnected(false)
+      setClosureStatus('Synthetic reservation released back to the existing queue. No connection, consultation, clinical, billing, claim, media, integration, or external state changed.')
+      await refresh()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'The synthetic reservation could not be released. Refresh before retrying.')
+    } finally { setWorking(false) }
   }
 
   async function beginSyntheticConsultation() {
@@ -292,6 +312,7 @@ export default function ClinicianTelehealthQueue() {
           {reservation.applicantOriginated ? <p><strong>New-patient applicant request.</strong> This reservation matched the exact current synthetic rendering-candidate evidence. It is not real credentialing, network confirmation, consent, or care authorization.</p> : null}
           <p>Lease expires {new Date(reservation.leaseExpiresAt).toLocaleTimeString()}.</p>
           <p>The connection room is provider-neutral and transports no media. After the start handoff, only an audited, bounded chart projection and unsigned SOAP draft are available; general chart navigation and all other clinical actions remain unavailable.</p>
+          {!waitingRoom && !consultation ? <ClinicianReservationReleaseControl reservation={reservation} disabled={working || connectionWorking} onRelease={(confirmations) => void releaseReservation(confirmations)} /> : null}
           <section className="telehealth-connection-room" aria-labelledby="physician-device-check-title">
             <h3 id="physician-device-check-title">Physician device check</h3>
             <p>The user-initiated test requests camera and microphone access and immediately stops all test tracks. No device names or media are retained.</p>
