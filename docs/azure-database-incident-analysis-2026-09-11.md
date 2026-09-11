@@ -1,5 +1,7 @@
 # PostgreSQL connection exhaustion investigation — 2026-09-11
 
+Implementation follow-up: [deployed remediation and verification](azure-database-remediation-2026-09-11.md).
+
 ## Conclusion
 
 The incident was connection exhaustion during sustained database overload, not

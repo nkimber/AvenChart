@@ -4,21 +4,21 @@
 - Large corpus: 1189 files · ~1,147,272 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
-- 11006 nodes · 25071 edges · 626 communities detected
+- 11008 nodes · 25075 edges · 626 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
-- Edge kinds: calls: 6495 · contains: 5185 · method: 4116 · MODIFIES: 3376 · imports: 2125 · ON_BRANCH: 1103 · references: 760 · reads_from: 584 · imports_from: 578 · PARENT_OF: 493 · triggers: 144 · inherits: 106 · re_exports: 6
+- Edge kinds: calls: 6495 · contains: 5185 · method: 4116 · MODIFIES: 3376 · imports: 2125 · ON_BRANCH: 1105 · references: 760 · reads_from: 584 · imports_from: 578 · PARENT_OF: 495 · triggers: 144 · inherits: 106 · re_exports: 6
 
 
 ## Input Scope
 - Requested: committed
 - Resolved: committed (source: cli)
 - Included files: 1189 · Candidates: 1670
-- Excluded: 0 untracked · 52427 ignored · 1 sensitive · 0 missing committed
+- Excluded: 0 untracked · 52439 ignored · 1 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `fb071ab`
+- Built from Git commit: `c27a745`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `AdministrationRepository` - 233 edges
@@ -64,7 +64,7 @@ Nodes (27): 077c7bc fix(clinical): block new content on inactive patients, 08d11
 
 ### Community 4 - "Community 4"
 Cohesion: 0.04
-Nodes (162): claude/telehealth-functionality-overview-a2de3f, codex/ef-data-access-modernization, main, 0220d35 fix(auth): scope scheduling and encounter workflows to facility, 0239c9f fix(labs): invalidate stale critical result queue, 05beda1 refactor(api): isolate encounter endpoints, 06f5d60 chore(graph): refresh code index, 07e8fdd fix(sdoh): anchor generated goals to assessment date (+154 more)
+Nodes (164): claude/telehealth-functionality-overview-a2de3f, codex/ef-data-access-modernization, main, 0220d35 fix(auth): scope scheduling and encounter workflows to facility, 0239c9f fix(labs): invalidate stale critical result queue, 05beda1 refactor(api): isolate encounter endpoints, 06f5d60 chore(graph): refresh code index, 07e8fdd fix(sdoh): anchor generated goals to assessment date (+156 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.03
