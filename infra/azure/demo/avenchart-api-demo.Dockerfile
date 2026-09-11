@@ -27,6 +27,8 @@ COPY --from=seed /src/avenchart/artifacts/postgres/seed-gold.sql ./demo-seed.sql
 COPY avenchart/database/migrations ./database/migrations
 COPY avenchart/database/bootstrap ./database/bootstrap
 COPY infra/azure/demo/avenchart-api-entrypoint.sh ./avenchart-api-entrypoint.sh
-RUN chmod +x ./avenchart-api-entrypoint.sh
+RUN sed -i 's/\r$//' ./avenchart-api-entrypoint.sh \
+    && chmod +x ./avenchart-api-entrypoint.sh \
+    && /bin/sh -n ./avenchart-api-entrypoint.sh
 EXPOSE 8081
 ENTRYPOINT ["./avenchart-api-entrypoint.sh"]
