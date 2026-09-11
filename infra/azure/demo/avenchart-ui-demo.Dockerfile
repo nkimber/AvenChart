@@ -9,6 +9,8 @@ ENV VITE_API_BASE_URL=
 RUN npm run build
 
 FROM nginx:1.29-alpine
+ARG SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 
 ARG AVENCHART_BASE_URL=""
 

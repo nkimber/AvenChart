@@ -16,6 +16,8 @@ RUN rm -rf bin obj \
     && dotnet publish -c Release -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+ARG SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates postgresql-client \
     && rm -rf /var/lib/apt/lists/*

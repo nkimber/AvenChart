@@ -25,18 +25,40 @@ secret and supplies it through a short-lived secure parameter file.
 ## Conservative default profile
 
 The page starts with a profile for 20 named users and 10 concurrent users. It
-uses one warm Container Apps replica, permits two replicas at peak, and gives
+uses one warm Container Apps replica, permits one replica at peak, and gives
 the API 0.5 vCPU/1 GiB and the UI 0.25 vCPU/0.5 GiB per replica. PostgreSQL uses
 the Burstable `Standard_B1ms` SKU with 32 GiB storage and seven days of backup.
-The API pool is 15 connections per replica (30 possible pooled connections at
-the default two-replica ceiling), leaving operating headroom on that database
+The API pool is 15 connections per replica (30 possible pooled connections during
+old/new revision overlap), leaving five ordinary connection slots on that database
 class. The validator recalculates this envelope whenever sizing changes and
 rejects unsafe totals. Treat this as a starting point and load-test the actual
 workflow before increasing the user commitment.
 
+The API applies the smaller of the connection-string maximum and the
+`DatabaseConnection:MaximumPoolSize` ceiling. The deployment passes the assessed
+ceiling explicitly. The validator budgets both sides of a rollout. Report workers
+poll idle queues every two seconds, perform maintenance every 15 seconds, and back
+off exponentially to 30 seconds during failures. API readiness remains dependent
+on PostgreSQL; the UI probe checks nginx without repeating database probes.
+
+`monitoring.bicep` can be applied independently to an existing deployment. The
+coordinator applies it after application health verification. It creates CPU,
+CPU-credit, connection-pressure and failed-connection alerts, and a standard
+three-location HTTPS readiness test (HTTP 200 plus healthy JSON). Alerts use
+`alertEmails`, or subscription Owner role receivers when the list is empty.
+Database diagnostics export server logs and query runtime/wait categories to the
+existing workspace; statement and bind-parameter logging are disabled. Query
+Store collection must be enabled separately if runtime/wait history is needed;
+it is not enabled automatically on the small burstable server. Azure Monitor
+alerts, standard availability tests, and diagnostic ingestion incur usage costs.
+
+Rollback copies a retained revision into a fresh single-mode rollout, preserving
+the current pool ceiling. Do not reactivate old revisions alongside the current
+one. Inspect schema compatibility before rollback; it never reverses migrations.
+
 Private networking, Key Vault references, managed identity, HTTPS ingress,
-health probes, Log Analytics, a cost budget, and multiple Container Apps
-revisions are enabled. PostgreSQL high availability, geo-redundant backup, and
+health probes, Log Analytics, a cost budget, and single-revision Container Apps
+rollouts are enabled. PostgreSQL high availability, geo-redundant backup, and
 extra replicas are opt-in because they materially increase cost. The budget is
 an alerting guardrail, not a spending cap.
 
@@ -137,7 +159,7 @@ them as controls.
    verifies health.
 5. Monitor structured phase events and use **Verify now** for later checks.
 6. If an application revision is unhealthy, select a known revision and use
-   rollback to shift Container Apps traffic. Database migrations are forward-
+   rollback to copy it into a fresh revision with the current pool limit. Database migrations are forward-
    only; investigate migration compatibility before rolling application code
    back. Archiving a profile removes it from normal page use but never deletes
    Azure resources.

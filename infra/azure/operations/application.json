@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "15618830075254072859"
+      "templateHash": "10869582565625847958"
     }
   },
   "parameters": {
@@ -75,9 +75,15 @@
     },
     "maximumReplicas": {
       "type": "int",
-      "defaultValue": 2,
+      "defaultValue": 1,
       "minValue": 1,
       "maxValue": 10
+    },
+    "connectionPoolMaximum": {
+      "type": "int",
+      "defaultValue": 15,
+      "minValue": 5,
+      "maxValue": 100
     },
     "httpConcurrency": {
       "type": "int",
@@ -143,7 +149,7 @@
         "environmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppsEnvironmentName'))]",
         "workloadProfileName": "Consumption",
         "configuration": {
-          "activeRevisionsMode": "Multiple",
+          "activeRevisionsMode": "Single",
           "ingress": {
             "external": true,
             "allowInsecure": false,
@@ -200,7 +206,7 @@
                 {
                   "type": "Readiness",
                   "httpGet": {
-                    "path": "/health/api/ready",
+                    "path": "/health",
                     "port": 8080,
                     "scheme": "HTTP"
                   },
@@ -217,7 +223,7 @@
                 "cpu": "[json(parameters('apiCpu'))]",
                 "memory": "[parameters('apiMemory')]"
               },
-              "env": "[flatten(createArray(createArray(createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Staging'), createObject('name', 'ASPNETCORE_URLS', 'value', 'http://+:8081'), createObject('name', 'ConnectionStrings__AvenChart', 'secretRef', 'database-connection-string'), createObject('name', 'DatabaseSchema__MigrationsPath', 'value', '/app/database/migrations'), createObject('name', 'RuntimeSafety__RequireHttps', 'value', 'false'), createObject('name', 'RuntimeSafety__RateLimitPermitLimit', 'value', string(parameters('rateLimitPermitLimit'))), createObject('name', 'DEMO_SEED_ON_STARTUP', 'value', 'false'), createObject('name', 'DEMO_RESET_ON_STARTUP', 'value', 'false')), if(parameters('telehealthInternetCallingPocEnabled'), createArray(createObject('name', 'Telehealth__Enabled', 'value', 'true'), createObject('name', 'Telehealth__Mode', 'value', 'Synthetic'), createObject('name', 'Telehealth__PracticeId', 'value', 'avenchart-synthetic-practice'), createObject('name', 'Telehealth__FacilityId', 'value', '10'), createObject('name', 'Telehealth__BrandedHosts__0', 'value', parameters('telehealthBrandedHost')), createObject('name', 'Telehealth__SupportedStates__0', 'value', 'GA'), createObject('name', 'Telehealth__SupportedStates__1', 'value', 'CA'), createObject('name', 'Telehealth__SupportedStates__2', 'value', 'FL'), createObject('name', 'Telehealth__ReservationLeaseSeconds', 'value', '300'), createObject('name', 'Telehealth__VideoAdapterMode', 'value', 'NON_PRODUCTION'), createObject('name', 'Telehealth__PharmacyDirectoryAdapterMode', 'value', 'NON_PRODUCTION'), createObject('name', 'Telehealth__ProfessionalClaimAdapterMode', 'value', 'NON_PRODUCTION'), createObject('name', 'Telehealth__LocalWebRtcPocEnabled', 'value', 'false'), createObject('name', 'Telehealth__InternetCallingPocEnabled', 'value', 'true'), createObject('name', 'Telehealth__InternetCallingConnectionString', 'secretRef', 'telehealth-internet-calling-connection-string')), createArray())))]",
+              "env": "[flatten(createArray(createArray(createObject('name', 'ASPNETCORE_ENVIRONMENT', 'value', 'Staging'), createObject('name', 'ASPNETCORE_URLS', 'value', 'http://+:8081'), createObject('name', 'ConnectionStrings__AvenChart', 'secretRef', 'database-connection-string'), createObject('name', 'DatabaseConnection__MaximumPoolSize', 'value', string(parameters('connectionPoolMaximum'))), createObject('name', 'DatabaseSchema__MigrationsPath', 'value', '/app/database/migrations'), createObject('name', 'RuntimeSafety__RequireHttps', 'value', 'false'), createObject('name', 'RuntimeSafety__RateLimitPermitLimit', 'value', string(parameters('rateLimitPermitLimit'))), createObject('name', 'DEMO_SEED_ON_STARTUP', 'value', 'false'), createObject('name', 'DEMO_RESET_ON_STARTUP', 'value', 'false')), if(parameters('telehealthInternetCallingPocEnabled'), createArray(createObject('name', 'Telehealth__Enabled', 'value', 'true'), createObject('name', 'Telehealth__Mode', 'value', 'Synthetic'), createObject('name', 'Telehealth__PracticeId', 'value', 'avenchart-synthetic-practice'), createObject('name', 'Telehealth__FacilityId', 'value', '10'), createObject('name', 'Telehealth__BrandedHosts__0', 'value', parameters('telehealthBrandedHost')), createObject('name', 'Telehealth__SupportedStates__0', 'value', 'GA'), createObject('name', 'Telehealth__SupportedStates__1', 'value', 'CA'), createObject('name', 'Telehealth__SupportedStates__2', 'value', 'FL'), createObject('name', 'Telehealth__ReservationLeaseSeconds', 'value', '300'), createObject('name', 'Telehealth__VideoAdapterMode', 'value', 'NON_PRODUCTION'), createObject('name', 'Telehealth__PharmacyDirectoryAdapterMode', 'value', 'NON_PRODUCTION'), createObject('name', 'Telehealth__ProfessionalClaimAdapterMode', 'value', 'NON_PRODUCTION'), createObject('name', 'Telehealth__LocalWebRtcPocEnabled', 'value', 'false'), createObject('name', 'Telehealth__InternetCallingPocEnabled', 'value', 'true'), createObject('name', 'Telehealth__InternetCallingConnectionString', 'secretRef', 'telehealth-internet-calling-connection-string')), createArray())))]",
               "probes": [
                 {
                   "type": "Startup",

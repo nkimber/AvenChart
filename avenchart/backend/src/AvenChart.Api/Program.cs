@@ -191,6 +191,12 @@ builder.Services.AddOptions<ReportExecutionOptions>()
         options => options.PollIntervalMilliseconds is >= 50 and <= 5000,
         "ReportExecution:PollIntervalMilliseconds must be between 50 and 5000.")
     .Validate(
+        options => options.MaintenanceIntervalSeconds is >= 1 and <= 30,
+        "ReportExecution:MaintenanceIntervalSeconds must be between 1 and 30.")
+    .Validate(
+        options => options.FailureBackoffMaximumSeconds is >= 5 and <= 300,
+        "ReportExecution:FailureBackoffMaximumSeconds must be between 5 and 300.")
+    .Validate(
         options => options.EnqueueDelayMilliseconds is >= 0 and <= 10000,
         "ReportExecution:EnqueueDelayMilliseconds must be between 0 and 10000.")
     .Validate(
@@ -248,15 +254,7 @@ var connectionString = builder.Configuration.GetConnectionString("AvenChart")
 var databaseConnectionOptions = builder.Configuration
     .GetSection(DatabaseConnectionOptions.SectionName)
     .Get<DatabaseConnectionOptions>() ?? new DatabaseConnectionOptions();
-var databaseConnectionString = new NpgsqlConnectionStringBuilder(connectionString)
-{
-    Timeout = databaseConnectionOptions.ConnectionTimeoutSeconds,
-    CommandTimeout = databaseConnectionOptions.CommandTimeoutSeconds,
-    CancellationTimeout = databaseConnectionOptions.CancellationTimeoutMilliseconds,
-    MinPoolSize = databaseConnectionOptions.MinimumPoolSize,
-    MaxPoolSize = databaseConnectionOptions.MaximumPoolSize,
-    KeepAlive = databaseConnectionOptions.KeepAliveSeconds
-}.ConnectionString;
+var databaseConnectionString = databaseConnectionOptions.BuildConnectionString(connectionString);
 
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(databaseConnectionString));
 builder.Services.AddDbContext<AvenChartDbContext>((services, options) =>
@@ -292,6 +290,7 @@ builder.Services.AddScoped<ReportDefinitionRepository>();
 builder.Services.AddScoped<ReportExecutionRepository>();
 builder.Services.AddScoped<ReportExecutionQueueRepository>();
 builder.Services.AddHostedService<ReportExecutionWorker>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<ClinicalFormRepository>();
 builder.Services.AddScoped<LegacyClinicalFormDisplayRepository>();
 builder.Services.AddScoped<TherapyGroupRepository>();

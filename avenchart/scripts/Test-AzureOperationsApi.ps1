@@ -67,6 +67,8 @@ function Start-TestApi {
     $env:ConnectionStrings__AvenChart = "Host=127.0.0.1;Port=5433;Database=$DatabaseName;Username=avenchart;Password=avenchart_demo"
     $env:DatabaseSchema__MigrationsPath = (Resolve-Path (Join-Path $SolutionRoot 'database/migrations')).Path
     $env:ASPNETCORE_URLS = "http://127.0.0.1:$ApiPort"
+    $env:ASPNETCORE_ENVIRONMENT = 'Development'
+    $env:DOTNET_ENVIRONMENT = 'Development'
     $env:AzureOperations__Enabled = $OperationsEnabled.ToString().ToLowerInvariant()
     $env:AzureOperations__AllowPlanExecution = 'false'
 
@@ -126,6 +128,8 @@ try {
         'ConnectionStrings__AvenChart',
         'DatabaseSchema__MigrationsPath',
         'ASPNETCORE_URLS',
+        'ASPNETCORE_ENVIRONMENT',
+        'DOTNET_ENVIRONMENT',
         'AzureOperations__Enabled',
         'AzureOperations__AllowPlanExecution')) {
         $PreviousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
@@ -133,6 +137,13 @@ try {
 
     docker compose -f avenchart/docker-compose.yml up -d postgres
     if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL startup failed.' }
+    $databaseDeadline = (Get-Date).AddSeconds(60)
+    do {
+        docker compose -f avenchart/docker-compose.yml exec -T postgres pg_isready -U avenchart -d postgres *> $null
+        if ($LASTEXITCODE -eq 0) { break }
+        Start-Sleep -Seconds 1
+    } while ((Get-Date) -lt $databaseDeadline)
+    if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL did not become ready within 60 seconds.' }
     Assert-TestDatabaseName
     docker compose -f avenchart/docker-compose.yml exec -T postgres `
         psql -X -U avenchart -d postgres -v ON_ERROR_STOP=1 `
@@ -141,7 +152,6 @@ try {
 
     & (Join-Path $SolutionRoot 'scripts/Seed-AvenChartGoldDataset.ps1') `
         -DatabaseName $DatabaseName `
-        -SkipMigrationImageBuild `
         -SkipArtifact
 
     Start-TestApi -OperationsEnabled $true
@@ -211,7 +221,7 @@ try {
         databaseName = 'avenchart'; databaseAdministratorLogin = 'avenchartadmin'
         databasePasswordSecretName = 'avenchart-database-administrator-password'
         expectedNamedUsers = 20; expectedConcurrentUsers = 10; apiCpu = 0.5; apiMemoryGiB = 1
-        uiCpu = 0.25; uiMemoryGiB = 0.5; minimumReplicas = 1; maximumReplicas = 2; httpConcurrency = 20
+        uiCpu = 0.25; uiMemoryGiB = 0.5; minimumReplicas = 1; maximumReplicas = 1; httpConcurrency = 20
         postgresSkuName = 'Standard_B1ms'; postgresTier = 'Burstable'; postgresStorageGiB = 32
         connectionPoolMaximum = 15; backupRetentionDays = 7; enableGeoRedundantBackup = $false
         enableHighAvailability = $false; vnetAddressPrefix = '10.42.0.0/16'
@@ -251,6 +261,21 @@ try {
     Assert-Status $network 200 'Overlapping subnet assessment'
     if (-not (($network.Content | ConvertFrom-Json).issues.code -contains 'subnets-overlap')) {
         throw 'Overlapping Container Apps and PostgreSQL delegated subnets were accepted.'
+    }
+
+    $profile.databaseSubnetPrefix = '10.42.2.0/28'
+    $budget = Invoke-Api -Method POST -Path '/api/administration/azure-operations/assess' `
+        -Headers $protectedHeaders -Body ($profile | ConvertTo-Json -Depth 10 -Compress)
+    Assert-Status $budget 200 'Rollout connection budget'
+    $assessment = $budget.Content | ConvertFrom-Json
+    if (-not $assessment.valid -or $assessment.maximumPotentialDatabaseConnections -ne 30) {
+        throw 'A single 15-connection replica must reserve 30 connections for deployment overlap.'
+    }
+    $profile.maximumReplicas = 2
+    $budget = Invoke-Api -Method POST -Path '/api/administration/azure-operations/assess' `
+        -Headers $protectedHeaders -Body ($profile | ConvertTo-Json -Depth 10 -Compress)
+    if (-not (($budget.Content | ConvertFrom-Json).issues.code -contains 'pool-exceeds-database')) {
+        throw 'Deployment overlap exceeding the database connection budget was accepted.'
     }
 
     Stop-TestApi

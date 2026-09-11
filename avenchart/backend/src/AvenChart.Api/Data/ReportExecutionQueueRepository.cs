@@ -23,9 +23,10 @@ public sealed class ReportExecutionQueueRepository(
 
     public async Task<bool> ProcessNextAsync(
         string workerId,
-        CancellationToken stoppingToken)
+        CancellationToken stoppingToken,
+        bool performMaintenance = true)
     {
-        var maintained = await MaintainAsync(stoppingToken);
+        var maintained = performMaintenance && await MaintainAsync(stoppingToken);
         var claim = await ClaimNextAsync(workerId, stoppingToken);
         if (claim is null)
         {

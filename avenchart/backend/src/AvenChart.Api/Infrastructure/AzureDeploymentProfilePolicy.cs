@@ -104,12 +104,13 @@ public static partial class AzureDeploymentProfilePolicy
         ValidateCpuMemory(document.UiCpu, document.UiMemoryGiB, nameof(document.UiCpu), nameof(document.UiMemoryGiB), issues);
 
         var connectionLimit = DatabaseUserConnectionLimit(document.PostgresSkuName);
-        var potentialConnections = document.ConnectionPoolMaximum * document.MaximumReplicas;
-        if (document.ConnectionPoolMaximum is < 1 or > 100)
-            issues.Add(Error(nameof(document.ConnectionPoolMaximum), "pool-range", "Maximum pool size must be between 1 and 100 per API replica."));
+        // Single revision mode still overlaps old/new replicas during a rollout.
+        var potentialConnections = document.ConnectionPoolMaximum * document.MaximumReplicas * 2;
+        if (document.ConnectionPoolMaximum is < 5 or > 100)
+            issues.Add(Error(nameof(document.ConnectionPoolMaximum), "pool-range", "Maximum pool size must be between 5 and 100 per API replica."));
         if (potentialConnections > connectionLimit)
             issues.Add(Error(nameof(document.ConnectionPoolMaximum), "pool-exceeds-database",
-                $"The configured replicas can request {potentialConnections} pooled connections, but {document.PostgresSkuName} exposes approximately {connectionLimit} user connections."));
+                $"Old and new replicas during deployment can request {potentialConnections} pooled connections, but {document.PostgresSkuName} exposes approximately {connectionLimit} user connections."));
         else if (potentialConnections > Math.Floor(connectionLimit * 0.85m))
             issues.Add(Warning(nameof(document.ConnectionPoolMaximum), "pool-headroom-low",
                 "Reserve at least 15% of database connections for migrations, diagnostics, and operator access."));

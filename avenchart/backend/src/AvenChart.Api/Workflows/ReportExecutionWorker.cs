@@ -10,7 +10,8 @@ namespace AvenChart.Api.Workflows;
 public sealed class ReportExecutionWorker(
     IServiceScopeFactory scopeFactory,
     IOptions<ReportExecutionOptions> options,
-    ILogger<ReportExecutionWorker> logger)
+    ILogger<ReportExecutionWorker> logger,
+    TimeProvider timeProvider)
     : BackgroundService
 {
     private readonly string workerId =
@@ -18,18 +19,20 @@ public sealed class ReportExecutionWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var idleDelay = TimeSpan.FromMilliseconds(
-            options.Value.PollIntervalMilliseconds);
+        var schedule = new ReportWorkerSchedule(options.Value);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             var processed = false;
+            var failed = false;
             try
             {
                 await using var scope = scopeFactory.CreateAsyncScope();
                 var queue = scope.ServiceProvider
                     .GetRequiredService<ReportExecutionQueueRepository>();
-                processed = await queue.ProcessNextAsync(workerId, stoppingToken);
+                var maintain = schedule.MaintenanceDue(timeProvider.GetUtcNow());
+                processed = await queue.ProcessNextAsync(workerId, stoppingToken, maintain);
+                schedule.Succeeded(timeProvider.GetUtcNow(), maintain);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -37,6 +40,7 @@ public sealed class ReportExecutionWorker(
             }
             catch (Exception exception)
             {
+                failed = true;
                 logger.LogError(
                     exception,
                     "Governed report worker {WorkerId} iteration failed.",
@@ -45,8 +49,32 @@ public sealed class ReportExecutionWorker(
 
             if (!processed)
             {
-                await Task.Delay(idleDelay, stoppingToken);
+                await Task.Delay(schedule.NextDelay(failed), timeProvider, stoppingToken);
             }
         }
+    }
+}
+
+public sealed class ReportWorkerSchedule(ReportExecutionOptions options)
+{
+    private DateTimeOffset nextMaintenance = DateTimeOffset.MinValue;
+    private int consecutiveFailures;
+
+    public bool MaintenanceDue(DateTimeOffset now) => now >= nextMaintenance;
+
+    public void Succeeded(DateTimeOffset now, bool performedMaintenance)
+    {
+        consecutiveFailures = 0;
+        if (performedMaintenance)
+            nextMaintenance = now.AddSeconds(options.MaintenanceIntervalSeconds);
+    }
+
+    public TimeSpan NextDelay(bool failed)
+    {
+        if (!failed) return TimeSpan.FromMilliseconds(options.PollIntervalMilliseconds);
+        consecutiveFailures = Math.Min(consecutiveFailures + 1, 20);
+        return TimeSpan.FromMilliseconds(Math.Min(
+            options.FailureBackoffMaximumSeconds * 1000d,
+            options.PollIntervalMilliseconds * Math.Pow(2, consecutiveFailures - 1)));
     }
 }

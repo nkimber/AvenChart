@@ -1,0 +1,279 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "11496001390867900496"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string"
+    },
+    "resourceNamePrefix": {
+      "type": "string"
+    },
+    "postgresServerName": {
+      "type": "string"
+    },
+    "logAnalyticsWorkspaceName": {
+      "type": "string"
+    },
+    "applicationUrl": {
+      "type": "string"
+    },
+    "alertEmails": {
+      "type": "array",
+      "defaultValue": []
+    },
+    "postgresTier": {
+      "type": "string",
+      "defaultValue": "Burstable"
+    },
+    "connectionAlertThreshold": {
+      "type": "int",
+      "defaultValue": 28,
+      "minValue": 1
+    }
+  },
+  "variables": {
+    "metricRules": "[concat(createArray(createObject('name', 'database-cpu', 'metric', 'cpu_percent', 'aggregation', 'Average', 'operator', 'GreaterThan', 'threshold', 80, 'window', 'PT15M'), createObject('name', 'database-connections', 'metric', 'active_connections', 'aggregation', 'Maximum', 'operator', 'GreaterThan', 'threshold', parameters('connectionAlertThreshold'), 'window', 'PT5M'), createObject('name', 'database-connection-failures', 'metric', 'connections_failed', 'aggregation', 'Total', 'operator', 'GreaterThan', 'threshold', 5, 'window', 'PT5M')), if(equals(parameters('postgresTier'), 'Burstable'), createArray(createObject('name', 'database-cpu-credits', 'metric', 'cpu_credits_remaining', 'aggregation', 'Average', 'operator', 'LessThan', 'threshold', 30, 'window', 'PT15M')), createArray()))]",
+    "loggingParameters": [
+      {
+        "name": "log_statement",
+        "value": "none"
+      },
+      {
+        "name": "log_min_duration_statement",
+        "value": "-1"
+      },
+      {
+        "name": "log_min_error_statement",
+        "value": "panic"
+      },
+      {
+        "name": "log_parameter_max_length",
+        "value": "0"
+      },
+      {
+        "name": "log_parameter_max_length_on_error",
+        "value": "0"
+      }
+    ]
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}-operations', parameters('resourceNamePrefix'))]",
+      "location": "global",
+      "properties": {
+        "copy": [
+          {
+            "name": "emailReceivers",
+            "count": "[length(parameters('alertEmails'))]",
+            "input": {
+              "name": "[format('operator-{0}', copyIndex('emailReceivers'))]",
+              "emailAddress": "[parameters('alertEmails')[copyIndex('emailReceivers')]]",
+              "useCommonAlertSchema": true
+            }
+          }
+        ],
+        "groupShortName": "AvenChart",
+        "enabled": true,
+        "armRoleReceivers": "[if(empty(parameters('alertEmails')), createArray(createObject('name', 'subscription-owners', 'roleId', '8e3af657-a8ff-443c-a75c-2fe8c4bcb635', 'useCommonAlertSchema', true())), createArray())]"
+      }
+    },
+    {
+      "copy": {
+        "name": "databaseAlerts",
+        "count": "[length(variables('metricRules'))]"
+      },
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('{0}-{1}', parameters('resourceNamePrefix'), variables('metricRules')[copyIndex()].name)]",
+      "location": "global",
+      "properties": {
+        "description": "AvenChart database capacity warning. See the database recovery runbook.",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('postgresServerName'))]"
+        ],
+        "evaluationFrequency": "PT1M",
+        "windowSize": "[variables('metricRules')[copyIndex()].window]",
+        "autoMitigate": true,
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "[variables('metricRules')[copyIndex()].name]",
+              "metricName": "[variables('metricRules')[copyIndex()].metric]",
+              "metricNamespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+              "timeAggregation": "[variables('metricRules')[copyIndex()].aggregation]",
+              "operator": "[variables('metricRules')[copyIndex()].operator]",
+              "threshold": "[variables('metricRules')[copyIndex()].threshold]",
+              "criterionType": "StaticThresholdCriterion"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', format('{0}-operations', parameters('resourceNamePrefix')))]"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-operations', parameters('resourceNamePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "apiVersion": "2021-05-01-preview",
+      "scope": "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('postgresServerName'))]",
+      "name": "avenchart-database-operations",
+      "properties": {
+        "workspaceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]",
+        "logs": [
+          {
+            "category": "PostgreSQLLogs",
+            "enabled": true
+          },
+          {
+            "category": "PostgreSQLFlexQueryStoreRuntime",
+            "enabled": true
+          },
+          {
+            "category": "PostgreSQLFlexQueryStoreWaitStats",
+            "enabled": true
+          }
+        ],
+        "metrics": [
+          {
+            "category": "AllMetrics",
+            "enabled": true
+          }
+        ]
+      },
+      "dependsOn": [
+        "safeLogging"
+      ]
+    },
+    {
+      "copy": {
+        "name": "safeLogging",
+        "count": "[length(variables('loggingParameters'))]"
+      },
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers/configurations",
+      "apiVersion": "2024-08-01",
+      "name": "[format('{0}/{1}', parameters('postgresServerName'), variables('loggingParameters')[copyIndex()].name)]",
+      "properties": {
+        "value": "[variables('loggingParameters')[copyIndex()].value]",
+        "source": "user-override"
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[format('{0}-availability', parameters('resourceNamePrefix'))]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]",
+        "DisableLocalAuth": true
+      }
+    },
+    {
+      "type": "Microsoft.Insights/webtests",
+      "apiVersion": "2022-06-15",
+      "name": "[format('{0}-public-readiness', parameters('resourceNamePrefix'))]",
+      "location": "[parameters('location')]",
+      "kind": "standard",
+      "tags": {
+        "[format('hidden-link:{0}', resourceId('Microsoft.Insights/components', format('{0}-availability', parameters('resourceNamePrefix'))))]": "Resource"
+      },
+      "properties": {
+        "Name": "[format('{0}-public-readiness', parameters('resourceNamePrefix'))]",
+        "SyntheticMonitorId": "[format('{0}-public-readiness', parameters('resourceNamePrefix'))]",
+        "Kind": "standard",
+        "Enabled": true,
+        "Frequency": 300,
+        "Timeout": 30,
+        "RetryEnabled": true,
+        "Locations": [
+          {
+            "Id": "us-va-ash-azr"
+          },
+          {
+            "Id": "us-tx-sn1-azr"
+          },
+          {
+            "Id": "us-ca-sjc-azr"
+          }
+        ],
+        "Request": {
+          "RequestUrl": "[format('{0}/health/api/ready', parameters('applicationUrl'))]",
+          "HttpVerb": "GET",
+          "FollowRedirects": false,
+          "ParseDependentRequests": false
+        },
+        "ValidationRules": {
+          "ExpectedHttpStatusCode": 200,
+          "SSLCheck": true,
+          "SSLCertRemainingLifetimeCheck": 7,
+          "ContentValidation": {
+            "ContentMatch": "\"status\":\"healthy\"",
+            "IgnoreCase": false,
+            "PassIfTextFound": true
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', format('{0}-availability', parameters('resourceNamePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('{0}-public-readiness-failed', parameters('resourceNamePrefix'))]",
+      "location": "global",
+      "properties": {
+        "description": "AvenChart public readiness failed in at least two locations.",
+        "severity": 1,
+        "enabled": true,
+        "scopes": [
+          "[resourceId('Microsoft.Insights/webtests', format('{0}-public-readiness', parameters('resourceNamePrefix')))]",
+          "[resourceId('Microsoft.Insights/components', format('{0}-availability', parameters('resourceNamePrefix')))]"
+        ],
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "autoMitigate": true,
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.WebtestLocationAvailabilityCriteria",
+          "webTestId": "[resourceId('Microsoft.Insights/webtests', format('{0}-public-readiness', parameters('resourceNamePrefix')))]",
+          "componentId": "[resourceId('Microsoft.Insights/components', format('{0}-availability', parameters('resourceNamePrefix')))]",
+          "failedLocationCount": 2
+        },
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', format('{0}-operations', parameters('resourceNamePrefix')))]"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-operations', parameters('resourceNamePrefix')))]",
+        "[resourceId('Microsoft.Insights/components', format('{0}-availability', parameters('resourceNamePrefix')))]",
+        "[resourceId('Microsoft.Insights/webtests', format('{0}-public-readiness', parameters('resourceNamePrefix')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "actionGroupId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/actionGroups', format('{0}-operations', parameters('resourceNamePrefix')))]"
+    }
+  }
+}

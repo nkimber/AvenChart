@@ -18,7 +18,22 @@ public sealed class DatabaseConnectionOptions
 
     public int MinimumPoolSize { get; init; }
 
-    public int MaximumPoolSize { get; init; } = 100;
+    public int MaximumPoolSize { get; init; } = 15;
 
     public int KeepAliveSeconds { get; init; } = 30;
+
+    public string BuildConnectionString(string connectionString)
+    {
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
+        // Both settings are ceilings. Never enlarge a deployment's explicit pool.
+        builder.MaxPoolSize = Math.Min(builder.MaxPoolSize, MaximumPoolSize);
+        builder.MinPoolSize = Math.Max(builder.MinPoolSize, MinimumPoolSize);
+        if (builder.MinPoolSize > builder.MaxPoolSize)
+            throw new InvalidOperationException("The minimum database pool size exceeds the effective maximum.");
+        builder.Timeout = ConnectionTimeoutSeconds;
+        builder.CommandTimeout = CommandTimeoutSeconds;
+        builder.CancellationTimeout = CancellationTimeoutMilliseconds;
+        builder.KeepAlive = KeepAliveSeconds;
+        return builder.ConnectionString;
+    }
 }

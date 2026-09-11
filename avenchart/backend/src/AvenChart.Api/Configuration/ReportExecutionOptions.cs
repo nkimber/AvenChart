@@ -7,7 +7,11 @@ public sealed class ReportExecutionOptions
 {
     public const string SectionName = "ReportExecution";
 
-    public int PollIntervalMilliseconds { get; init; } = 250;
+    public int PollIntervalMilliseconds { get; init; } = 2000;
+
+    public int MaintenanceIntervalSeconds { get; init; } = 15;
+
+    public int FailureBackoffMaximumSeconds { get; init; } = 30;
 
     public int EnqueueDelayMilliseconds { get; init; } = 500;
 

@@ -96,7 +96,7 @@ function defaultDocument(): AzureDeploymentProfileDocument {
     uiCpu: 0.25,
     uiMemoryGiB: 0.5,
     minimumReplicas: 1,
-    maximumReplicas: 2,
+    maximumReplicas: 1,
     httpConcurrency: 20,
     postgresSkuName: "Standard_B1ms",
     postgresTier: "Burstable",
@@ -578,7 +578,7 @@ export default function AzureOperations() {
           <label className="azure-ops-field"><span>PostgreSQL SKU</span><select className="ne-input" value={document.postgresSkuName} onChange={(event) => { const sku = event.target.value; update("postgresSkuName", sku); update("postgresTier", sku.startsWith("Standard_B") ? "Burstable" : "GeneralPurpose"); }}><option value="Standard_B1ms">B1ms · 1 vCPU / 2 GiB / 35 user connections</option><option value="Standard_B2s">B2s · 2 vCPU / 4 GiB / 414 user connections</option><option value="Standard_B2ms">B2ms · 2 vCPU / 8 GiB / 844 user connections</option><option value="Standard_D2ds_v5">General Purpose D2ds v5 · production-like</option></select></label>
           <Field label="Compute tier" value={document.postgresTier} onChange={(value) => update("postgresTier", value)} />
           <Field label="Storage (GiB)" type="number" value={document.postgresStorageGiB} onChange={(value) => number("postgresStorageGiB", value)} />
-          <Field label="Pool maximum per replica" type="number" value={document.connectionPoolMaximum} onChange={(value) => number("connectionPoolMaximum", value)} help={`${document.connectionPoolMaximum * document.maximumReplicas} potential application connections.`} />
+          <Field label="Pool maximum per replica" type="number" value={document.connectionPoolMaximum} onChange={(value) => number("connectionPoolMaximum", value)} help={`${document.connectionPoolMaximum * document.maximumReplicas * 2} potential connections during deployment overlap.`} />
           <Field label="Backup retention (days)" type="number" value={document.backupRetentionDays} onChange={(value) => number("backupRetentionDays", value)} />
           <Field label="Database name" value={document.databaseName} onChange={(value) => update("databaseName", value)} />
           <Field label="Administrator login" value={document.databaseAdministratorLogin} onChange={(value) => update("databaseAdministratorLogin", value)} />

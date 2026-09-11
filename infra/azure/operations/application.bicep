@@ -26,7 +26,10 @@ param customDomainCertificateId string = ''
 param minimumReplicas int = 1
 @minValue(1)
 @maxValue(10)
-param maximumReplicas int = 2
+param maximumReplicas int = 1
+@minValue(5)
+@maxValue(100)
+param connectionPoolMaximum int = 15
 @minValue(1)
 @maxValue(1000)
 param httpConcurrency int = 20
@@ -57,7 +60,7 @@ resource application 'Microsoft.App/containerApps@2024-03-01' = {
     environmentId: managedEnvironment.id
     workloadProfileName: 'Consumption'
     configuration: {
-      activeRevisionsMode: 'Multiple'
+      activeRevisionsMode: 'Single'
       ingress: {
         external: true
         allowInsecure: false
@@ -140,7 +143,8 @@ resource application 'Microsoft.App/containerApps@2024-03-01' = {
             {
               type: 'Readiness'
               httpGet: {
-                path: '/health/api/ready'
+                // API readiness is probed separately; avoid duplicate DB work.
+                path: '/health'
                 port: 8080
                 scheme: 'HTTP'
               }
@@ -172,6 +176,10 @@ resource application 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'ConnectionStrings__AvenChart'
               secretRef: 'database-connection-string'
+            }
+            {
+              name: 'DatabaseConnection__MaximumPoolSize'
+              value: string(connectionPoolMaximum)
             }
             {
               name: 'DatabaseSchema__MigrationsPath'

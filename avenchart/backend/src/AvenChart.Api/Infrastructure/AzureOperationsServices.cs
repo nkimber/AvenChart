@@ -415,10 +415,28 @@ public sealed class AzureDeploymentCoordinator(
 
             phase = "verify-health";
             await SetPhase(executionId, phase, "Checking UI, API liveness, and API readiness through public ingress.", token);
-            var health = await GetHealthInScope(profile, token);
+            var health = await WaitForDeployedHealth(profile, token);
             if (health.UiHealth != "healthy" || health.ApiLiveness != "healthy" || health.ApiReadiness != "healthy")
                 throw new InvalidOperationException($"Post-deployment verification failed: UI={health.UiHealth}, API live={health.ApiLiveness}, API ready={health.ApiReadiness}.");
-            var summary = "Azure platform, images, synthetic seed, schema migrations, application revision, and health verification completed successfully.";
+            phase = "configure-monitoring";
+            await SetPhase(executionId, phase, "Configuring database alerts, diagnostic retention, and public readiness monitoring.", token);
+            using (var monitoring = await WriteParameterFileAsync(new Dictionary<string, object?>
+            {
+                ["location"] = profile.Location,
+                ["resourceNamePrefix"] = profile.ResourceNamePrefix,
+                ["postgresServerName"] = profile.PostgresServerName,
+                ["postgresTier"] = profile.PostgresTier,
+                ["logAnalyticsWorkspaceName"] = profile.LogAnalyticsWorkspaceName,
+                ["applicationUrl"] = health.ApplicationUrl!.TrimEnd('/'),
+                ["alertEmails"] = profile.AlertEmails ?? [],
+                ["connectionAlertThreshold"] = (int)(AzureDeploymentProfilePolicy.DatabaseUserConnectionLimit(profile.PostgresSkuName) * 0.8)
+            }, token))
+            {
+                await RequireSuccess(["deployment", "group", "create", "--subscription", profile.SubscriptionId, "--resource-group", profile.ResourceGroupName,
+                    "--name", DeploymentName(item, "monitoring"), "--template-file", Path.Combine(root, "infra", "azure", "operations", "monitoring.bicep"),
+                    "--parameters", $"@{monitoring.Path}", "--output", "none", "--only-show-errors"], token);
+            }
+            var summary = "Azure platform, images, synthetic seed, schema migrations, application revision, health verification, and monitoring completed successfully.";
             if (!string.IsNullOrWhiteSpace(profile.CustomDomain)) summary += " Custom-domain DNS and certificate activation remain pending validation.";
             await WithRepository(repository => repository.CompleteExecutionAsync(executionId, summary, health.ApplicationUrl, DeploymentName(item, "application"), token));
         }
@@ -427,17 +445,20 @@ public sealed class AzureDeploymentCoordinator(
         {
             var profile = item.Document;
             phase = "select-rollback-revision";
-            await SetPhase(executionId, phase, "Selecting the previous healthy active Container Apps revision.", token);
+            await SetPhase(executionId, phase, "Selecting a previous healthy Container Apps revision to redeploy.", token);
             var revisions = await RequireSuccess(["containerapp", "revision", "list", "--subscription", profile.SubscriptionId, "--resource-group", profile.ResourceGroupName,
                 "--name", profile.ContainerAppName, "--output", "json", "--only-show-errors"], token);
             var target = SelectPreviousRevision(revisions.StandardOutput);
-            phase = "shift-traffic";
-            await SetPhase(executionId, phase, $"Shifting all application traffic to revision {target}.", token);
-            await RequireSuccess(["containerapp", "ingress", "traffic", "set", "--subscription", profile.SubscriptionId, "--resource-group", profile.ResourceGroupName,
-                "--name", profile.ContainerAppName, "--revision-weight", $"{target}=100", "--only-show-errors", "--output", "none"], token);
-            var health = await GetHealthInScope(profile, token);
+            phase = "redeploy-previous-revision";
+            await SetPhase(executionId, phase, $"Copying {target} into a fresh revision with the current connection budget.", token);
+            await RequireSuccess(["containerapp", "revision", "copy", "--subscription", profile.SubscriptionId, "--resource-group", profile.ResourceGroupName,
+                "--name", profile.ContainerAppName, "--from-revision", target, "--container-name", "api",
+                "--revision-suffix", $"rollback-{executionId:N}", "--set-env-vars",
+                $"DatabaseConnection__MaximumPoolSize={profile.ConnectionPoolMaximum}", "ReportExecution__PollIntervalMilliseconds=2000",
+                "--only-show-errors", "--output", "none"], token);
+            var health = await WaitForDeployedHealth(profile, token);
             if (health.ApiReadiness != "healthy") throw new InvalidOperationException("The rollback revision did not pass API readiness verification.");
-            await WithRepository(repository => repository.CompleteExecutionAsync(executionId, $"Traffic shifted to {target} and readiness passed.", health.ApplicationUrl, target, token));
+            await WithRepository(repository => repository.CompleteExecutionAsync(executionId, $"Redeployed {target} as {health.RevisionName}; readiness passed.", health.ApplicationUrl, health.RevisionName, token));
         }
 
         async Task VerifyAsync(AzureDeploymentExecutionWorkItem item, CancellationToken token)
@@ -570,6 +591,7 @@ public sealed class AzureDeploymentCoordinator(
         ["keyVaultName"] = p.KeyVaultName,
         ["minimumReplicas"] = p.MinimumReplicas,
         ["maximumReplicas"] = p.MaximumReplicas,
+        ["connectionPoolMaximum"] = p.ConnectionPoolMaximum,
         ["httpConcurrency"] = p.HttpConcurrency,
         ["apiCpu"] = p.ApiCpu.ToString("0.##", CultureInfo.InvariantCulture),
         ["apiMemory"] = $"{p.ApiMemoryGiB.ToString("0.##", CultureInfo.InvariantCulture)}Gi",
@@ -636,6 +658,26 @@ public sealed class AzureDeploymentCoordinator(
         return await scope.ServiceProvider.GetRequiredService<AzureOperationsService>().GetHealthAsync(profile, cancellationToken);
     }
 
+    private async Task<AzureDeploymentHealthResponse> WaitForDeployedHealth(AzureDeploymentProfileDocument profile, CancellationToken token)
+    {
+        for (var attempt = 0; attempt < 120; attempt++)
+        {
+            var result = await RequireSuccess(["containerapp", "show", "--subscription", profile.SubscriptionId,
+                "--resource-group", profile.ResourceGroupName, "--name", profile.ContainerAppName,
+                "--query", "properties.{latest:latestRevisionName,ready:latestReadyRevisionName}", "--output", "json", "--only-show-errors"], token);
+            using var state = JsonDocument.Parse(result.StandardOutput);
+            var latest = state.RootElement.GetProperty("latest").GetString();
+            var ready = state.RootElement.GetProperty("ready").GetString();
+            if (!string.IsNullOrEmpty(latest) && latest == ready)
+            {
+                var health = await GetHealthInScope(profile, token);
+                if (health.UiHealth == "healthy" && health.ApiLiveness == "healthy" && health.ApiReadiness == "healthy") return health;
+            }
+            await Task.Delay(TimeSpan.FromSeconds(5), token);
+        }
+        throw new InvalidOperationException("The new application revision did not become ready within ten minutes.");
+    }
+
     private async Task<T> WithRepository<T>(Func<AzureOperationsRepository, Task<T>> action)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -668,15 +710,18 @@ public sealed class AzureDeploymentCoordinator(
         catch { return "Azure what-if completed successfully."; }
     }
 
-    private static string SelectPreviousRevision(string json)
+    public static string SelectPreviousRevision(string json)
     {
         using var document = JsonDocument.Parse(json);
         var candidates = document.RootElement.EnumerateArray()
-            .Where(item => !item.TryGetProperty("properties", out var properties) || !properties.TryGetProperty("healthState", out var health) || !string.Equals(health.GetString(), "Unhealthy", StringComparison.OrdinalIgnoreCase))
+            .Where(item => item.TryGetProperty("properties", out var properties)
+                && properties.TryGetProperty("healthState", out var health)
+                && string.Equals(health.GetString(), "Healthy", StringComparison.OrdinalIgnoreCase)
+                && properties.TryGetProperty("trafficWeight", out var traffic) && traffic.GetInt32() == 0)
             .Select(item => new { Name = item.GetProperty("name").GetString(), Created = item.TryGetProperty("properties", out var properties) && properties.TryGetProperty("createdTime", out var created) ? created.GetString() : null })
             .Where(item => !string.IsNullOrWhiteSpace(item.Name)).OrderByDescending(item => item.Created, StringComparer.Ordinal).ToArray();
-        if (candidates.Length < 2) throw new InvalidOperationException("No previous healthy Container Apps revision is available for rollback.");
-        return candidates[1].Name!;
+        if (candidates.Length == 0) throw new InvalidOperationException("No previous healthy Container Apps revision is available for rollback.");
+        return candidates[0].Name!;
     }
 
     private static string ReadJobStatus(string json, string? executionName)
