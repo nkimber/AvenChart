@@ -5394,11 +5394,13 @@ test.describe('telehealth accessibility', () => {
 
     await expect(page.getByRole('heading', { name: 'Immediate telehealth request' })).toBeVisible()
     await expect(page.getByRole('note')).toContainText('Demonstration data only')
-    const migraineButton = page.getByRole('button', { name: 'Start migraine demo' })
-    await migraineButton.focus()
-    await expect(migraineButton).toBeFocused()
-    await page.keyboard.press('Tab')
-    await expect(page.getByRole('button', { name: 'Start sleep demo' })).toBeFocused()
+    await expect(page.getByRole('button', { name: 'Start migraine demo' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Start sleep demo' })).toBeDisabled()
+    const existingRequest = page.getByRole('button', { name: /migraine Draft/ })
+    await existingRequest.focus()
+    await expect(existingRequest).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: 'Confirm current location' })).toBeEnabled()
 
     await expectNoSeriousAccessibilityViolations(page)
     await expectTelehealthReflow(page)
@@ -5418,7 +5420,7 @@ test.describe('telehealth accessibility', () => {
     await expect(summary).toBeFocused()
     await page.keyboard.press('Tab')
     await expect(page.getByLabel('Synthetic symptom duration')).toBeFocused()
-    await expect(page.getByRole('button', { name: 'Submit readiness for synthetic verification' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Confirm details and join demo queue' })).toBeDisabled()
 
     await expectNoSeriousAccessibilityViolations(page)
     await expectTelehealthReflow(page)
@@ -5517,12 +5519,12 @@ test.describe('telehealth accessibility', () => {
     await expectTelehealthReflow(page)
   })
 
-  test('patient wrap-up lifecycle is terminal, privacy-bounded, and accessible', async ({ page }) => {
+  test('patient wrap-up continues status polling, stays privacy-bounded, and is accessible', async ({ page }) => {
     let statusCalls = 0
     await page.route('**/api/telehealth/v1/patient/requests', (route) => route.fulfill({ json: { requests: [wrapUpPatientRequest] } }))
     await page.route('**/api/telehealth/v1/patient/requests/*/status', (route) => {
       statusCalls += 1
-      return route.fulfill({ status: 500, json: { detail: 'Terminal lifecycle must not poll.' } })
+      return route.fulfill({ json: { ...patientQueueStatus, requestStatus: 'WrapUp', requestVersion: wrapUpPatientRequest.version, phase: 'WrapUp', headline: 'Finishing the visit record', detail: 'The physician is preparing wrap-up.', approximateRequestsAhead: null, safetyActions: [] } })
     })
     await signInPortal(page)
     await page.goto('/portal/telehealth')
@@ -5531,8 +5533,7 @@ test.describe('telehealth accessibility', () => {
     await expect(page.getByText(/This visit is not complete.*after-visit summary.*prescription.*claim/i)).toBeVisible()
     await expect(page.getByText(/Call 911 now for an emergency/i)).toBeVisible()
     await expect(page.getByText(/gold-provider-01|physicianStaffId|encounterId|joinCredential/i)).toHaveCount(0)
-    await page.waitForTimeout(100)
-    expect(statusCalls).toBe(0)
+    await expect.poll(() => statusCalls).toBeGreaterThan(0)
 
     await expectNoSeriousAccessibilityViolations(page)
     await expectTelehealthReflow(page)
@@ -6001,8 +6002,15 @@ test.describe('telehealth accessibility', () => {
     const prescriptionPreparationBodies: Array<Record<string, unknown>> = []
     const safetyDispositionCommandKeys: Array<string | undefined> = []
     const safetyDispositionBodies: Array<Record<string, unknown>> = []
+    let shiftStarted = false
+    let reservationHeld = false
+    const activeShift = { shiftId: '30000000-0000-4000-8000-000000000003', status: 'Active', facilityId: 10, clinicianStaffId: 101, startedAt: '2026-08-26T12:10:00Z', version: 1 }
+    const activeReservation = { reservationId: '70000000-0000-4000-8000-000000000007', requestId: queueRequest.requestId, queueEntryId: '80000000-0000-4000-8000-000000000008', shiftId: activeShift.shiftId, clinicianStaffId: 101, reservedAt: activeShift.startedAt, leaseExpiresAt: '2026-08-27T04:31:00Z', status: 'Active', requestVersion: 9, applicantOriginated: true }
+    await page.route('**/api/telehealth/v1/clinician/active-work', route => route.fulfill({ json: { shift: shiftStarted ? activeShift : null, reservation: reservationHeld ? activeReservation : null, consultationId: consultationCalls >= 2 ? consultationStart.consultationId : null } }))
+    await page.route('**/api/telehealth/v1/clinician/consultations/*/final-clinical-review', route => route.fulfill({ json: { consultationId: consultationStart.consultationId, documentation: { version: currentDocumentation.version }, safetyDisposition: null, currentPrescriptionOrderId: null, currentReview: null, reviewEnabled: false, limitations: [] } }))
+    await page.route('**/api/telehealth/v1/clinician/consultations/*/professional-claim-preparation', route => route.fulfill({ json: { claimPreparationEnabled: false, currentPreparation: null, targetStandard: '837P', blockers: ['Separate governed claim demonstration.'], limitations: [] } }))
     await page.route('**/api/telehealth/v1/clinician/queue', (route) => route.fulfill({ json: { requests: [{ ...queueRequest, status: 'Queued', applicantOriginated: true }] } }))
-    await page.route('**/api/telehealth/v1/clinician/shifts', (route) => route.fulfill({
+    await page.route('**/api/telehealth/v1/clinician/shifts', (route) => { shiftStarted = true; return route.fulfill({
       json: {
         shiftId: '30000000-0000-4000-8000-000000000003',
         status: 'Active',
@@ -6011,8 +6019,8 @@ test.describe('telehealth accessibility', () => {
         startedAt: '2026-08-26T12:10:00Z',
         version: 1,
       },
-    }))
-    await page.route('**/api/telehealth/v1/clinician/reservations/reserve-next', (route) => route.fulfill({ json: {
+    }) })
+    await page.route('**/api/telehealth/v1/clinician/reservations/reserve-next', (route) => { reservationHeld = true; return route.fulfill({ json: {
       reservationId: '70000000-0000-4000-8000-000000000007',
       requestId: queueRequest.requestId,
       queueEntryId: '80000000-0000-4000-8000-000000000008',
@@ -6023,7 +6031,7 @@ test.describe('telehealth accessibility', () => {
       status: 'Active',
       requestVersion: 9,
       applicantOriginated: true,
-    } }))
+    } }) })
     await page.route('**/api/telehealth/v1/clinician/reservations/*/connection-grants', (route) => route.fulfill({ json: { ...connectionGrant, participantRole: 'physician' } }))
     await page.route('**/api/telehealth/v1/clinician/reservations/*/consultations/start', async (route) => {
       consultationCalls += 1
@@ -6151,15 +6159,15 @@ test.describe('telehealth accessibility', () => {
     await page.goto('/clinician/telehealth/physician')
 
     await expect(page.getByRole('heading', { name: 'Telehealth clinician queue' })).toBeVisible()
-    await expect(page.getByRole('note')).toContainText(/No real consultation.*prescribing.*patient care is enabled/i)
+    await expect(page.getByRole('note')).toContainText(/Video and draft workflows are for demonstration, not patient care/i)
     await expect(page.getByText(/New-patient applicant · exact synthetic candidate match/i)).toBeVisible()
     const startButton = page.getByRole('button', { name: 'Start telehealth shift' })
     await startButton.focus()
     await expect(startButton).toBeFocused()
     await page.keyboard.press('Enter')
-    await expect(page.getByRole('button', { name: 'Shift active' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Start telehealth shift' })).toHaveCount(0)
     await expect(page.getByText('Active at facility 10')).toBeVisible()
-    await page.getByRole('button', { name: 'Reserve next request' }).click()
+    await page.getByRole('button', { name: 'See next patient' }).click()
     await expect(page.getByRole('heading', { name: 'Reserved synthetic request' })).toBeVisible()
     await expect(page.getByText(/matched the exact current synthetic rendering-candidate evidence/i)).toBeVisible()
     await expect(page.getByText(/not real credentialing, network confirmation, consent, or care authorization/i)).toBeVisible()
@@ -6235,7 +6243,8 @@ test.describe('telehealth accessibility', () => {
     await expect(page.getByRole('heading', { name: 'Wrap-up is active' })).toBeVisible()
     await expect(page.getByText(/still unfinished.*remain responsible.*unavailable for new work/i)).toBeVisible()
     await expect(page.getByText(/Lifecycle: unfinished wrap-up/i)).toBeVisible()
-    const completionPanel = page.locator('.telehealth-completion-review')
+    await page.getByText('Optional completion and claim-preparation review', { exact: true }).click()
+    const completionPanel = page.locator('.telehealth-completion-review').filter({ has: page.getByRole('heading', { name: 'Pre-finalization evidence review' }) })
     const completionAlert = completionPanel.getByRole('alert')
     await expect(completionAlert).toContainText('Synthetic completion review unavailable.')
     await expect(completionAlert).toBeFocused()
@@ -6248,6 +6257,7 @@ test.describe('telehealth accessibility', () => {
     await page.getByLabel('Plan').fill('Synthetic unfinished wrap-up plan.')
     await page.getByRole('button', { name: 'Save unsigned draft' }).click()
     await expect(page.getByText(/Unsigned synthetic draft version 2 saved/)).toBeVisible()
+    await page.getByText('Optional pharmacy and prescription preparation', { exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Patient-confirmed pharmacy destination draft' })).toBeVisible()
     await expect(page.locator('.telehealth-pharmacy-choice').getByRole('note')).toContainText(/does not create, sign, route, or transmit a prescription/i)
     await page.getByLabel(/Synthetic Golden Gate Pharmacy/).check()

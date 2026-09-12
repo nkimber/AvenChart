@@ -4,21 +4,24 @@
 import { expect as baseExpect, test, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 const expect = baseExpect.configure({ timeout: 20_000 })
+const azureAcceptance = process.env.TELEHEALTH_AZURE_DEMO_E2E === '1'
 
-// Explicitly opt in against the isolated synthetic staging stack. No API
-// responses are mocked. Chromium supplies synthetic camera/microphone tracks;
-// this is NOT evidence for physical cameras or the Azure ACS transport.
+// Explicitly opt in against the isolated staging stack or the named Azure
+// synthetic demo. No API responses are mocked. Chromium supplies synthetic
+// camera/microphone tracks; this is NOT evidence for physical cameras.
 test.use({ actionTimeout: 15_000, navigationTimeout: 30_000, permissions: ['camera', 'microphone'], launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] } })
-test.skip(process.env.TELEHEALTH_DEMO_E2E !== '1', 'Requires isolated synthetic staging data and explicit opt-in')
+test.skip(process.env.TELEHEALTH_DEMO_E2E !== '1' && !azureAcceptance, 'Requires explicit local or named Azure synthetic-demo opt-in')
 
 async function checkLabels(page: Page, labels: RegExp[]) {
   for (const label of labels) await page.getByLabel(label).check()
 }
 
 test('two tabs complete the patient and physician office demonstration through real APIs', async ({ page: patient, context, baseURL }) => {
-  expect(['127.0.0.1', 'localhost']).toContain(new URL(baseURL!).hostname)
+  expect(azureAcceptance ? ['avenchart.kimber.dev'] : ['127.0.0.1', 'localhost']).toContain(new URL(baseURL!).hostname)
+  if (azureAcceptance) expect(new URL(baseURL!).protocol).toBe('https:')
   const doctor = await context.newPage()
   const errors: string[] = []
+  let createdRequestId: string | undefined
   let wrapUpRequested = false
   patient.on('pageerror', error => errors.push(`Patient: ${error.message}`))
   doctor.on('pageerror', error => errors.push(`Physician: ${error.message}`))
@@ -36,7 +39,11 @@ test('two tabs complete the patient and physician office demonstration through r
   await expect(patient).toHaveURL(/\/portal\/telehealth$/)
   await expect(patient.getByRole('heading', { name: 'Immediate telehealth request' })).toBeVisible()
   if (process.env.TELEHEALTH_DEMO_RESUME !== '1') {
+    await expect(patient.getByRole('button', { name: 'Start sleep demo' }), 'An unfinished request must be resolved through the normal workflow first; this test never resets existing records.').toBeEnabled()
+    const created = patient.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/telehealth/v1/patient/requests')
     await patient.getByRole('button', { name: 'Start sleep demo' }).click()
+    createdRequestId = (await (await created).json()).requestId
+    expect(createdRequestId).toEqual(expect.any(String))
     await patient.getByRole('button', { name: 'Confirm current location' }).click()
     await patient.getByRole('button', { name: 'Evaluate synthetic triage' }).click()
     await checkLabels(patient, [/confirm these current demographic/i, /reviewed this synthetic clinical-list summary/i, /entered synthetic demonstration data only/i, /selected and confirmed this existing synthetic coverage/i, /affirmatively accept this exact synthetic acknowledgment/i])
@@ -51,7 +58,9 @@ test('two tabs complete the patient and physician office demonstration through r
   await expect(doctor.getByRole('heading', { name: 'Telehealth shift', exact: true })).toBeVisible()
   const note = 'Synthetic office demonstration: reviewed the supplied fixture, not a real clinical assessment.'
   if (process.env.TELEHEALTH_DEMO_RESUME_CONSULTATION !== '1') {
+  const reserved = doctor.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/telehealth/v1/clinician/reservations/reserve-next')
   await doctor.getByRole('button', { name: 'See next patient', exact: true }).click()
+  if (createdRequestId) expect((await (await reserved).json()).requestId, 'Never proceed into another queued patient’s visit').toBe(createdRequestId)
   await expect(patient.getByRole('button', { name: 'Check camera and microphone' })).toBeVisible({ timeout: 25_000 })
   for (const tab of [patient, doctor]) {
     await tab.getByRole('button', { name: 'Check camera and microphone' }).click()
@@ -59,9 +68,29 @@ test('two tabs complete the patient and physician office demonstration through r
   }
   await patient.getByRole('button', { name: 'Enter synthetic waiting room' }).click()
   await doctor.getByRole('button', { name: 'Enter physician waiting room' }).click()
-  await doctor.getByRole('button', { name: 'Start browser media POC' }).click()
-  await patient.getByRole('button', { name: 'Join browser media POC' }).click()
-  for (const tab of [patient, doctor]) await expect(tab.getByText('Local browser-to-browser media connected. AvenChart does not receive or store media.')).toBeVisible({ timeout: 30_000 })
+  if (azureAcceptance) {
+    for (const tab of [patient, doctor]) {
+      await tab.getByRole('combobox', { name: 'Camera for synthetic internet call' }).selectOption({ index: 1 })
+      await tab.getByRole('checkbox', { name: /Same-laptop demo: silence/ }).check()
+      await tab.getByRole('button', { name: 'Join video visit', exact: true }).click()
+    }
+    for (const tab of [patient, doctor]) {
+      await expect(tab.getByText('Patient and physician are connected.', { exact: true })).toBeVisible({ timeout: 60_000 })
+      await expect.poll(() => tab.locator('[aria-label="Other participant video"] video').evaluateAll(videos => videos.some(video => (video as HTMLVideoElement).videoWidth > 0 && !(video as HTMLVideoElement).paused)), { timeout: 30_000 }).toBe(true)
+      await expect(tab.getByRole('button', { name: 'Unmute microphone' })).toBeDisabled()
+    }
+    await doctor.getByRole('button', { name: 'Turn camera off' }).click()
+    await expect(doctor.getByText('Your camera is off', { exact: true })).toBeVisible()
+    await doctor.getByRole('button', { name: 'Turn camera on' }).click()
+    await doctor.getByRole('button', { name: 'Leave video visit' }).click()
+    await expect(patient.getByText('You are in the room. Waiting for the other participant to join…', { exact: true })).toBeVisible()
+    await doctor.getByRole('button', { name: 'Rejoin video visit' }).click()
+    for (const tab of [patient, doctor]) await expect(tab.getByText('Patient and physician are connected.', { exact: true })).toBeVisible({ timeout: 60_000 })
+  } else {
+    await doctor.getByRole('button', { name: 'Start browser media POC' }).click()
+    await patient.getByRole('button', { name: 'Join browser media POC' }).click()
+    for (const tab of [patient, doctor]) await expect(tab.getByText('Local browser-to-browser media connected. AvenChart does not receive or store media.')).toBeVisible({ timeout: 30_000 })
+  }
   await checkLabels(doctor, [/Patient identity discussion completed/, /Callback number reconfirmed/, /Privacy and other participants discussed/, /Telehealth consent discussion completed/, /No concerning symptom change/, /Emergency plan reviewed/, /Synthetic communication check is sufficient/])
   await doctor.getByRole('button', { name: 'Start synthetic lifecycle', exact: true }).click()
   await expect(doctor.getByRole('heading', { name: 'Consultation workspace' })).toBeVisible()
