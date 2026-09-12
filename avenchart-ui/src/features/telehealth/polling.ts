@@ -8,7 +8,9 @@ const MAXIMUM_DELAY_SECONDS = 30
 const JITTER_FRACTION = 0.1
 
 export function shouldPollPatientQueueStatus(status: TelehealthRequestStatus) {
-  return ['OperationalReview', 'Queued', 'Reserved', 'Connecting', 'InConsultation'].includes(status)
+  // Wrap-up is not terminal: keep listening until the physician closes the
+  // visit so the patient receives the receipt without a manual page refresh.
+  return ['OperationalReview', 'Queued', 'Reserved', 'Connecting', 'InConsultation', 'WrapUp'].includes(status)
 }
 
 export function queuePollDelayMilliseconds(

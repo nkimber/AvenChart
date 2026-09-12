@@ -10,9 +10,9 @@ import {
   type TelehealthSafetyDispositionWorkspace,
 } from './api.ts'
 
-type Props = { consultationId: string }
+type Props = { consultationId: string; onSaved?: () => void }
 
-export default function TelehealthSafetyDispositionPanel({ consultationId }: Props) {
+export default function TelehealthSafetyDispositionPanel({ consultationId, onSaved }: Props) {
   const headingId = useId()
   const errorRef = useRef<HTMLParagraphElement>(null)
   const commandKey = useRef<string | null>(null)
@@ -136,6 +136,7 @@ export default function TelehealthSafetyDispositionPanel({ consultationId }: Pro
       setSyntheticDataConfirmed(false)
       commandKey.current = null
       setStatus(`Unsigned safety-disposition draft version ${draft.version} recorded. It was not signed, finalized, or delivered.`)
+      onSaved?.()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The safety-disposition draft was not recorded. Reload before retrying a conflict.')
       setStatus('No safety-disposition change was recorded. No patient delivery or lifecycle action occurred.')

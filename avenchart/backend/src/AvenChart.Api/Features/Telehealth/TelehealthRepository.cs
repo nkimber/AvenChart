@@ -649,6 +649,7 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             {
                 if (!string.Equals(reader.GetString(7), fingerprint, StringComparison.Ordinal)) throw TelehealthProblem.Conflict("telehealth_idempotency_conflict", "The shift-end idempotency key was reused with different content.");
                 var result = new TelehealthShiftResponse(reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetFieldValue<DateTimeOffset>(4), checked((int)reader.GetInt64(5)), reader.GetFieldValue<DateTimeOffset>(6));
+                await reader.DisposeAsync();
                 await transaction.CommitAsync(cancellationToken); return result;
             }
         }
@@ -668,6 +669,7 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             await using var reader = await end.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken)) throw TelehealthProblem.Conflict("telehealth_shift_end_unavailable", "The shift is stale, no longer idle, or cannot be ended.");
             var result = new TelehealthShiftResponse(reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetFieldValue<DateTimeOffset>(4), checked((int)reader.GetInt64(5)), reader.GetFieldValue<DateTimeOffset>(6));
+            await reader.DisposeAsync();
             await transaction.CommitAsync(cancellationToken); return result;
         }
     }

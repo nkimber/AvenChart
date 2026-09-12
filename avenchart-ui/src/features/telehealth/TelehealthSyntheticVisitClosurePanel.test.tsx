@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TelehealthSyntheticVisitClosurePanel from './TelehealthSyntheticVisitClosurePanel.tsx'
 import { closeSyntheticTelehealthVisit } from './api.ts'
 
@@ -12,6 +12,20 @@ vi.mock('./api.ts', async (importOriginal) => {
 })
 
 describe('TelehealthSyntheticVisitClosurePanel', () => {
+  beforeEach(() => vi.clearAllMocks())
+  it('reuses the same closure key after an interrupted response', async () => {
+    vi.mocked(closeSyntheticTelehealthVisit).mockRejectedValue(new Error('Response interrupted'))
+    render(<TelehealthSyntheticVisitClosurePanel consultationId="consultation-1" expectedVersion={5} onClosed={vi.fn()} />)
+    screen.getAllByRole('checkbox').forEach(checkbox => fireEvent.click(checkbox))
+    const button = screen.getByRole('button', { name: /close synthetic visit and return to availability/i })
+    fireEvent.click(button)
+    await screen.findByText('Response interrupted')
+    const firstKey = vi.mocked(closeSyntheticTelehealthVisit).mock.calls[0][3]
+    fireEvent.click(button)
+    await waitFor(() => expect(closeSyntheticTelehealthVisit).toHaveBeenCalledTimes(2))
+    expect(firstKey).toEqual(expect.any(String))
+    expect(vi.mocked(closeSyntheticTelehealthVisit).mock.calls[1][3]).toBe(firstKey)
+  })
   it('requires both confirmations before closing only the synthetic lifecycle', async () => {
     const onClosed = vi.fn()
     vi.mocked(closeSyntheticTelehealthVisit).mockResolvedValue({ consultationId: 'consultation-1', consultationVersion: 6, requestVersion: 9, closedAt: '2026-08-30T17:00:00Z', encounterLocked: true, clinicianAvailableForNewWork: true, appointmentCompleted: false, patientDeliveryCreated: false, billingCreated: false, claimCreated: false, externalDestinationContacted: false, limitations: [] })
@@ -21,7 +35,7 @@ describe('TelehealthSyntheticVisitClosurePanel', () => {
     screen.getAllByRole('checkbox').forEach((checkbox) => fireEvent.click(checkbox))
     expect(button).toBeEnabled()
     fireEvent.click(button)
-    await waitFor(() => expect(closeSyntheticTelehealthVisit).toHaveBeenCalledWith('consultation-1', { expectedConsultationVersion: 5, encounterLockReviewed: true, syntheticClosureConfirmed: true }))
+    await waitFor(() => expect(closeSyntheticTelehealthVisit).toHaveBeenCalledWith('consultation-1', { expectedConsultationVersion: 5, encounterLockReviewed: true, syntheticClosureConfirmed: true }, undefined, expect.any(String)))
     expect(onClosed).toHaveBeenCalledWith(expect.objectContaining({ consultationId: 'consultation-1', clinicianAvailableForNewWork: true, appointmentCompleted: false }))
     expect(await screen.findByText(/appointment, delivery, billing, claims, and integrations remain unchanged/i)).toBeInTheDocument()
   })

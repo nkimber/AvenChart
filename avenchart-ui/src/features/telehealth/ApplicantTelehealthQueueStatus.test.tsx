@@ -248,10 +248,12 @@ describe('ApplicantTelehealthQueueStatus', () => {
     expect(screen.getByText(/Communication started/).parentElement).toHaveTextContent('No')
   })
 
-  it('continues polling during consultation and stops at minimized wrap-up status', async () => {
+  it('continues polling through wrap-up so the final receipt can arrive automatically', async () => {
+    vi.mocked(getApplicantSyntheticPostVisitReceipt).mockRejectedValue(new ApiRequestError('Receipt unavailable.', 404))
     vi.mocked(getApplicantTelehealthRequestQueueStatus)
       .mockResolvedValueOnce(inConsultationStatus)
       .mockResolvedValueOnce(wrapUpStatus)
+      .mockResolvedValue(closedStatus)
 
     render(<ApplicantTelehealthQueueStatus applicantId="applicant-57" applicantAccessKey="secret-key" enabled />)
 
@@ -260,6 +262,8 @@ describe('ApplicantTelehealthQueueStatus', () => {
 
     expect(await screen.findByRole('heading', { name: 'Your physician is finishing the synthetic visit record' })).toBeVisible()
     expect(screen.getByText(/No signed record, after-visit summary, prescription, or claim/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh queue status now' }))
+    await screen.findByRole('heading', { name: 'The synthetic visit lifecycle has closed' })
     expect(screen.queryByRole('button', { name: 'Refresh queue status now' })).not.toBeInTheDocument()
     expect(screen.queryByText(/provider|NPI|prescription ID/i)).not.toBeInTheDocument()
   })

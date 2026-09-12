@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { acknowledgeApplicantTelehealthNotice, assessApplicantTelehealthRequestComplaintTriage, assessApplicantTelehealthRequestUniversalSafety, authorizeApplicantPracticeReview, authorizeApplicantRequestToQueue, authorizeRequest, cancelPatientTelehealthRequest, claimApplicantPracticeReview, completePatientReadiness, confirmApplicantInsuranceHandoff, confirmApplicantRegistrationDetails, confirmApplicantTelehealthRequestInsuranceSource, confirmApplicantTelehealthRequestIntake, confirmApplicantTelehealthRequestLocation, confirmApplicantTelehealthRequestParticipationContext, createApplicantTelehealthRequest, createPatientRequest, createProspectiveApplicant, endIdleClinicianShift, enterTelehealthConsultationWrapUp, evaluateApplicantTelehealthRequestParticipation, evaluateProspectiveSafetyTriage, executeApplicantSyntheticPromotion, fastTrackPatientRequestToQueue, getApplicantInsuranceHandoff, getApplicantPracticeReviewPacket, getApplicantRegistrationDetails, getApplicantRequestQueueAuthorization, getApplicantSyntheticPostVisitReceipt, getApplicantTelehealthNotice, getApplicantTelehealthRequest, getApplicantTelehealthRequestComplaintTriage, getApplicantTelehealthRequestEligibility, getApplicantTelehealthRequestInsuranceSource, getApplicantTelehealthRequestIntake, getApplicantTelehealthRequestLocation, getApplicantTelehealthRequestOperationalReviewSubmission, getApplicantTelehealthRequestParticipationContext, getApplicantTelehealthRequestParticipationEvaluation, getApplicantTelehealthRequestPracticeNetwork, getApplicantTelehealthRequestQueueStatus, getApplicantTelehealthRequestRenderingCandidate, getApplicantTelehealthRequestUniversalSafety, getClinicianActiveWork, getPatientQueueStatus, getPatientRequestHistory, getPatientSyntheticPostVisitReceipt, getProspectivePracticeNetworkOptions, getTelehealthCompletionPrerequisites, getTelehealthConsultationWorkspace, getTelehealthPharmacyChoices, getTelehealthPrescriptionPreparationDraft, getTelehealthSafetyDispositionDraft, listApplicantIdentityReview, listApplicantPracticeReviewInbox, listApplicantPromotionAuthorization, listApplicantSyntheticPromotion, listClinicianQueue, prepareApplicantConnection, preparePatientConnection, preparePhysicianConnection, prepareTelehealthProfessionalClaim, recordApplicantIdentityReview, recordApplicantPromotionAuthorization, recordProspectiveEligibility, recordProspectiveIdentityProofing, recordProspectiveMemberInsuranceDetails, recordProspectivePracticeNetwork, recordProspectivePracticeNetworkPrecheck, recordProspectiveVisitPurpose, recordTelehealthPharmacyChoice, recordTelehealthPrescriptionPreparationDraft, recordTelehealthSafetyDispositionDraft, reserveNextRequest, runApplicantTelehealthRequestEligibility, runApplicantTelehealthRequestPracticeNetwork, saveTelehealthConsultationDocumentationDraft, selectApplicantTelehealthRequestRenderingCandidate, startTelehealthConsultation, submitApplicantTelehealthRequestForOperationalReview, verifyPatientCoverage, verifyProspectiveApplicantContact, withdrawApplicantTelehealthRequest, type TelehealthDevicePreflight, type TelehealthReadiness } from './api.ts'
 import { getApplicantSyntheticAfterVisitPlanPreview, getPatientSyntheticAfterVisitPlanPreview } from './api.ts'
 import { readPhysicianLocalWebRtcSignals, writePhysicianLocalWebRtcSignal } from './api.ts'
+import { closeSyntheticTelehealthVisit, finalizeTelehealthEncounter } from './api.ts'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -21,6 +22,22 @@ describe('telehealth transport boundaries', () => {
   })
 
   afterEach(() => vi.restoreAllMocks())
+
+  it('sends encounter locking and closure as JSON with explicit retry identities', async () => {
+    sessionStorage.setItem('avenchart-ui.clinicianSession', JSON.stringify({ sessionId: 'physician-session', username: 'doctor', displayName: 'Doctor', role: 'provider', facilityId: 10, purposeOfUse: 'treatment' }))
+    fetchMock.mockImplementation(async () => jsonResponse({}))
+    await finalizeTelehealthEncounter('consultation/1', { expectedDocumentationVersion: 1, expectedDispositionVersion: 2, expectedFinalClinicalReviewVersion: 3, sourceReviewConfirmed: true, syntheticOnlyConfirmed: true }, undefined, 'lock-retry')
+    await closeSyntheticTelehealthVisit('consultation/1', { expectedConsultationVersion: 2, encounterLockReviewed: true, syntheticClosureConfirmed: true }, undefined, 'close-retry')
+    for (const [index, key] of ['lock-retry', 'close-retry'].entries()) {
+      const [url, init] = fetchMock.mock.calls[index]
+      expect(String(url)).toContain(`/consultations/consultation%2F1/${index === 0 ? 'finalize' : 'close'}`)
+      const headers = new Headers(init?.headers)
+      expect(headers.get('Content-Type')).toBe('application/json')
+      expect(headers.get('X-Idempotency-Key')).toBe(key)
+      expect(headers.get('X-AvenChart-Session')).toBe('physician-session')
+      expect(init?.cache).toBe('no-store')
+    }
+  })
 
   it('binds patient creation to the stored portal session and a semantic idempotency key', async () => {
     sessionStorage.setItem('avenchart-ui.portalSession', JSON.stringify({ sessionId: 'portal-session', username: 'patient', portalUsername: 'patient', displayName: 'Synthetic Patient' }))

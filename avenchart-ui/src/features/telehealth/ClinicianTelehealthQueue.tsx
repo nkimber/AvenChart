@@ -19,6 +19,7 @@ import ClinicianIdleShiftEndControl, { type ClinicianIdleShiftEndConfirmations }
 import ClinicianReservationReleaseControl, { type ClinicianReservationReleaseConfirmations } from './ClinicianReservationReleaseControl.tsx'
 import ClinicianConnectionAbandonControl, { type ClinicianConnectionAbandonConfirmations } from './ClinicianConnectionAbandonControl.tsx'
 import './telehealth.css'
+import TelehealthOptionalSection from './TelehealthOptionalSection.tsx'
 
 const TelehealthInternetCallingPocPanel = lazy(() => import('./TelehealthInternetCallingPocPanel.tsx'))
 
@@ -31,6 +32,7 @@ export default function ClinicianTelehealthQueue() {
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [queueError, setQueueError] = useState<string | null>(null)
   const [connectionWorking, setConnectionWorking] = useState(false)
   const [deviceEvidence, setDeviceEvidence] = useState<TelehealthDevicePreflight | null>(null)
   const [waitingRoom, setWaitingRoom] = useState<TelehealthConnectionGrant | null>(null)
@@ -38,6 +40,8 @@ export default function ClinicianTelehealthQueue() {
   const [consultation, setConsultation] = useState<{ consultationId: string; limitations: string[] } | null>(null)
   const [workspace, setWorkspace] = useState<TelehealthConsultationWorkspace | null>(null)
   const [encounterLocked, setEncounterLocked] = useState(false)
+  const [reviewRevision, setReviewRevision] = useState(0)
+  const [finalizationRevision, setFinalizationRevision] = useState(0)
   const [closureStatus, setClosureStatus] = useState<string | null>(null)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
@@ -74,7 +78,7 @@ export default function ClinicianTelehealthQueue() {
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const current = ++generation.current
     setLoading(true)
-    setError(null)
+    setQueueError(null)
     try {
       const [result, activeWork] = await Promise.all([
         listClinicianQueue(signal),
@@ -91,7 +95,7 @@ export default function ClinicianTelehealthQueue() {
     } catch (caught) {
       if (isRequestCancellation(caught) || current !== generation.current) return
       setItems([])
-      setError(caught instanceof Error ? caught.message : 'The clinician queue could not be loaded.')
+      setQueueError(caught instanceof Error ? caught.message : 'The clinician queue could not be loaded.')
     } finally {
       if (current === generation.current) setLoading(false)
     }
@@ -112,8 +116,10 @@ export default function ClinicianTelehealthQueue() {
   }
 
   async function reserve() {
+    if (working || loading || reservation || consultation) return
     setWorking(true); setError(null)
     try {
+      if (!shift) setShift(await startClinicianShift())
       setReservation(await reserveNextRequest()); setConsultation(null); setWorkspace(null); setWorkspaceError(null); setEncounterLocked(false); setClosureStatus(null); resetDraft()
       setWrapUpChecks({ syntheticSessionEndedConfirmed: false, documentationStillIncompleteAcknowledged: false, wrapUpResponsibilityAcknowledged: false })
       setWrapUpStatus(null); setWrapUpError(null); wrapUpCommandKey.current = null
@@ -270,6 +276,7 @@ export default function ClinicianTelehealthQueue() {
       setDraft({ subjective: saved.subjective ?? '', objective: saved.objective ?? '', assessment: saved.assessment ?? '', plan: saved.plan ?? '' })
       setDraftVersion(saved.version)
       setDraftDirty(false)
+      setReviewRevision((value) => value + 1)
       setDraftStatus(`Unsigned synthetic draft version ${saved.version} saved. It is not final or patient-visible.`)
     } catch (caught) {
       setDraftError(caught instanceof Error ? caught.message : 'The unsigned synthetic draft could not be saved. Reload the current draft before retrying a version conflict.')
@@ -298,6 +305,8 @@ export default function ClinicianTelehealthQueue() {
       setReservation((current) => current ? { ...current, requestVersion: result.requestVersion } : current)
       setShift((current) => current ? { ...current, status: result.shiftStatus } : current)
       setConsultation((current) => current ? { ...current, limitations: result.limitations } : current)
+      setWaitingRoom(null)
+      setLocalMediaConnected(false)
       setWrapUpStatus('Wrap-up entered. This synthetic visit is still unfinished, and you remain responsible and unavailable for new work.')
       wrapUpCommandKey.current = null
     } catch (caught) {
@@ -341,13 +350,14 @@ export default function ClinicianTelehealthQueue() {
   return (
     <main className="telehealth-page" aria-labelledby="clinician-telehealth-title">
       <header className="telehealth-heading"><div><p className="telehealth-kicker">Physician workspace</p><h1 id="clinician-telehealth-title">Telehealth clinician queue</h1></div><button className="telehealth-button telehealth-button-secondary" type="button" onClick={() => void refresh()} disabled={loading}>Refresh</button></header>
-      <div className="telehealth-synthetic" role="note">Synthetic lifecycle demonstration only. No real consultation, media, prescribing, transmission, claims, completion, or patient care is enabled. Bounded chart, pharmacy, disposition, completion-review, and unsigned prescription-preparation drafts are available without legal effect.</div>
+      <div className="telehealth-synthetic" role="note">Demonstration only — use synthetic patient information. Video and draft workflows are for demonstration, not patient care. No legal prescribing, pharmacy transmission, billing, or claims are performed.</div>
       {error ? <p className="telehealth-error" role="alert">{error}</p> : null}
+      {queueError ? <p className="telehealth-error" role="alert">{queueError}</p> : null}
       <section className="telehealth-card telehealth-actions" aria-live="polite">
-        <div><h2>Telehealth shift</h2><p>{shift ? `${shift.status} at facility ${shift.facilityId}` : 'Start a shift before reserving a request.'}</p></div>
-        <button className="telehealth-button" type="button" disabled={working || shift !== null} onClick={() => void start()}>{shift ? 'Shift active' : 'Start telehealth shift'}</button>
-        <button className="telehealth-button" type="button" disabled={working || shift === null || reservation !== null} onClick={() => void reserve()}>Reserve next request</button>
-        {shift ? <ClinicianIdleShiftEndControl shift={shift} reservationActive={reservation !== null} consultationActive={consultation !== null} working={working} onEnd={(confirmations) => void endShift(confirmations)} /> : null}
+        <div><h2>Telehealth shift</h2><p>{loading && !shift ? 'Checking availability…' : shift ? `${shift.status} at facility ${shift.facilityId}` : 'See the next patient to start your availability and reserve their visit.'}</p></div>
+        <button className="telehealth-button" type="button" disabled={working || loading || reservation !== null || consultation !== null || (shift !== null && shift.status !== 'Active') || items.length === 0} onClick={() => void reserve()}>{working ? 'Preparing visit…' : 'See next patient'}</button>
+        {!shift ? <button className="telehealth-button telehealth-button-secondary" type="button" disabled={working || loading} onClick={() => void start()}>Start telehealth shift</button> : null}
+        {shift && !reservation && !consultation ? <details><summary>End availability</summary><ClinicianIdleShiftEndControl shift={shift} reservationActive={false} consultationActive={false} working={working} onEnd={(confirmations) => void endShift(confirmations)} /></details> : null}
       </section>
       {closureStatus ? <p role="status">{closureStatus}</p> : null}
       {reservation ? (
@@ -356,21 +366,20 @@ export default function ClinicianTelehealthQueue() {
           <p>Request {reservation.requestId.slice(0, 8)}</p>
           {reservation.applicantOriginated ? <p><strong>New-patient applicant request.</strong> This reservation matched the exact current synthetic rendering-candidate evidence. It is not real credentialing, network confirmation, consent, or care authorization.</p> : null}
           {!consultation ? <p>Lease expires {new Date(reservation.leaseExpiresAt).toLocaleTimeString()}.</p> : null}
-          <p>The connection room is provider-neutral and transports no media. After the start handoff, only an audited, bounded chart projection and unsigned SOAP draft are available; general chart navigation and all other clinical actions remain unavailable.</p>
-          {!waitingRoom && !consultation ? <ClinicianReservationReleaseControl reservation={reservation} disabled={working || connectionWorking} onRelease={(confirmations) => void releaseReservation(confirmations)} /> : null}
-          <section className="telehealth-connection-room" aria-labelledby="physician-device-check-title">
+          {!waitingRoom && !consultation ? <details><summary>Return this request to the queue</summary><ClinicianReservationReleaseControl reservation={reservation} disabled={working || connectionWorking} onRelease={(confirmations) => void releaseReservation(confirmations)} /></details> : null}
+          {!consultation || waitingRoom ? <section className="telehealth-connection-room" aria-labelledby="physician-device-check-title">
             <h3 id="physician-device-check-title">Physician device check</h3>
             <p>The user-initiated test requests camera and microphone access and immediately stops all test tracks. No device names or media are retained.</p>
-            <div className="telehealth-actions">
+            {!consultation ? <div className="telehealth-actions">
               <button className="telehealth-button telehealth-button-secondary" type="button" disabled={connectionWorking} onClick={() => void checkDevices()}>{deviceEvidence ? 'Run device check again' : 'Check camera and microphone'}</button>
               <button className="telehealth-button" type="button" disabled={connectionWorking || !deviceEvidence} onClick={() => void enterWaitingRoom()}>Enter physician waiting room</button>
-            </div>
+            </div> : null}
             {deviceEvidence ? <p className="telehealth-preflight-passed" role="status">Device check passed. Network indication: {deviceEvidence.networkQuality}.</p> : null}
             {waitingRoom ? <div className="telehealth-waiting-room" role="status"><h4>Physician grant ready</h4><p>{waitingRoom.waitingRoomMessage}</p><p><small>Local grant expires {new Date(waitingRoom.expiresAt).toLocaleTimeString()}.</small></p><ul>{waitingRoom.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></div> : null}
             {waitingRoom?.mediaTransportEnabled && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_INTERNET_ACS_CALLING_POC' ? <Suspense fallback={<p role="status">Loading the synthetic internet calling controls…</p>}><TelehealthInternetCallingPocPanel grant={waitingRoom} role="physician" getCallingConfiguration={() => getPhysicianInternetCallingConfiguration(waitingRoom)} onConnectionStateChange={setLocalMediaConnected} /></Suspense> : null}
             {waitingRoom?.mediaTransportEnabled && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_LOCAL_WEBRTC_POC' ? <TelehealthLocalWebRtcPocPanel grant={waitingRoom} role="physician" writeSignal={(kind, payload) => writePhysicianLocalWebRtcSignal(waitingRoom, kind, payload)} readSignals={(afterSequence, signal) => readPhysicianLocalWebRtcSignals(waitingRoom, afterSequence, signal)} onConnectionStateChange={setLocalMediaConnected} /> : null}
-          </section>
-          {waitingRoom && !consultation ? <ClinicianConnectionAbandonControl reservation={reservation} disabled={working || connectionWorking} onAbandon={(confirmations) => void abandonConnection(confirmations)} /> : null}
+          </section> : null}
+          {waitingRoom && !consultation ? <details><summary>Unable to connect? Return to queue</summary><ClinicianConnectionAbandonControl reservation={reservation} disabled={working || connectionWorking} onAbandon={(confirmations) => void abandonConnection(confirmations)} /></details> : null}
           {waitingRoom && !consultation ? (
             <form className="telehealth-consultation-start" onSubmit={(event) => { event.preventDefault(); void beginSyntheticConsultation() }}>
               <fieldset>
@@ -444,15 +453,23 @@ export default function ClinicianTelehealthQueue() {
                 ) : (
                   <section className="telehealth-wrap-up-handoff" role="status" aria-labelledby="wrap-up-active-title">
                     <p className="telehealth-kicker">Physician-owned unfinished work</p><h4 id="wrap-up-active-title">Wrap-up is active</h4>
-                    <p>This visit is not complete. Continue the unsigned SOAP note as needed. The pharmacy, prescription-preparation, and safety-disposition sections below record planning drafts only; safety checking, signing, transmission, patient delivery, finalization, and clinician release remain unavailable.</p>
+                    <p>Finish the SOAP note and safety plan, review the current versions, then lock and close this synthetic visit to return to availability. Optional pharmacy and prescription drafts do not transmit to a pharmacy. No real patient care, billing, or claim is performed.</p>
                     {wrapUpStatus ? <p>{wrapUpStatus}</p> : null}
                   </section>
                 )}
-                {workspace.consultationStatus === 'WrapUp' ? <TelehealthPharmacyChoicePanel consultationId={consultation.consultationId} patientState={workspace.visit.patientLocationState} /> : null}
-                {workspace.consultationStatus === 'WrapUp' ? <TelehealthPrescriptionPreparationPanel consultationId={consultation.consultationId} /> : null}
-                {workspace.consultationStatus === 'WrapUp' ? <TelehealthSafetyDispositionPanel consultationId={consultation.consultationId} /> : null}
-                {workspace.consultationStatus === 'WrapUp' ? <TelehealthFinalClinicalReviewPanel consultationId={consultation.consultationId} /> : null}
-                {workspace.consultationStatus === 'WrapUp' ? <TelehealthEncounterFinalizationPanel consultationId={consultation.consultationId} onFinalized={() => setEncounterLocked(true)} /> : null}
+                {workspace.consultationStatus === 'WrapUp' && !encounterLocked ? <>
+                  <TelehealthSafetyDispositionPanel consultationId={consultation.consultationId} onSaved={() => setReviewRevision((value) => value + 1)} />
+                  <TelehealthOptionalSection title="Optional pharmacy and prescription preparation">
+                    <TelehealthPharmacyChoicePanel consultationId={consultation.consultationId} patientState={workspace.visit.patientLocationState} />
+                    <TelehealthPrescriptionPreparationPanel consultationId={consultation.consultationId} />
+                  </TelehealthOptionalSection>
+                  <TelehealthFinalClinicalReviewPanel key={`review-${consultation.consultationId}-${reviewRevision}`} consultationId={consultation.consultationId} onRecorded={() => setFinalizationRevision((value) => value + 1)} />
+                  <TelehealthEncounterFinalizationPanel key={`lock-${consultation.consultationId}-${reviewRevision}-${finalizationRevision}`} consultationId={consultation.consultationId} onFinalized={() => {
+                    setEncounterLocked(true)
+                    setWorkspace((current) => current ? { ...current, documentation: { ...current.documentation, isLocked: true } } : current)
+                  }} />
+                </> : null}
+                {encounterLocked ? <p role="status">The synthetic encounter is locked. Close the visit below to return to availability.</p> : null}
                 {workspace.consultationStatus === 'WrapUp' && encounterLocked ? <TelehealthSyntheticVisitClosurePanel consultationId={consultation.consultationId} expectedVersion={workspace.consultationVersion} onClosed={(result) => {
                   setReservation(null); setConsultation(null); setWorkspace(null); setEncounterLocked(false); setDeviceEvidence(null); setWaitingRoom(null); setLocalMediaConnected(false); resetDraft()
                   setShift((current) => current ? { ...current, status: result.clinicianAvailableForNewWork ? 'Active' : current.status } : current)
@@ -461,8 +478,7 @@ export default function ClinicianTelehealthQueue() {
                     : 'Synthetic visit lifecycle closed. The appointment and encounter remain incomplete, and no delivery, billing, claim, integration, or external action was created.')
                   void refresh()
                 }} /> : null}
-                {workspace.consultationStatus === 'WrapUp' ? <TelehealthProfessionalClaimPreparationPanel consultationId={consultation.consultationId} /> : null}
-                {workspace.consultationStatus === 'WrapUp' ? <TelehealthCompletionPrerequisitesPanel consultationId={consultation.consultationId} /> : null}
+                {workspace.consultationStatus === 'WrapUp' && !encounterLocked ? <TelehealthOptionalSection title="Optional completion and claim-preparation review"><TelehealthProfessionalClaimPreparationPanel consultationId={consultation.consultationId} /><TelehealthCompletionPrerequisitesPanel consultationId={consultation.consultationId} /></TelehealthOptionalSection> : null}
                 <p><small>Projection as of {new Date(workspace.asOf).toLocaleString()}.</small></p>
                 <ul>{workspace.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
               </> : null}

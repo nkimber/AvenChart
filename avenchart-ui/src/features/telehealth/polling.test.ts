@@ -18,12 +18,12 @@ describe('telehealth patient queue polling', () => {
     expect(queuePollDelayMilliseconds(30, 0, () => 1)).toBe(30_000)
   })
 
-  it('polls only patient-visible review and queue states', () => {
+  it('keeps unfinished wrap-up current and stops only after closure or other terminal states', () => {
     expect(shouldPollPatientQueueStatus('OperationalReview')).toBe(true)
     expect(shouldPollPatientQueueStatus('Queued')).toBe(true)
     expect(shouldPollPatientQueueStatus('Reserved')).toBe(true)
     expect(shouldPollPatientQueueStatus('InConsultation')).toBe(true)
-    expect(shouldPollPatientQueueStatus('WrapUp')).toBe(false)
+    expect(shouldPollPatientQueueStatus('WrapUp')).toBe(true)
     expect(shouldPollPatientQueueStatus('Closed')).toBe(false)
     expect(shouldPollPatientQueueStatus('Redirected')).toBe(false)
     expect(shouldPollPatientQueueStatus('Verification')).toBe(false)

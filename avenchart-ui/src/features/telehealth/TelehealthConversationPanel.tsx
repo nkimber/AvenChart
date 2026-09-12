@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { useCallback, useEffect, useId, useState } from 'react'
-import { isRequestCancellation } from '../../api/transport.ts'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { ApiRequestError, isRequestCancellation } from '../../api/transport.ts'
 import {
   addPatientTelehealthConversationMessage,
   addPhysicianTelehealthConversationMessage,
@@ -16,6 +16,8 @@ type Props =
   | { participant: 'physician'; consultationId: string }
 
 export default function TelehealthConversationPanel(props: Props) {
+  const participant = props.participant
+  const scopeId = props.participant === 'patient' ? props.requestId : props.consultationId
   const headingId = useId()
   const [conversation, setConversation] = useState<TelehealthConversation | null>(null)
   const [body, setBody] = useState('')
@@ -24,29 +26,39 @@ export default function TelehealthConversationPanel(props: Props) {
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const unavailable = useRef(false)
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    if (unavailable.current) return
     setLoading(true)
     try {
-      const result = props.participant === 'patient'
-        ? await getPatientTelehealthConversation(props.requestId, signal)
-        : await getPhysicianTelehealthConversation(props.consultationId, signal)
+      const result = participant === 'patient'
+        ? await getPatientTelehealthConversation(scopeId, signal)
+        : await getPhysicianTelehealthConversation(scopeId, signal)
       setConversation(result)
       setError(null)
     } catch (caught) {
       if (isRequestCancellation(caught)) return
+      if (caught instanceof ApiRequestError && caught.status === 404) {
+        unavailable.current = true
+        setConversation(null)
+        setStatus('This transcript is no longer available for messaging. The visit status will update automatically.')
+        setError(null)
+        return
+      }
       setConversation(null)
       setError(caught instanceof Error ? caught.message : 'The synthetic transcript could not be loaded.')
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }, [props])
+  }, [participant, scopeId])
 
   useEffect(() => {
+    unavailable.current = false
     const controller = new AbortController()
     void load(controller.signal)
     const refreshId = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load()
+      if (document.visibilityState === 'visible') void load(controller.signal)
     }, 5000)
     return () => {
       controller.abort()
@@ -56,7 +68,7 @@ export default function TelehealthConversationPanel(props: Props) {
 
   async function send() {
     const message = body.trim()
-    if (!message || !syntheticConfirmed || sending) return
+    if (!message || !syntheticConfirmed || sending || !conversation?.canSend || unavailable.current) return
     setSending(true)
     setError(null)
     try {
@@ -95,7 +107,7 @@ export default function TelehealthConversationPanel(props: Props) {
         <label className="telehealth-check"><input type="checkbox" checked={syntheticConfirmed} onChange={(event) => setSyntheticConfirmed(event.target.checked)} />I confirm this contains synthetic demonstration data only and is not care communication.</label>
         <div className="telehealth-actions">
           <button className="telehealth-button telehealth-button-secondary" type="button" disabled={loading || sending} onClick={() => void load()}>Refresh transcript</button>
-          <button className="telehealth-button" type="submit" disabled={sending || !body.trim() || !syntheticConfirmed}>{sending ? 'Adding message…' : 'Add synthetic message'}</button>
+          <button className="telehealth-button" type="submit" disabled={sending || !conversation?.canSend || !body.trim() || !syntheticConfirmed}>{sending ? 'Adding message…' : 'Add synthetic message'}</button>
         </div>
       </form>
       {conversation ? <ul>{conversation.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul> : null}

@@ -37,6 +37,7 @@ import { queuePollDelayMilliseconds, shouldPollPatientQueueStatus } from './poll
 import TelehealthConversationPanel from './TelehealthConversationPanel.tsx'
 import TelehealthLocalWebRtcPocPanel from './TelehealthLocalWebRtcPocPanel.tsx'
 import './telehealth.css'
+import TelehealthVisitProgress from './TelehealthVisitProgress.tsx'
 
 const TelehealthInternetCallingPocPanel = lazy(() => import('./TelehealthInternetCallingPocPanel.tsx'))
 
@@ -66,6 +67,7 @@ export default function PatientTelehealthWorkspace() {
   const [deviceEvidence, setDeviceEvidence] = useState<TelehealthDevicePreflight | null>(null)
   const [waitingRoom, setWaitingRoom] = useState<TelehealthConnectionGrant | null>(null)
   const [connectionRecoveryNotice, setConnectionRecoveryNotice] = useState<string | null>(null)
+  const [editingReadiness, setEditingReadiness] = useState(false)
   const connectionCommandKey = useRef<string | null>(null)
   const requestGeneration = useRef(0)
   const readinessGeneration = useRef(0)
@@ -375,19 +377,20 @@ export default function PatientTelehealthWorkspace() {
         <button className="telehealth-button telehealth-button-secondary" type="button" onClick={() => void refresh()} disabled={loading}>Refresh</button>
       </header>
       <div className="telehealth-synthetic" role="note">Demonstration data only. Do not enter real symptoms or personal information.</div>
-      <section className="telehealth-emergency" aria-labelledby="patient-emergency-title">
+      <TelehealthVisitProgress status={selected?.status} />
+      <section className="telehealth-emergency telehealth-emergency-compact" aria-labelledby="patient-emergency-title">
         <h2 id="patient-emergency-title">Emergency symptoms?</h2>
         <p>Call 911 now. An emergency result cannot enter this queue.</p>
         <a className="telehealth-button telehealth-button-danger" href="tel:911">Call 911</a>
       </section>
       {error ? <p className="telehealth-error" role="alert">{error}</p> : null}
 
-      <div className="telehealth-workspace">
+      <div className={`telehealth-workspace${selected && ['Queued', 'Reserved', 'Connecting', 'InConsultation', 'WrapUp', 'Closed'].includes(selected.status) ? ' is-in-visit' : ''}`}>
         <section className="telehealth-card" aria-labelledby="request-list-title" aria-busy={loading}>
           <h2 id="request-list-title">Your synthetic requests</h2>
           <div className="telehealth-actions">
-            <button className="telehealth-button" type="button" disabled={working} onClick={() => void run(() => createPatientRequest('migraine'))}>Start migraine demo</button>
-            <button className="telehealth-button" type="button" disabled={working} onClick={() => void run(() => createPatientRequest('sleep'))}>Start sleep demo</button>
+            <button className="telehealth-button" type="button" disabled={working || loading || requests.some((item) => !['Cancelled', 'Closed', 'Redirected'].includes(item.status))} onClick={() => void run(() => createPatientRequest('migraine'))}>Start migraine demo</button>
+            <button className="telehealth-button" type="button" disabled={working || loading || requests.some((item) => !['Cancelled', 'Closed', 'Redirected'].includes(item.status))} onClick={() => void run(() => createPatientRequest('sleep'))}>Start sleep demo</button>
           </div>
           {loading ? <p aria-live="polite">Loading requests…</p> : null}
           {!loading && requests.length === 0 ? <p>No active synthetic request.</p> : null}
@@ -395,7 +398,7 @@ export default function PatientTelehealthWorkspace() {
             {requests.map((item) => (
               <li key={item.requestId}>
                 <button type="button" className={item.requestId === selectedId ? 'is-selected' : ''} onClick={() => setSelectedId(item.requestId)}>
-                  <span>{item.complaintCategory}</span><strong>{item.status}</strong><small>Version {item.version}</small>
+                  <span>{item.complaintCategory}</span><strong>{item.status.replace(/([a-z])([A-Z])/g, '$1 $2')}</strong><small>{new Date(item.createdAt).toLocaleString()}</small>
                 </button>
               </li>
             ))}
@@ -444,17 +447,19 @@ export default function PatientTelehealthWorkspace() {
               <p>Your synthetic eligibility and readiness checks have already passed. Join the ready physician queue now so the physician can reserve this request. If the synthetic coverage evidence needs to be refreshed, this handoff does that automatically before it continues.</p>
               <p><small>This records a patient-initiated synthetic demonstration handoff. It is not acceptance for care, an appointment confirmation, or a payment guarantee.</small></p>
               <button className="telehealth-button" type="button" disabled={working} onClick={() => void run(() => joinPhysicianDemoQueue(selected))}>{working ? 'Joining physician demo queue…' : 'Join physician demo queue'}</button>
+              <button className="telehealth-button telehealth-button-secondary" type="button" disabled={working} onClick={() => setEditingReadiness((value) => !value)}>{editingReadiness ? 'Hide confirmed details' : 'Review details or change coverage'}</button>
             </section>
           ) : null}
-          {selected && ['Intake', 'Verification', 'OperationalReview'].includes(selected.status) ? (
+          {selected && (selected.status === 'Intake' || (editingReadiness && ['Verification', 'OperationalReview'].includes(selected.status))) ? (
             <form onSubmit={(event) => {
               event.preventDefault()
               if (!readiness || !Object.values(confirmations).every(Boolean)) return
-              void run(() => completePatientReadiness(selected.requestId, readiness, {
-                complaintSummary,
-                symptomDuration,
-                coverageToken,
-              }))
+              void run(async () => {
+                const submitted = await completePatientReadiness(selected.requestId, readiness, { complaintSummary, symptomDuration, coverageToken })
+                setEditingReadiness(false)
+                const verified = await verifyPatientCoverage(submitted.requestId, submitted.version)
+                return verified.status === 'OperationalReview' ? joinPhysicianDemoQueue(verified) : verified
+              })
             }}>
               {readinessLoading ? <p aria-live="polite">Loading current details…</p> : null}
               {readiness ? (
@@ -504,7 +509,8 @@ export default function PatientTelehealthWorkspace() {
                     <label className="telehealth-check"><input type="checkbox" checked={confirmations.acknowledgment} onChange={(event) => setConfirmations((current) => ({ ...current, acknowledgment: event.target.checked }))} />I affirmatively accept this exact synthetic acknowledgment.</label>
                   </fieldset>
                   {readiness.blockingReasons.length > 0 ? <div className="telehealth-error" role="alert"><strong>Cannot continue</strong><ul>{readiness.blockingReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : null}
-                  <button className="telehealth-button" type="submit" disabled={working || readiness.blockingReasons.length > 0 || !coverageToken || !Object.values(confirmations).every(Boolean)}>Submit readiness for synthetic verification</button>
+                  <p>Continue to check this synthetic coverage and join the physician demo queue if eligible. No real payer is contacted and no payment is taken.</p>
+                  <button className="telehealth-button" type="submit" disabled={working || readiness.blockingReasons.length > 0 || !coverageToken || !Object.values(confirmations).every(Boolean)}>{working ? 'Checking details and joining queue…' : 'Confirm details and join demo queue'}</button>
                 </>
               ) : null}
             </form>
@@ -521,16 +527,17 @@ export default function PatientTelehealthWorkspace() {
                   <ul>{selected.coverage.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
                 </div>
               ) : null}
-              <button className="telehealth-button" type="button" disabled={working} onClick={() => void run(() => verifyPatientCoverage(selected.requestId, selected.version))}>{selected.coverage ? 'Run synthetic verification again' : 'Run synthetic coverage verification'}</button>
+              <button className="telehealth-button" type="button" disabled={working} onClick={() => void run(async () => { const verified = await verifyPatientCoverage(selected.requestId, selected.version); return verified.status === 'OperationalReview' ? joinPhysicianDemoQueue(verified) : verified })}>Retry verification and join demo queue</button>
+              <button className="telehealth-button telehealth-button-secondary" type="button" disabled={working} onClick={() => setEditingReadiness((value) => !value)}>{editingReadiness ? 'Hide confirmed details' : 'Review details or change coverage'}</button>
             </div>
           ) : null}
           {selected && canCancelPatientTelehealthRequest(selected.status) ? (
-            <section className="telehealth-request-cancellation" aria-labelledby="telehealth-cancel-title">
-              <h3 id="telehealth-cancel-title">Cancel this synthetic request</h3>
+            <details className="telehealth-request-cancellation">
+              <summary>Cancel this synthetic request</summary>
               <p>You may cancel before a physician reserves the request or a connection starts. If practice queue authorization already occurred, this removes the request from the ready queue and cancels its provisional synthetic appointment. It does not cancel a reservation, connection, consultation, prescription, billing item, claim, or external action.</p>
               <label className="telehealth-check"><input type="checkbox" checked={cancellationConfirmed} onChange={(event) => setCancellationConfirmed(event.target.checked)} />I confirm I want to cancel this synthetic request.</label>
               <button className="telehealth-button telehealth-button-secondary" type="button" disabled={working || !cancellationConfirmed} onClick={() => void run(() => cancelPatientTelehealthRequest(selected.requestId, selected.version))}>Cancel synthetic request</button>
-            </section>
+            </details>
           ) : null}
           {selected && !['Draft', 'LocationConfirmed', 'Intake', 'Verification'].includes(selected.status) ? (
             <div aria-live="polite">
@@ -567,13 +574,13 @@ export default function PatientTelehealthWorkspace() {
                 </section>
               ) : null}
               {requestHistory?.requestId === selected.requestId ? (
-                <section className="telehealth-request-history" aria-labelledby="telehealth-history-title">
-                  <h3 id="telehealth-history-title">Synthetic request history</h3>
+                <details className="telehealth-request-history">
+                  <summary>Synthetic request history</summary>
                   <p>This is a read-only POC status history. It does not show clinician identity, clinical notes, prescriptions, billing, claims, communications, or external activity.</p>
                   <ol>
                     {requestHistory.entries.map((entry) => <li key={entry.aggregateVersion}><strong>{entry.status}</strong> — {entry.message} <time dateTime={entry.occurredAt}>{new Date(entry.occurredAt).toLocaleString()}</time></li>)}
                   </ol>
-                </section>
+                </details>
               ) : null}
               {selected.status === 'Closed' && postVisitReceipt?.requestId === selected.requestId ? (
                 <section className="telehealth-post-visit-receipt" aria-labelledby="telehealth-post-visit-receipt-title">

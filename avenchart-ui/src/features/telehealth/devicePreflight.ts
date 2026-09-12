@@ -26,8 +26,20 @@ export async function runTelehealthDevicePreflight(
   }
 
   let stream: MediaStreamLike | null = null
+  let expired = false
+  let timeout: ReturnType<typeof setTimeout> | undefined
   try {
-    stream = await environment.getUserMedia({ audio: true, video: true })
+    const request = environment.getUserMedia({ audio: true, video: true }).then((result) => {
+      // getUserMedia cannot be cancelled: release any late permission grant.
+      if (expired) result.getTracks().forEach((track) => track.stop())
+      return result
+    })
+    stream = await Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => { expired = true; reject(new Error('permission-timeout')) }, 30_000)
+      }),
+    ])
     const tracks = stream.getTracks()
     const cameraAvailable = tracks.some((track) => track.kind === 'video')
     const microphoneAvailable = tracks.some((track) => track.kind === 'audio')
@@ -46,8 +58,11 @@ export async function runTelehealthDevicePreflight(
       },
     }
   } catch {
-    return { status: 'failed', message: 'Camera or microphone permission was unavailable. Check browser permissions and try again.' }
+    return { status: 'failed', message: expired
+      ? 'The device check timed out. Allow camera and microphone access in your browser, then try again. If a permission prompt is still open, dismiss it before retrying.'
+      : 'Camera or microphone permission was unavailable. Check browser permissions and try again.' }
   } finally {
+    clearTimeout(timeout)
     stream?.getTracks().forEach((track) => track.stop())
   }
 }

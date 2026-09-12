@@ -222,7 +222,7 @@ public sealed class TelehealthFinalClinicalReviewRepository(NpgsqlDataSource dat
         if (source.Documentation.Version < 1 || source.Disposition is null) return null;
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = ReviewSelect + """
+        command.CommandText = ReviewSelect + "\n" + """
             where review.consultation_id=@consultationId and review.documentation_version=@documentationVersion
               and review.disposition_version=@dispositionVersion
               and review.prescription_order_id is not distinct from @prescriptionOrderId

@@ -5,6 +5,20 @@ import { describe, expect, it, vi } from 'vitest'
 import { runTelehealthDevicePreflight, type TelehealthPreflightEnvironment } from './devicePreflight.ts'
 
 describe('telehealth device preflight', () => {
+  it('times out an unanswered permission prompt and stops a late stream', async () => {
+    vi.useFakeTimers()
+    try {
+      const stop = vi.fn()
+      let grant!: (value: { getTracks: () => { kind: string; stop: () => void }[] }) => void
+      const pending = new Promise<{ getTracks: () => { kind: string; stop: () => void }[] }>((resolve) => { grant = resolve })
+      const check = runTelehealthDevicePreflight({ secureContext: true, peerConnectionAvailable: true, speakerOutputAvailable: true, getUserMedia: () => pending })
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(await check).toEqual({ status: 'failed', message: expect.stringContaining('timed out') })
+      grant({ getTracks: () => [{ kind: 'video', stop }] })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(stop).toHaveBeenCalledOnce()
+    } finally { vi.useRealTimers() }
+  })
   it('returns only coarse evidence and immediately stops test tracks', async () => {
     const stopCamera = vi.fn()
     const stopMicrophone = vi.fn()

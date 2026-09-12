@@ -5058,17 +5058,17 @@ export function prepareTelehealthProfessionalClaim(
   )
 }
 
-export function finalizeTelehealthEncounter(consultationId: string, input: TelehealthEncounterFinalizationInput, signal?: AbortSignal) {
+export function finalizeTelehealthEncounter(consultationId: string, input: TelehealthEncounterFinalizationInput, signal?: AbortSignal, idempotencyKey: string = crypto.randomUUID()) {
   return json<TelehealthEncounterFinalization>(
     `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/finalize`,
-    { method: 'POST', headers: clinicianHeaders({ 'X-Idempotency-Key': crypto.randomUUID() }), body: JSON.stringify(input), signal },
+    { method: 'POST', headers: clinicianHeaders({ 'Content-Type': 'application/json', 'X-Idempotency-Key': idempotencyKey }), body: JSON.stringify(input), signal, cache: 'no-store' },
   )
 }
 
-export function closeSyntheticTelehealthVisit(consultationId: string, input: TelehealthSyntheticVisitClosureInput, signal?: AbortSignal) {
+export function closeSyntheticTelehealthVisit(consultationId: string, input: TelehealthSyntheticVisitClosureInput, signal?: AbortSignal, idempotencyKey: string = crypto.randomUUID()) {
   return json<TelehealthSyntheticVisitClosure>(
     `/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/close`,
-    { method: 'POST', headers: clinicianHeaders({ 'X-Idempotency-Key': crypto.randomUUID() }), body: JSON.stringify(input), signal },
+    { method: 'POST', headers: clinicianHeaders({ 'Content-Type': 'application/json', 'X-Idempotency-Key': idempotencyKey }), body: JSON.stringify(input), signal, cache: 'no-store' },
   )
 }
 

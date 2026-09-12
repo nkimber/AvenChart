@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ShieldCheck, Stethoscope } from 'lucide-react'
 import { login } from '../api.ts'
 import { saveClinicianSession } from '../auth/session.ts'
@@ -16,7 +16,10 @@ import { ClinicianIllustration } from '../illustrations.tsx'
 
 export default function ClinicianLogin() {
   const navigate = useNavigate()
-  const [username, setUsername] = useState('admin')
+  const [searchParams] = useSearchParams()
+  const telehealthEntry = searchParams.get('telehealth') === '1'
+  const demoUsername = telehealthEntry ? 'gold-provider-01' : 'admin'
+  const [username, setUsername] = useState(demoUsername)
   const [password, setPassword] = useState('pass')
   const [status, setStatus] = useState<'idle' | 'checking' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -77,7 +80,7 @@ export default function ClinicianLogin() {
         facilities: result.accessContext?.facilities ?? [],
         purposes: result.accessContext?.purposes ?? ['treatment'],
       })
-      navigate('/home')
+      navigate(telehealthEntry ? '/clinician/telehealth/physician' : '/home')
     } catch (err) {
       setStatus('error')
       setError(err instanceof Error ? err.message : 'Sign-in failed.')
@@ -116,11 +119,11 @@ export default function ClinicianLogin() {
           <p className="subtitle">
             {externalIdentityMode
               ? 'Continue with your organization’s approved identity provider.'
-              : 'Sign in with your AvenChart staff credentials.'}
+              : telehealthEntry ? 'Sign in to see the telehealth queue or resume your visit.' : 'Sign in with your AvenChart staff credentials.'}
           </p>
 
           {!externalIdentityMode && (
-            <div className="hint-banner">Demo credentials are pre-filled: admin / pass.</div>
+            <div className="hint-banner">Demo credentials are pre-filled: {demoUsername} / pass.</div>
           )}
 
           {error && (

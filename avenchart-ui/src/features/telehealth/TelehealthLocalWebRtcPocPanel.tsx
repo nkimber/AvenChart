@@ -258,7 +258,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
       window.clearTimeout(timer)
       if (document.visibilityState !== 'hidden') {
         void poll()
-        timer = window.setTimeout(schedule, 900)
+        timer = window.setTimeout(schedule, 2500)
       }
     }
     const visible = () => schedule()

@@ -4,6 +4,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TelehealthConversationPanel from './TelehealthConversationPanel.tsx'
+import { ApiRequestError } from '../../api/transport.ts'
 import { addPatientTelehealthConversationMessage, getPatientTelehealthConversation, type TelehealthConversation } from './api.ts'
 
 vi.mock('./api.ts', async (importOriginal) => {
@@ -44,5 +45,21 @@ describe('TelehealthConversationPanel', () => {
     await waitFor(() => expect(addPatientTelehealthConversationMessage).toHaveBeenCalledWith(conversation.requestId, 'Synthetic hello'))
     expect(await screen.findByText('Synthetic hello')).toBeInTheDocument()
     expect(screen.getAllByText(/No external communication occurred/).length).toBeGreaterThan(0)
+  })
+
+  it('does not refetch when the parent renders again for the same participant and visit', async () => {
+    const view = render(<TelehealthConversationPanel participant="patient" requestId={conversation.requestId} />)
+    await screen.findByText('No synthetic messages yet.')
+    view.rerender(<TelehealthConversationPanel participant="patient" requestId={conversation.requestId} />)
+    expect(getPatientTelehealthConversation).toHaveBeenCalledTimes(1)
+  })
+  it('handles a wrap-up transition between status polls without a transient error or continued messaging', async () => {
+    vi.mocked(getPatientTelehealthConversation).mockRejectedValue(new ApiRequestError('Unavailable', 404))
+    render(<TelehealthConversationPanel participant="patient" requestId={conversation.requestId} />)
+    await screen.findByText(/no longer available for messaging/)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add synthetic message' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh transcript' }))
+    expect(getPatientTelehealthConversation).toHaveBeenCalledTimes(1)
   })
 })

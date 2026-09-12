@@ -11,6 +11,7 @@ import {
   fastTrackPatientRequestToQueue,
   listPatientRequests,
   verifyPatientCoverage,
+  completePatientReadiness,
   type TelehealthPatientQueueStatus,
   type TelehealthReadiness,
   type TelehealthRequest,
@@ -27,6 +28,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     fastTrackPatientRequestToQueue: vi.fn(),
     listPatientRequests: vi.fn(),
     verifyPatientCoverage: vi.fn(),
+    completePatientReadiness: vi.fn(),
   }
 })
 
@@ -108,7 +110,7 @@ describe('PatientTelehealthWorkspace', () => {
     vi.mocked(listPatientRequests).mockResolvedValue([request])
     vi.mocked(getPatientReadiness).mockResolvedValue(readiness)
     vi.mocked(getPatientRequestHistory).mockResolvedValue({ requestId: request.requestId, entries: [] })
-    vi.mocked(getPatientQueueStatus).mockResolvedValue(queueStatus)
+    vi.mocked(getPatientQueueStatus).mockResolvedValue({ ...queueStatus, requestVersion: request.version })
     vi.mocked(verifyPatientCoverage).mockResolvedValue({
       ...request,
       version: request.version + 1,
@@ -129,14 +131,15 @@ describe('PatientTelehealthWorkspace', () => {
   it('keeps readiness confirmations while an unchanged workflow stage receives live status updates', async () => {
     render(<PatientTelehealthWorkspace />)
 
-    await screen.findByRole('button', { name: 'Submit readiness for synthetic verification' })
+    fireEvent.click(await screen.findByRole('button', { name: 'Review details or change coverage' }))
+    await screen.findByRole('button', { name: 'Confirm details and join demo queue' })
     fireEvent.click(screen.getByLabelText(/confirm these current demographic/i))
     fireEvent.click(screen.getByLabelText(/reviewed this synthetic clinical-list summary/i))
     fireEvent.click(screen.getByLabelText(/entered synthetic demonstration data only/i))
     fireEvent.click(screen.getByLabelText(/selected and confirmed this existing synthetic coverage/i))
     fireEvent.click(screen.getByLabelText(/affirmatively accept this exact synthetic acknowledgment/i))
 
-    const submit = screen.getByRole('button', { name: 'Submit readiness for synthetic verification' })
+    const submit = screen.getByRole('button', { name: 'Confirm details and join demo queue' })
     expect(submit).toBeEnabled()
 
     await waitFor(() => expect(vi.mocked(getPatientQueueStatus)).toHaveBeenCalledTimes(1))
@@ -151,6 +154,30 @@ describe('PatientTelehealthWorkspace', () => {
     expect(screen.getByLabelText(/selected and confirmed this existing synthetic coverage/i)).toBeChecked()
     expect(screen.getByLabelText(/affirmatively accept this exact synthetic acknowledgment/i)).toBeChecked()
     expect(submit).toBeEnabled()
+  })
+
+  it('submits reviewed intake, verifies coverage, and queues in one explicit action', async () => {
+    vi.mocked(listPatientRequests).mockResolvedValue([{ ...request, status: 'Intake' }])
+    vi.mocked(completePatientReadiness).mockResolvedValue({ ...request, status: 'Verification', version: 4 })
+    vi.mocked(verifyPatientCoverage).mockResolvedValue({ ...request, status: 'OperationalReview', version: 5 })
+    render(<PatientTelehealthWorkspace />)
+    const submit = await screen.findByRole('button', { name: 'Confirm details and join demo queue' })
+    expect(submit).toBeDisabled()
+    for (const label of [/confirm these current demographic/i, /reviewed this synthetic clinical-list summary/i, /entered synthetic demonstration data only/i, /selected and confirmed this existing synthetic coverage/i, /affirmatively accept this exact synthetic acknowledgment/i]) fireEvent.click(screen.getByLabelText(label))
+    fireEvent.click(submit)
+    await waitFor(() => expect(verifyPatientCoverage).toHaveBeenCalledWith(request.requestId, 4))
+    await waitFor(() => expect(fastTrackPatientRequestToQueue).toHaveBeenCalledWith(request.requestId, 5))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Confirm details and join demo queue' })).not.toBeInTheDocument())
+  })
+
+  it('does not enter the queue when coverage remains blocked', async () => {
+    vi.mocked(listPatientRequests).mockResolvedValue([{ ...request, status: 'Verification' }])
+    vi.mocked(verifyPatientCoverage).mockResolvedValue({ ...request, status: 'Verification', version: 5 })
+    render(<PatientTelehealthWorkspace />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry verification and join demo queue' }))
+    await waitFor(() => expect(verifyPatientCoverage).toHaveBeenCalled())
+    expect(fastTrackPatientRequestToQueue).not.toHaveBeenCalled()
+    expect(await screen.findByRole('button', { name: 'Review details or change coverage' })).toBeEnabled()
   })
 
   it('lets an operational-review request join the physician demo queue with its current version', async () => {

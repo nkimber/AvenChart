@@ -5,9 +5,9 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { isRequestCancellation } from '../../api/transport.ts'
 import { getTelehealthFinalClinicalReview, recordTelehealthFinalClinicalReview, type TelehealthFinalClinicalReviewWorkspace } from './api.ts'
 
-type Props = { consultationId: string }
+type Props = { consultationId: string; onRecorded?: () => void }
 
-export default function TelehealthFinalClinicalReviewPanel({ consultationId }: Props) {
+export default function TelehealthFinalClinicalReviewPanel({ consultationId, onRecorded }: Props) {
   const headingId = useId()
   const errorRef = useRef<HTMLParagraphElement>(null)
   const commandKey = useRef<string | null>(null)
@@ -50,6 +50,7 @@ export default function TelehealthFinalClinicalReviewPanel({ consultationId }: P
       }, commandKey.current)
       setWorkspace((current) => current ? { ...current, currentReview: review } : current)
       setStatus(`Final clinical-review evidence version ${review.version} was recorded. It has no legal, delivery, billing, or claim effect.`)
+      onRecorded?.()
     } catch (caught) {
       commandKey.current = null
       setError(caught instanceof Error ? caught.message : 'The final clinical-review evidence could not be recorded.')

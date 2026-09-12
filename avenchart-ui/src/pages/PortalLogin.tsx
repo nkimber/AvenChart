@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { HeartPulse, ShieldCheck } from 'lucide-react'
 import { loginPatientPortal } from '../api.ts'
 import { savePortalSession } from '../auth/session.ts'
@@ -16,7 +16,10 @@ import { PatientIllustration } from '../illustrations.tsx'
 
 export default function PortalLogin() {
   const navigate = useNavigate()
-  const [username, setUsername] = useState('mod-pat-0004@example.test')
+  const [searchParams] = useSearchParams()
+  const telehealthEntry = searchParams.get('telehealth') === '1'
+  const demoUsername = telehealthEntry ? 'mod-pat-0012@example.test' : 'mod-pat-0004@example.test'
+  const [username, setUsername] = useState(demoUsername)
   const [password, setPassword] = useState('PortalPass207!')
   const [status, setStatus] = useState<'idle' | 'checking' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -71,7 +74,7 @@ export default function PortalLogin() {
         portalUsername: result.portalUsername,
         displayName: result.displayName,
       })
-      navigate('/portal/home')
+      navigate(telehealthEntry ? '/portal/telehealth' : '/portal/home')
     } catch (err) {
       setStatus('error')
       setError(err instanceof Error ? err.message : 'Sign-in failed.')
@@ -110,11 +113,11 @@ export default function PortalLogin() {
           <p className="subtitle">
             {externalIdentityMode
               ? 'Continue with your organization’s approved identity provider.'
-              : 'Sign in to view your messages and appointments.'}
+              : telehealthEntry ? 'Sign in to start or resume your telehealth visit.' : 'Sign in to view your messages and appointments.'}
           </p>
 
           {!externalIdentityMode && (
-            <div className="hint-banner">Demo credentials are pre-filled: mod-pat-0004@example.test / PortalPass207!</div>
+            <div className="hint-banner">Demo credentials are pre-filled: {demoUsername} / PortalPass207!</div>
           )}
 
           {error && (

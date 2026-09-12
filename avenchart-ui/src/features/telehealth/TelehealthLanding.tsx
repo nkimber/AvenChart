@@ -68,9 +68,11 @@ export default function TelehealthLanding() {
             <p>{context.entryMessage}</p>
             <p>Supported synthetic locations: {context.supportedStates.join(', ')}.</p>
             <div className="telehealth-actions">
-              <Link className="telehealth-button" to="/portal/login">Sign in as an existing patient</Link>
+              <Link className="telehealth-button" to="/portal/login?telehealth=1">Sign in as an existing patient</Link>
               <Link className="telehealth-button telehealth-button-secondary" to="/telehealth/new">Start as a new patient</Link>
+              <Link className="telehealth-button telehealth-button-secondary" to="/login?telehealth=1" target="_blank" rel="noopener noreferrer">Open physician workspace in a new tab</Link>
             </div>
+            <p>For a two-sided demo, use the pre-filled patient and physician accounts. Each tab keeps its own session and camera selection. Choose a different camera in each room and enable “Same-laptop demo” in one video tab to prevent echo.</p>
           </div>
         ) : null}
       </section>

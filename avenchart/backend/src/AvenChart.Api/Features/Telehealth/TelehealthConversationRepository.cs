@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using Npgsql;
+using NpgsqlTypes;
 
 namespace AvenChart.Api.Features.Telehealth;
 
@@ -104,10 +105,10 @@ public sealed class TelehealthConversationRepository(NpgsqlDataSource dataSource
             {(forUpdate ? "for update of context,request" : string.Empty)};
             """;
         command.Parameters.AddWithValue("practiceId", practiceId);
-        command.Parameters.AddWithValue("requestId", requestId is null ? DBNull.Value : requestId.Value);
-        command.Parameters.AddWithValue("consultationId", consultationId is null ? DBNull.Value : consultationId.Value);
-        command.Parameters.AddWithValue("patientId", patientId is null ? DBNull.Value : patientId);
-        command.Parameters.AddWithValue("physicianStaffId", physicianStaffId is null ? DBNull.Value : physicianStaffId.Value);
+        command.Parameters.AddWithValue("requestId", NpgsqlDbType.Uuid, requestId is null ? DBNull.Value : requestId.Value);
+        command.Parameters.AddWithValue("consultationId", NpgsqlDbType.Uuid, consultationId is null ? DBNull.Value : consultationId.Value);
+        command.Parameters.AddWithValue("patientId", NpgsqlDbType.Text, patientId is null ? DBNull.Value : patientId);
+        command.Parameters.AddWithValue("physicianStaffId", NpgsqlDbType.Integer, physicianStaffId is null ? DBNull.Value : physicianStaffId.Value);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
             ? new ConversationContext(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetInt32(3))
