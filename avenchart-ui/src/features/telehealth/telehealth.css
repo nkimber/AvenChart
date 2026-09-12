@@ -41,3 +41,8 @@
 @media (forced-colors: active) { .telehealth-card, .telehealth-emergency, .telehealth-synthetic, .telehealth-list button, .telehealth-queue li, .telehealth-queue-status, .telehealth-connection, .telehealth-connection-room, .telehealth-waiting-room, .telehealth-local-webrtc-poc, .telehealth-local-webrtc-videos video, .telehealth-consultation-start, .telehealth-consultation-started, .telehealth-consultation-workspace, .telehealth-workspace-grid section, .telehealth-workspace-lists section, .telehealth-documentation-draft, .telehealth-draft-reload, .telehealth-wrap-up-handoff, .telehealth-conversation, .telehealth-conversation-log, .telehealth-conversation-message, .telehealth-pharmacy-choice, .telehealth-pharmacy-option, .telehealth-prescription-preparation, .telehealth-catalog-choice, .telehealth-disposition-draft, .telehealth-completion-review, .telehealth-completion-review-grid section, .telehealth-capability-stop { border: 2px solid CanvasText; } }
 @media (max-width: 600px) { .telehealth-local-device-grid, .telehealth-local-webrtc-videos { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .telehealth-page * { scroll-behavior: auto !important; transition: none !important; } }
+.telehealth-video-surface, .telehealth-video-placeholder { width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: .65rem; background: #172c35; color: #fff; }
+.telehealth-video-placeholder { display: grid; place-items: center; }
+.telehealth-video-surface > div { width: 100%; height: 100%; }
+.telehealth-video-surface video { width: 100%; height: 100%; min-height: 0; object-fit: cover; }
+.telehealth-video-surface[hidden] { display: none; }
