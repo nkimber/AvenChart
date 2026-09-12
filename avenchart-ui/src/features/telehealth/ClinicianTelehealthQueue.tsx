@@ -84,6 +84,10 @@ export default function ClinicianTelehealthQueue() {
       setItems(result)
       setShift(activeWork.shift)
       setReservation(activeWork.reservation)
+      if (activeWork.consultationId) {
+        const id = activeWork.consultationId
+        setConsultation((existing) => existing?.consultationId === id ? existing : { consultationId: id, limitations: [] })
+      }
     } catch (caught) {
       if (isRequestCancellation(caught) || current !== generation.current) return
       setItems([])
@@ -179,36 +183,13 @@ export default function ClinicianTelehealthQueue() {
       setConsultation({ consultationId: result.consultationId, limitations: result.limitations })
       setReservation((current) => current ? { ...current, requestVersion: result.requestVersion, status: 'Released' } : current)
       consultationCommandKey.current = null
-      await loadWorkspace(result.consultationId)
+      generation.current++
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The synthetic consultation lifecycle could not start.')
     } finally { setConnectionWorking(false) }
   }
 
-  async function loadWorkspace(consultationId: string) {
-    setWorkspaceLoading(true); setWorkspaceError(null)
-    try {
-      const result = await getTelehealthConsultationWorkspace(consultationId)
-      setWorkspace(result)
-      replaceDraft(result)
-    }
-    catch (caught) {
-      setWorkspace(null)
-      setWorkspaceError(caught instanceof Error ? caught.message : 'The read-only consultation workspace could not be loaded.')
-    } finally { setWorkspaceLoading(false) }
-  }
-
-  function resetDraft() {
-    setDraft(emptyDraft)
-    setDraftVersion(0)
-    setDraftDirty(false)
-    setDraftSaving(false)
-    setDraftStatus(null)
-    setDraftError(null)
-    setDraftReloadPending(false)
-  }
-
-  function replaceDraft(current: TelehealthConsultationWorkspace) {
+  const replaceDraft = useCallback((current: TelehealthConsultationWorkspace) => {
     setDraft({
       subjective: current.documentation.subjective ?? '',
       objective: current.documentation.objective ?? '',
@@ -219,6 +200,42 @@ export default function ClinicianTelehealthQueue() {
     setDraftDirty(false)
     setDraftError(null)
     setDraftStatus(current.documentation.version > 0 ? `Current saved draft version ${current.documentation.version} loaded.` : 'No saved draft. Start with blank fields.')
+    setDraftReloadPending(false)
+    setEncounterLocked(current.documentation.isLocked)
+  }, [])
+
+  const loadWorkspace = useCallback(async (consultationId: string) => {
+    setWorkspaceLoading(true); setWorkspaceError(null)
+    try {
+      const result = await getTelehealthConsultationWorkspace(consultationId)
+      setWorkspace(result)
+      replaceDraft(result)
+    }
+    catch (caught) {
+      setWorkspace(null)
+      setWorkspaceError(caught instanceof Error ? caught.message : 'The read-only consultation workspace could not be loaded.')
+    } finally { setWorkspaceLoading(false) }
+  }, [replaceDraft])
+
+  const consultationId = consultation?.consultationId
+  useEffect(() => {
+    if (consultationId) void loadWorkspace(consultationId)
+  }, [consultationId, loadWorkspace])
+
+  useEffect(() => {
+    if (!draftDirty) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [draftDirty])
+
+  function resetDraft() {
+    setDraft(emptyDraft)
+    setDraftVersion(0)
+    setDraftDirty(false)
+    setDraftSaving(false)
+    setDraftStatus(null)
+    setDraftError(null)
     setDraftReloadPending(false)
   }
 
@@ -338,7 +355,7 @@ export default function ClinicianTelehealthQueue() {
           <h2 id="reserved-title">Reserved synthetic request</h2>
           <p>Request {reservation.requestId.slice(0, 8)}</p>
           {reservation.applicantOriginated ? <p><strong>New-patient applicant request.</strong> This reservation matched the exact current synthetic rendering-candidate evidence. It is not real credentialing, network confirmation, consent, or care authorization.</p> : null}
-          <p>Lease expires {new Date(reservation.leaseExpiresAt).toLocaleTimeString()}.</p>
+          {!consultation ? <p>Lease expires {new Date(reservation.leaseExpiresAt).toLocaleTimeString()}.</p> : null}
           <p>The connection room is provider-neutral and transports no media. After the start handoff, only an audited, bounded chart projection and unsigned SOAP draft are available; general chart navigation and all other clinical actions remain unavailable.</p>
           {!waitingRoom && !consultation ? <ClinicianReservationReleaseControl reservation={reservation} disabled={working || connectionWorking} onRelease={(confirmations) => void releaseReservation(confirmations)} /> : null}
           <section className="telehealth-connection-room" aria-labelledby="physician-device-check-title">

@@ -45,3 +45,9 @@ separately; passing one does not imply the others passed.
   physical-camera and deployed-call acceptance remain pending.
 - Overall workflow implementation and browser acceptance remain in progress.
   This document is not yet a claim that the Monday demonstration is ready.
+- Physician recovery checkpoint: the API now returns owned Busy/WrapUp work
+  with its consultation identifier. Three component regressions pass for
+  consultation recovery without polling over unsaved notes, locked wrap-up
+  recovery, and preservation during a failed refresh. TypeScript and targeted
+  ESLint pass; the API Release container builds and becomes healthy. Full
+  database-backed lifecycle acceptance is still pending.

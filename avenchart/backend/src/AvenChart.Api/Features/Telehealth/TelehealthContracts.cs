@@ -860,7 +860,8 @@ public sealed record TelehealthReservationResponse(
 
 public sealed record TelehealthClinicianActiveWorkResponse(
     TelehealthShiftResponse? Shift,
-    TelehealthReservationResponse? Reservation);
+    TelehealthReservationResponse? Reservation,
+    Guid? ConsultationId = null);
 
 public sealed record ReleaseTelehealthReservationRequest(
     int ExpectedVersion,

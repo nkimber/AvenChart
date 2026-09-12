@@ -687,7 +687,7 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
                 select shift_id, status, facility_id, clinician_staff_id, started_at, version
                 from telehealth_clinician_shifts
                 where practice_id=@practice_id and facility_id=@facility_id
-                  and clinician_staff_id=@clinician and status='Active';
+                  and clinician_staff_id=@clinician and status in ('Active','Busy','WrapUp');
                 """;
             shiftCommand.Parameters.AddWithValue("practice_id", practiceId);
             shiftCommand.Parameters.AddWithValue("facility_id", facilityId);
@@ -706,14 +706,27 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
             select reservation.reservation_id, reservation.request_id, reservation.queue_entry_id,
                    reservation.shift_id, reservation.clinician_staff_id, reservation.reserved_at,
                    reservation.lease_expires_at, reservation.status, request.version,
-                   request.source_applicant_id is not null
+                   request.source_applicant_id is not null, context.consultation_id
             from telehealth_reservations reservation
             join telehealth_requests request on request.request_id=reservation.request_id
+            left join telehealth_consultation_contexts context
+              on context.reservation_id=reservation.reservation_id
+              and context.request_id=request.request_id and context.shift_id=reservation.shift_id
+              and context.practice_id=@practice_id and context.facility_id=@facility_id
+              and context.physician_staff_id=@clinician
+              and ((context.status='Started' and request.status='InConsultation' and @shift_status='Busy')
+                or (context.status='MediaEnded' and request.status='WrapUp' and @shift_status='WrapUp'))
             where reservation.shift_id=@shift_id and reservation.clinician_staff_id=@clinician
-              and reservation.status='Active' and reservation.lease_expires_at > now();
+              and request.practice_id=@practice_id and request.facility_id=@facility_id
+              and ((reservation.status='Active' and reservation.lease_expires_at > now() and @shift_status='Active')
+                or (reservation.status='Released' and context.consultation_id is not null))
+            order by reservation.reserved_at desc limit 1;
             """;
         reservationCommand.Parameters.AddWithValue("shift_id", shift.ShiftId);
         reservationCommand.Parameters.AddWithValue("clinician", clinicianStaffId);
+        reservationCommand.Parameters.AddWithValue("practice_id", practiceId);
+        reservationCommand.Parameters.AddWithValue("facility_id", facilityId);
+        reservationCommand.Parameters.AddWithValue("shift_status", shift.Status);
         await using var reservationReader = await reservationCommand.ExecuteReaderAsync(cancellationToken);
         var reservation = await reservationReader.ReadAsync(cancellationToken)
             ? ReadReservation(
@@ -722,7 +735,10 @@ public sealed class TelehealthRepository(NpgsqlDataSource dataSource)
                 reservationReader.GetBoolean(9))
             : null;
 
-        return new TelehealthClinicianActiveWorkResponse(shift, reservation);
+        var consultationId = reservation is not null && !reservationReader.IsDBNull(10)
+            ? reservationReader.GetGuid(10)
+            : (Guid?)null;
+        return new TelehealthClinicianActiveWorkResponse(shift, reservation, consultationId);
     }
 
     public async Task<TelehealthReservationResponse?> ReserveNextAsync(

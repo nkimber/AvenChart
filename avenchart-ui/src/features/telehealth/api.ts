@@ -2509,6 +2509,7 @@ export type TelehealthReservation = {
 export type TelehealthClinicianActiveWork = {
   shift: TelehealthShift | null
   reservation: TelehealthReservation | null
+  consultationId?: string | null
 }
 
 export type TelehealthReservationRelease = {
