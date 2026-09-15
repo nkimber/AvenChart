@@ -699,7 +699,7 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict);
         patient.MapPost("/requests/{requestId:guid}/cancel", CancelPatientRequestAsync)
             .WithName("CancelPatientTelehealthRequest")
-            .WithDescription("Cancels the authenticated patient's synthetic request before queue authorization. It is versioned and idempotent, and creates no appointment, reservation, consultation, clinical, billing, claim, integration, or external action.")
+            .WithDescription("Cancels the authenticated patient's synthetic request before a physician reserves it or a connection starts. A queued request is removed from the ready queue and its provisional synthetic appointment is cancelled. The command is versioned and idempotent and creates no reservation, consultation, clinical, billing, claim, integration, or external action.")
             .Accepts<CancelTelehealthRequest>("application/json")
             .Produces<TelehealthRequestResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)

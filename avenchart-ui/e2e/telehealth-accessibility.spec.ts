@@ -599,7 +599,7 @@ const queuedPatientRequest = {
   ...intakeRequest,
   status: 'Queued',
   version: 8,
-  allowedActions: ['await-clinician'],
+  allowedActions: ['await-clinician', 'cancel-request'],
   readyAt: '2026-08-26T12:20:00Z',
 }
 
@@ -1064,6 +1064,11 @@ test.describe('telehealth accessibility', () => {
     const existingPatient = page.getByRole('link', { name: 'Sign in as an existing patient' })
     if (!await existingPatient.evaluate((element) => element === document.activeElement)) await existingPatient.focus()
     await expect(existingPatient).toBeFocused()
+    await page.getByText('Demo accounts and scenarios').click()
+    await expect(page.getByRole('heading', { name: 'Physician — two-sided telehealth visit' })).toBeVisible()
+    await expect(page.getByText('gold-provider-01')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Patient — two-sided telehealth visit' })).toBeVisible()
+    await expect(page.getByText('mod-pat-0012@example.test')).toBeVisible()
 
     await expectNoSeriousAccessibilityViolations(page)
   })
@@ -5469,6 +5474,35 @@ test.describe('telehealth accessibility', () => {
 
     await expectNoSeriousAccessibilityViolations(page)
     await expectTelehealthReflow(page)
+  })
+
+  test('waiting patient can cancel the complete request and return to the telehealth entry', async ({ page }) => {
+    let cancellationBody: { expectedVersion?: number; syntheticCancellationConfirmed?: boolean } | null = null
+    await page.route('**/api/telehealth/v1/patient/requests', (route) => route.fulfill({ json: { requests: [queuedPatientRequest] } }))
+    await page.route('**/api/telehealth/v1/patient/requests/*/status', (route) => route.fulfill({ json: patientQueueStatus }))
+    await page.route('**/api/telehealth/v1/patient/requests/*/cancel', async (route) => {
+      cancellationBody = route.request().postDataJSON()
+      await route.fulfill({
+        json: {
+          ...queuedPatientRequest,
+          status: 'Cancelled',
+          version: queuedPatientRequest.version + 1,
+          allowedActions: ['request-cancelled'],
+        },
+      })
+    })
+    await signInPortal(page)
+    await page.goto('/portal/telehealth')
+
+    const cancelButton = page.getByRole('button', { name: 'Cancel telehealth visit' })
+    await expect(cancelButton).toBeVisible()
+    await expect(cancelButton).toBeDisabled()
+    await page.getByLabel('I confirm I want to cancel this synthetic request.').check()
+    await cancelButton.click()
+
+    await expect(page).toHaveURL(/\/telehealth$/)
+    await expect(page.getByRole('heading', { name: 'Telehealth', exact: true })).toBeVisible()
+    expect(cancellationBody).toEqual({ expectedVersion: queuedPatientRequest.version, syntheticCancellationConfirmed: true })
   })
 
   test('patient device preflight stops tracks, retries exactly, and enters a private simulator room accessibly', async ({ page }) => {

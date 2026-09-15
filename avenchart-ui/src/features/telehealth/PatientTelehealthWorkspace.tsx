@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import {
   cancelPatientTelehealthRequest,
   completePatientReadiness,
@@ -68,6 +69,7 @@ export default function PatientTelehealthWorkspace() {
   const [waitingRoom, setWaitingRoom] = useState<TelehealthConnectionGrant | null>(null)
   const [connectionRecoveryNotice, setConnectionRecoveryNotice] = useState<string | null>(null)
   const [editingReadiness, setEditingReadiness] = useState(false)
+  const [returnToTelehealthEntry, setReturnToTelehealthEntry] = useState(false)
   const connectionCommandKey = useRef<string | null>(null)
   const requestGeneration = useRef(0)
   const readinessGeneration = useRef(0)
@@ -329,6 +331,23 @@ export default function PatientTelehealthWorkspace() {
     }
   }
 
+  async function cancelRequest(request: TelehealthRequest) {
+    if (working || !cancellationConfirmed) return
+    setWorking(true)
+    setError(null)
+    try {
+      await cancelPatientTelehealthRequest(request.requestId, request.version)
+      setReturnToTelehealthEntry(true)
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'The telehealth request could not be cancelled.'
+      setError(message)
+      await refresh()
+      setError(message)
+    } finally {
+      setWorking(false)
+    }
+  }
+
   async function checkDevices() {
     setConnectionWorking(true)
     setError(null)
@@ -369,6 +388,8 @@ export default function PatientTelehealthWorkspace() {
       setConnectionWorking(false)
     }
   }
+
+  if (returnToTelehealthEntry) return <Navigate to="/telehealth" replace />
 
   return (
     <main className="telehealth-page" aria-labelledby="patient-telehealth-title">
@@ -532,11 +553,11 @@ export default function PatientTelehealthWorkspace() {
             </div>
           ) : null}
           {selected && canCancelPatientTelehealthRequest(selected.status) ? (
-            <details className="telehealth-request-cancellation">
-              <summary>Cancel this synthetic request</summary>
-              <p>You may cancel before a physician reserves the request or a connection starts. If practice queue authorization already occurred, this removes the request from the ready queue and cancels its provisional synthetic appointment. It does not cancel a reservation, connection, consultation, prescription, billing item, claim, or external action.</p>
+            <details className={`telehealth-request-cancellation${selected.status === 'Queued' ? ' is-waiting' : ''}`} open={selected.status === 'Queued' ? true : undefined}>
+              <summary>{selected.status === 'Queued' ? 'Cancel telehealth visit' : 'Cancel this synthetic request'}</summary>
+              <p>{selected.status === 'Queued' ? 'You are currently waiting for a physician. Cancelling removes this request from the queue and returns you to the main telehealth screen.' : 'You may cancel before a physician reserves the request or a connection starts.'} It does not cancel a reservation, connection, consultation, prescription, billing item, claim, or external action.</p>
               <label className="telehealth-check"><input type="checkbox" checked={cancellationConfirmed} onChange={(event) => setCancellationConfirmed(event.target.checked)} />I confirm I want to cancel this synthetic request.</label>
-              <button className="telehealth-button telehealth-button-secondary" type="button" disabled={working || !cancellationConfirmed} onClick={() => void run(() => cancelPatientTelehealthRequest(selected.requestId, selected.version))}>Cancel synthetic request</button>
+              <button className="telehealth-button telehealth-button-danger" type="button" disabled={working || !cancellationConfirmed} onClick={() => void cancelRequest(selected)}>{working ? 'Cancelling telehealth visit…' : 'Cancel telehealth visit'}</button>
             </details>
           ) : null}
           {selected && !['Draft', 'LocationConfirmed', 'Intake', 'Verification'].includes(selected.status) ? (

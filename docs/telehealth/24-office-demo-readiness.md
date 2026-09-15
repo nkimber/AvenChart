@@ -14,10 +14,12 @@ patient care, legal signing, prescribing, patient delivery, billing or claims.
 Use [the telehealth entry](https://avenchart.kimber.dev/telehealth). Allow about
 8–12 minutes for a narrated demonstration; rehearse on the office network first.
 
-1. From the entry page, open **Open physician workspace in a new tab**. In the
-   original tab choose **Sign in as an existing patient**. Both role-specific
-   demonstration credentials are prefilled; sign in without changing them.
-   Each tab keeps its own session. Use fictional information only.
+1. From the entry page, expand **Demo accounts and scenarios** when the audience
+   needs the test credentials and purpose of each account. Open **Open physician
+   workspace in a new tab**. In the original tab choose **Sign in as an existing
+   patient**. Both role-specific demonstration credentials are prefilled; sign
+   in without changing them. Each tab keeps its own session. Use fictional
+   information only.
 2. Patient: **Start sleep demo**, confirm the displayed current location, review
    the safety questions and **Evaluate synthetic triage**. Review the existing
    details, clinical-list summary and coverage; make the five explicit
@@ -52,8 +54,11 @@ Use [the telehealth entry](https://avenchart.kimber.dev/telehealth). Allow about
    availability**. The patient receives the synthetic receipt and authored plan
    preview automatically. These are not a completed appointment or real delivery.
 8. To repeat, start the next fictional patient request and use **See next
-   patient**. To stop, expand **End availability**, make its two confirmations
-   and **End idle telehealth shift**. No database reset is necessary.
+   patient**. A patient who is still waiting can expand the visible **Cancel
+   telehealth visit** control, confirm cancellation and return to the main
+   telehealth entry; the ready queue entry and provisional synthetic appointment
+   are cancelled together. To stop, expand **End availability**, make its two
+   confirmations and **End idle telehealth shift**. No database reset is necessary.
 
 Optional prescribing/pharmacy, completion and claim preparation are collapsed
 and loaded only when opened. Leave these out of the core office script; they

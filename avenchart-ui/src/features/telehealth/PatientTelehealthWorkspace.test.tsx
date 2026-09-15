@@ -3,8 +3,10 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import PatientTelehealthWorkspace from './PatientTelehealthWorkspace.tsx'
 import {
+  cancelPatientTelehealthRequest,
   getPatientQueueStatus,
   getPatientReadiness,
   getPatientRequestHistory,
@@ -29,6 +31,7 @@ vi.mock('./api.ts', async (importOriginal) => {
     listPatientRequests: vi.fn(),
     verifyPatientCoverage: vi.fn(),
     completePatientReadiness: vi.fn(),
+    cancelPatientTelehealthRequest: vi.fn(),
   }
 })
 
@@ -222,5 +225,47 @@ describe('PatientTelehealthWorkspace', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Join physician demo queue' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('The synthetic handoff could not be completed.')
+  })
+
+  it('prominently cancels a waiting request and returns to the telehealth entry', async () => {
+    const queuedRequest = {
+      ...request,
+      status: 'Queued',
+      version: 7,
+      readyAt: '2026-08-31T12:05:00Z',
+      allowedActions: ['await-clinician', 'cancel-request'],
+    } satisfies TelehealthRequest
+    vi.mocked(listPatientRequests).mockResolvedValue([queuedRequest])
+    vi.mocked(getPatientQueueStatus).mockResolvedValue({
+      ...queueStatus,
+      requestStatus: 'Queued',
+      requestVersion: queuedRequest.version,
+      phase: 'InQueue',
+      headline: "You're in line",
+    })
+    vi.mocked(cancelPatientTelehealthRequest).mockResolvedValue({
+      ...queuedRequest,
+      status: 'Cancelled',
+      version: queuedRequest.version + 1,
+      allowedActions: ['request-cancelled'],
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/portal/telehealth']}>
+        <Routes>
+          <Route path="/portal/telehealth" element={<PatientTelehealthWorkspace />} />
+          <Route path="/telehealth" element={<h1>Telehealth start</h1>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    const cancelButton = await screen.findByRole('button', { name: 'Cancel telehealth visit' })
+    expect(cancelButton).toBeVisible()
+    expect(cancelButton).toBeDisabled()
+    fireEvent.click(screen.getByLabelText('I confirm I want to cancel this synthetic request.'))
+    fireEvent.click(cancelButton)
+
+    await waitFor(() => expect(cancelPatientTelehealthRequest).toHaveBeenCalledWith(queuedRequest.requestId, queuedRequest.version))
+    expect(await screen.findByRole('heading', { name: 'Telehealth start' })).toBeVisible()
   })
 })

@@ -72,7 +72,33 @@ export default function TelehealthLanding() {
               <Link className="telehealth-button telehealth-button-secondary" to="/telehealth/new">Start as a new patient</Link>
               <Link className="telehealth-button telehealth-button-secondary" to="/login?telehealth=1" target="_blank" rel="noopener noreferrer">Open physician workspace in a new tab</Link>
             </div>
-            <p>For a two-sided demo, use the pre-filled patient and physician accounts. Each tab keeps its own session and camera selection. Choose a different camera in each room and enable “Same-laptop demo” in one video tab to prevent echo.</p>
+            <details className="telehealth-demo-accounts">
+              <summary>Demo accounts and scenarios</summary>
+              <p>These accounts contain synthetic demonstration data only. The sign-in pages pre-fill the same credentials.</p>
+              <div className="telehealth-demo-account-grid">
+                <section aria-labelledby="telehealth-physician-demo-account">
+                  <h3 id="telehealth-physician-demo-account">Physician — two-sided telehealth visit</h3>
+                  <dl>
+                    <div><dt>Username</dt><dd><code>gold-provider-01</code></dd></div>
+                    <div><dt>Password</dt><dd><code>pass</code></dd></div>
+                  </dl>
+                  <p>Use in the physician tab to reserve the waiting patient and conduct the visit.</p>
+                </section>
+                <section aria-labelledby="telehealth-patient-demo-account">
+                  <h3 id="telehealth-patient-demo-account">Patient — two-sided telehealth visit</h3>
+                  <dl>
+                    <div><dt>Username</dt><dd><code>mod-pat-0012@example.test</code></dd></div>
+                    <div><dt>Password</dt><dd><code>PortalPass207!</code></dd></div>
+                  </dl>
+                  <p>Use in the patient tab to create, queue, join, or cancel a synthetic visit.</p>
+                </section>
+                <section aria-labelledby="telehealth-new-patient-demo">
+                  <h3 id="telehealth-new-patient-demo">New-patient identity intake</h3>
+                  <p><strong>No account required.</strong> Choose “Start as a new patient.” This short demo stops safely at identity review and does not enter the physician queue.</p>
+                </section>
+              </div>
+              <p>For a same-laptop demo, each tab keeps its own session and camera selection. Choose a different camera in each room and enable “Same-laptop demo” in both video tabs to prevent echo.</p>
+            </details>
           </div>
         ) : null}
       </section>
