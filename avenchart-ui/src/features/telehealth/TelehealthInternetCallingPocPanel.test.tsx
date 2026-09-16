@@ -9,7 +9,7 @@ import type { TelehealthConnectionGrant, TelehealthInternetCallingConfiguration 
 const sdk = vi.hoisted(() => {
   const handlers = new Map<string, (...args: unknown[]) => void>()
   const call = {
-    state: 'Connected', isMuted: false, remoteParticipants: [] as unknown[],
+    state: 'Connected', isMuted: false, remoteParticipants: [] as unknown[], localVideoStreams: [] as unknown[],
     on: vi.fn((name: string, handler: (...args: unknown[]) => void) => handlers.set(name, handler)),
     off: vi.fn((name: string) => handlers.delete(name)),
     hangUp: vi.fn().mockResolvedValue(undefined), muteIncomingAudio: vi.fn().mockResolvedValue(undefined),
@@ -24,9 +24,10 @@ const sdk = vi.hoisted(() => {
       getCameras: vi.fn(), getMicrophones: vi.fn(), getSpeakers: vi.fn(),
       askDevicePermission: vi.fn(), selectMicrophone: vi.fn(), selectSpeaker: vi.fn(),
     },
-    join: vi.fn(() => call), agentDispose: vi.fn().mockResolvedValue(undefined),
+    join: vi.fn(), agentDispose: vi.fn().mockResolvedValue(undefined),
     clientDispose: vi.fn().mockResolvedValue(undefined), tokenDispose: vi.fn(),
     makeStream: vi.fn(), streamDispose: vi.fn(), createAgent: vi.fn(),
+    rendererSources: [] as unknown[], createView: vi.fn(), rendererDispose: vi.fn(), viewDispose: vi.fn(), lifecycle: [] as string[],
   }
 })
 
@@ -41,8 +42,13 @@ vi.mock('@azure/communication-calling', () => ({
     dispose = sdk.streamDispose
   },
   VideoStreamRenderer: class {
-    createView = async () => ({ target: document.createElement('video'), dispose: vi.fn() })
-    dispose = vi.fn()
+    constructor(stream: unknown) { sdk.rendererSources.push(stream) }
+    createView = async (options?: unknown) => {
+      sdk.lifecycle.push('createView')
+      sdk.createView(options)
+      return { target: document.createElement('video'), dispose: sdk.viewDispose }
+    }
+    dispose = sdk.rendererDispose
   },
 }))
 vi.mock('@azure/communication-common', () => ({
@@ -63,12 +69,18 @@ describe('internet video visit', () => {
     vi.clearAllMocks()
     vi.stubGlobal('isSecureContext', true)
     sdk.handlers.clear()
-    sdk.call.state = 'Connected'; sdk.call.isMuted = false; sdk.call.remoteParticipants = []
+    sdk.rendererSources.length = 0; sdk.lifecycle.length = 0
+    sdk.call.state = 'Connected'; sdk.call.isMuted = false; sdk.call.remoteParticipants = []; sdk.call.localVideoStreams = []
     sdk.manager.isSpeakerSelectionAvailable = true
     sdk.manager.getCameras.mockResolvedValue([sdk.camera1, sdk.camera2])
     sdk.manager.getMicrophones.mockResolvedValue([{ id: 'acs-microphone', name: 'USB microphone' }])
     sdk.manager.getSpeakers.mockResolvedValue([{ id: 'acs-speaker', name: 'Headphones' }])
     sdk.manager.askDevicePermission.mockResolvedValue({ audio: true, video: true })
+    sdk.join.mockImplementation((_locator, options) => {
+      sdk.lifecycle.push('join')
+      sdk.call.localVideoStreams = options.videoOptions.localVideoStreams
+      return sdk.call
+    })
     sdk.createAgent.mockResolvedValue({ join: sdk.join, dispose: sdk.agentDispose })
   })
   afterEach(() => vi.unstubAllGlobals())
@@ -81,6 +93,16 @@ describe('internet video visit', () => {
     expect(sdk.makeStream).toHaveBeenCalledWith(sdk.camera2)
     expect(screen.getByText('Your camera: USB camera')).toBeVisible()
     expect(sdk.manager.selectMicrophone).toHaveBeenCalledWith({ id: 'acs-microphone', name: 'USB microphone' })
+  })
+
+  it('renders a mirrored self-preview from the stream adopted by the active call', async () => {
+    render(<TelehealthInternetCallingPocPanel grant={grant} role="patient" getCallingConfiguration={async () => config} />)
+    await join()
+    const localPreview = screen.getByLabelText('Local camera preview')
+    await waitFor(() => expect(localPreview.querySelector('video')).not.toBeNull())
+    expect(sdk.rendererSources).toContain(sdk.call.localVideoStreams[0])
+    expect(sdk.createView).toHaveBeenCalledWith({ isMirrored: true, scalingMode: 'Crop' })
+    expect(sdk.lifecycle.indexOf('join')).toBeLessThan(sdk.lifecycle.indexOf('createView'))
   })
 
   it('keeps an unplugged camera selection and refuses to substitute the first camera', async () => {

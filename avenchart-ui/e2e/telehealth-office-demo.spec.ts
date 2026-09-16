@@ -76,6 +76,7 @@ test('two tabs complete the patient and physician office demonstration through r
     }
     for (const tab of [patient, doctor]) {
       await expect(tab.getByText('Patient and physician are connected.', { exact: true })).toBeVisible({ timeout: 60_000 })
+      await expect.poll(() => tab.locator('[aria-label="Local camera preview"] video').evaluateAll(videos => videos.some(video => (video as HTMLVideoElement).videoWidth > 0 && !(video as HTMLVideoElement).paused)), { timeout: 30_000 }).toBe(true)
       await expect.poll(() => tab.locator('[aria-label="Other participant video"] video').evaluateAll(videos => videos.some(video => (video as HTMLVideoElement).videoWidth > 0 && !(video as HTMLVideoElement).paused)), { timeout: 30_000 }).toBe(true)
       await expect(tab.getByRole('button', { name: 'Unmute microphone' })).toBeDisabled()
     }

@@ -163,6 +163,25 @@ export default function TelehealthInternetCallingPocPanel({ grant, role, getCall
     remoteVideoContainer.current?.append(view.target)
   }, [])
 
+  const renderLocalStream = useCallback(async (stream: LocalVideoStream) => {
+    if (localRendererRef.current) return
+    const current = operation.current
+    const renderer = new VideoStreamRenderer(stream)
+    localRendererRef.current = renderer
+    try {
+      const view = await renderer.createView({ isMirrored: true, scalingMode: 'Crop' })
+      if (current !== operation.current || localRendererRef.current !== renderer) { view.dispose(); return }
+      localViewRef.current = view
+      localVideoContainer.current?.append(view.target)
+    } catch (error) {
+      if (localRendererRef.current === renderer) {
+        renderer.dispose()
+        localRendererRef.current = null
+      }
+      throw error
+    }
+  }, [])
+
   async function join() {
     if (joining.current || stopping.current || callRef.current) return
     if (!window.isSecureContext) {
@@ -207,13 +226,6 @@ export default function TelehealthInternetCallingPocPanel({ grant, role, getCall
       callAgentRef.current = callAgent
       const localStream = new LocalVideoStream(camera)
       localStreamRef.current = localStream
-      const localRenderer = new VideoStreamRenderer(localStream)
-      localRendererRef.current = localRenderer
-      const localView = await localRenderer.createView()
-      if (!isCurrent()) { localView.dispose(); return }
-      localRendererRef.current = localRenderer
-      localViewRef.current = localView
-      localVideoContainer.current?.append(localView.target)
       setActiveCamera(camera.name)
       setCameraOn(true)
       setMuted(sameLaptop)
@@ -223,6 +235,26 @@ export default function TelehealthInternetCallingPocPanel({ grant, role, getCall
         { audioOptions: { muted: sameLaptop }, videoOptions: { localVideoStreams: [localStream] } },
       )
       callRef.current = call
+      const localStreamsUpdated = (event: { added: LocalVideoStream[]; removed: LocalVideoStream[] }) => {
+        if (!isCurrent()) return
+        if (event.removed.length) {
+          clearView(localVideoContainer.current, localViewRef.current, localRendererRef.current)
+          localViewRef.current = null
+          localRendererRef.current = null
+        }
+        event.added.forEach((stream) => {
+          void renderLocalStream(stream).catch(() => {
+            if (isCurrent()) setMessage('Your camera is connected, but its preview could not be displayed. Turn the camera off and on or leave and rejoin.')
+          })
+        })
+      }
+      call.on('localVideoStreamsUpdated', localStreamsUpdated)
+      subscriptions.current.push(() => call.off('localVideoStreamsUpdated', localStreamsUpdated))
+      call.localVideoStreams.forEach((stream) => {
+        void renderLocalStream(stream).catch(() => {
+          if (isCurrent()) setMessage('Your camera is connected, but its preview could not be displayed. Turn the camera off and on or leave and rejoin.')
+        })
+      })
       const syncState = () => {
         if (!isCurrent()) return
         const bothConnected = call.state === 'Connected' && call.remoteParticipants.some((participant) => participant.state === 'Connected')
