@@ -5,6 +5,7 @@ import { loadClinicianSession, loadPortalSession } from '../../auth/session.ts'
 import { apiBaseUrl, apiFetch } from '../../api/transport.ts'
 
 export type TelehealthPracticeContext = {
+  demoLauncherEnabled?: boolean
   available: boolean
   practiceDisplayName: string
   supportedStates: string[]

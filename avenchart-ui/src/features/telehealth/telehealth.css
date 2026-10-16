@@ -66,3 +66,7 @@
 .telehealth-workspace.is-in-visit .telehealth-list { display: flex; gap: .5rem; overflow-x: auto; padding: .25rem; max-height: 9rem; }
 .telehealth-workspace.is-in-visit .telehealth-list li { min-width: 12rem; }
 @media (max-width: 760px) { .telehealth-workspace { grid-template-columns: 1fr; }.telehealth-emergency-compact a { margin-left: 0; } }
+.telehealth-demo-role-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 1rem; margin: 1rem 0; }
+.telehealth-demo-role-card { min-width: 0; padding: 1rem; border: 1px solid var(--border-color, #cbd5e1); border-radius: .75rem; }
+.telehealth-demo-invitation-field { display: grid; gap: .4rem; margin-top: .75rem; }
+.telehealth-demo-invitation-field input { box-sizing: border-box; min-width: 0; width: 100%; padding: .5rem; }

@@ -13,6 +13,7 @@ param uiImage string
 param keyVaultName string
 param databaseConnectionStringSecretName string = 'avenchart-database-connection-string'
 param telehealthInternetCallingPocEnabled bool = false
+param telehealthDemoLauncherEnabled bool = false
 param telehealthInternetCallingConnectionStringSecretName string = 'telehealth-internet-calling-connection-string'
 // Pass true only when upgrading an active revision that still references the
 // Phase-1 network-traversal secret. It avoids a destructive secret removal
@@ -257,6 +258,10 @@ resource application 'Microsoft.App/containerApps@2024-03-01' = {
               {
                 name: 'Telehealth__InternetCallingPocEnabled'
                 value: 'true'
+              }
+              {
+                name: 'Telehealth__DemoLauncherEnabled'
+                value: string(telehealthDemoLauncherEnabled)
               }
               {
                 name: 'Telehealth__InternetCallingConnectionString'

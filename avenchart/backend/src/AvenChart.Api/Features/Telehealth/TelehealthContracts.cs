@@ -8,7 +8,8 @@ public sealed record TelehealthPracticeContextResponse(
     string PracticeDisplayName,
     IReadOnlyList<string> SupportedStates,
     bool SyntheticOnly,
-    string EntryMessage);
+    string EntryMessage,
+    bool DemoLauncherEnabled = false);
 
 public sealed record CreateTelehealthProspectiveApplicantRequest(
     string LegalFirstName,

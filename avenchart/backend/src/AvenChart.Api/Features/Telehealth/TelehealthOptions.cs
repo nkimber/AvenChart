@@ -24,6 +24,7 @@ public sealed class TelehealthOptions
     public string VideoAdapterMode { get; init; } = "NON_PRODUCTION";
     public bool LocalWebRtcPocEnabled { get; init; }
     public bool InternetCallingPocEnabled { get; init; }
+    public bool DemoLauncherEnabled { get; init; }
     public string InternetCallingConnectionString { get; init; } = string.Empty;
     public string PharmacyDirectoryAdapterMode { get; init; } = "NON_PRODUCTION";
     public string ProfessionalClaimAdapterMode { get; init; } = "NON_PRODUCTION";
@@ -182,6 +183,8 @@ public static class TelehealthServiceRegistration
         services.AddScoped<TelehealthApplicantQueuedRequestWithdrawalService>();
         services.AddScoped<TelehealthVideoRepository>();
         services.AddScoped<TelehealthVideoService>();
+        services.AddScoped<TelehealthDemoRepository>();
+        services.AddScoped<TelehealthDemoService>();
         services.AddScoped<TelehealthLocalWebRtcPocRepository>();
         services.AddScoped<TelehealthLocalWebRtcPocService>();
         services.AddSingleton<TelehealthLocalWebRtcPocRelay>();

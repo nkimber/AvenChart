@@ -17,13 +17,14 @@ x-api-environment: &api-environment
   AllowedHosts: localhost;127.0.0.1
   RuntimeSafety__RequireHttps: "false"
   RuntimeSafety__EnableSyntheticFinancialMutations: "false"
-  # Keep the normal limit; an isolated multi-tab rehearsal can match Azure's
-  # configured 300 permits without disabling request limiting.
-  RuntimeSafety__RateLimitPermitLimit: ${AVENCHART_STAGING_RATE_LIMIT_PERMITS:-120}
+  # Synthetic multi-session rehearsals match Azure's 300-per-minute limit;
+  # status, heartbeat, and local signaling still remain rate limited.
+  RuntimeSafety__RateLimitPermitLimit: ${AVENCHART_STAGING_RATE_LIMIT_PERMITS:-300}
   IdentityProvider__Mode: local
   IdentityProvider__BrowserAllowedOrigins__0: http://127.0.0.1:${AVENCHART_STAGING_PORT:-8088}
   IdentityProvider__BrowserAllowedOrigins__1: http://localhost:${AVENCHART_STAGING_PORT:-8088}
   Telehealth__Enabled: "true"
+  Telehealth__DemoLauncherEnabled: "true"
   Telehealth__Mode: Synthetic
   Telehealth__PracticeId: avenchart-synthetic-practice
   Telehealth__PracticeDisplayName: AvenChart Synthetic Practice

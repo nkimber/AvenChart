@@ -91,6 +91,8 @@ const DocumentOcrQueue = lazy(
 )
 const DuplicateReview = lazy(() => import('./pages/clinician/DuplicateReview.tsx'))
 const TelehealthLanding = lazy(() => import('./features/telehealth/TelehealthLanding.tsx'))
+const TelehealthDemoLauncher = lazy(() => import('./features/telehealth/TelehealthDemoLauncher.tsx'))
+const TelehealthDemoRoom = lazy(() => import('./features/telehealth/TelehealthDemoRoom.tsx'))
 const ProspectivePatientTelehealthEntry = lazy(() => import('./features/telehealth/ProspectivePatientTelehealthEntry.tsx'))
 const PatientTelehealthWorkspace = lazy(() => import('./features/telehealth/PatientTelehealthWorkspace.tsx'))
 const AdminTelehealthQueue = lazy(() => import('./features/telehealth/AdminTelehealthQueue.tsx'))
@@ -113,6 +115,8 @@ export default function App() {
         <Route path="/login" element={<ClinicianLogin />} />
         <Route path="/auth/oidc/callback" element={<OidcCallback />} />
         <Route path="/telehealth" element={<TelehealthLanding />} />
+        <Route path="/telehealth/demo" element={<TelehealthDemoLauncher />} />
+        <Route path="/telehealth/demo/:runId/:role" element={<TelehealthDemoRoom />} />
         <Route path="/telehealth/new" element={<ProspectivePatientTelehealthEntry />} />
         {/* Legacy redirect */}
         <Route path="/home" element={<Navigate to="/clinician/dashboard" replace />} />

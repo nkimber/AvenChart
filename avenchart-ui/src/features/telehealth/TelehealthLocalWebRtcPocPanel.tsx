@@ -26,10 +26,6 @@ function deviceLabel(device: MediaDeviceInfo, index: number, kind: 'camera' | 'm
   return device.label || `${kind[0].toUpperCase()}${kind.slice(1)} ${index + 1}`
 }
 
-function retainDeviceSelection(current: string, devices: LocalDevice[]) {
-  return current && devices.some((device) => device.deviceId === current) ? current : ''
-}
-
 function deviceConstraint(deviceId: string): boolean | MediaTrackConstraints {
   return deviceId ? { deviceId: { exact: deviceId } } : true
 }
@@ -131,16 +127,18 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
       setCameras(availableCameras)
       setMicrophones(availableMicrophones)
       setSpeakers(availableSpeakers)
-      setSelectedCamera((current) => retainDeviceSelection(current, availableCameras))
-      setSelectedMicrophone((current) => retainDeviceSelection(current, availableMicrophones))
-      setSelectedSpeakerId((current) => retainDeviceSelection(current, availableSpeakers))
+      const cameraId = localStream.current?.getVideoTracks?.()[0]?.getSettings().deviceId
+      const microphoneId = localStream.current?.getAudioTracks?.()[0]?.getSettings().deviceId
+      if ((cameraId && !availableCameras.some(device => device.deviceId === cameraId)) || (microphoneId && !availableMicrophones.some(device => device.deviceId === microphoneId))) {
+        stop(); fail(new Error('A camera or microphone was disconnected. Choose an available device and join again.'))
+      }
       setDeviceStatus('Choose the local camera, microphone, and speaker to use when the media POC starts.')
     } catch {
       setDeviceStatus('Available local devices could not be read. Confirm browser camera and microphone permission, then refresh this list.')
     } finally {
       setLoadingDevices(false)
     }
-  }, [])
+  }, [fail, stop])
 
   useEffect(() => {
     void refreshDevices()
@@ -184,9 +182,10 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
         }
       }
     } catch (error) {
+      stop()
       fail(error)
     }
-  }, [fail, role, writeSignal])
+  }, [fail, role, stop, writeSignal])
 
   async function flushRemoteCandidates(connection: RTCPeerConnection) {
     const candidates = pendingRemoteCandidates.current
@@ -218,7 +217,12 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
       const connection = new RTCPeerConnection()
       peer.current = connection
       pendingRemoteCandidates.current = []
-      stream.getTracks().forEach((track) => connection.addTrack(track, stream))
+      stream.getTracks().forEach((track) => {
+        connection.addTrack(track, stream)
+        track.addEventListener('ended', () => {
+          if (peer.current === connection) { stop(); fail(new Error('A camera or microphone was disconnected. Reconnect the device and join again.')) }
+        }, { once: true })
+      })
       connection.ontrack = (event) => {
         if (remoteVideo.current) {
           remoteVideo.current.srcObject = event.streams[0] ?? new MediaStream([event.track])
@@ -229,17 +233,19 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
         if (event.candidate) void writeSignal('candidate', JSON.stringify({ ...event.candidate.toJSON(), negotiationId: negotiation.current })).catch(fail)
       }
       connection.onconnectionstatechange = () => {
+        if (peer.current !== connection) return
         if (connection.connectionState === 'connected') {
           setState('connected')
           setMessage('Local browser-to-browser media connected. AvenChart does not receive or store media.')
           connectionStateChange.current?.(true)
         } else if (connection.connectionState === 'failed') {
-          connectionStateChange.current?.(false)
+          stop()
           fail(new Error('The browser media connection failed. End and reconnect both participants.'))
         } else if (connection.connectionState === 'disconnected') {
           connectionStateChange.current?.(false)
           setMessage('The connection was interrupted. Reconnect if it does not recover.')
         } else if (connection.connectionState === 'closed') {
+          if (peer.current === connection) stop()
           connectionStateChange.current?.(false)
           setState('ended')
         }
@@ -257,6 +263,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
       }
       setState('waiting')
     } catch (error) {
+      stop()
       fail(error)
     }
   }
@@ -329,6 +336,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
             Camera
             <select aria-label="Camera for browser media POC" value={selectedCamera} onChange={(event) => setSelectedCamera(event.target.value)}>
               <option value="">Browser default camera</option>
+              {selectedCamera && !cameras.some(device => device.deviceId === selectedCamera) ? <option value={selectedCamera}>Selected camera disconnected</option> : null}
               {cameras.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
             </select>
           </label>
@@ -336,6 +344,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
             Microphone
             <select aria-label="Microphone for browser media POC" value={selectedMicrophone} onChange={(event) => setSelectedMicrophone(event.target.value)}>
               <option value="">Browser default microphone</option>
+              {selectedMicrophone && !microphones.some(device => device.deviceId === selectedMicrophone) ? <option value={selectedMicrophone}>Selected microphone disconnected</option> : null}
               {microphones.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
             </select>
           </label>

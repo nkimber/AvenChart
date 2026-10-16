@@ -9,6 +9,20 @@ namespace AvenChart.Api.Tests.Telehealth;
 public sealed class TelehealthLocalWebRtcPocRelayTests
 {
     [Fact]
+    public void RestartResetsStaleCursorsWithoutDiscardingNewNegotiation()
+    {
+        var relay = new TelehealthLocalWebRtcPocRelay();
+        var session = Guid.NewGuid();
+        var expiry = DateTimeOffset.UtcNow.AddMinutes(1);
+        Assert.Equal(0, relay.Read(session, "physician", 30, expiry).LatestSequence);
+        relay.Append(session, "patient", "request-offer", "{}", expiry);
+        var recovered = relay.Read(session, "physician", 30, expiry);
+        Assert.Equal("request-offer", Assert.Single(recovered.Signals).Kind);
+        Assert.Equal(1, recovered.LatestSequence);
+        Assert.Empty(relay.Read(session, "physician", recovered.LatestSequence, expiry).Signals);
+    }
+
+    [Fact]
     public void ReadReturnsOnlyTheOtherParticipantTransientSignals()
     {
         var relay = new TelehealthLocalWebRtcPocRelay();

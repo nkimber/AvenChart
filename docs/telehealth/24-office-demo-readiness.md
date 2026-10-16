@@ -42,8 +42,9 @@ Use [the telehealth entry](https://avenchart.kimber.dev/telehealth). Allow about
 5. Physician: conduct the seven explicit opening checks, then **Start synthetic
    lifecycle**. Show both sides of the short synthetic transcript. Type a brief
    fictional SOAP note and **Save unsigned draft**. Explain that this is not
-   real clinical documentation. Do not reload during a live video demonstration:
-   saved chart work is recoverable, but a browser reload ends that tab's media.
+   real clinical documentation. A reload ends that tab's media; use the active-call
+   recovery action to check devices and rejoin the same consultation. Saved chart
+   work remains available. See [active-call recovery](25-active-call-recovery.md).
 6. Make the three end-session confirmations and **End synthetic session and
    enter wrap-up**. The camera is released and the patient sees wrap-up status.
    Author the safety disposition, follow-up owner/timeframe, next steps and

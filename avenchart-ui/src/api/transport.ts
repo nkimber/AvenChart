@@ -177,7 +177,7 @@ export async function apiFetch(
       // case-insensitively, then materialize the final set for a stable fetch
       // contract in browsers, test doubles, and request instrumentation.
       headers: materializeRequestHeaders(headers),
-      credentials: 'include',
+      credentials: init.credentials ?? 'include',
       signal: requestController.signal,
     });
     await requireSuccessfulResponse(response, action, scope);

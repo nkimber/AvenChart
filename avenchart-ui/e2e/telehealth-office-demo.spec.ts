@@ -9,7 +9,7 @@ const azureAcceptance = process.env.TELEHEALTH_AZURE_DEMO_E2E === '1'
 // Explicitly opt in against the isolated staging stack or the named Azure
 // synthetic demo. No API responses are mocked. Chromium supplies synthetic
 // camera/microphone tracks; this is NOT evidence for physical cameras.
-test.use({ actionTimeout: 15_000, navigationTimeout: 30_000, permissions: ['camera', 'microphone'], launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] } })
+test.use({ trace: 'off', video: 'off', actionTimeout: 15_000, navigationTimeout: 30_000, permissions: ['camera', 'microphone'], launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] } })
 test.skip(process.env.TELEHEALTH_DEMO_E2E !== '1' && !azureAcceptance, 'Requires explicit local or named Azure synthetic-demo opt-in')
 
 async function checkLabels(page: Page, labels: RegExp[]) {

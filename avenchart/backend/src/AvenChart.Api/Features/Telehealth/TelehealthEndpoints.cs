@@ -22,6 +22,7 @@ public static class TelehealthEndpoints
 
         var root = app.MapGroup("/api/telehealth/v1")
             .WithTags("Telehealth (synthetic only)");
+        app.MapTelehealthDemoEndpoints();
 
         root.MapGet("/context", GetContextAsync)
             .WithName("GetTelehealthPracticeContext")

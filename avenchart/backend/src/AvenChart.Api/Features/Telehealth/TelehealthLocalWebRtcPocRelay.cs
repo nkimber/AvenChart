@@ -52,11 +52,15 @@ public sealed class TelehealthLocalWebRtcPocRelay
 
         if (!_sessions.TryGetValue(sessionId, out var session))
         {
-            return new TelehealthLocalWebRtcSignalReadResponse([], afterSequence, expiresAt);
+            return new TelehealthLocalWebRtcSignalReadResponse([], 0, expiresAt);
         }
 
         lock (session.Gate)
         {
+            // A process restart loses the transient relay, while browsers keep
+            // their cursor. Never acknowledge or discard the new negotiation
+            // using a cursor from the previous process.
+            if (afterSequence > session.NextSequence) afterSequence = 0;
             session.Signals.RemoveAll(signal => signal.ExpiresAt <= DateTimeOffset.UtcNow);
             session.Signals.RemoveAll(signal => signal.Sequence <= afterSequence
                 && !string.Equals(signal.SenderRole, recipientRole, StringComparison.Ordinal));

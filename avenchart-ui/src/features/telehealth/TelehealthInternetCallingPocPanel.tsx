@@ -47,6 +47,8 @@ export default function TelehealthInternetCallingPocPanel({ grant, role, getCall
   const localViewRef = useRef<VideoStreamRendererView | null>(null)
   const remoteViewRef = useRef<VideoStreamRendererView | null>(null)
   const localStreamRef = useRef<LocalVideoStream | null>(null)
+  const activeCameraId = useRef('')
+  const activeMicrophoneId = useRef('')
   const connectionStateChange = useRef(onConnectionStateChange)
   const [state, setState] = useState<'idle' | 'joining' | 'waiting' | 'connected' | 'ended' | 'error'>('idle')
   const [message, setMessage] = useState('Choose your camera, then join. Either participant can join first.')
@@ -101,6 +103,7 @@ export default function TelehealthInternetCallingPocPanel({ grant, role, getCall
     remoteRendererRef.current = null
     localStreamRef.current?.dispose()
     localStreamRef.current = null
+    activeCameraId.current = ''; activeMicrophoneId.current = ''
     if (call && call.state !== 'Disconnected') {
       try {
         await call.hangUp({ forEveryone: false })
@@ -135,13 +138,18 @@ export default function TelehealthInternetCallingPocPanel({ grant, role, getCall
       const options = (devices: { id: string; name: string }[]) => devices.map((device) => ({ deviceId: device.id, label: device.name }))
       setCameras(options(video)); setMicrophones(options(audio)); setSpeakers(options(output))
       setSpeakerSupported(manager.isSpeakerSelectionAvailable)
+      if (callRef.current && ((activeCameraId.current && !video.some(device => device.id === activeCameraId.current)) || (activeMicrophoneId.current && !audio.some(device => device.id === activeMicrophoneId.current)))) {
+        await stop()
+        setState('error')
+        setMessage('A camera or microphone was disconnected. Choose an available device and rejoin the video visit.')
+      }
       setDeviceStatus('Choose your camera and audio. These choices apply only to this tab.')
     } catch {
       setDeviceStatus('Available local devices could not be read. Confirm browser camera and microphone permission, then refresh this list.')
     } finally {
       setLoadingDevices(false)
     }
-  }, [getDeviceManager])
+  }, [getDeviceManager, stop])
 
   useEffect(() => {
     void refreshDevices()
@@ -226,6 +234,7 @@ export default function TelehealthInternetCallingPocPanel({ grant, role, getCall
       callAgentRef.current = callAgent
       const localStream = new LocalVideoStream(camera)
       localStreamRef.current = localStream
+      activeCameraId.current = camera.id; activeMicrophoneId.current = microphone.id
       setActiveCamera(camera.name)
       setCameraOn(true)
       setMuted(sameLaptop)

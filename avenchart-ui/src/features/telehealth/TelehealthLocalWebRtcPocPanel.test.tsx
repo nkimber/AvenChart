@@ -119,4 +119,23 @@ describe('TelehealthLocalWebRtcPocPanel', () => {
       video: { deviceId: { exact: 'camera-usb' } },
     }))
   })
+
+  it('releases media after a failed admission and permits another join', async () => {
+    const track = Object.assign(new EventTarget(), { stop: vi.fn() })
+    const connection = { addTrack: vi.fn(), close: vi.fn() }
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [track] })
+    vi.stubGlobal('isSecureContext', true)
+    vi.stubGlobal('RTCPeerConnection', vi.fn(function FakePeerConnection() { return connection }))
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } })
+    const writeSignal = vi.fn().mockRejectedValueOnce(new Error('Temporary admission failure')).mockResolvedValue(undefined)
+    const readSignals = vi.fn().mockResolvedValue({ latestSequence: 0, signals: [] })
+    render(<TelehealthLocalWebRtcPocPanel grant={grant} role="patient" writeSignal={writeSignal} readSignals={readSignals} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Join browser media POC' }))
+    await screen.findByText('Temporary admission failure')
+    expect(track.stop).toHaveBeenCalledOnce()
+    expect(connection.close).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Join browser media POC' }))
+    await waitFor(() => expect(writeSignal).toHaveBeenCalledTimes(2))
+    expect(getUserMedia).toHaveBeenCalledTimes(2)
+  })
 })

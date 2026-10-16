@@ -44,7 +44,7 @@ function Require([bool]$Condition, [string]$Message) { if (-not $Condition) { th
 if ($FixtureDatabaseContainer) {
     $inspection = docker inspect $FixtureDatabaseContainer | ConvertFrom-Json
     $project = $inspection[0].Config.Labels.'com.docker.compose.project'
-    if ($LASTEXITCODE -ne 0 -or $project -notmatch '^avenchart-telehealth-[a-z0-9-]*qa$') { throw 'Refusing fixture provisioning outside a named isolated telehealth QA project.' }
+    if ($LASTEXITCODE -ne 0 -or $project -notmatch '^avenchart-telehealth-[a-z0-9-]*(qa|ci)$') { throw 'Refusing fixture provisioning outside a named isolated telehealth QA/CI project.' }
     Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/telehealth-recovery-second-physician.sql') -Raw | docker exec -i $FixtureDatabaseContainer psql -X -U avenchart_staging -d avenchart_staging -v ON_ERROR_STOP=1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'The second synthetic physician could not be provisioned.' }
 }

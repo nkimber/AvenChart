@@ -34,6 +34,20 @@ describe("staff access context transport", () => {
     vi.unstubAllGlobals();
   });
 
+  it("omits browser cookies when a synthetic room explicitly opts out", async () => {
+    const request = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", request);
+    await apiFetch("http://localhost:5001/api/telehealth/v1/demo/runs", {
+      method: "POST",
+      credentials: "omit",
+      headers: { "X-AvenChart-Telehealth-Demo-Key": "scoped-demo-key" },
+    });
+    const [, init] = request.mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe("omit");
+    expect(new Headers(init.headers).has("X-AvenChart-Session")).toBe(false);
+    expect(new Headers(init.headers).has("X-AvenChart-Patient-Portal-Session")).toBe(false);
+  });
+
   it("adds the selected facility and purpose to a clinician request", async () => {
     saveClinicianSession({
       sessionId: "staff-session",

@@ -1,0 +1,88 @@
+name: Synthetic telehealth demo acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'avenchart/backend/src/AvenChart.Api/Features/Telehealth/**'
+      - 'avenchart/backend/src/AvenChart.Api/Program.cs'
+      - 'avenchart/database/migrations/**'
+      - 'avenchart/scripts/*Telehealth*.ps1'
+      - 'avenchart/scripts/fixtures/telehealth-*.sql'
+      - 'avenchart-ui/src/App.tsx'
+      - 'avenchart-ui/src/api/transport.ts'
+      - 'avenchart-ui/src/features/telehealth/**'
+      - 'avenchart-ui/e2e/telehealth-*.spec.ts'
+      - 'docker-compose.staging.yml'
+      - '.github/workflows/telehealth-demo-acceptance.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'avenchart/backend/src/AvenChart.Api/Features/Telehealth/**'
+      - 'avenchart/backend/src/AvenChart.Api/Program.cs'
+      - 'avenchart/database/migrations/**'
+      - 'avenchart/scripts/*Telehealth*.ps1'
+      - 'avenchart/scripts/fixtures/telehealth-*.sql'
+      - 'avenchart-ui/src/App.tsx'
+      - 'avenchart-ui/src/api/transport.ts'
+      - 'avenchart-ui/src/features/telehealth/**'
+      - 'avenchart-ui/e2e/telehealth-*.spec.ts'
+      - 'docker-compose.staging.yml'
+      - '.github/workflows/telehealth-demo-acceptance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: synthetic-telehealth-demo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-two-session-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      COMPOSE_PROJECT_NAME: avenchart-telehealth-demo-ci
+      AVENCHART_STAGING_RATE_LIMIT_PERMITS: '300'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: avenchart-ui/package-lock.json
+      - name: Configure the disposable synthetic database
+        shell: bash
+        run: |
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::$password"
+          printf 'AVENCHART_STAGING_POSTGRES_PASSWORD=%s\n' "$password" > .env.staging
+      - name: Start isolated staging and load fictional fixtures
+        shell: pwsh
+        run: |
+          docker compose --env-file .env.staging -f docker-compose.staging.yml up -d --build --wait
+          if ($LASTEXITCODE -ne 0) { throw 'The isolated staging build failed.' }
+          ./avenchart/scripts/Reset-AvenChartTelehealthPocStaging.ps1 -ResetStagingData
+      - name: Install the browser test runtime
+        working-directory: avenchart-ui
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Exercise real APIs, two sessions, reconnection, and API restart
+        working-directory: avenchart-ui
+        env:
+          MODERN_UI_BASE_URL: http://127.0.0.1:8088
+          TELEHEALTH_API_BASE_URL: http://127.0.0.1:8088
+          TELEHEALTH_DEMO_E2E: '1'
+          TELEHEALTH_QA_API_CONTAINER: avenchart-telehealth-demo-ci-api-1
+        run: npx playwright test e2e/telehealth-demo-launcher.spec.ts e2e/telehealth-office-demo.spec.ts --project=desktop-chromium --workers=1 --reporter=list
+      - name: Verify synthetic-only records, expiry, replay, and active-call authorization
+        shell: pwsh
+        run: |
+          ./avenchart/scripts/Test-TelehealthDemoLauncher.ps1 -ApiBaseUrl http://127.0.0.1:8088 -UseDisposableSyntheticEnvironment -DatabaseContainer avenchart-telehealth-demo-ci-postgres-1
+          ./avenchart/scripts/Test-TelehealthActiveCallRecovery.ps1 -ApiBaseUrl http://127.0.0.1:8088 -UseDisposableSyntheticEnvironment -FixtureDatabaseContainer avenchart-telehealth-demo-ci-postgres-1
+      # No Azure resource, production credential, or shared database is used.
+      # Avoid publishing traces containing temporary invitation capabilities.
+      - name: Stop the disposable environment
+        if: always()
+        run: docker compose --env-file .env.staging -f docker-compose.staging.yml down

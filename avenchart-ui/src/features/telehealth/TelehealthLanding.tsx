@@ -68,6 +68,7 @@ export default function TelehealthLanding() {
             <p>{context.entryMessage}</p>
             <p>Supported synthetic locations: {context.supportedStates.join(', ')}.</p>
             <div className="telehealth-actions">
+              {context.demoLauncherEnabled && context.syntheticOnly ? <Link className="telehealth-button" to="/telehealth/demo">Launch a two-session demo</Link> : null}
               <Link className="telehealth-button" to="/portal/login?telehealth=1">Sign in as an existing patient</Link>
               <Link className="telehealth-button telehealth-button-secondary" to="/telehealth/new">Start as a new patient</Link>
               <Link className="telehealth-button telehealth-button-secondary" to="/login?telehealth=1" target="_blank" rel="noopener noreferrer">Open physician workspace in a new tab</Link>

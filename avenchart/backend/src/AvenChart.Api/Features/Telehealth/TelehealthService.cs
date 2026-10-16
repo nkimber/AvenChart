@@ -27,7 +27,8 @@ public sealed class TelehealthService(
             _options.PracticeDisplayName,
             _options.SupportedStates,
             true,
-            "Synthetic demonstration only. This service is not available for patient care.");
+            "Synthetic demonstration only. This service is not available for patient care.",
+            _options.DemoLauncherEnabled);
     }
 
     public async Task<TelehealthRequestResponse> CreateRequestAsync(

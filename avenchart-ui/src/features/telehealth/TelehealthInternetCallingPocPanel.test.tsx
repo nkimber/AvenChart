@@ -195,6 +195,24 @@ describe('internet video visit', () => {
     expect(sdk.manager.selectSpeaker).not.toHaveBeenCalled()
   })
 
+  it('releases an active call after the selected camera disappears and requires an explicit rejoin', async () => {
+    const original = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices')
+    const events = new EventTarget()
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: events })
+    try {
+      render(<TelehealthInternetCallingPocPanel grant={grant} role="patient" getCallingConfiguration={async () => config} />)
+      await join()
+      sdk.manager.getCameras.mockResolvedValue([])
+      await act(async () => { events.dispatchEvent(new Event('devicechange')) })
+      await waitFor(() => expect(sdk.call.hangUp).toHaveBeenCalled())
+      expect(await screen.findByRole('alert')).toHaveTextContent('camera or microphone was disconnected')
+      expect(screen.getByRole('button', { name: 'Rejoin video visit' })).toBeEnabled()
+    } finally {
+      if (original) Object.defineProperty(navigator, 'mediaDevices', original)
+      else Reflect.deleteProperty(navigator, 'mediaDevices')
+    }
+  })
+
   it('recovers from denied permission without requesting a calling credential', async () => {
     sdk.manager.askDevicePermission.mockResolvedValue({ audio: false, video: false })
     const configuration = vi.fn(async () => config)
