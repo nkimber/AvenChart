@@ -19,6 +19,7 @@ import {
   readPatientLocalWebRtcSignals,
   listPatientRequests,
   preparePatientConnection,
+  resumePatientCall,
   verifyPatientCoverage,
   writePatientLocalWebRtcSignal,
   type TelehealthConnectionGrant,
@@ -39,6 +40,8 @@ import TelehealthConversationPanel from './TelehealthConversationPanel.tsx'
 import TelehealthLocalWebRtcPocPanel from './TelehealthLocalWebRtcPocPanel.tsx'
 import './telehealth.css'
 import TelehealthVisitProgress from './TelehealthVisitProgress.tsx'
+import TelehealthCallRecovery from './TelehealthCallRecovery.tsx'
+import { useActiveCallGrant } from './useActiveCallGrant.ts'
 
 const TelehealthInternetCallingPocPanel = lazy(() => import('./TelehealthInternetCallingPocPanel.tsx'))
 
@@ -67,6 +70,7 @@ export default function PatientTelehealthWorkspace() {
   const [connectionWorking, setConnectionWorking] = useState(false)
   const [deviceEvidence, setDeviceEvidence] = useState<TelehealthDevicePreflight | null>(null)
   const [waitingRoom, setWaitingRoom] = useState<TelehealthConnectionGrant | null>(null)
+  const [mediaConnected, setMediaConnected] = useState(false)
   const [connectionRecoveryNotice, setConnectionRecoveryNotice] = useState<string | null>(null)
   const [editingReadiness, setEditingReadiness] = useState(false)
   const [returnToTelehealthEntry, setReturnToTelehealthEntry] = useState(false)
@@ -78,6 +82,8 @@ export default function PatientTelehealthWorkspace() {
   const afterVisitPlanPreviewGeneration = useRef(0)
   const queueStatusGeneration = useRef(0)
   const selected = requests.find((item) => item.requestId === selectedId) ?? null
+  const connectionGrant = useActiveCallGrant(waitingRoom, selected?.status === 'InConsultation', deviceEvidence,
+    (evidence, key) => resumePatientCall(selected!.requestId, selected!.version, evidence, key))
   // A polling response may replace the selected request object even though the
   // patient is still on exactly the same readiness step. Keep draft input
   // scoped to meaningful workflow identity, not object identity.
@@ -346,6 +352,10 @@ export default function PatientTelehealthWorkspace() {
     } finally {
       setWorking(false)
     }
+  }
+
+  async function callingConfiguration() {
+    return getPatientInternetCallingConfiguration(await connectionGrant())
   }
 
   async function checkDevices() {
@@ -652,8 +662,9 @@ export default function PatientTelehealthWorkspace() {
                   ) : null}
                 </section>
               ) : null}
-              {waitingRoom?.mediaTransportEnabled && ['Connecting', 'InConsultation'].includes(selected.status) && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_INTERNET_ACS_CALLING_POC' ? <Suspense fallback={<p role="status">Loading the synthetic internet calling controls…</p>}><TelehealthInternetCallingPocPanel grant={waitingRoom} role="patient" getCallingConfiguration={() => getPatientInternetCallingConfiguration(waitingRoom)} /></Suspense> : null}
-              {waitingRoom?.mediaTransportEnabled && ['Connecting', 'InConsultation'].includes(selected.status) && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_LOCAL_WEBRTC_POC' ? <TelehealthLocalWebRtcPocPanel grant={waitingRoom} role="patient" writeSignal={(kind, payload) => writePatientLocalWebRtcSignal(waitingRoom, kind, payload)} readSignals={(afterSequence, signal) => readPatientLocalWebRtcSignals(waitingRoom, afterSequence, signal)} /> : null}
+              {selected.status === 'InConsultation' && !mediaConnected ? <TelehealthCallRecovery prepare={(preflight, key) => resumePatientCall(selected.requestId, selected.version, preflight, key)} onReady={(grant, evidence) => { setWaitingRoom(grant); setDeviceEvidence(evidence) }} /> : null}
+              {waitingRoom?.mediaTransportEnabled && ['Connecting', 'InConsultation'].includes(selected.status) && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_INTERNET_ACS_CALLING_POC' ? <Suspense fallback={<p role="status">Loading the synthetic internet calling controls…</p>}><TelehealthInternetCallingPocPanel grant={waitingRoom} role="patient" getCallingConfiguration={callingConfiguration} onConnectionStateChange={setMediaConnected} /></Suspense> : null}
+              {waitingRoom?.mediaTransportEnabled && ['Connecting', 'InConsultation'].includes(selected.status) && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_LOCAL_WEBRTC_POC' ? <TelehealthLocalWebRtcPocPanel key={waitingRoom.grantId} grant={waitingRoom} role="patient" writeSignal={async (kind, payload) => writePatientLocalWebRtcSignal(await connectionGrant(), kind, payload)} readSignals={async (afterSequence, signal) => readPatientLocalWebRtcSignals(await connectionGrant(), afterSequence, signal)} onConnectionStateChange={setMediaConnected} /> : null}
               {selected.status === 'InConsultation' ? <section className="telehealth-consultation-started" role="status"><h3>Synthetic consultation lifecycle started</h3><p>This is lifecycle demonstration data only. A synthetic browser media POC may remain connected, but no recording, transcription, clinician identity, chart, diagnosis, prescription, completion, or claim is available.</p><TelehealthConversationPanel participant="patient" requestId={selected.requestId} /><ul className="telehealth-safety-actions"><li>If symptoms worsen or you are unsure it is safe to continue, contact the practice or seek in-person care.</li><li>Call 911 now for an emergency.</li></ul></section> : null}
               {selected.status === 'WrapUp' ? <section className="telehealth-consultation-started" role="status"><h3>Your physician is finishing the synthetic visit record</h3><p>This visit is not complete. No signed record, after-visit summary, prescription, or claim is available. Follow the practice guidance you received.</p><ul className="telehealth-safety-actions"><li>If symptoms worsen or you are unsure it is safe to wait, contact the practice or seek in-person care.</li><li>Call 911 now for an emergency.</li></ul></section> : null}
               {selected.status === 'Closed' && !postVisitReceipt ? <section className="telehealth-consultation-started" role="status"><h3>Synthetic lifecycle closed</h3><p>The post-visit receipt is loading. This does not mean your appointment, encounter, clinical record, prescription, billing, or claim is complete.</p></section> : null}

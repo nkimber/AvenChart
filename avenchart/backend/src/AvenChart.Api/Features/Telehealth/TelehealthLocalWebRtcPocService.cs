@@ -81,11 +81,11 @@ public sealed class TelehealthLocalWebRtcPocService(
     private static string NormalizeKind(string? value)
     {
         var kind = value?.Trim().ToLowerInvariant();
-        if (kind is not ("offer" or "answer" or "candidate"))
+        if (kind is not ("offer" or "answer" or "candidate" or "request-offer"))
         {
             throw TelehealthProblem.BadRequest(
                 "telehealth_local_webrtc_signal_kind_invalid",
-                "Signal kind must be offer, answer, or candidate.");
+                "Signal kind must be offer, answer, candidate, or request-offer.");
         }
         return kind;
     }

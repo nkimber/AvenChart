@@ -23,12 +23,14 @@ test('two tabs complete the patient and physician office demonstration through r
   const errors: string[] = []
   let createdRequestId: string | undefined
   let wrapUpRequested = false
+  let consultationStarting = false
   patient.on('pageerror', error => errors.push(`Patient: ${error.message}`))
   doctor.on('pageerror', error => errors.push(`Physician: ${error.message}`))
   for (const tab of [patient, doctor]) tab.on('response', response => {
     // The transcript is intentionally unavailable once the server enters
     // wrap-up; its poll may beat the patient's independent status poll.
     if (wrapUpRequested && response.status() === 404 && /\/patient\/requests\/[^/]+\/conversation$/.test(new URL(response.url()).pathname)) return
+    if ((consultationStarting || wrapUpRequested) && response.status() === 404 && new URL(response.url()).pathname === '/api/telehealth/v1/local-webrtc/signals/read') return
     if (response.status() >= 400 && response.url().includes('/api/')) errors.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`)
   })
   await patient.goto('/telehealth')
@@ -93,6 +95,7 @@ test('two tabs complete the patient and physician office demonstration through r
     for (const tab of [patient, doctor]) await expect(tab.getByText('Local browser-to-browser media connected. AvenChart does not receive or store media.')).toBeVisible({ timeout: 30_000 })
   }
   await checkLabels(doctor, [/Patient identity discussion completed/, /Callback number reconfirmed/, /Privacy and other participants discussed/, /Telehealth consent discussion completed/, /No concerning symptom change/, /Emergency plan reviewed/, /Synthetic communication check is sufficient/])
+  consultationStarting = true
   await doctor.getByRole('button', { name: 'Start synthetic lifecycle', exact: true }).click()
   await expect(doctor.getByRole('heading', { name: 'Consultation workspace' })).toBeVisible()
   await expect(patient.getByRole('heading', { name: 'Synthetic consultation lifecycle started' })).toBeVisible({ timeout: 25_000 })
@@ -103,6 +106,26 @@ test('two tabs complete the patient and physician office demonstration through r
   await doctor.reload()
   await expect(doctor.getByRole('textbox', { name: 'Subjective', exact: true })).toHaveValue(note)
   if (process.env.TELEHEALTH_DEMO_RESUME_WRAPUP !== '1') {
+  // Recover the media after the lifecycle transition, rather than testing
+  // leave/rejoin only against still-valid waiting-room grants.
+  await patient.reload()
+  for (const tab of [patient, doctor]) {
+    await tab.getByRole('button', { name: 'Prepare active-call reconnection' }).click()
+  }
+  if (azureAcceptance) {
+    for (const tab of [patient, doctor]) {
+      await tab.getByRole('checkbox', { name: /Same-laptop demo: silence/ }).check()
+      await tab.getByRole('button', { name: 'Join video visit', exact: true }).click()
+    }
+    for (const tab of [patient, doctor]) await expect(tab.getByText('Patient and physician are connected.', { exact: true })).toBeVisible({ timeout: 60_000 })
+  } else {
+    // The patient can enter first and request a new offer from the physician.
+    await patient.getByRole('button', { name: 'Join browser media POC' }).click()
+    await doctor.getByRole('button', { name: 'Start browser media POC' }).click()
+    for (const tab of [patient, doctor]) await expect(tab.getByText('Local browser-to-browser media connected. AvenChart does not receive or store media.')).toBeVisible({ timeout: 40_000 })
+  }
+  await expect(doctor.getByRole('textbox', { name: 'Subjective', exact: true })).toHaveValue(note)
+  consultationStarting = false
   await patient.getByLabel('Demonstration message').fill('Synthetic patient hello from a separate tab.')
   await patient.getByLabel(/I confirm this contains synthetic demonstration data only/).check()
   await patient.getByRole('button', { name: 'Add synthetic message' }).click()

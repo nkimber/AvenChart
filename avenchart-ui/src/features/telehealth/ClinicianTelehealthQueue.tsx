@@ -17,6 +17,9 @@ import TelehealthEncounterFinalizationPanel from './TelehealthEncounterFinalizat
 import TelehealthSyntheticVisitClosurePanel from './TelehealthSyntheticVisitClosurePanel.tsx'
 import ClinicianIdleShiftEndControl, { type ClinicianIdleShiftEndConfirmations } from './ClinicianIdleShiftEndControl.tsx'
 import ClinicianReservationReleaseControl, { type ClinicianReservationReleaseConfirmations } from './ClinicianReservationReleaseControl.tsx'
+import TelehealthCallRecovery from './TelehealthCallRecovery.tsx'
+import { resumePhysicianCall } from './api.ts'
+import { useActiveCallGrant } from './useActiveCallGrant.ts'
 import ClinicianConnectionAbandonControl, { type ClinicianConnectionAbandonConfirmations } from './ClinicianConnectionAbandonControl.tsx'
 import './telehealth.css'
 import TelehealthOptionalSection from './TelehealthOptionalSection.tsx'
@@ -74,6 +77,9 @@ export default function ClinicianTelehealthQueue() {
     && startChecklist.noConcerningSymptomChange && startChecklist.emergencyPlanConfirmed
     && startChecklist.communicationSufficient
   const wrapUpReady = Object.values(wrapUpChecks).every(Boolean)
+  const connectionGrant = useActiveCallGrant(waitingRoom, !!consultation, deviceEvidence,
+    (evidence, key) => resumePhysicianCall(consultation!.consultationId, reservation!.requestVersion, evidence, key))
+
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const current = ++generation.current
@@ -315,6 +321,10 @@ export default function ClinicianTelehealthQueue() {
     } finally { setWrapUpWorking(false) }
   }
 
+  async function callingConfiguration() {
+    return getPhysicianInternetCallingConfiguration(await connectionGrant())
+  }
+
   function setStartCheck(name: keyof typeof startChecklist, value: boolean | 'GA' | 'CA' | 'FL') {
     setStartChecklist((current) => ({ ...current, [name]: value }))
   }
@@ -367,7 +377,7 @@ export default function ClinicianTelehealthQueue() {
           {reservation.applicantOriginated ? <p><strong>New-patient applicant request.</strong> This reservation matched the exact current synthetic rendering-candidate evidence. It is not real credentialing, network confirmation, consent, or care authorization.</p> : null}
           {!consultation ? <p>Lease expires {new Date(reservation.leaseExpiresAt).toLocaleTimeString()}.</p> : null}
           {!waitingRoom && !consultation ? <details><summary>Return this request to the queue</summary><ClinicianReservationReleaseControl reservation={reservation} disabled={working || connectionWorking} onRelease={(confirmations) => void releaseReservation(confirmations)} /></details> : null}
-          {!consultation || waitingRoom ? <section className="telehealth-connection-room" aria-labelledby="physician-device-check-title">
+          {(!consultation || workspace?.consultationStatus === 'InConsultation') ? <section className="telehealth-connection-room" aria-labelledby="physician-device-check-title">
             <h3 id="physician-device-check-title">Physician device check</h3>
             <p>The user-initiated test requests camera and microphone access and immediately stops all test tracks. No device names or media are retained.</p>
             {!consultation ? <div className="telehealth-actions">
@@ -376,8 +386,9 @@ export default function ClinicianTelehealthQueue() {
             </div> : null}
             {deviceEvidence ? <p className="telehealth-preflight-passed" role="status">Device check passed. Network indication: {deviceEvidence.networkQuality}.</p> : null}
             {waitingRoom ? <div className="telehealth-waiting-room" role="status"><h4>Physician grant ready</h4><p>{waitingRoom.waitingRoomMessage}</p><p><small>Local grant expires {new Date(waitingRoom.expiresAt).toLocaleTimeString()}.</small></p><ul>{waitingRoom.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></div> : null}
-            {waitingRoom?.mediaTransportEnabled && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_INTERNET_ACS_CALLING_POC' ? <Suspense fallback={<p role="status">Loading the synthetic internet calling controls…</p>}><TelehealthInternetCallingPocPanel grant={waitingRoom} role="physician" getCallingConfiguration={() => getPhysicianInternetCallingConfiguration(waitingRoom)} onConnectionStateChange={setLocalMediaConnected} /></Suspense> : null}
-            {waitingRoom?.mediaTransportEnabled && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_LOCAL_WEBRTC_POC' ? <TelehealthLocalWebRtcPocPanel grant={waitingRoom} role="physician" writeSignal={(kind, payload) => writePhysicianLocalWebRtcSignal(waitingRoom, kind, payload)} readSignals={(afterSequence, signal) => readPhysicianLocalWebRtcSignals(waitingRoom, afterSequence, signal)} onConnectionStateChange={setLocalMediaConnected} /> : null}
+            {consultation && workspace?.consultationStatus === 'InConsultation' && !localMediaConnected ? <TelehealthCallRecovery prepare={(preflight, key) => resumePhysicianCall(consultation.consultationId, reservation.requestVersion, preflight, key)} onReady={(grant, evidence) => { setWaitingRoom(grant); setDeviceEvidence(evidence) }} /> : null}
+            {waitingRoom?.mediaTransportEnabled && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_INTERNET_ACS_CALLING_POC' ? <Suspense fallback={<p role="status">Loading the synthetic internet calling controls…</p>}><TelehealthInternetCallingPocPanel grant={waitingRoom} role="physician" getCallingConfiguration={callingConfiguration} onConnectionStateChange={setLocalMediaConnected} /></Suspense> : null}
+            {waitingRoom?.mediaTransportEnabled && waitingRoom.mediaTransportMode === 'NON_PRODUCTION_LOCAL_WEBRTC_POC' ? <TelehealthLocalWebRtcPocPanel key={waitingRoom.grantId} grant={waitingRoom} role="physician" writeSignal={async (kind, payload) => writePhysicianLocalWebRtcSignal(await connectionGrant(), kind, payload)} readSignals={async (afterSequence, signal) => readPhysicianLocalWebRtcSignals(await connectionGrant(), afterSequence, signal)} onConnectionStateChange={setLocalMediaConnected} /> : null}
           </section> : null}
           {waitingRoom && !consultation ? <details><summary>Unable to connect? Return to queue</summary><ClinicianConnectionAbandonControl reservation={reservation} disabled={working || connectionWorking} onAbandon={(confirmations) => void abandonConnection(confirmations)} /></details> : null}
           {waitingRoom && !consultation ? (

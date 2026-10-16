@@ -30,14 +30,18 @@ public sealed class TelehealthVideoService(
         Guid requestId,
         PrepareTelehealthConnectionRequest request,
         string idempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool activeCall = false)
     {
         RequireConfiguredHost(httpContext.Request.Host);
         var patient = await RequirePatientAsync(httpContext, cancellationToken);
         var normalized = Normalize(request);
         var key = TelehealthCommandFingerprint.RequireIdempotencyKey(idempotencyKey);
         var subjectHash = SubjectHash("patient", patient.CanonicalId);
-        var context = await repository.PreparePatientContextAsync(
+        var context = activeCall
+            ? await repository.PrepareActiveCallAsync(_options.PracticeId, _options.FacilityId, requestId,
+                patient.CanonicalId, null, null, cancellationToken)
+            : await repository.PreparePatientContextAsync(
             _options.PracticeId,
             _options.FacilityId,
             patient.CanonicalId,
@@ -85,7 +89,8 @@ public sealed class TelehealthVideoService(
         Guid reservationId,
         PrepareTelehealthConnectionRequest request,
         string idempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool activeCall = false)
     {
         RequirePhysician(session);
         RequireConfiguredFacility(accessContext);
@@ -96,7 +101,10 @@ public sealed class TelehealthVideoService(
         var normalized = Normalize(request);
         var key = TelehealthCommandFingerprint.RequireIdempotencyKey(idempotencyKey);
         var subjectHash = SubjectHash("physician", staffId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        var context = await repository.PreparePhysicianContextAsync(
+        var context = activeCall
+            ? await repository.PrepareActiveCallAsync(_options.PracticeId, _options.FacilityId, null,
+                null, reservationId, staffId, cancellationToken)
+            : await repository.PreparePhysicianContextAsync(
             _options.PracticeId,
             _options.FacilityId,
             staffId,

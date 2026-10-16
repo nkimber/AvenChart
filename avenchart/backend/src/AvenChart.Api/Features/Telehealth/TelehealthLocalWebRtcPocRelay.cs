@@ -58,6 +58,8 @@ public sealed class TelehealthLocalWebRtcPocRelay
         lock (session.Gate)
         {
             session.Signals.RemoveAll(signal => signal.ExpiresAt <= DateTimeOffset.UtcNow);
+            session.Signals.RemoveAll(signal => signal.Sequence <= afterSequence
+                && !string.Equals(signal.SenderRole, recipientRole, StringComparison.Ordinal));
             var signals = session.Signals
                 .Where(signal => signal.Sequence > afterSequence && !string.Equals(signal.SenderRole, recipientRole, StringComparison.Ordinal))
                 .Select(signal => new TelehealthLocalWebRtcSignalResponse(signal.Sequence, signal.Kind, signal.Payload))

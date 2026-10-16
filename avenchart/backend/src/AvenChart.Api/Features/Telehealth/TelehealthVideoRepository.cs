@@ -12,7 +12,8 @@ public sealed record TelehealthVideoContextRecord(
     int RequestVersion,
     string RequestStatus,
     DateTimeOffset SessionExpiresAt,
-    DateTimeOffset GrantExpiresAt);
+    DateTimeOffset GrantExpiresAt,
+    bool ActiveCall = false);
 
 public sealed record TelehealthVideoGrantRecord(
     Guid SessionId,
@@ -23,7 +24,7 @@ public sealed record TelehealthVideoGrantRecord(
     string ParticipantRole,
     DateTimeOffset ExpiresAt);
 
-public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
+public sealed partial class TelehealthVideoRepository(NpgsqlDataSource dataSource)
 {
     public async Task<TelehealthVideoContextRecord> PreparePatientContextAsync(
         string practiceId,
@@ -79,9 +80,11 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var current = await LoadContextForUpdateAsync(
-            connection, transaction, context.SessionId, context.ReservationId, cancellationToken)
-            ?? throw TelehealthProblem.Conflict(
+        var current = context.ActiveCall
+            ? await LoadActiveCallForUpdateAsync(connection, transaction, context.SessionId, cancellationToken)
+            : await LoadContextForUpdateAsync(
+            connection, transaction, context.SessionId, context.ReservationId, cancellationToken);
+        if (current is null) throw TelehealthProblem.Conflict(
                 "telehealth_video_context_stale",
                 "The reserved connection context is no longer available. Refresh before trying again.");
 
@@ -103,6 +106,8 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
             cancellationToken);
         if (prior is not null)
         {
+            if (!prior.Value.IsCurrent)
+                throw TelehealthProblem.Conflict("telehealth_video_grant_expired", "This connection grant is no longer current. Prepare a new connection.");
             if (!string.Equals(prior.Value.CommandFingerprint, commandFingerprint, StringComparison.Ordinal)
                 || !string.Equals(prior.Value.ProviderInstanceId, provision.ProviderInstanceId, StringComparison.Ordinal)
                 || !string.Equals(prior.Value.CredentialHash, provision.JoinCredentialHash, StringComparison.Ordinal))
@@ -123,14 +128,14 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
                 prior.Value.ExpiresAt);
         }
 
-        if (current.RequestStatus == TelehealthRequestStatus.Reserved.ToString()
+        if ((context.ActiveCall || current.RequestStatus == TelehealthRequestStatus.Reserved.ToString())
             && current.RequestVersion != expectedVersion)
         {
             throw TelehealthProblem.Conflict(
                 "telehealth_version_conflict",
                 "The request changed before the connection room could be prepared. Refresh and try again.");
         }
-        if (current.RequestStatus is not ("Reserved" or "Connecting"))
+        if (context.ActiveCall ? current.RequestStatus != "InConsultation" : current.RequestStatus is not ("Reserved" or "Connecting"))
         {
             throw TelehealthProblem.Conflict(
                 "telehealth_video_state_invalid",
@@ -551,7 +556,7 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
             : null;
     }
 
-    private static async Task<(Guid GrantId, string ProviderInstanceId, string CredentialHash, string CommandFingerprint, DateTimeOffset ExpiresAt)?> LoadGrantByIdempotencyAsync(
+    private static async Task<(Guid GrantId, string ProviderInstanceId, string CredentialHash, string CommandFingerprint, DateTimeOffset ExpiresAt, bool IsCurrent)?> LoadGrantByIdempotencyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid sessionId,
@@ -563,7 +568,7 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            select grant_id,provider_instance_id,credential_hash,command_fingerprint,expires_at
+            select grant_id,provider_instance_id,credential_hash,command_fingerprint,expires_at,status='Issued' and expires_at>now()
             from telehealth_video_participant_grants
             where session_id=@sessionId and participant_role=@role
               and participant_subject_hash=@subjectHash and idempotency_key=@key;
@@ -574,7 +579,7 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("key", idempotencyKey);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
-            ? (reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetFieldValue<DateTimeOffset>(4))
+            ? (reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetFieldValue<DateTimeOffset>(4), reader.GetBoolean(5))
             : null;
     }
 
@@ -610,7 +615,7 @@ public sealed class TelehealthVideoRepository(NpgsqlDataSource dataSource)
         command.Transaction = transaction;
         command.CommandText = """
             update telehealth_video_sessions
-            set status='WaitingRoom',version=version+1
+            set status=case when status='Ended' then status else 'WaitingRoom' end,version=version+1
             where session_id=@sessionId
             returning version;
             """;

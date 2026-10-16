@@ -17,6 +17,7 @@ const grant = {
 const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices')
 describe('TelehealthLocalWebRtcPocPanel', () => {
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     if (originalMediaDevices) Object.defineProperty(navigator, 'mediaDevices', originalMediaDevices)
     else Reflect.deleteProperty(navigator, 'mediaDevices')
@@ -38,6 +39,7 @@ describe('TelehealthLocalWebRtcPocPanel', () => {
   })
 
   it('queues a remote ICE candidate until the offer establishes a remote description', async () => {
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000003')
     const peer = {
       remoteDescription: null as RTCSessionDescriptionInit | null,
       connectionState: 'new',
@@ -64,8 +66,8 @@ describe('TelehealthLocalWebRtcPocPanel', () => {
         latestSequence: 2,
         expiresAt: grant.expiresAt,
         signals: [
-          { sequence: 1, kind: 'candidate', payload: '{"candidate":"candidate:opaque"}' },
-          { sequence: 2, kind: 'offer', payload: '{"type":"offer","sdp":"opaque-offer"}' },
+          { sequence: 1, kind: 'candidate', payload: '{"candidate":"candidate:opaque","negotiationId":"epoch"}' },
+          { sequence: 2, kind: 'offer', payload: '{"type":"offer","sdp":"opaque-offer","negotiationId":"epoch","requestId":"00000000-0000-4000-8000-000000000003"}' },
         ],
       })
       .mockResolvedValue({ latestSequence: 2, expiresAt: grant.expiresAt, signals: [] })
@@ -73,10 +75,10 @@ describe('TelehealthLocalWebRtcPocPanel', () => {
     render(<TelehealthLocalWebRtcPocPanel grant={grant} role="patient" writeSignal={writeSignal} readSignals={readSignals} />)
     fireEvent.click(screen.getByRole('button', { name: 'Join browser media POC' }))
 
-    await waitFor(() => expect(peer.addIceCandidate).toHaveBeenCalledWith({ candidate: 'candidate:opaque' }))
+    await waitFor(() => expect(peer.addIceCandidate).toHaveBeenCalledWith({ candidate: 'candidate:opaque', negotiationId: 'epoch' }))
     expect(createPeerConnection).toHaveBeenCalledWith()
     expect(peer.setRemoteDescription.mock.invocationCallOrder[0]).toBeLessThan(peer.addIceCandidate.mock.invocationCallOrder[0])
-    expect(writeSignal).toHaveBeenCalledWith('answer', JSON.stringify({ type: 'answer', sdp: 'opaque-answer' }))
+    expect(writeSignal).toHaveBeenCalledWith('answer', JSON.stringify({ type: 'answer', sdp: 'opaque-answer', negotiationId: 'epoch' }))
   })
 
   it('uses the selected local camera and microphone when joining', async () => {

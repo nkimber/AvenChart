@@ -2536,7 +2536,7 @@ export type TelehealthConnectionGrant = {
   grantId: string
   requestId: string
   requestVersion: number
-  requestStatus: 'Connecting'
+  requestStatus: 'Connecting' | 'InConsultation'
   participantRole: 'patient' | 'physician'
   adapterMode: 'NON_PRODUCTION'
   joinCredential: string
@@ -2549,7 +2549,7 @@ export type TelehealthConnectionGrant = {
   limitations: string[]
 }
 
-export type TelehealthLocalWebRtcSignalKind = 'offer' | 'answer' | 'candidate'
+export type TelehealthLocalWebRtcSignalKind = 'offer' | 'answer' | 'candidate' | 'request-offer'
 
 export type TelehealthLocalWebRtcSignal = {
   sequence: number
@@ -4827,6 +4827,16 @@ export function preparePatientConnection(
     `/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/connection-grants`,
     connectionCommandInit(preflight, expectedVersion, idempotencyKey, 'portal'),
   )
+}
+
+export function resumePatientCall(requestId: string, expectedVersion: number, preflight: TelehealthDevicePreflight, idempotencyKey: string) {
+  return json<TelehealthConnectionGrant>(`/api/telehealth/v1/patient/requests/${encodeURIComponent(requestId)}/active-call-grants`,
+    connectionCommandInit(preflight, expectedVersion, idempotencyKey, 'portal'))
+}
+
+export function resumePhysicianCall(consultationId: string, expectedVersion: number, preflight: TelehealthDevicePreflight, idempotencyKey: string) {
+  return json<TelehealthConnectionGrant>(`/api/telehealth/v1/clinician/consultations/${encodeURIComponent(consultationId)}/active-call-grants`,
+    connectionCommandInit(preflight, expectedVersion, idempotencyKey, 'clinician'))
 }
 
 export function prepareApplicantConnection(

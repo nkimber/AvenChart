@@ -627,6 +627,9 @@ public static class TelehealthEndpoints
             .ProducesProblem(StatusCodes.Status410Gone);
 
         var patient = root.MapGroup("/patient");
+        patient.MapPost("/requests/{requestId:guid}/active-call-grants", ResumePatientCallAsync)
+            .WithName("ResumePatientTelehealthCall")
+            .Produces<TelehealthConnectionGrantResponse>();
         patient.MapGet("/requests", ListPatientRequestsAsync)
             .WithName("ListPatientTelehealthRequests")
             .Produces<TelehealthRequestListResponse>()
@@ -845,6 +848,10 @@ public static class TelehealthEndpoints
             .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
 
         var clinician = root.MapGroup("/clinician");
+        clinician.MapPost("/consultations/{consultationId:guid}/active-call-grants", ResumePhysicianCallAsync)
+            .WithName("ResumePhysicianTelehealthCall")
+            .Produces<TelehealthConnectionGrantResponse>()
+            .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
         clinician.MapGet("/queue", ListClinicianQueueAsync)
             .WithName("ListTelehealthClinicianQueue")
             .Produces<TelehealthQueueResponse>()
@@ -2329,6 +2336,28 @@ public static class TelehealthEndpoints
             request,
             ReadIdempotencyKey(context),
             cancellationToken)));
+
+    private static Task<IResult> ResumePatientCallAsync(
+        TelehealthVideoService service, HttpContext context, Guid requestId,
+        PrepareTelehealthConnectionRequest request, CancellationToken cancellationToken) =>
+        ExecuteAsync(async () =>
+        {
+            SetMediaPocPrivateResponse(context, requestId);
+            return Results.Ok(await service.PreparePatientAsync(context, requestId, request,
+                ReadIdempotencyKey(context), cancellationToken, activeCall: true));
+        });
+
+    private static async Task<IResult> ResumePhysicianCallAsync(
+        TelehealthVideoService service, AuthRepository authRepository, HttpContext context, Guid consultationId,
+        PrepareTelehealthConnectionRequest request, CancellationToken cancellationToken) =>
+        await ExecuteAsync(async () =>
+        {
+            SetConsultationPrivateResponse(context, consultationId);
+            return Results.Ok(await service.PreparePhysicianAsync(
+                await GetSessionFromHeaderAsync(authRepository, context, cancellationToken),
+                RequireStaffAccessContext(context), consultationId, request,
+                ReadIdempotencyKey(context), cancellationToken, activeCall: true));
+        });
 
     private static async Task<IResult> GetPatientConversationAsync(
         TelehealthConversationService service, HttpContext context, Guid requestId, CancellationToken cancellationToken)

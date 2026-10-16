@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TelehealthConnectionGrant, TelehealthLocalWebRtcSignalKind, TelehealthLocalWebRtcSignalRead } from './api.ts'
+import { ApiRequestError } from '../../api/transport.ts'
 
 type Props = {
   grant: TelehealthConnectionGrant
@@ -38,9 +39,13 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
   const remoteVideo = useRef<HTMLVideoElement>(null)
   const peer = useRef<RTCPeerConnection | null>(null)
   const localStream = useRef<MediaStream | null>(null)
-  const pendingRemoteCandidates = useRef<RTCIceCandidateInit[]>([])
+  const pendingRemoteCandidates = useRef<Array<RTCIceCandidateInit & { negotiationId?: string }>>([])
   const sequence = useRef(0)
   const polling = useRef(false)
+  const negotiation = useRef<string | null>(null)
+  const requestedOffer = useRef<string | null>(null)
+  const operation = useRef(0)
+  const authorizationChangedAt = useRef<number | null>(null)
   const connectionStateChange = useRef(onConnectionStateChange)
   const selectedSpeaker = useRef('')
   const [state, setState] = useState<'idle' | 'joining' | 'waiting' | 'connected' | 'ended' | 'error'>('idle')
@@ -53,6 +58,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
   const [selectedSpeakerId, setSelectedSpeakerId] = useState('')
   const [deviceStatus, setDeviceStatus] = useState('Loading the cameras, microphones, and speakers available to this browser…')
   const [loadingDevices, setLoadingDevices] = useState(true)
+  const [sameLaptop, setSameLaptop] = useState(false)
   const speakerSelectionSupported = typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype
 
   useEffect(() => {
@@ -64,21 +70,26 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
   }, [selectedSpeakerId])
 
   useEffect(() => () => {
+    operation.current++
     connectionStateChange.current?.(false)
     peer.current?.close()
     localStream.current?.getTracks().forEach((track) => track.stop())
   }, [])
 
-  function stop() {
+  const stop = useCallback(() => {
+    operation.current++
     connectionStateChange.current?.(false)
     peer.current?.close()
     peer.current = null
     pendingRemoteCandidates.current = []
+    sequence.current = 0
+    negotiation.current = null
+    requestedOffer.current = null
     localStream.current?.getTracks().forEach((track) => track.stop())
     localStream.current = null
     if (localVideo.current) localVideo.current.srcObject = null
     if (remoteVideo.current) remoteVideo.current.srcObject = null
-  }
+  }, [])
 
   const fail = useCallback((error: unknown) => {
     connectionStateChange.current?.(false)
@@ -144,33 +155,43 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
     const connection = peer.current
     if (!connection) return
     try {
-      if (kind === 'offer') {
-        const offer = JSON.parse(payload) as RTCSessionDescriptionInit
+      const data = JSON.parse(payload) as (RTCSessionDescriptionInit & RTCIceCandidateInit & { negotiationId?: string; requestId?: string }) | null
+      if (kind === 'request-offer' && role === 'physician') {
+        negotiation.current = crypto.randomUUID()
+        const offer = await connection.createOffer({ iceRestart: true })
+        await connection.setLocalDescription(offer)
+        await writeSignal('offer', JSON.stringify({ ...offer, negotiationId: negotiation.current, requestId: data?.requestId }))
+      } else if (kind === 'offer' && role === 'patient' && data) {
+        if (requestedOffer.current && data.requestId !== requestedOffer.current) return
+        negotiation.current = data.negotiationId ?? null
+        requestedOffer.current = null
+        pendingRemoteCandidates.current = pendingRemoteCandidates.current.filter(candidate => candidate.negotiationId === data.negotiationId)
+        const offer = { type: data.type, sdp: data.sdp }
         await connection.setRemoteDescription(offer)
         await flushRemoteCandidates(connection)
         const answer = await connection.createAnswer()
         await connection.setLocalDescription(answer)
-        await writeSignal('answer', JSON.stringify(answer))
-      } else if (kind === 'answer') {
-        await connection.setRemoteDescription(JSON.parse(payload) as RTCSessionDescriptionInit)
+        await writeSignal('answer', JSON.stringify({ ...answer, negotiationId: negotiation.current }))
+      } else if (kind === 'answer' && data && data.negotiationId === negotiation.current && connection.signalingState === 'have-local-offer') {
+        await connection.setRemoteDescription({ type: data.type, sdp: data.sdp })
         await flushRemoteCandidates(connection)
-      } else if (payload !== 'null') {
-        const candidate = JSON.parse(payload) as RTCIceCandidateInit
-        if (connection.remoteDescription) {
+      } else if (kind === 'candidate' && data) {
+        const candidate = data
+        if (connection.remoteDescription && data.negotiationId === negotiation.current) {
           await connection.addIceCandidate(candidate)
-        } else {
+        } else if (pendingRemoteCandidates.current.length < 100) {
           pendingRemoteCandidates.current.push(candidate)
         }
       }
     } catch (error) {
       fail(error)
     }
-  }, [fail, writeSignal])
+  }, [fail, role, writeSignal])
 
   async function flushRemoteCandidates(connection: RTCPeerConnection) {
     const candidates = pendingRemoteCandidates.current
     pendingRemoteCandidates.current = []
-    for (const candidate of candidates) await connection.addIceCandidate(candidate)
+    for (const candidate of candidates) if (candidate.negotiationId === negotiation.current) await connection.addIceCandidate(candidate)
   }
 
   async function join() {
@@ -182,13 +203,17 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
     }
 
     setState('joining')
+    const current = ++operation.current
     try {
       setMessage('Requesting camera and microphone permission…')
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: deviceConstraint(selectedMicrophone),
         video: deviceConstraint(selectedCamera),
       })
+      if (current !== operation.current) { stream.getTracks().forEach(track => track.stop()); return }
       localStream.current = stream
+      if (sameLaptop) stream.getAudioTracks().forEach(track => { track.enabled = false })
+      if (remoteVideo.current) remoteVideo.current.muted = sameLaptop
       if (localVideo.current) localVideo.current.srcObject = stream
       const connection = new RTCPeerConnection()
       peer.current = connection
@@ -201,7 +226,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
         }
       }
       connection.onicecandidate = (event) => {
-        if (event.candidate) void writeSignal('candidate', JSON.stringify(event.candidate.toJSON())).catch(fail)
+        if (event.candidate) void writeSignal('candidate', JSON.stringify({ ...event.candidate.toJSON(), negotiationId: negotiation.current })).catch(fail)
       }
       connection.onconnectionstatechange = () => {
         if (connection.connectionState === 'connected') {
@@ -209,18 +234,25 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
           setMessage('Local browser-to-browser media connected. AvenChart does not receive or store media.')
           connectionStateChange.current?.(true)
         } else if (connection.connectionState === 'failed') {
+          connectionStateChange.current?.(false)
           fail(new Error('The browser media connection failed. End and reconnect both participants.'))
+        } else if (connection.connectionState === 'disconnected') {
+          connectionStateChange.current?.(false)
+          setMessage('The connection was interrupted. Reconnect if it does not recover.')
         } else if (connection.connectionState === 'closed') {
           connectionStateChange.current?.(false)
           setState('ended')
         }
       }
       if (role === 'physician') {
+        negotiation.current = crypto.randomUUID()
         const offer = await connection.createOffer()
         await connection.setLocalDescription(offer)
-        await writeSignal('offer', JSON.stringify(offer))
+        await writeSignal('offer', JSON.stringify({ ...offer, negotiationId: negotiation.current }))
         setMessage('Browser offer sent. Waiting for the patient browser to join.')
       } else {
+        requestedOffer.current = crypto.randomUUID()
+        await writeSignal('request-offer', JSON.stringify({ requestId: requestedOffer.current }))
         setMessage('Waiting for the physician browser to begin the connection.')
       }
       setState('waiting')
@@ -238,7 +270,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
   }
 
   useEffect(() => {
-    if (state !== 'waiting') return
+    if (state !== 'waiting' && state !== 'connected') return
     const controller = new AbortController()
     let timer: number | undefined
     const poll = async () => {
@@ -246,10 +278,23 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
       polling.current = true
       try {
         const result = await readSignals(sequence.current, controller.signal)
-        sequence.current = Math.max(sequence.current, result.latestSequence)
+        authorizationChangedAt.current = null
+        // A local API restart resets only the transient relay. Permit the
+        // next poll to read its new sequence without recreating the visit.
+        sequence.current = result.latestSequence
         for (const signal of result.signals) await receive(signal.kind, signal.payload)
       } catch (error) {
-        if (!controller.signal.aborted) fail(error)
+        if (!controller.signal.aborted) {
+          // Consultation start revokes the waiting-room grant before the
+          // independent patient status poll can learn the new lifecycle.
+          // Give that reconciliation a bounded window; never revive a grant.
+          if (error instanceof ApiRequestError && error.status === 404) {
+            authorizationChangedAt.current ??= Date.now()
+            if (Date.now() - authorizationChangedAt.current < 15_000) return
+          }
+          stop()
+          fail(error)
+        }
       } finally {
         polling.current = false
       }
@@ -269,7 +314,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
       window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', visible)
     }
-  }, [fail, readSignals, receive, state])
+  }, [fail, readSignals, receive, state, stop])
 
   return (
     <section className="telehealth-local-webrtc-poc" aria-labelledby={`local-webrtc-${grant.grantId}`}>
@@ -277,6 +322,7 @@ export default function TelehealthLocalWebRtcPocPanel({ grant, role, writeSignal
       <p role="note">NON_PRODUCTION local-only synthetic demonstration. Browser media is protected by WebRTC and does not enter AvenChart. No external media service, recording, transcription, media storage, patient delivery, clinical completion, or emergency support is provided.</p>
       <fieldset className="telehealth-local-device-picker" disabled={mediaActive}>
         <legend>Choose your local devices</legend>
+        <label className="telehealth-check"><input type="checkbox" checked={sameLaptop} onChange={event => setSameLaptop(event.target.checked)} />Same-laptop demo: silence this tab’s microphone and incoming audio to prevent echo</label>
         <p aria-live="polite">{deviceStatus}</p>
         <div className="telehealth-local-device-grid">
           <label>
