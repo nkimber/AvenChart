@@ -69,9 +69,9 @@ function DemoRoomSession({ runId, role }: { runId: string; role: string }) {
         const result = await demoRequest<DemoStatus>(`/runs/${runId}`, session.key, undefined, 'GET', controller.signal)
         if (controller.signal.aborted) return
         setStatus(result)
+        setStatusError(null)
         if (result.status !== 'Active') { setReady(false); return }
         await demoRequest(`${path}/heartbeat`, session.key, { stage: stage.current }, 'POST', controller.signal)
-        if (!controller.signal.aborted) setStatusError(null)
       } catch (caught) {
         if (!controller.signal.aborted) {
           if (caught instanceof DemoRequestError && caught.status === 404) { setReady(false); setRevoked(true); setStatusError(null) }
@@ -110,11 +110,13 @@ function DemoRoomSession({ runId, role }: { runId: string; role: string }) {
   } : null, [participant, runId, role, session.key])
   const ended = status?.status === 'Ended' || status?.status === 'Expired' || expired || revoked
   const visibleError = error ?? statusError
+  const terminationMessage = status?.status === 'Ended' ? 'This synthetic demo has ended.'
+    : status?.status === 'Expired' || expired ? 'This synthetic demo has expired.' : 'This synthetic demo is no longer available.'
   return <main className="telehealth-page" id="main-content">
     <h1>Synthetic {role === 'physician' ? 'physician' : 'patient'} session</h1>
     <p className="telehealth-synthetic" role="note">Connection demo only. You are using a fictional role with no access to a patient chart or clinical workflow. Audio and video are not recorded by AvenChart.</p>
     {visibleError ? <p className="telehealth-error" role="alert">{visibleError}</p> : null}
-    {!valid ? <p role="alert">This demo invitation is invalid.</p> : !participant ? <section><p>Opening your invitation…</p>{error ? <button className="telehealth-button" onClick={() => setAttempt(value => value + 1)}>Retry invitation</button> : null}</section> : ended ? <p role="status">{revoked ? 'This synthetic demo is no longer available.' : `This synthetic demo has ${status?.status === 'Ended' ? 'ended' : 'expired'}.`} The camera and microphone are released.</p> : <>
+    {!valid ? <p role="alert">This demo invitation is invalid.</p> : !participant ? <section><p>Opening your invitation…</p>{error ? <button className="telehealth-button" onClick={() => setAttempt(value => value + 1)}>Retry invitation</button> : null}</section> : ended ? <p role="status">{terminationMessage} The camera and microphone are released.</p> : <>
       <p>Room <strong>{runId.slice(0, 8)}</strong>. Expires <time dateTime={participant.expiresAt}>{new Date(participant.expiresAt).toLocaleTimeString()}</time>.</p>
       {status ? <p aria-live="polite">Patient: {demoStageLabel[status.patientStatus]}. Physician: {demoStageLabel[status.physicianStatus]}.</p> : null}
       {!ready ? <button className="telehealth-button" disabled={busy} onClick={() => void prepare()}>{busy ? 'Checking devices…' : 'Check devices and enter room'}</button> : null}

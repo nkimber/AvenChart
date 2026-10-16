@@ -90,7 +90,10 @@ The browser checks use real APIs and PostgreSQL, independent browser contexts,
 and Chromium synthetic cameras/microphones. They check playing remote video,
 inbound synthetic audio packets, patient-first joining, both-role refresh,
 network interruption, disconnected-track recovery, guarded API restart, ending,
-media release, and native permission denial/retry. The office test also checks
+media release, and controlled browser permission-error rejection/retry. Chromium's
+fake media UI bypasses native permission settings, so this error is explicitly
+injected before retrying actual browser capture. Native permission prompts need
+manual physical-browser acceptance. The office test also checks
 rejoining after the consultation starts without duplicating its encounter.
 Tests disable traces/video capture to avoid retaining invitation capabilities.
 
@@ -116,3 +119,27 @@ work; synthetic Chromium RTP does not establish those results.
   scenario; those process failures are not reported as passing acceptance.
 - No hosted deployment, live ACS call, physical-device, or mobile acceptance
   was executed.
+
+## Browser acceptance completion, October 16, 2026
+
+A clean Linux Chromium run passed all three browser scenarios in 2.2 minutes
+against the built application and real local API/PostgreSQL. The initial patient
+and physician connection took 5,855 ms. Remote video played and inbound synthetic
+audio packets were received in both independent browser sessions. Both-role
+refresh, network interruption, disconnected-track recovery, a real guarded API
+container restart, cross-room/replay denial, ending, and release of all captured
+tracks passed. The full visit scenario also passed consultation-start recovery,
+saved chart work, wrap-up, locking, closure, and shift ending through the normal
+screens.
+
+This run exposed and verified a fix for a late heartbeat rejection replacing an
+already-confirmed ended state. The room's four component tests passed, including
+that race and permission-error persistence. The final affected files passed
+ESLint, type checking, production build, and the unchanged bundle budget.
+The earlier two frontend timing failures both passed focused reruns; the extra
+ended-state regression brings the exercised frontend cases to 199.
+
+The deterministic permission scenario injects one `NotAllowedError`, then retries
+actual Chromium synthetic capture in the same room/session. It does not establish
+native permission-prompt or physical-device behavior. The GitHub workflow has been
+dispatched separately; a queued workflow is not counted as CI acceptance.

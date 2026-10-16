@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto'
 
 const azure = process.env.TELEHEALTH_AZURE_DEMO_E2E === '1'
 test.skip(process.env.TELEHEALTH_DEMO_E2E !== '1' && !azure, 'Requires an explicitly selected isolated synthetic demo')
-test.use({ trace: 'off', video: 'off', launchOptions: { args: ['--use-fake-device-for-media-stream'] } })
+test.use({ trace: 'off', video: 'off', launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] } })
 
 declare global {
   interface Window {
@@ -160,12 +160,22 @@ test('isolated patient and physician connect, recover, reject cross-room access,
   }
 })
 
-test('camera denial can be corrected without creating another room or consuming the invitation again', async ({ browser, page: launcher, request, baseURL }) => {
-  test.skip(azure, 'Local deterministic permission test; no live Azure mutation')
+test('a simulated browser permission rejection can be corrected without creating another room or consuming the invitation again', async ({ browser, page: launcher, request, baseURL }) => {
+  test.skip(azure, 'Local deterministic permission-error test; no live Azure mutation')
   expect(['127.0.0.1', 'localhost']).toContain(new URL(baseURL!).hostname)
   const api = process.env.TELEHEALTH_API_BASE_URL ?? baseURL!
-  const context = await browser.newContext()
-  await context.grantPermissions(['microphone'])
+  const context = await browser.newContext({ permissions: ['camera', 'microphone'] })
+  // Chromium's fake media UI bypasses native permission settings. Exercise
+  // the browser API's denial contract once, then capture real synthetic tracks
+  // on retry. Native site-permission prompts require physical-browser acceptance.
+  await context.addInitScript(() => {
+    const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    let deny = true
+    navigator.mediaDevices.getUserMedia = async constraints => {
+      if (deny) { deny = false; throw new DOMException('Synthetic acceptance permission denial', 'NotAllowedError') }
+      return capture(constraints)
+    }
+  })
   const patient = await context.newPage()
   let runId = '', observer = ''
   try {
@@ -176,10 +186,8 @@ test('camera denial can be corrected without creating another room or consuming 
     runId = new URL(invitation!).pathname.split('/')[3]
     observer = await launcher.evaluate(() => JSON.parse(sessionStorage.getItem('avenchart-ui.telehealth-demo.launcher')!).key as string)
     await patient.goto(invitation!)
-    expect(await patient.evaluate(async () => (await navigator.permissions.query({ name: 'camera' as PermissionName })).state)).toBe('denied')
     await patient.getByRole('button', { name: 'Check devices and enter room' }).click()
     await expect(patient.getByRole('alert')).toContainText('Camera or microphone permission was unavailable', { timeout: 10_000 })
-    await context.grantPermissions(['camera', 'microphone'])
     await prepare(patient)
     expect(new URL(patient.url()).pathname).toContain(runId)
     expect(new URL(patient.url()).hash).toBe('')

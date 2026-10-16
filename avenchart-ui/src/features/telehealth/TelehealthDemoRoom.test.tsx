@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Neil Kimber and AvenChart contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { ApiRequestError, apiFetch } from '../../api/transport.ts'
@@ -54,4 +54,20 @@ it('removes media controls when the server revokes the room session', async () =
   vi.mocked(apiFetch).mockRejectedValue(new ApiRequestError('Room no longer available', 404))
   await screen.findByText(/This synthetic demo is no longer available/, {}, { timeout: 6000 })
   expect(screen.queryByText('Local call controls')).not.toBeInTheDocument()
+})
+
+it('keeps the authoritative ended state when an in-flight heartbeat is rejected', async () => {
+  let rejectHeartbeat: (error: Error) => void = () => undefined
+  vi.mocked(apiFetch).mockImplementation(async url => {
+    if (String(url).endsWith('/redeem')) return Response.json(member)
+    if (String(url).endsWith('/heartbeat')) return new Promise<Response>((_, reject) => { rejectHeartbeat = reject })
+    return Response.json(String(url).endsWith('/end') ? { ...status, status: 'Ended' } : status)
+  })
+  show()
+  await screen.findByRole('button', { name: 'Check devices and enter room' })
+  await waitFor(() => expect(vi.mocked(apiFetch).mock.calls.some(([url]) => String(url).endsWith('/heartbeat'))).toBe(true))
+  fireEvent.click(screen.getByRole('button', { name: 'End this demo' }))
+  await screen.findByText(/This synthetic demo has ended/)
+  await act(async () => { rejectHeartbeat(new ApiRequestError('Room no longer active', 404)) })
+  expect(screen.getByText(/This synthetic demo has ended/)).toBeInTheDocument()
 })
